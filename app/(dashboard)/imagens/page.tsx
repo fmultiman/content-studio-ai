@@ -77,6 +77,12 @@ function ImagesPageContent() {
     if (!userInput.trim() && !generatedPrompt.trim()) return null
 
     const draftName = userInput.split('\n')[0].trim().slice(0, 50) || 'Rascunho sem titulo'
+    const safeImageUrl = imageUrl?.startsWith('data:') ? null : imageUrl
+    const safeGenerationAttempts = generationAttempts.map((attempt) => ({
+      ...attempt,
+      imageUrl: attempt.imageUrl?.startsWith('data:') ? null : attempt.imageUrl,
+    }))
+
     const response = await fetch('/api/image-drafts', {
       method: currentDraftId ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -89,15 +95,23 @@ function ImagesPageContent() {
         generatedPromptPt: generatedPromptPt || null,
         promptDetails,
         currentEvaluation,
-        generationAttempts,
+        generationAttempts: safeGenerationAttempts,
         currentAttempt,
         imageStatus,
         autoMode,
-        imageUrl,
+        imageUrl: safeImageUrl,
+        currentImageId: currentImage?.id || null,
         selectedModel,
       }),
     })
-    const data = await response.json()
+    const responseText = await response.text()
+    let data: { draft?: ImageDraft; error?: string } = {}
+
+    try {
+      data = responseText ? JSON.parse(responseText) : {}
+    } catch {
+      data = { error: responseText || 'Resposta invalida do servidor' }
+    }
 
     if (!response.ok) {
       throw new Error(data.error || 'Erro ao salvar rascunho')

@@ -58,6 +58,32 @@ function buildDraftPayload(body: Record<string, unknown>, includePromptPt = true
   return payload
 }
 
+async function attachImageFromReference(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  body: Record<string, unknown>,
+  payload: Record<string, unknown>,
+) {
+  const currentImageId = body.currentImageId
+
+  if (typeof currentImageId !== 'string' || !currentImageId) {
+    return payload
+  }
+
+  const { data: image } = await supabase
+    .from('images')
+    .select('image_url')
+    .eq('id', currentImageId)
+    .eq('user_id', userId)
+    .single()
+
+  if (image?.image_url) {
+    payload.image_url = image.image_url
+  }
+
+  return payload
+}
+
 export async function GET(request: Request) {
   try {
     const { supabase, user } = await getAuthenticatedClient()
@@ -135,10 +161,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const payload = {
+    const payload = await attachImageFromReference(supabase, user.id, body, {
       user_id: user.id,
       ...buildDraftPayload(body),
-    }
+    })
 
     let result = await supabase
       .from('image_drafts')
@@ -151,7 +177,12 @@ export async function POST(request: Request) {
         .from('image_drafts')
         .insert({
           user_id: user.id,
-          ...buildDraftPayload(body, false),
+          ...(await attachImageFromReference(
+            supabase,
+            user.id,
+            body,
+            buildDraftPayload(body, false),
+          )),
         })
         .select()
         .single()
@@ -191,9 +222,16 @@ export async function PATCH(request: Request) {
       )
     }
 
+    const payload = await attachImageFromReference(
+      supabase,
+      user.id,
+      body,
+      buildDraftPayload(body),
+    )
+
     let result = await supabase
       .from('image_drafts')
-      .update(buildDraftPayload(body))
+      .update(payload)
       .eq('id', body.id)
       .eq('user_id', user.id)
       .select()
@@ -202,7 +240,14 @@ export async function PATCH(request: Request) {
     if (result.error && isMissingPromptPtColumn(result.error)) {
       result = await supabase
         .from('image_drafts')
-        .update(buildDraftPayload(body, false))
+        .update(
+          await attachImageFromReference(
+            supabase,
+            user.id,
+            body,
+            buildDraftPayload(body, false),
+          ),
+        )
         .eq('id', body.id)
         .eq('user_id', user.id)
         .select()
