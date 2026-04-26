@@ -30,6 +30,8 @@ import {
   Edit2,
   Trash2,
   Palette,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Image as ImageType, Video as VideoType } from '@/lib/types'
@@ -48,6 +50,7 @@ export default function ProjectDetailPage() {
   const [showEditForm, setShowEditForm] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [copiedSection, setCopiedSection] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchProjectData = async () => {
@@ -128,6 +131,20 @@ export default function ProjectDetailPage() {
       .single()
     if (projectData) {
       setProject(projectData)
+    }
+  }
+
+  const handleCopySection = async (section: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedSection(section)
+      setTimeout(() => setCopiedSection(null), 2000)
+    } catch {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível copiar o texto.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -226,16 +243,46 @@ export default function ProjectDetailPage() {
             <CardContent className="space-y-6">
               {project.description && (
                 <div>
-                  <h3 className="mb-2 text-sm font-medium text-muted-foreground">Descrição</h3>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-medium text-muted-foreground">Descrição</h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleCopySection('description', project.description || '')}
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      aria-label="Copiar descrição"
+                    >
+                      {copiedSection === 'description' ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                   <p className="whitespace-pre-wrap text-foreground">{project.description}</p>
                 </div>
               )}
               {project.context && (
                 <div>
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <FileText className="h-4 w-4" />
-                    Contexto para IA
-                  </h3>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      Contexto para IA
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleCopySection('context', project.context || '')}
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      aria-label="Copiar contexto para IA"
+                    >
+                      {copiedSection === 'context' ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                   <div className="rounded-lg border border-border/50 bg-background/50 p-4">
                     <p className="whitespace-pre-wrap text-sm text-foreground">{project.context}</p>
                   </div>
@@ -243,10 +290,25 @@ export default function ProjectDetailPage() {
               )}
               {project.style_profile && (
                 <div>
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <Palette className="h-4 w-4" />
-                    Perfil de Estilo
-                  </h3>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Palette className="h-4 w-4" />
+                      Perfil de Estilo
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleCopySection('style_profile', project.style_profile || '')}
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      aria-label="Copiar perfil de estilo"
+                    >
+                      {copiedSection === 'style_profile' ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                   <div className="rounded-lg border border-border/50 bg-background/50 p-4">
                     <p className="whitespace-pre-wrap text-sm text-foreground">{project.style_profile}</p>
                   </div>
