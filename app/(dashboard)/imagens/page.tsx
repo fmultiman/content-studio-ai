@@ -760,7 +760,7 @@ function ImagesPageContent() {
       setImageStatus('draft')
       toast({
         title: 'Erro',
-        description: 'Não foi possível criar a imagem. Tente novamente.',
+        description: error instanceof Error ? error.message : 'Nao foi possivel criar a imagem. Tente novamente.',
         variant: 'destructive',
       })
     } finally {
@@ -816,7 +816,7 @@ function ImagesPageContent() {
       setImageStatus('draft')
       toast({
         title: 'Erro',
-        description: 'Não foi possível regenerar a imagem. Tente novamente.',
+        description: error instanceof Error ? error.message : 'Nao foi possivel regenerar a imagem. Tente novamente.',
         variant: 'destructive',
       })
     } finally {
