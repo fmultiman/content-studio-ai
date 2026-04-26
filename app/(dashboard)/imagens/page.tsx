@@ -266,6 +266,14 @@ function ImagesPageContent() {
   }
 
   const loadDraft = (draft: ImageDraft) => {
+    setPromptDetails(null)
+    setCurrentImage(null)
+    setImageUrl(null)
+    setImageStatus('draft')
+    setCurrentEvaluation(null)
+    setGenerationAttempts([])
+    setCurrentAttempt(1)
+
     setCurrentDraftId(draft.id)
     setUserInput(draft.user_input)
     setSelectedProject(draft.project_id)
