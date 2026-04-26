@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
   FolderKanban,
+  FileText,
   Image,
   Images,
   Video,
@@ -37,6 +38,11 @@ const navItems = [
     label: 'Vídeos',
     href: '/videos',
     icon: Video,
+  },
+  {
+    label: 'Posts',
+    href: '/posts',
+    icon: FileText,
   },
   {
     label: 'Galeria',

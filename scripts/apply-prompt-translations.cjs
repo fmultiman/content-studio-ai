@@ -32,6 +32,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/006_add_prompt_translations.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/010_add_image_draft_workspace_state.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/011_add_image_draft_current_image_id.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/012_create_posts.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -65,7 +66,40 @@ async function main() {
       throw new Error(`Colunas nao encontradas apos a migracao: ${missingColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts prompt translation, workspace state, and current image reference')
+    const postColumns = await sql`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'posts'
+        and column_name in (
+          'project_id',
+          'name',
+          'channel',
+          'description',
+          'ai_context',
+          'feed_text',
+          'image_url',
+          'status'
+        )
+    `
+    const foundPostColumns = new Set(postColumns.map((column) => column.column_name))
+    const requiredPostColumns = [
+      'project_id',
+      'name',
+      'channel',
+      'description',
+      'ai_context',
+      'feed_text',
+      'image_url',
+      'status',
+    ]
+    const missingPostColumns = requiredPostColumns.filter((column) => !foundPostColumns.has(column))
+
+    if (missingPostColumns.length > 0) {
+      throw new Error(`Colunas de posts nao encontradas apos a migracao: ${missingPostColumns.join(', ')}`)
+    }
+
+    console.log('migration ok: image_drafts workspace state and posts')
   } finally {
     await sql.end()
   }

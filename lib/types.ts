@@ -94,6 +94,24 @@ export interface Video {
   updated_at: string
 }
 
+export type PostChannel = 'instagram' | 'youtube'
+export type PostStatus = 'draft' | 'saved'
+
+export interface Post {
+  id: string
+  user_id: string
+  project_id: string | null
+  name: string
+  channel: PostChannel
+  description: string | null
+  ai_context: string | null
+  feed_text: string | null
+  image_url: string | null
+  status: PostStatus
+  created_at: string
+  updated_at: string
+}
+
 export interface VideoScene {
   id: string
   order: number
