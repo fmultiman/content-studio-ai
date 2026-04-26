@@ -18,6 +18,11 @@ function isMissingPromptPtColumn(error: { message?: string; details?: string; co
   return text.includes('generated_prompt_pt') || error?.code === 'PGRST204'
 }
 
+function isMissingCurrentImageIdColumn(error: { message?: string; details?: string; code?: string } | null) {
+  const text = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return text.includes('current_image_id') || error?.code === 'PGRST204'
+}
+
 async function getAuthenticatedClient() {
   const supabase = await createClient()
   const {
@@ -39,7 +44,6 @@ function buildDraftPayload(body: Record<string, unknown>, includePromptPt = true
     user_input: typeof body.userInput === 'string' ? body.userInput : '',
     generated_prompt: body.generatedPrompt || null,
     auto_mode: Boolean(body.autoMode),
-    image_url: body.imageUrl || null,
     selected_model: body.selectedModel || null,
     prompt_details: body.promptDetails || null,
     current_evaluation: body.currentEvaluation || null,
@@ -49,6 +53,14 @@ function buildDraftPayload(body: Record<string, unknown>, includePromptPt = true
     current_attempt:
       typeof body.currentAttempt === 'number' ? body.currentAttempt : 1,
     image_status: body.imageStatus || 'draft',
+  }
+
+  if (Object.hasOwn(body, 'imageUrl')) {
+    payload.image_url = body.imageUrl || null
+  }
+
+  if (typeof body.currentImageId === 'string' && body.currentImageId) {
+    payload.current_image_id = body.currentImageId
   }
 
   if (includePromptPt) {
@@ -172,7 +184,7 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (result.error && isMissingPromptPtColumn(result.error)) {
+    if (result.error && (isMissingPromptPtColumn(result.error) || isMissingCurrentImageIdColumn(result.error))) {
       result = await supabase
         .from('image_drafts')
         .insert({
@@ -181,7 +193,11 @@ export async function POST(request: Request) {
             supabase,
             user.id,
             body,
-            buildDraftPayload(body, false),
+            Object.fromEntries(
+              Object.entries(buildDraftPayload(body, false)).filter(
+                ([key]) => key !== 'current_image_id',
+              ),
+            ),
           )),
         })
         .select()
@@ -237,7 +253,7 @@ export async function PATCH(request: Request) {
       .select()
       .single()
 
-    if (result.error && isMissingPromptPtColumn(result.error)) {
+    if (result.error && (isMissingPromptPtColumn(result.error) || isMissingCurrentImageIdColumn(result.error))) {
       result = await supabase
         .from('image_drafts')
         .update(
@@ -245,7 +261,11 @@ export async function PATCH(request: Request) {
             supabase,
             user.id,
             body,
-            buildDraftPayload(body, false),
+            Object.fromEntries(
+              Object.entries(buildDraftPayload(body, false)).filter(
+                ([key]) => key !== 'current_image_id',
+              ),
+            ),
           ),
         )
         .eq('id', body.id)

@@ -31,6 +31,7 @@ async function main() {
   try {
     await sql.unsafe(fs.readFileSync('scripts/006_add_prompt_translations.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/010_add_image_draft_workspace_state.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/011_add_image_draft_current_image_id.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -43,7 +44,8 @@ async function main() {
           'current_evaluation',
           'generation_attempts',
           'current_attempt',
-          'image_status'
+          'image_status',
+          'current_image_id'
         )
     `
 
@@ -55,6 +57,7 @@ async function main() {
       'generation_attempts',
       'current_attempt',
       'image_status',
+      'current_image_id',
     ]
     const missingColumns = requiredColumns.filter((column) => !foundColumns.has(column))
 
@@ -62,7 +65,7 @@ async function main() {
       throw new Error(`Colunas nao encontradas apos a migracao: ${missingColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts prompt translation and workspace state')
+    console.log('migration ok: image_drafts prompt translation, workspace state, and current image reference')
   } finally {
     await sql.end()
   }

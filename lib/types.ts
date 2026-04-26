@@ -46,6 +46,7 @@ export interface GenerationAttempt {
   attempt: number
   prompt: string
   imageUrl: string | null
+  imageId?: string | null
   model: string
   evaluation: ImageEvaluation | null
   timestamp: string
@@ -136,6 +137,7 @@ export interface ImageDraft {
   image_status?: 'draft' | 'generating' | 'approved' | 'rejected' | null
   auto_mode: boolean
   image_url: string | null
+  current_image_id?: string | null
   selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null
   created_at: string
   updated_at: string

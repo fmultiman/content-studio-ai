@@ -77,32 +77,37 @@ function ImagesPageContent() {
     if (!userInput.trim() && !generatedPrompt.trim()) return null
 
     const draftName = userInput.split('\n')[0].trim().slice(0, 50) || 'Rascunho sem titulo'
-    const safeImageUrl = imageUrl?.startsWith('data:') ? null : imageUrl
+    const safeImageUrl = imageUrl?.startsWith('data:') ? undefined : imageUrl
     const safeGenerationAttempts = generationAttempts.map((attempt) => ({
       ...attempt,
+      imageId: attempt.imageId || (attempt.imageUrl === imageUrl ? currentImage?.id || null : null),
       imageUrl: attempt.imageUrl?.startsWith('data:') ? null : attempt.imageUrl,
     }))
+    const body: Record<string, unknown> = {
+      id: currentDraftId,
+      name: draftName,
+      projectId: selectedProject,
+      userInput,
+      generatedPrompt: generatedPrompt || null,
+      generatedPromptPt: generatedPromptPt || null,
+      promptDetails,
+      currentEvaluation,
+      generationAttempts: safeGenerationAttempts,
+      currentAttempt,
+      imageStatus,
+      autoMode,
+      currentImageId: currentImage?.id || null,
+      selectedModel,
+    }
+
+    if (safeImageUrl !== undefined) {
+      body.imageUrl = safeImageUrl
+    }
 
     const response = await fetch('/api/image-drafts', {
       method: currentDraftId ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: currentDraftId,
-        name: draftName,
-        projectId: selectedProject,
-        userInput,
-        generatedPrompt: generatedPrompt || null,
-        generatedPromptPt: generatedPromptPt || null,
-        promptDetails,
-        currentEvaluation,
-        generationAttempts: safeGenerationAttempts,
-        currentAttempt,
-        imageStatus,
-        autoMode,
-        imageUrl: safeImageUrl,
-        currentImageId: currentImage?.id || null,
-        selectedModel,
-      }),
+      body: JSON.stringify(body),
     })
     const responseText = await response.text()
     let data: { draft?: ImageDraft; error?: string } = {}
@@ -120,13 +125,40 @@ function ImagesPageContent() {
     return data.draft as ImageDraft
   }
 
-  const applyDraftState = (draft: ImageDraft) => {
+  const applyDraftState = async (draft: ImageDraft) => {
+    const draftAttempts = draft.generation_attempts || []
+    const imageIds = Array.from(
+      new Set(
+        [
+          draft.current_image_id,
+          ...draftAttempts.map((attempt) => attempt.imageId),
+        ].filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    )
+    let imageById = new Map<string, ImageType>()
+
+    if (imageIds.length > 0) {
+      const supabase = createClient()
+      const { data: images } = await supabase
+        .from('images')
+        .select('*')
+        .in('id', imageIds)
+
+      imageById = new Map((images || []).map((image) => [image.id, image as ImageType]))
+    }
+
+    const hydratedAttempts = draftAttempts.map((attempt) => ({
+      ...attempt,
+      imageUrl: attempt.imageUrl || (attempt.imageId ? imageById.get(attempt.imageId)?.image_url || null : null),
+    }))
+    const currentDraftImage = draft.current_image_id ? imageById.get(draft.current_image_id) || null : null
+
     setPromptDetails(draft.prompt_details || null)
     setCurrentEvaluation(draft.current_evaluation || null)
-    setGenerationAttempts(draft.generation_attempts || [])
+    setGenerationAttempts(hydratedAttempts)
     setCurrentAttempt(draft.current_attempt || 1)
-    setCurrentImage(null)
-    setImageUrl(draft.image_url || null)
+    setCurrentImage(currentDraftImage)
+    setImageUrl(currentDraftImage?.image_url || draft.image_url || null)
     setImageStatus(draft.image_status || 'draft')
 
     setCurrentDraftId(draft.id)
@@ -242,7 +274,7 @@ function ImagesPageContent() {
         
         if (draftResponse.ok && draftPayload.draft) {
           const draftData = draftPayload.draft as ImageDraft
-          applyDraftState(draftData)
+          await applyDraftState(draftData)
         } else if (!draftResponse.ok) {
           console.error('[v0] Image draft load error:', draftPayload)
         }
@@ -315,7 +347,7 @@ function ImagesPageContent() {
       }
     }
 
-    applyDraftState(draft)
+    await applyDraftState(draft)
 
     toast({
       title: 'Rascunho carregado',
@@ -443,6 +475,7 @@ function ImagesPageContent() {
         attempt: currentAttempt,
         prompt: generatedPrompt,
         imageUrl,
+        imageId: currentImage?.id || null,
         model: selectedModel,
         evaluation,
         timestamp: new Date().toISOString(),
