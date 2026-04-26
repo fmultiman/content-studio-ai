@@ -1,0 +1,149 @@
+// Database types for Content Agent Studio
+
+export interface Project {
+  id: string
+  user_id: string
+  name: string
+  description: string | null
+  context: string | null
+  style_profile: string | null
+  status: 'active' | 'archived'
+  created_at: string
+  updated_at: string
+}
+
+export interface UserSettings {
+  id: string
+  user_id: string
+  theme: 'light' | 'dark' | 'system'
+  auto_mode_default: boolean
+  save_prompt_history: boolean
+  notifications_email: boolean
+  notifications_browser: boolean
+  openai_api_key: string | null
+  replicate_api_key: string | null
+  nanobanana_api_key: string | null
+  nanobanana_base_url: string | null
+  automation_enabled: boolean
+  default_image_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2'
+  image_evaluator_enabled: boolean
+  max_refinement_iterations: number
+  created_at: string
+  updated_at: string
+}
+
+// Evaluation types
+export interface ImageEvaluation {
+  score: number
+  approved: boolean
+  feedback: string
+  improvements: string[]
+  refinedPrompt: string
+}
+
+export interface GenerationAttempt {
+  id: string
+  attempt: number
+  prompt: string
+  imageUrl: string | null
+  model: string
+  evaluation: ImageEvaluation | null
+  timestamp: string
+}
+
+export interface Image {
+  id: string
+  user_id: string
+  project_id: string | null
+  user_input: string
+  generated_prompt: string | null
+  image_url: string | null
+  status: 'draft' | 'generating' | 'approved' | 'rejected'
+  model: string | null
+  aspect_ratio: string | null
+  style: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface Prompt {
+  id: string
+  user_id: string
+  original_input: string
+  generated_prompt: string
+  type: 'image' | 'video'
+  is_favorite: boolean
+  tags: string[] | null
+  created_at: string
+}
+
+export interface Video {
+  id: string
+  user_id: string
+  project_id: string | null
+  name: string
+  description: string | null
+  status: 'draft' | 'generating' | 'completed' | 'failed'
+  video_url: string | null
+  duration_seconds: number | null
+  scenes: VideoScene[]
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface VideoScene {
+  id: string
+  order: number
+  description: string
+  prompt: string | null
+  image_url: string | null
+  duration: number // in seconds
+  movement: string | null
+}
+
+// Form types
+export interface CreateProjectForm {
+  name: string
+  description: string
+  context: string
+}
+
+export interface CreateImageForm {
+  user_input: string
+  project_id?: string
+  auto_mode: boolean
+}
+
+// Draft types
+export interface ImageDraft {
+  id: string
+  user_id: string
+  project_id: string | null
+  name: string | null
+  user_input: string
+  generated_prompt: string | null
+  generated_prompt_pt?: string | null
+  auto_mode: boolean
+  image_url: string | null
+  selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null
+  created_at: string
+  updated_at: string
+}
+
+export interface VideoDraft {
+  id: string
+  user_id: string
+  project_id: string | null
+  name: string
+  scenes: VideoScene[]
+  created_at: string
+  updated_at: string
+}
+
+// API Response types
+export interface ApiResponse<T> {
+  data: T | null
+  error: string | null
+}
