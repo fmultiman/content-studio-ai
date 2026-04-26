@@ -29,6 +29,7 @@ import {
   Calendar,
   Edit2,
   Trash2,
+  Palette,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Image as ImageType, Video as VideoType } from '@/lib/types'
@@ -237,6 +238,17 @@ export default function ProjectDetailPage() {
                   </h3>
                   <div className="rounded-lg border border-border/50 bg-background/50 p-4">
                     <p className="whitespace-pre-wrap text-sm text-foreground">{project.context}</p>
+                  </div>
+                </div>
+              )}
+              {project.style_profile && (
+                <div>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Palette className="h-4 w-4" />
+                    Perfil de Estilo
+                  </h3>
+                  <div className="rounded-lg border border-border/50 bg-background/50 p-4">
+                    <p className="whitespace-pre-wrap text-sm text-foreground">{project.style_profile}</p>
                   </div>
                 </div>
               )}
