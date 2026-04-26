@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Sparkles, Loader2, Wand2, Save } from 'lucide-react'
+import { Sparkles, Loader2, Wand2, Save, Plus } from 'lucide-react'
 import type { Project } from '@/lib/types'
 
 interface ImageInputSectionProps {
@@ -27,6 +27,7 @@ interface ImageInputSectionProps {
   isGeneratingPrompt: boolean
   onSaveDraft: () => void
   isSavingDraft: boolean
+  onNewImage?: () => void
   generatedPrompt?: string
   automationEnabled?: boolean
 }
@@ -43,22 +44,31 @@ export function ImageInputSection({
   isGeneratingPrompt,
   onSaveDraft,
   isSavingDraft,
+  onNewImage,
   generatedPrompt = '',
   automationEnabled = false,
 }: ImageInputSectionProps) {
   const canSaveDraft = userInput.trim() || generatedPrompt.trim()
   return (
     <div className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
-      <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500">
-          <Wand2 className="h-5 w-5 text-white" />
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500">
+            <Wand2 className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Nova Imagem</h2>
+            <p className="text-sm text-muted-foreground">
+              Descreva a imagem, gere um prompt otimizado e crie o resultado visual
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Descreva sua imagem</h2>
-          <p className="text-sm text-muted-foreground">
-            Descreva o que você quer criar e a IA vai gerar um prompt otimizado
-          </p>
-        </div>
+        {onNewImage && (
+          <Button variant="outline" size="sm" onClick={onNewImage} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nova Imagem
+          </Button>
+        )}
       </div>
 
       <div className="space-y-6">

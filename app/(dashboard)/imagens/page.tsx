@@ -87,6 +87,11 @@ function ImagesPageContent() {
         userInput,
         generatedPrompt: generatedPrompt || null,
         generatedPromptPt: generatedPromptPt || null,
+        promptDetails,
+        currentEvaluation,
+        generationAttempts,
+        currentAttempt,
+        imageStatus,
         autoMode,
         imageUrl,
         selectedModel,
@@ -99,6 +104,26 @@ function ImagesPageContent() {
     }
 
     return data.draft as ImageDraft
+  }
+
+  const applyDraftState = (draft: ImageDraft) => {
+    setPromptDetails(draft.prompt_details || null)
+    setCurrentEvaluation(draft.current_evaluation || null)
+    setGenerationAttempts(draft.generation_attempts || [])
+    setCurrentAttempt(draft.current_attempt || 1)
+    setCurrentImage(null)
+    setImageUrl(draft.image_url || null)
+    setImageStatus(draft.image_status || 'draft')
+
+    setCurrentDraftId(draft.id)
+    setUserInput(draft.user_input)
+    setSelectedProject(draft.project_id)
+    setGeneratedPrompt(draft.generated_prompt || '')
+    setGeneratedPromptPt(draft.generated_prompt_pt || '')
+    setAutoMode(draft.auto_mode)
+    if (draft.selected_model) {
+      setSelectedModel(normalizeImageModel(draft.selected_model))
+    }
   }
 
   // Auto save do rascunho de imagem
@@ -137,6 +162,11 @@ function ImagesPageContent() {
     userInput,
     generatedPrompt,
     generatedPromptPt,
+    promptDetails,
+    currentEvaluation,
+    generationAttempts,
+    currentAttempt,
+    imageStatus,
     selectedProject,
     autoMode,
     imageUrl,
@@ -198,16 +228,7 @@ function ImagesPageContent() {
         
         if (draftResponse.ok && draftPayload.draft) {
           const draftData = draftPayload.draft as ImageDraft
-          setCurrentDraftId(draftData.id)
-          setUserInput(draftData.user_input)
-          setSelectedProject(draftData.project_id)
-          setGeneratedPrompt(draftData.generated_prompt || '')
-          setGeneratedPromptPt(draftData.generated_prompt_pt || '')
-          setAutoMode(draftData.auto_mode)
-          if (draftData.image_url) {
-            setImageUrl(draftData.image_url)
-            setImageStatus('draft')
-          }
+          applyDraftState(draftData)
         } else if (!draftResponse.ok) {
           console.error('[v0] Image draft load error:', draftPayload)
         }
@@ -265,28 +286,22 @@ function ImagesPageContent() {
     }
   }
 
-  const loadDraft = (draft: ImageDraft) => {
-    setPromptDetails(null)
-    setCurrentImage(null)
-    setImageUrl(null)
-    setImageStatus('draft')
-    setCurrentEvaluation(null)
-    setGenerationAttempts([])
-    setCurrentAttempt(1)
+  const loadDraft = async (draft: ImageDraft) => {
+    if (currentDraftId !== draft.id) {
+      try {
+        const savedDraft = await saveImageDraft()
+        if (savedDraft) {
+          setDrafts((prev) => {
+            const withoutCurrent = prev.filter((item) => item.id !== savedDraft.id)
+            return [savedDraft, ...withoutCurrent].slice(0, 5)
+          })
+        }
+      } catch (error) {
+        console.error('[v0] Image draft save before load error:', error)
+      }
+    }
 
-    setCurrentDraftId(draft.id)
-    setUserInput(draft.user_input)
-    setSelectedProject(draft.project_id)
-    setGeneratedPrompt(draft.generated_prompt || '')
-    setGeneratedPromptPt(draft.generated_prompt_pt || '')
-    setAutoMode(draft.auto_mode)
-    if (draft.selected_model) {
-      setSelectedModel(normalizeImageModel(draft.selected_model))
-    }
-    if (draft.image_url) {
-      setImageUrl(draft.image_url)
-      setImageStatus('draft')
-    }
+    applyDraftState(draft)
 
     toast({
       title: 'Rascunho carregado',
@@ -294,7 +309,7 @@ function ImagesPageContent() {
     })
   }
 
-  const clearForm = () => {
+  const resetImageForm = () => {
     setUserInput('')
     setGeneratedPrompt('')
     setGeneratedPromptPt('')
@@ -309,6 +324,16 @@ function ImagesPageContent() {
     setCurrentEvaluation(null)
     setGenerationAttempts([])
     setCurrentAttempt(1)
+  }
+
+  const handleNewImage = async () => {
+    try {
+      await saveImageDraft()
+    } catch (error) {
+      console.error('[v0] Image draft save before new image error:', error)
+    }
+
+    resetImageForm()
   }
 
   const updateGeneratedPrompt = (prompt: string) => {
@@ -946,7 +971,7 @@ function ImagesPageContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={clearForm}
+                onClick={handleNewImage}
                 className="text-violet-300 hover:text-violet-200"
               >
                 Limpar e criar novo
@@ -967,6 +992,7 @@ function ImagesPageContent() {
             isGeneratingPrompt={isGeneratingPrompt}
             onSaveDraft={handleSaveDraft}
             isSavingDraft={isSavingDraft}
+            onNewImage={handleNewImage}
             generatedPrompt={generatedPrompt}
             automationEnabled={automationEnabled}
           />

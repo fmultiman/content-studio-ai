@@ -41,6 +41,14 @@ function buildDraftPayload(body: Record<string, unknown>, includePromptPt = true
     auto_mode: Boolean(body.autoMode),
     image_url: body.imageUrl || null,
     selected_model: body.selectedModel || null,
+    prompt_details: body.promptDetails || null,
+    current_evaluation: body.currentEvaluation || null,
+    generation_attempts: Array.isArray(body.generationAttempts)
+      ? body.generationAttempts
+      : [],
+    current_attempt:
+      typeof body.currentAttempt === 'number' ? body.currentAttempt : 1,
+    image_status: body.imageStatus || 'draft',
   }
 
   if (includePromptPt) {

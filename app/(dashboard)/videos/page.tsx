@@ -217,7 +217,7 @@ function VideosPageContent() {
     return data.prompt as string
   }
 
-  const handleSaveDraft = async () => {
+  const handleSaveDraft = async (showToast = true) => {
     const hasSceneContent = scenes.some((scene) =>
       scene.description.trim() ||
       scene.prompt?.trim() ||
@@ -225,12 +225,14 @@ function VideosPageContent() {
     )
 
     if (!videoName.trim() && !hasSceneContent) {
-      toast({
-        title: 'Nome obrigatorio',
-        description: 'Por favor, insira um nome ou uma cena para o video.',
-        variant: 'destructive',
-      })
-      return
+      if (showToast) {
+        toast({
+          title: 'Nome obrigatorio',
+          description: 'Por favor, insira um nome ou uma cena para o video.',
+          variant: 'destructive',
+        })
+      }
+      return null
     }
 
     setIsSavingDraft(true)
@@ -269,25 +271,36 @@ function VideosPageContent() {
         })
       }
 
-      toast({
-        title: currentDraftId ? 'Rascunho atualizado!' : 'Rascunho salvo!',
-        description: currentDraftId
-          ? 'As alteracoes foram salvas.'
-          : 'Voce pode continuar editando mais tarde.',
-      })
+      if (showToast) {
+        toast({
+          title: currentDraftId ? 'Rascunho atualizado!' : 'Rascunho salvo!',
+          description: currentDraftId
+            ? 'As alteracoes foram salvas.'
+            : 'Voce pode continuar editando mais tarde.',
+        })
+      }
+
+      return data.draft || null
     } catch (error) {
       console.error('[v0] Video draft save error:', error)
-      toast({
-        title: 'Erro',
-        description: 'Nao foi possivel salvar o rascunho.',
-        variant: 'destructive',
-      })
+      if (showToast) {
+        toast({
+          title: 'Erro',
+          description: 'Nao foi possivel salvar o rascunho.',
+          variant: 'destructive',
+        })
+      }
+      return null
     } finally {
       setIsSavingDraft(false)
     }
   }
 
-  const loadDraft = (draft: VideoDraft) => {
+  const loadDraft = async (draft: VideoDraft) => {
+    if (currentDraftId !== draft.id) {
+      await handleSaveDraft(false)
+    }
+
     setCurrentDraftId(draft.id)
     setVideoName(draft.name)
     setSelectedProject(draft.project_id)
@@ -336,6 +349,11 @@ function VideosPageContent() {
     setScenes([])
     setSelectedProject(null)
     setCurrentDraftId(null)
+  }
+
+  const handleNewVideo = async () => {
+    await handleSaveDraft(false)
+    clearForm()
   }
 
   const totalDuration = scenes.reduce((acc, scene) => acc + scene.duration, 0)
@@ -422,7 +440,7 @@ function VideosPageContent() {
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
-                    onClick={handleSaveDraft}
+                    onClick={() => handleSaveDraft()}
                     disabled={isSavingDraft || (!videoName.trim() && scenes.length === 0)}
                     className="gap-2"
                   >
@@ -432,6 +450,14 @@ function VideosPageContent() {
                       <Save className="h-4 w-4" />
                     )}
                     Salvar Rascunho
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleNewVideo}
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Novo VÃ­deo
                   </Button>
                   <Button
                     onClick={handleGenerateVideo}
@@ -499,7 +525,7 @@ function VideosPageContent() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={clearForm}
+                  onClick={handleNewVideo}
                   className="text-muted-foreground"
                 >
                   Limpar e criar novo

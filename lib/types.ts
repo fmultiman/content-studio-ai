@@ -125,6 +125,15 @@ export interface ImageDraft {
   user_input: string
   generated_prompt: string | null
   generated_prompt_pt?: string | null
+  prompt_details?: {
+    style: string
+    lighting: string
+    composition: string
+  } | null
+  current_evaluation?: ImageEvaluation | null
+  generation_attempts?: GenerationAttempt[] | null
+  current_attempt?: number | null
+  image_status?: 'draft' | 'generating' | 'approved' | 'rejected' | null
   auto_mode: boolean
   image_url: string | null
   selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null

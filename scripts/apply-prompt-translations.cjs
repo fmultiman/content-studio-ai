@@ -30,20 +30,39 @@ async function main() {
 
   try {
     await sql.unsafe(fs.readFileSync('scripts/006_add_prompt_translations.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/010_add_image_draft_workspace_state.sql', 'utf8'))
 
-    const [column] = await sql`
+    const columns = await sql`
       select column_name
       from information_schema.columns
       where table_schema = 'public'
         and table_name = 'image_drafts'
-        and column_name = 'generated_prompt_pt'
+        and column_name in (
+          'generated_prompt_pt',
+          'prompt_details',
+          'current_evaluation',
+          'generation_attempts',
+          'current_attempt',
+          'image_status'
+        )
     `
 
-    if (!column) {
-      throw new Error('A coluna generated_prompt_pt nao foi encontrada apos a migracao')
+    const foundColumns = new Set(columns.map((column) => column.column_name))
+    const requiredColumns = [
+      'generated_prompt_pt',
+      'prompt_details',
+      'current_evaluation',
+      'generation_attempts',
+      'current_attempt',
+      'image_status',
+    ]
+    const missingColumns = requiredColumns.filter((column) => !foundColumns.has(column))
+
+    if (missingColumns.length > 0) {
+      throw new Error(`Colunas nao encontradas apos a migracao: ${missingColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts.generated_prompt_pt')
+    console.log('migration ok: image_drafts prompt translation and workspace state')
   } finally {
     await sql.end()
   }

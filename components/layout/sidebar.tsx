@@ -34,14 +34,14 @@ const navItems = [
     icon: Image,
   },
   {
-    label: 'Galeria',
-    href: '/galeria',
-    icon: Images,
-  },
-  {
     label: 'Vídeos',
     href: '/videos',
     icon: Video,
+  },
+  {
+    label: 'Galeria',
+    href: '/galeria',
+    icon: Images,
   },
   {
     label: 'Configurações',
