@@ -227,7 +227,7 @@ export default function ProjectDetailPage() {
               {project.description && (
                 <div>
                   <h3 className="mb-2 text-sm font-medium text-muted-foreground">Descrição</h3>
-                  <p className="text-foreground">{project.description}</p>
+                  <p className="whitespace-pre-wrap text-foreground">{project.description}</p>
                 </div>
               )}
               {project.context && (
