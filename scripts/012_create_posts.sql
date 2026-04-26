@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS posts (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
-  channel TEXT NOT NULL DEFAULT 'instagram' CHECK (channel IN ('instagram', 'youtube')),
+  channel TEXT NOT NULL DEFAULT 'instagram_post',
   description TEXT,
   ai_context TEXT,
   feed_text TEXT,
@@ -12,6 +12,26 @@ CREATE TABLE IF NOT EXISTS posts (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_channel_check;
+ALTER TABLE posts ALTER COLUMN channel SET DEFAULT 'instagram_post';
+
+UPDATE posts
+SET channel = CASE
+  WHEN channel = 'instagram' THEN 'instagram_post'
+  WHEN channel = 'youtube' THEN 'youtube_post'
+  ELSE channel
+END;
+
+ALTER TABLE posts
+  ADD CONSTRAINT posts_channel_check
+  CHECK (channel IN (
+    'instagram_post',
+    'instagram_story',
+    'youtube_post',
+    'youtube_shorts',
+    'youtube_video'
+  ));
 
 ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 

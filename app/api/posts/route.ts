@@ -28,7 +28,17 @@ async function getAuthenticatedClient() {
 }
 
 function normalizeChannel(channel: unknown) {
-  return channel === 'youtube' ? 'youtube' : 'instagram'
+  if (
+    channel === 'instagram_story' ||
+    channel === 'youtube_post' ||
+    channel === 'youtube_shorts' ||
+    channel === 'youtube_video'
+  ) {
+    return channel
+  }
+
+  if (channel === 'youtube') return 'youtube_post'
+  return 'instagram_post'
 }
 
 function normalizeStatus(status: unknown) {

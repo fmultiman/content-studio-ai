@@ -57,7 +57,32 @@ export async function POST(request: Request) {
       }
     }
 
-    const network = channel === 'youtube' ? 'YouTube' : 'Instagram'
+    const publicationContext = {
+      instagram_post: {
+        label: 'Instagram Post',
+        instruction: 'Formato: legenda de Instagram com abertura forte, corpo escaneavel, CTA e 5 a 10 hashtags.',
+      },
+      instagram_story: {
+        label: 'Instagram Story',
+        instruction: 'Formato: roteiro curto para story vertical, com texto principal, CTA e sugestao visual. Seja direto.',
+      },
+      youtube_post: {
+        label: 'YouTube Post',
+        instruction: 'Formato: texto para aba Comunidade do YouTube, com gancho, corpo curto, CTA e hashtags opcionais.',
+      },
+      youtube_shorts: {
+        label: 'YouTube Shorts',
+        instruction: 'Formato: titulo curto, descricao curta para Shorts, CTA e 5 a 8 hashtags.',
+      },
+      youtube_video: {
+        label: 'YouTube Video',
+        instruction: 'Formato: titulo, descricao completa para YouTube, CTA, hashtags/tags e sugestao de capa.',
+      },
+    }[channel as string] || {
+      label: 'Instagram Post',
+      instruction: 'Formato: legenda de Instagram com abertura forte, corpo escaneavel, CTA e 5 a 10 hashtags.',
+    }
+
     const response = await fetch(OPENAI_CHAT_URL, {
       method: 'POST',
       headers: {
@@ -76,14 +101,12 @@ export async function POST(request: Request) {
           {
             role: 'user',
             content: [
-              `Crie o texto de feed para ${network}.`,
+              `Crie a publicacao para ${publicationContext.label}.`,
               name ? `Nome do post: ${name}` : '',
               projectContext,
               aiContext ? `Contexto especifico do post: ${aiContext}` : '',
               `Descricao do que o post precisa comunicar: ${description}`,
-              channel === 'youtube'
-                ? 'Formato: titulo curto, descricao para YouTube e 5 a 8 hashtags. Nao invente links.'
-                : 'Formato: legenda de Instagram com abertura forte, corpo escaneavel, CTA e 5 a 10 hashtags.',
+              publicationContext.instruction,
             ].filter(Boolean).join('\n\n'),
           },
         ],

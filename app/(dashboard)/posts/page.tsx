@@ -32,7 +32,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useToast } from '@/hooks/use-toast'
-import type { Post, PostChannel, PostStatus, Project } from '@/lib/types'
+import type { Post, PublicationType, PostStatus, Project } from '@/lib/types'
 import {
   CheckCircle2,
   FileText,
@@ -48,11 +48,11 @@ import {
 } from 'lucide-react'
 
 type StatusFilter = 'all' | PostStatus
-type ChannelFilter = 'all' | PostChannel
+type ChannelFilter = 'all' | PublicationType
 
 const emptyPost = {
   name: '',
-  channel: 'instagram' as PostChannel,
+  channel: 'instagram_post' as PublicationType,
   description: '',
   aiContext: '',
   feedText: '',
@@ -60,8 +60,20 @@ const emptyPost = {
   projectId: 'none',
 }
 
-function channelLabel(channel: PostChannel) {
-  return channel === 'youtube' ? 'YouTube' : 'Instagram'
+const publicationOptions: Array<{
+  value: PublicationType
+  label: string
+  icon: typeof Instagram
+}> = [
+  { value: 'instagram_post', label: 'Instagram Post', icon: Instagram },
+  { value: 'instagram_story', label: 'Instagram Story', icon: Instagram },
+  { value: 'youtube_post', label: 'YouTube Post', icon: Youtube },
+  { value: 'youtube_shorts', label: 'YouTube Shorts', icon: Youtube },
+  { value: 'youtube_video', label: 'YouTube Video', icon: Youtube },
+]
+
+function channelLabel(channel: PublicationType) {
+  return publicationOptions.find((option) => option.value === channel)?.label || 'Instagram Post'
 }
 
 function statusLabel(status: PostStatus) {
@@ -374,21 +386,21 @@ export default function PostsPage() {
     }
 
     toast({
-      title: ids.length > 1 ? 'Posts excluidos' : 'Post excluido',
+      title: ids.length > 1 ? 'Publicacoes excluidas' : 'Publicacao excluida',
       description: ids.length > 1
-        ? 'Os posts selecionados foram removidos.'
-        : 'O post foi removido.',
+        ? 'As publicacoes selecionadas foram removidas.'
+        : 'A publicacao foi removida.',
     })
   }
 
   return (
     <>
-      <Header title="Posts" />
+      <Header title="PublicaÃ§Ãµes" />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
-              Crie textos de feed para Instagram e YouTube com rascunho automatico.
+              Crie posts, stories, shorts e videos para Instagram e YouTube com rascunho automatico.
             </p>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
@@ -417,17 +429,15 @@ export default function PostsPage() {
                       <ToggleGroup
                         type="single"
                         value={form.channel}
-                        onValueChange={(value: PostChannel) => value && setForm((prev) => ({ ...prev, channel: value }))}
-                        className="justify-start rounded-lg border border-border/50 p-1"
+                        onValueChange={(value: PublicationType) => value && setForm((prev) => ({ ...prev, channel: value }))}
+                        className="flex-wrap justify-start rounded-lg border border-border/50 p-1"
                       >
-                        <ToggleGroupItem value="instagram" className="gap-2">
-                          <Instagram className="h-4 w-4" />
-                          Instagram
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="youtube" className="gap-2">
-                          <Youtube className="h-4 w-4" />
-                          YouTube
-                        </ToggleGroupItem>
+                        {publicationOptions.map((option) => (
+                          <ToggleGroupItem key={option.value} value={option.value} className="gap-2">
+                            <option.icon className="h-4 w-4" />
+                            {option.label}
+                          </ToggleGroupItem>
+                        ))}
                       </ToggleGroup>
                     </div>
                     <div className="space-y-2">
@@ -478,7 +488,7 @@ export default function PostsPage() {
               type="single"
               value={selectedStatus}
               onValueChange={(value: StatusFilter) => value && setSelectedStatus(value)}
-              className="rounded-lg border border-border/50"
+              className="flex-wrap justify-start rounded-lg border border-border/50"
             >
               <ToggleGroupItem value="all" className="gap-2 text-xs">
                 <FileText className="h-3.5 w-3.5" />
@@ -501,14 +511,12 @@ export default function PostsPage() {
               <ToggleGroupItem value="all" className="gap-2 text-xs">
                 Todos
               </ToggleGroupItem>
-              <ToggleGroupItem value="instagram" className="gap-2 text-xs">
-                <Instagram className="h-3.5 w-3.5" />
-                Instagram
-              </ToggleGroupItem>
-              <ToggleGroupItem value="youtube" className="gap-2 text-xs">
-                <Youtube className="h-3.5 w-3.5" />
-                YouTube
-              </ToggleGroupItem>
+              {publicationOptions.map((option) => (
+                <ToggleGroupItem key={option.value} value={option.value} className="gap-2 text-xs">
+                  <option.icon className="h-3.5 w-3.5" />
+                  {option.label}
+                </ToggleGroupItem>
+              ))}
             </ToggleGroup>
 
             <div className="flex min-w-[240px] items-center gap-2">
@@ -554,7 +562,7 @@ export default function PostsPage() {
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
               <CardContent className="space-y-3 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-semibold">Posts salvos e rascunhos</h2>
+                  <h2 className="font-semibold">Publicacoes salvas e rascunhos</h2>
                   <Button size="sm" variant="outline" onClick={selectAllVisible}>
                     Selecionar visiveis
                   </Button>
@@ -657,7 +665,7 @@ export default function PostsPage() {
                         className="gap-2"
                       >
                         <Trash2 className="h-4 w-4" />
-                        Excluir Post
+                        Excluir Publicacao
                       </Button>
                     )}
                     <Button variant="outline" onClick={() => savePost('draft')} disabled={isSaving} className="gap-2">
@@ -707,17 +715,15 @@ export default function PostsPage() {
                   <ToggleGroup
                     type="single"
                     value={form.channel}
-                    onValueChange={(value: PostChannel) => value && setForm((prev) => ({ ...prev, channel: value }))}
-                    className="justify-start rounded-lg border border-border/50 p-1"
+                    onValueChange={(value: PublicationType) => value && setForm((prev) => ({ ...prev, channel: value }))}
+                    className="flex-wrap justify-start rounded-lg border border-border/50 p-1"
                   >
-                    <ToggleGroupItem value="instagram" className="gap-2">
-                      <Instagram className="h-4 w-4" />
-                      Instagram
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="youtube" className="gap-2">
-                      <Youtube className="h-4 w-4" />
-                      YouTube
-                    </ToggleGroupItem>
+                    {publicationOptions.map((option) => (
+                      <ToggleGroupItem key={option.value} value={option.value} className="gap-2">
+                        <option.icon className="h-4 w-4" />
+                        {option.label}
+                      </ToggleGroupItem>
+                    ))}
                   </ToggleGroup>
                 </div>
 
