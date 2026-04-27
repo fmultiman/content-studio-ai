@@ -251,6 +251,43 @@ export async function moveLibraryS3Object(input: {
   }
 }
 
+export async function moveS3Object(input: {
+  currentPath: string
+  nextPath: string
+}) {
+  const config = getS3Config()
+
+  if (!config) return null
+  if (input.currentPath === input.nextPath) {
+    return {
+      storagePath: input.currentPath,
+      publicUrl: publicUrl(config.publicBaseUrl, input.currentPath),
+    }
+  }
+
+  const client = createS3Client(config)
+  const copySource = `${config.bucket}/${input.currentPath.split('/').map(encodeURIComponent).join('/')}`
+
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: config.bucket,
+      Key: input.nextPath,
+      CopySource: copySource,
+    }),
+  )
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: input.currentPath,
+    }),
+  )
+
+  return {
+    storagePath: input.nextPath,
+    publicUrl: publicUrl(config.publicBaseUrl, input.nextPath),
+  }
+}
+
 type PresignedReadOptions = {
   filename?: string | null
   disposition?: 'inline' | 'attachment'

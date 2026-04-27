@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createS3FolderPlaceholder, deleteS3FolderPlaceholder } from '@/lib/storage/s3'
+import { createS3FolderPlaceholder, deleteS3FolderPlaceholder, moveLibraryS3Object } from '@/lib/storage/s3'
 
 type LibraryFolderBody = {
+  id?: string | null
   projectId?: string | null
   name?: string | null
   parentPath?: string | null
@@ -236,6 +237,168 @@ export async function POST(request: Request) {
     return NextResponse.json({ folder: data })
   } catch (error) {
     console.error('[Library Folders] POST error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro interno' },
+      { status: 500 },
+    )
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const { supabase, user } = await getAuthenticatedClient()
+    if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+    const body = (await request.json()) as LibraryFolderBody
+    if (!body.id) {
+      return NextResponse.json({ error: 'Pasta obrigatória' }, { status: 400 })
+    }
+
+    const nextName = safeFolderName(body.name)
+    if (!nextName) {
+      return NextResponse.json({ error: 'Nome da pasta obrigatório' }, { status: 400 })
+    }
+
+    const { data: folder, error: folderError } = await supabase
+      .from('library_folders')
+      .select('*')
+      .eq('id', body.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (folderError || !folder) {
+      return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })
+    }
+
+    if (folder.is_project_root) {
+      return NextResponse.json({ error: 'A pasta raiz do projeto não pode ser renomeada' }, { status: 400 })
+    }
+
+    const nextPath = joinFolderPath(folder.parent_path, nextName)
+    if (nextPath === folder.path) {
+      return NextResponse.json({ folder })
+    }
+
+    const { data: conflictingFolder, error: conflictError } = await supabase
+      .from('library_folders')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('project_id', folder.project_id)
+      .eq('path', nextPath)
+      .maybeSingle()
+
+    if (conflictError) {
+      return NextResponse.json({ error: conflictError.message, details: conflictError }, { status: 400 })
+    }
+
+    if (conflictingFolder && conflictingFolder.id !== folder.id) {
+      return NextResponse.json({ error: 'Já existe uma pasta com esse nome nesse local' }, { status: 409 })
+    }
+
+    const { data: projectFolders, error: foldersError } = await supabase
+      .from('library_folders')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('project_id', folder.project_id)
+
+    if (foldersError) {
+      return NextResponse.json({ error: foldersError.message, details: foldersError }, { status: 400 })
+    }
+
+    const affectedFolders = (projectFolders || []).filter(
+      (item) => item.id === folder.id || item.path.startsWith(`${folder.path}/`),
+    )
+
+    const { data: affectedFiles, error: filesError } = await supabase
+      .from('library_files')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('project_id', folder.project_id)
+
+    if (filesError) {
+      return NextResponse.json({ error: filesError.message, details: filesError }, { status: 400 })
+    }
+
+    const filesToMove = (affectedFiles || []).filter(
+      (file) => file.folder === folder.path || file.folder.startsWith(`${folder.path}/`),
+    )
+
+    for (const file of filesToMove) {
+      const nextFolder = file.folder === folder.path
+        ? nextPath
+        : file.folder.replace(`${folder.path}/`, `${nextPath}/`)
+      let moved: Awaited<ReturnType<typeof moveLibraryS3Object>> | null = null
+
+      if (file.storage_path) {
+        moved = await moveLibraryS3Object({
+          userId: user.id,
+          currentPath: file.storage_path,
+          targetFolder: nextFolder,
+        })
+      }
+
+      const { error: fileUpdateError } = await supabase
+        .from('library_files')
+        .update({
+          folder: nextFolder,
+          storage_path: moved?.storagePath || file.storage_path,
+          public_url: moved?.publicUrl || file.public_url,
+        })
+        .eq('id', file.id)
+        .eq('user_id', user.id)
+
+      if (fileUpdateError) {
+        return NextResponse.json({ error: fileUpdateError.message, details: fileUpdateError }, { status: 400 })
+      }
+    }
+
+    for (const item of affectedFolders) {
+      const updatedPath = item.id === folder.id
+        ? nextPath
+        : item.path.replace(`${folder.path}/`, `${nextPath}/`)
+      const updatedParentPath = item.id === folder.id
+        ? folder.parent_path
+        : item.parent_path === folder.path
+          ? nextPath
+          : item.parent_path.replace(`${folder.path}/`, `${nextPath}/`)
+      const updatedName = item.id === folder.id ? nextName : item.name
+
+      const { error: folderUpdateError } = await supabase
+        .from('library_folders')
+        .update({
+          name: updatedName,
+          path: updatedPath,
+          parent_path: updatedParentPath,
+        })
+        .eq('id', item.id)
+        .eq('user_id', user.id)
+
+      if (folderUpdateError) {
+        return NextResponse.json({ error: folderUpdateError.message, details: folderUpdateError }, { status: 400 })
+      }
+    }
+
+    await deleteS3FolderPlaceholder({
+      userId: user.id,
+      folder: 'library',
+      prefix: folder.path,
+    })
+    await createFolderPlaceholder(user.id, nextPath)
+
+    const { data: updatedFolder, error: updatedError } = await supabase
+      .from('library_folders')
+      .select('*')
+      .eq('id', folder.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (updatedError) {
+      return NextResponse.json({ error: updatedError.message, details: updatedError }, { status: 400 })
+    }
+
+    return NextResponse.json({ folder: updatedFolder })
+  } catch (error) {
+    console.error('[Library Folders] PATCH error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro interno' },
       { status: 500 },

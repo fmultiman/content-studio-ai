@@ -46,6 +46,7 @@ import {
   ImageIcon,
   Loader2,
   MoreVertical,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -113,6 +114,9 @@ export default function ArquivosPage() {
   const [moveIds, setMoveIds] = useState<string[]>([])
   const [moveTarget, setMoveTarget] = useState('root')
   const [isMoving, setIsMoving] = useState(false)
+  const [renameFolder, setRenameFolder] = useState<LibraryFolder | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState('')
+  const [isRenamingFolder, setIsRenamingFolder] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   const imageFiles = useMemo(() => files.filter((file) => file.kind === 'image'), [files])
@@ -345,6 +349,54 @@ export default function ArquivosPage() {
       title: 'Pasta excluída',
       description: 'A pasta vazia foi removida da biblioteca.',
     })
+  }
+
+  const openRenameFolder = (folderToRename: LibraryFolder) => {
+    setRenameFolder(folderToRename)
+    setRenameFolderName(folderToRename.name)
+  }
+
+  const submitRenameFolder = async () => {
+    if (!renameFolder) return
+
+    const name = renameFolderName.trim()
+    if (!name) {
+      toast({
+        title: 'Nome obrigatório',
+        description: 'Informe o novo nome da pasta.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsRenamingFolder(true)
+    try {
+      const response = await fetch('/api/library-folders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: renameFolder.id, name }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível renomear a pasta')
+
+      await loadFiles()
+      setFolder(payload.folder.path)
+      setRenameFolder(null)
+      setRenameFolderName('')
+      toast({
+        title: 'Pasta renomeada',
+        description: `Agora a pasta se chama ${payload.folder.name}.`,
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro ao renomear pasta',
+        description: error instanceof Error ? error.message : 'Não foi possível renomear a pasta.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsRenamingFolder(false)
+    }
   }
 
   const openMoveDialog = (ids: string[]) => {
@@ -670,17 +722,33 @@ export default function ArquivosPage() {
                             {selectedProject === 'all' ? `${item.projectName} / ${item.label}` : item.label}
                           </span>
                         </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                          disabled={item.is_project_root}
-                          onClick={() => deleteFolder(item)}
-                          aria-label={`Excluir pasta ${item.label}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-muted-foreground"
+                              aria-label={`Opções da pasta ${item.label}`}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem disabled={item.is_project_root} onClick={() => openRenameFolder(item)}>
+                              <Pencil className="h-4 w-4" />
+                              Renomear
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={item.is_project_root}
+                              variant="destructive"
+                              onClick={() => deleteFolder(item)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     ))}
                   </div>
@@ -922,6 +990,37 @@ export default function ArquivosPage() {
             <Button type="button" onClick={moveFiles} disabled={isMoving} className="gap-2">
               {isMoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderInput className="h-4 w-4" />}
               Mover
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameFolder} onOpenChange={(open) => !open && setRenameFolder(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renomear pasta</DialogTitle>
+            <DialogDescription>
+              O novo nome será aplicado à pasta, subpastas e arquivos dentro dela.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Novo nome</Label>
+            <Input
+              value={renameFolderName}
+              onChange={(event) => setRenameFolderName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submitRenameFolder()
+              }}
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRenameFolder(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={submitRenameFolder} disabled={isRenamingFolder} className="gap-2">
+              {isRenamingFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+              Renomear
             </Button>
           </div>
         </DialogContent>
