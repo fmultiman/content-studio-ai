@@ -13,9 +13,10 @@ type UploadImageInput = {
 
 type PresignedUploadInput = {
   userId: string
-  folder: 'images' | 'posts'
+  folder: 'images' | 'posts' | 'library'
   mimeType: string
   filename?: string
+  prefix?: string | null
 }
 
 export type StoredImage = {
@@ -79,9 +80,24 @@ function parseDataUrl(dataUrl: string) {
 }
 
 function extensionForMimeType(mimeType: string) {
+  if (mimeType === 'application/pdf') return 'pdf'
+  if (mimeType.startsWith('text/')) return 'txt'
+  if (mimeType.startsWith('video/')) return 'mp4'
+  if (mimeType.startsWith('audio/')) return 'mp3'
   if (mimeType === 'image/jpeg') return 'jpg'
   if (mimeType === 'image/webp') return 'webp'
   return 'png'
+}
+
+function safePathSegment(value: string | null | undefined, fallback: string) {
+  const safe = value
+    ?.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_.]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 96)
+
+  return safe || fallback
 }
 
 function publicUrl(publicBaseUrl: string, path: string) {
@@ -93,16 +109,15 @@ export async function createPresignedImageUpload(input: PresignedUploadInput) {
 
   if (!config) return null
 
-  const extension = extensionForMimeType(input.mimeType)
+  const extension = input.filename?.includes('.')
+    ? input.filename.split('.').pop() || extensionForMimeType(input.mimeType)
+    : extensionForMimeType(input.mimeType)
   const id = randomUUID()
-  const safeName = input.filename
-    ?.replace(/\.[^/.]+$/, '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9-_]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48)
-  const path = `users/${input.userId}/${input.folder}/${id}/${safeName || 'image'}.${extension}`
+  const safeName = safePathSegment(input.filename?.replace(/\.[^/.]+$/, ''), 'file')
+  const prefix = input.prefix
+    ? `${input.prefix.split('/').map((segment) => safePathSegment(segment, 'folder')).join('/')}/`
+    : ''
+  const path = `users/${input.userId}/${input.folder}/${prefix}${id}/${safeName}.${extension}`
   const client = createS3Client(config)
   const uploadUrl = await getSignedUrl(
     client,

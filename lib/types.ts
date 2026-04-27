@@ -142,6 +142,25 @@ export interface PostImage {
   name?: string | null
 }
 
+export type LibraryFileKind = 'image' | 'video' | 'audio' | 'document' | 'other'
+
+export interface LibraryFile {
+  id: string
+  user_id: string
+  project_id: string | null
+  folder: string
+  name: string
+  kind: LibraryFileKind
+  mime_type: string | null
+  file_size: number | null
+  storage_provider: string
+  storage_path: string
+  public_url: string
+  thumbnail_url: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface VideoScene {
   id: string
   order: number

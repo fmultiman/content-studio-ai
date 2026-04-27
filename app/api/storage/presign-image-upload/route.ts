@@ -14,17 +14,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
-    const { folder = 'posts', mimeType, filename } = await request.json()
+    const { folder = 'posts', mimeType, filename, prefix } = await request.json()
 
-    if (typeof mimeType !== 'string' || !mimeType.startsWith('image/')) {
-      return NextResponse.json({ error: 'Tipo de imagem obrigatório' }, { status: 400 })
+    if (typeof mimeType !== 'string') {
+      return NextResponse.json({ error: 'Tipo de arquivo obrigatório' }, { status: 400 })
     }
 
     const signed = await createPresignedImageUpload({
       userId: user.id,
-      folder: folder === 'images' ? 'images' : 'posts',
+      folder: folder === 'images' || folder === 'library' ? folder : 'posts',
       mimeType,
       filename,
+      prefix,
     })
 
     if (!signed) {

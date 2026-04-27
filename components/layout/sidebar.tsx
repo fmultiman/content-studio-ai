@@ -9,6 +9,7 @@ import {
   FileText,
   Image,
   Images,
+  UploadCloud,
   Video,
   Settings,
   Sparkles,
@@ -43,6 +44,11 @@ const navItems = [
     label: 'Publicações',
     href: '/posts',
     icon: FileText,
+  },
+  {
+    label: 'Arquivos',
+    href: '/arquivos',
+    icon: UploadCloud,
   },
   {
     label: 'Galeria',
@@ -124,7 +130,7 @@ export function Sidebar() {
         <div className="border-t border-border/50 p-4">
           <div className="rounded-lg bg-gradient-to-r from-violet-600/10 to-cyan-500/10 p-3">
             <p className="text-xs text-muted-foreground">
-              Versão Beta
+              Vers?o Beta
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Criação de conteúdo com IA

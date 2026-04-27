@@ -35,6 +35,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/012_create_posts.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/013_add_storage_metadata.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/014_add_post_images.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/015_create_library_files.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
