@@ -8,13 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -32,7 +25,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useToast } from '@/hooks/use-toast'
-import type { Post, PublicationType, PostStatus, Project } from '@/lib/types'
+import type { Post, PostImage, PublicationType, PostStatus, Project } from '@/lib/types'
 import {
   CheckCircle2,
   FileText,
@@ -63,6 +56,7 @@ const emptyPost = {
   thumbnailPath: null as string | null,
   fileSize: null as number | null,
   mimeType: null as string | null,
+  postImages: [] as PostImage[],
   projectId: 'none',
 }
 
@@ -75,7 +69,7 @@ const publicationOptions: Array<{
   { value: 'instagram_story', label: 'Story', icon: Instagram },
   { value: 'youtube_post', label: 'Post', icon: Youtube },
   { value: 'youtube_shorts', label: 'Shorts', icon: Youtube },
-  { value: 'youtube_video', label: 'VÃ­deo', icon: Youtube },
+  { value: 'youtube_video', label: 'Vídeo', icon: Youtube },
 ]
 
 function channelLabel(channel: PublicationType) {
@@ -84,7 +78,7 @@ function channelLabel(channel: PublicationType) {
     instagram_story: 'Instagram Story',
     youtube_post: 'YouTube Post',
     youtube_shorts: 'YouTube Shorts',
-    youtube_video: 'YouTube VÃ­deo',
+    youtube_video: 'YouTube Vídeo',
   }
 
   return labels[channel] || 'Instagram Post'
@@ -94,12 +88,42 @@ function statusLabel(status: PostStatus) {
   return status === 'saved' ? 'Salvo' : 'Rascunho'
 }
 
-function readImageAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
+function createThumbnail(file: File) {
+  return new Promise<Blob>((resolve, reject) => {
+    const image = new Image()
+    const url = URL.createObjectURL(file)
+
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      const maxSize = 360
+      const scale = Math.min(maxSize / image.width, maxSize / image.height, 1)
+      canvas.width = Math.max(1, Math.round(image.width * scale))
+      canvas.height = Math.max(1, Math.round(image.height * scale))
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        URL.revokeObjectURL(url)
+        reject(new Error('Não foi possível gerar a miniatura'))
+        return
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url)
+        if (blob) {
+          resolve(blob)
+          return
+        }
+        reject(new Error('Não foi possível gerar a miniatura'))
+      }, 'image/webp', 0.55)
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Não foi possível ler a imagem'))
+    }
+
+    image.src = url
   })
 }
 
@@ -115,9 +139,9 @@ export default function PostsPage() {
   const [form, setForm] = useState(emptyPost)
   const [isLoading, setIsLoading] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isUploadingImages, setIsUploadingImages] = useState(false)
 
   const currentPost = posts.find((post) => post.id === currentPostId) || null
 
@@ -145,7 +169,7 @@ export default function PostsPage() {
     if (!isDataReady || !currentPostId) return
 
     const timeoutId = window.setTimeout(() => {
-      savePost('draft', false).catch((error) => {
+      savePost(currentPost?.status || 'draft', false).catch((error) => {
         console.error('[v0] Post auto-save error:', error)
       })
     }, 800)
@@ -164,8 +188,10 @@ export default function PostsPage() {
     form.thumbnailPath,
     form.fileSize,
     form.mimeType,
+    form.postImages,
     form.projectId,
     currentPostId,
+    currentPost?.status,
     isDataReady,
   ])
 
@@ -202,25 +228,9 @@ export default function PostsPage() {
       thumbnailPath: post.thumbnail_path || null,
       fileSize: post.file_size || null,
       mimeType: post.mime_type || null,
+      postImages: post.post_images || [],
       projectId: post.project_id || 'none',
     })
-  }
-
-  const createPost = async () => {
-    if (!form.name.trim()) {
-      toast({
-        title: 'Nome obrigatorio',
-        description: 'Informe um nome para criar o post.',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const post = await savePost('draft', false, true)
-    if (post) {
-      applyPostToForm(post)
-      setIsCreateOpen(false)
-    }
   }
 
   const savePost = async (
@@ -232,7 +242,8 @@ export default function PostsPage() {
       !form.name.trim() &&
       !form.description.trim() &&
       !form.aiContext.trim() &&
-      !form.feedText.trim()
+      !form.feedText.trim() &&
+      form.postImages.length === 0
     ) {
       return null
     }
@@ -258,6 +269,7 @@ export default function PostsPage() {
           thumbnailPath: form.thumbnailPath,
           fileSize: form.fileSize,
           mimeType: form.mimeType,
+          postImages: form.postImages,
           status,
         }),
       })
@@ -290,45 +302,124 @@ export default function PostsPage() {
     setForm(emptyPost)
   }
 
-  const handleImageChange = async (file: File | null) => {
-    if (!file) return
+  const uploadFileDirectly = async (file: File, filename: string) => {
+    const response = await fetch('/api/storage/presign-image-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folder: 'posts',
+        mimeType: file.type,
+        filename,
+      }),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Não foi possível preparar o upload')
+    }
+
+    const uploadResponse = await fetch(data.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    })
+
+    if (!uploadResponse.ok) {
+      throw new Error('Não foi possível enviar a imagem para o storage')
+    }
+
+    return data as {
+      imageUrl: string
+      storageProvider: string
+      storagePath: string
+      mimeType: string
+    }
+  }
+
+  const handleImageChange = async (files: FileList | null) => {
+    const selectedFiles = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
+    if (selectedFiles.length === 0) return
+
+    setIsUploadingImages(true)
 
     try {
-      const imageDataUrl = await readImageAsDataUrl(file)
-      const response = await fetch('/api/storage/upload-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imageDataUrl, folder: 'posts' }),
+      const uploadedImages = await Promise.all(
+        selectedFiles.map(async (file) => {
+          const thumbnailBlob = await createThumbnail(file)
+          const thumbnailFile = new File(
+            [thumbnailBlob],
+            `${file.name.replace(/\.[^/.]+$/, '')}-thumb.webp`,
+            { type: 'image/webp' },
+          )
+          const [original, thumbnail] = await Promise.all([
+            uploadFileDirectly(file, file.name),
+            uploadFileDirectly(thumbnailFile, thumbnailFile.name),
+          ])
+
+          return {
+            id: crypto.randomUUID(),
+            imageUrl: original.imageUrl,
+            thumbnailUrl: thumbnail.imageUrl,
+            storageProvider: original.storageProvider,
+            storagePath: original.storagePath,
+            thumbnailPath: thumbnail.storagePath,
+            fileSize: file.size,
+            mimeType: file.type,
+            name: file.name,
+          } satisfies PostImage
+        }),
+      )
+
+      setForm((prev) => {
+        const postImages = [...prev.postImages, ...uploadedImages]
+        const cover = postImages[0] || null
+
+        return {
+          ...prev,
+          postImages,
+          imageUrl: cover?.imageUrl || null,
+          thumbnailUrl: cover?.thumbnailUrl || null,
+          storageProvider: cover?.storageProvider || null,
+          storagePath: cover?.storagePath || null,
+          thumbnailPath: cover?.thumbnailPath || null,
+          fileSize: cover?.fileSize || null,
+          mimeType: cover?.mimeType || null,
+        }
       })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Nao foi possivel enviar a imagem')
-      }
-
-      setForm((prev) => ({
-        ...prev,
-        imageUrl: data.imageUrl,
-        thumbnailUrl: data.thumbnailUrl,
-        storageProvider: data.storageProvider,
-        storagePath: data.storagePath,
-        thumbnailPath: data.thumbnailPath,
-        fileSize: data.fileSize,
-        mimeType: data.mimeType,
-      }))
-    } catch {
+    } catch (error) {
       toast({
         title: 'Erro no upload',
-        description: 'Nao foi possivel carregar a imagem.',
+        description: error instanceof Error ? error.message : 'Não foi possível carregar a imagem.',
         variant: 'destructive',
       })
+    } finally {
+      setIsUploadingImages(false)
     }
+  }
+
+  const removePostImage = (id: string) => {
+    setForm((prev) => {
+      const postImages = prev.postImages.filter((image) => image.id !== id)
+      const cover = postImages[0] || null
+
+      return {
+        ...prev,
+        postImages,
+        imageUrl: cover?.imageUrl || null,
+        thumbnailUrl: cover?.thumbnailUrl || null,
+        storageProvider: cover?.storageProvider || null,
+        storagePath: cover?.storagePath || null,
+        thumbnailPath: cover?.thumbnailPath || null,
+        fileSize: cover?.fileSize || null,
+        mimeType: cover?.mimeType || null,
+      }
+    })
   }
 
   const generateFeedText = async () => {
     if (!form.description.trim()) {
       toast({
-        title: 'Descricao obrigatoria',
+        title: 'Descrição obrigatória',
         description: 'Descreva o post antes de gerar o texto do feed.',
         variant: 'destructive',
       })
@@ -363,7 +454,7 @@ export default function PostsPage() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Nao foi possivel gerar o texto.',
+        description: error instanceof Error ? error.message : 'Não foi possível gerar o texto.',
         variant: 'destructive',
       })
     } finally {
@@ -412,6 +503,7 @@ export default function PostsPage() {
             thumbnailPath: post.thumbnail_path,
             fileSize: post.file_size,
             mimeType: post.mime_type,
+            postImages: post.post_images || [],
             status,
           }),
         })
@@ -444,7 +536,7 @@ export default function PostsPage() {
     }
 
     toast({
-      title: ids.length > 1 ? 'Publicacoes excluidas' : 'Publicacao excluida',
+      title: ids.length > 1 ? 'Publicações excluídas' : 'Publicação excluída',
       description: ids.length > 1
         ? 'As publicacoes selecionadas foram removidas.'
         : 'A publicacao foi removida.',
@@ -458,103 +550,12 @@ export default function PostsPage() {
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
-              Crie posts, stories, shorts e videos para Instagram e YouTube com rascunho automatico.
+              Crie posts, stories, shorts e vídeos para Instagram e YouTube com rascunho automático.
             </p>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white" onClick={resetForm}>
-                  <Plus className="h-4 w-4" />
-                  Novo Post
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Novo Post</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="post-name">Nome do post</Label>
-                    <Input
-                      id="post-name"
-                      value={form.name}
-                      onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                      placeholder="Ex: Lancamento da campanha"
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Rede</Label>
-                      <ToggleGroup
-                        type="single"
-                        value={form.channel}
-                        onValueChange={(value: PublicationType) => value && setForm((prev) => ({ ...prev, channel: value }))}
-                        className="flex-wrap justify-start rounded-lg border border-border/50 p-1"
-                      >
-                        {publicationOptions.map((option) => (
-                          <ToggleGroupItem key={option.value} value={option.value} className="gap-2">
-                            <option.icon className="h-4 w-4" />
-                            {option.label}
-                          </ToggleGroupItem>
-                        ))}
-                      </ToggleGroup>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Projeto</Label>
-                      <Select
-                        value={form.projectId}
-                        onValueChange={(value) => setForm((prev) => ({ ...prev, projectId: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Sem projeto</SelectItem>
-                          {projects.map((project) => (
-                            <SelectItem key={project.id} value={project.id}>
-                              {project.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="post-context">Contexto para IA</Label>
-                    <Textarea
-                      id="post-context"
-                      value={form.aiContext}
-                      onChange={(event) => setForm((prev) => ({ ...prev, aiContext: event.target.value }))}
-                      placeholder="Tom de voz, publico, objetivo, restricoes..."
-                      rows={4}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="post-image">Imagem do post</Label>
-                    <input
-                      id="post-image"
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
-                    />
-                    <label
-                      htmlFor="post-image"
-                      className="flex aspect-[16/9] cursor-pointer items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/40 transition-colors hover:border-violet-500/70 hover:bg-muted"
-                    >
-                      {form.imageUrl ? (
-                        <img src={form.thumbnailUrl || form.imageUrl} alt="" className="h-full w-full rounded-lg object-cover" />
-                      ) : (
-                        <Plus className="h-8 w-8 text-muted-foreground" />
-                      )}
-                    </label>
-                  </div>
-                  <Button onClick={createPost} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Criar Post
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white" onClick={resetForm}>
+              <Plus className="h-4 w-4" />
+              Novo Post
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -627,7 +628,7 @@ export default function PostsPage() {
                 Excluir
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setSelectedPostIds([])}>
-                Limpar selecao
+                Limpar seleção
               </Button>
             </div>
           )}
@@ -636,9 +637,9 @@ export default function PostsPage() {
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
               <CardContent className="space-y-3 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-semibold">Publicacoes salvas e rascunhos</h2>
+                  <h2 className="font-semibold">Publicações salvas e rascunhos</h2>
                   <Button size="sm" variant="outline" onClick={selectAllVisible}>
-                    Selecionar visiveis
+                    Selecionar visíveis
                   </Button>
                 </div>
                 {isLoading ? (
@@ -739,7 +740,7 @@ export default function PostsPage() {
                         className="gap-2"
                       >
                         <Trash2 className="h-4 w-4" />
-                        Excluir Publicacao
+                        Excluir Publicação
                       </Button>
                     )}
                     <Button variant="outline" onClick={() => savePost('draft')} disabled={isSaving} className="gap-2">
@@ -803,7 +804,7 @@ export default function PostsPage() {
 
                 <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
                   <div className="space-y-2">
-                    <Label htmlFor="editor-description">Descricao</Label>
+                    <Label htmlFor="editor-description">Descrição</Label>
                     <Textarea
                       id="editor-description"
                       value={form.description}
@@ -819,18 +820,40 @@ export default function PostsPage() {
                       type="file"
                       accept="image/*"
                       className="sr-only"
-                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
+                      multiple
+                      onChange={(event) => handleImageChange(event.target.files)}
                     />
                     <label
                       htmlFor="editor-image"
                       className="flex aspect-square cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border/70 bg-muted transition-colors hover:border-violet-500/70"
                     >
-                      {form.imageUrl ? (
-                        <img src={form.thumbnailUrl || form.imageUrl} alt="" className="h-full w-full object-cover" />
+                      {form.postImages.length > 0 ? (
+                        <img src={form.postImages[0].thumbnailUrl || form.postImages[0].imageUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <Plus className="h-10 w-10 text-muted-foreground" />
+                        isUploadingImages ? (
+                          <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Plus className="h-10 w-10 text-muted-foreground" />
+                        )
                       )}
                     </label>
+                    {form.postImages.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {form.postImages.map((image) => (
+                          <div key={image.id} className="group relative aspect-square overflow-hidden rounded-md border border-border/50 bg-muted">
+                            <img src={image.thumbnailUrl || image.imageUrl} alt="" className="h-full w-full object-cover" />
+                            <button
+                              type="button"
+                              className="absolute right-1 top-1 hidden rounded bg-background/80 p-1 text-destructive shadow group-hover:block"
+                              onClick={() => removePostImage(image.id)}
+                              aria-label="Remover imagem"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 

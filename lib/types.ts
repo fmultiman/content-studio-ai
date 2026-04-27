@@ -124,9 +124,22 @@ export interface Post {
   thumbnail_path?: string | null
   file_size?: number | null
   mime_type?: string | null
+  post_images?: PostImage[] | null
   status: PostStatus
   created_at: string
   updated_at: string
+}
+
+export interface PostImage {
+  id: string
+  imageUrl: string
+  thumbnailUrl: string
+  storageProvider: string | null
+  storagePath: string | null
+  thumbnailPath: string | null
+  fileSize: number | null
+  mimeType: string | null
+  name?: string | null
 }
 
 export interface VideoScene {

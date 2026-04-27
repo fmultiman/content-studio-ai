@@ -1,4 +1,5 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
 
@@ -8,6 +9,13 @@ type UploadImageInput = {
   dataUrl?: string
   buffer?: Buffer
   mimeType?: string
+}
+
+type PresignedUploadInput = {
+  userId: string
+  folder: 'images' | 'posts'
+  mimeType: string
+  filename?: string
 }
 
 export type StoredImage = {
@@ -41,6 +49,18 @@ function getS3Config() {
   }
 }
 
+function createS3Client(config: NonNullable<ReturnType<typeof getS3Config>>) {
+  return new S3Client({
+    endpoint: config.endpoint,
+    region: config.region,
+    forcePathStyle: config.forcePathStyle,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  })
+}
+
 export function isS3StorageConfigured() {
   return Boolean(getS3Config())
 }
@@ -66,6 +86,41 @@ function extensionForMimeType(mimeType: string) {
 
 function publicUrl(publicBaseUrl: string, path: string) {
   return `${publicBaseUrl.replace(/\/$/, '')}/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
+export async function createPresignedImageUpload(input: PresignedUploadInput) {
+  const config = getS3Config()
+
+  if (!config) return null
+
+  const extension = extensionForMimeType(input.mimeType)
+  const id = randomUUID()
+  const safeName = input.filename
+    ?.replace(/\.[^/.]+$/, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  const path = `users/${input.userId}/${input.folder}/${id}/${safeName || 'image'}.${extension}`
+  const client = createS3Client(config)
+  const uploadUrl = await getSignedUrl(
+    client,
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+      ContentType: input.mimeType,
+    }),
+    { expiresIn: 900 },
+  )
+
+  return {
+    uploadUrl,
+    imageUrl: publicUrl(config.publicBaseUrl, path),
+    storageProvider: 's3' as const,
+    storagePath: path,
+    mimeType: input.mimeType,
+  }
 }
 
 export async function uploadImageToS3(input: UploadImageInput): Promise<StoredImage | null> {
@@ -97,15 +152,7 @@ export async function uploadImageToS3(input: UploadImageInput): Promise<StoredIm
     .webp({ quality: 55 })
     .toBuffer()
 
-  const client = new S3Client({
-    endpoint: config.endpoint,
-    region: config.region,
-    forcePathStyle: config.forcePathStyle,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-  })
+  const client = createS3Client(config)
 
   await Promise.all([
     client.send(

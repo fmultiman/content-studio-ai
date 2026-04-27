@@ -16,6 +16,7 @@ type PostBody = {
   thumbnailPath?: string | null
   fileSize?: number | null
   mimeType?: string | null
+  postImages?: unknown[] | null
   status?: string
 }
 
@@ -66,6 +67,7 @@ function buildPostPayload(body: PostBody) {
     thumbnail_path: body.thumbnailPath || null,
     file_size: body.fileSize || null,
     mime_type: body.mimeType || null,
+    post_images: Array.isArray(body.postImages) ? body.postImages : [],
     status: normalizeStatus(body.status),
   }
 }
