@@ -124,8 +124,14 @@ export default function ArquivosPage() {
 
     if (filesResponse.ok) setFiles(filesPayload.files || [])
     else console.error('[v0] Library files load error:', filesPayload)
-    if (!foldersResponse || foldersResponse.ok) setFolders(foldersPayload.folders || [])
-    else console.error('[v0] Library folders load error:', foldersPayload)
+    if (!foldersResponse || foldersResponse.ok) {
+      const nextFolders = foldersPayload.folders || []
+      setFolders(nextFolders)
+      const projectRoot = nextFolders.find((item: LibraryFolder) => item.is_project_root)
+      if (selectedProject !== 'all' && folder === '/' && projectRoot?.path) {
+        setFolder(projectRoot.path)
+      }
+    } else console.error('[v0] Library folders load error:', foldersPayload)
     if (projectsResult.data) setProjects(projectsResult.data)
     setIsLoading(false)
   }
@@ -133,13 +139,6 @@ export default function ArquivosPage() {
   useEffect(() => {
     loadFiles()
   }, [selectedProject, selectedKind, folder])
-
-  useEffect(() => {
-    setFolder('/')
-    setSelectedIds([])
-    setShowFolderInput(false)
-    setNewFolderName('')
-  }, [selectedProject])
 
   const availableFolders = useMemo(() => {
     return Array.from(new Set(['/', ...folders.map((item) => item.path), ...files.map((file) => file.folder)])).sort((a, b) =>
@@ -304,6 +303,14 @@ export default function ArquivosPage() {
     )
   }
 
+  const handleProjectChange = (value: string) => {
+    setSelectedProject(value)
+    setFolder('/')
+    setSelectedIds([])
+    setShowFolderInput(false)
+    setNewFolderName('')
+  }
+
   const openImagePreview = (fileId: string) => {
     const index = imageFiles.findIndex((file) => file.id === fileId)
     if (index >= 0) setPreviewIndex(index)
@@ -354,7 +361,7 @@ export default function ArquivosPage() {
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[240px] space-y-2">
                   <Label>Projeto</Label>
-                  <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <Select value={selectedProject} onValueChange={handleProjectChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>

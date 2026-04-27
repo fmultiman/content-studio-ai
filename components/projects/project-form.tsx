@@ -98,7 +98,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         })
       } else {
         // Create new project
-        const { error: insertError } = await supabase
+        const { data: createdProject, error: insertError } = await supabase
           .from('projects')
           .insert({
             user_id: user.id,
@@ -107,8 +107,25 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             context: formData.context || null,
             style_profile: formData.style_profile || null,
           })
+          .select('id')
+          .single()
 
         if (insertError) throw insertError
+
+        if (createdProject?.id) {
+          const folderResponse = await fetch('/api/library-folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectId: createdProject.id,
+              ensureProjectRoot: true,
+            }),
+          })
+
+          if (!folderResponse.ok) {
+            console.error('[Project Form] Project folder creation failed:', await folderResponse.json())
+          }
+        }
 
         toast({
           title: 'Projeto criado',

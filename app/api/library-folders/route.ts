@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createS3FolderPlaceholder } from '@/lib/storage/s3'
 
 type LibraryFolderBody = {
   projectId?: string | null
   name?: string | null
   parentPath?: string | null
+  ensureProjectRoot?: boolean
 }
 
 async function getAuthenticatedClient() {
@@ -41,6 +43,100 @@ function joinFolderPath(parentPath: string, name: string) {
   return cleanParent === '/' ? `/${cleanName}` : `${cleanParent}/${cleanName}`
 }
 
+async function createFolderPlaceholder(userId: string, path: string) {
+  try {
+    await createS3FolderPlaceholder({
+      userId,
+      folder: 'library',
+      prefix: path,
+    })
+  } catch (error) {
+    console.warn('[Library Folders] S3 placeholder error:', error)
+  }
+}
+
+async function ensureProjectRootFolder(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string,
+) {
+  const { data: existingRoot, error: existingError } = await supabase
+    .from('library_folders')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('is_project_root', true)
+    .maybeSingle()
+
+  if (existingError) throw existingError
+  if (existingRoot) return existingRoot
+
+  const { data: project, error: projectError } = await supabase
+    .from('projects')
+    .select('id, name')
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .single()
+
+  if (projectError || !project) {
+    throw projectError || new Error('Projeto não encontrado')
+  }
+
+  const name = safeFolderName(project.name) || 'Projeto'
+  let path = `/${name}`
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('library_folders')
+    .insert({
+      user_id: userId,
+      project_id: projectId,
+      name,
+      path,
+      parent_path: '/',
+      is_project_root: true,
+    })
+    .select()
+    .single()
+
+  if (!insertError) {
+    await createFolderPlaceholder(userId, inserted.path)
+    return inserted
+  }
+
+  if (insertError.code === '23505') {
+    const { data: rootAfterConflict, error: rootAfterConflictError } = await supabase
+      .from('library_folders')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('is_project_root', true)
+      .maybeSingle()
+
+    if (rootAfterConflictError) throw rootAfterConflictError
+    if (rootAfterConflict) return rootAfterConflict
+
+    path = `/${name}-${projectId.slice(0, 8)}`
+    const { data: fallback, error: fallbackError } = await supabase
+      .from('library_folders')
+      .insert({
+        user_id: userId,
+        project_id: projectId,
+        name,
+        path,
+        parent_path: '/',
+        is_project_root: true,
+      })
+      .select()
+      .single()
+
+    if (fallbackError) throw fallbackError
+    await createFolderPlaceholder(userId, fallback.path)
+    return fallback
+  }
+
+  throw insertError
+}
+
 export async function GET(request: Request) {
   try {
     const { supabase, user } = await getAuthenticatedClient()
@@ -52,6 +148,8 @@ export async function GET(request: Request) {
     if (!projectId || projectId === 'all') {
       return NextResponse.json({ folders: [] })
     }
+
+    await ensureProjectRootFolder(supabase, user.id, projectId)
 
     const { data, error } = await supabase
       .from('library_folders')
@@ -85,6 +183,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Selecione um projeto para criar pastas' }, { status: 400 })
     }
 
+    if (body.ensureProjectRoot) {
+      const folder = await ensureProjectRootFolder(supabase, user.id, projectId)
+      return NextResponse.json({ folder })
+    }
+
     if (!name) {
       return NextResponse.json({ error: 'Nome da pasta obrigatório' }, { status: 400 })
     }
@@ -99,6 +202,7 @@ export async function POST(request: Request) {
         name,
         path,
         parent_path: parentPath,
+        is_project_root: false,
       })
       .select()
       .single()
@@ -110,6 +214,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message, details: error }, { status: 400 })
     }
 
+    await createFolderPlaceholder(user.id, data.path)
     return NextResponse.json({ folder: data })
   } catch (error) {
     console.error('[Library Folders] POST error:', error)

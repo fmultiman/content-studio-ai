@@ -104,6 +104,13 @@ function publicUrl(publicBaseUrl: string, path: string) {
   return `${publicBaseUrl.replace(/\/$/, '')}/${path.split('/').map(encodeURIComponent).join('/')}`
 }
 
+function storagePrefix(prefix: string | null | undefined) {
+  const cleanPrefix = prefix?.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  return cleanPrefix
+    ? `${cleanPrefix.split('/').filter(Boolean).map((segment) => safePathSegment(segment, 'folder')).join('/')}/`
+    : ''
+}
+
 export async function createPresignedImageUpload(input: PresignedUploadInput) {
   const config = getS3Config()
 
@@ -114,10 +121,7 @@ export async function createPresignedImageUpload(input: PresignedUploadInput) {
     : extensionForMimeType(input.mimeType)
   const id = randomUUID()
   const safeName = safePathSegment(input.filename?.replace(/\.[^/.]+$/, ''), 'file')
-  const cleanPrefix = input.prefix?.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
-  const prefix = cleanPrefix
-    ? `${cleanPrefix.split('/').filter(Boolean).map((segment) => safePathSegment(segment, 'folder')).join('/')}/`
-    : ''
+  const prefix = storagePrefix(input.prefix)
   const path = `users/${input.userId}/${input.folder}/${prefix}${id}/${safeName}.${extension}`
   const client = createS3Client(config)
   const uploadUrl = await getSignedUrl(
@@ -136,6 +140,37 @@ export async function createPresignedImageUpload(input: PresignedUploadInput) {
     storageProvider: 's3' as const,
     storagePath: path,
     mimeType: input.mimeType,
+  }
+}
+
+export async function createS3FolderPlaceholder(input: {
+  userId: string
+  folder: 'library'
+  prefix: string
+}) {
+  const config = getS3Config()
+
+  if (!config) return null
+
+  const prefix = storagePrefix(input.prefix)
+  if (!prefix) return null
+
+  const path = `users/${input.userId}/${input.folder}/${prefix}.keep`
+  const client = createS3Client(config)
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+      Body: '',
+      ContentType: 'text/plain',
+    }),
+  )
+
+  return {
+    storageProvider: 's3' as const,
+    storagePath: path,
+    fileSize: 0,
+    mimeType: 'text/plain',
   }
 }
 

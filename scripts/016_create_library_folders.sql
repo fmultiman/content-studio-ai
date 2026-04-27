@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS library_folders (
   name TEXT NOT NULL,
   path TEXT NOT NULL,
   parent_path TEXT NOT NULL DEFAULT '/',
+  is_project_root BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, project_id, path)

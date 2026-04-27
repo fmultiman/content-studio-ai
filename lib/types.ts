@@ -168,6 +168,7 @@ export interface LibraryFolder {
   name: string
   path: string
   parent_path: string
+  is_project_root: boolean
   created_at: string
   updated_at: string
 }
