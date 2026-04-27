@@ -174,6 +174,17 @@ export async function createS3FolderPlaceholder(input: {
   }
 }
 
+export async function deleteS3FolderPlaceholder(input: {
+  userId: string
+  folder: 'library'
+  prefix: string
+}) {
+  const prefix = storagePrefix(input.prefix)
+  if (!prefix) return false
+
+  return deleteS3Object(`users/${input.userId}/${input.folder}/${prefix}.keep`)
+}
+
 export async function deleteS3Object(path: string) {
   const config = getS3Config()
 

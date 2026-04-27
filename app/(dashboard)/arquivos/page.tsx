@@ -40,6 +40,7 @@ import {
   FileAudio,
   FileText,
   FileVideo,
+  Folder,
   FolderInput,
   FolderPlus,
   ImageIcon,
@@ -175,6 +176,23 @@ export default function ArquivosPage() {
     ]
   }, [folders, projectNameById])
 
+  const folderTreeRows = useMemo(() => {
+    return folders
+      .map((item) => {
+        const segments = item.path.split('/').filter(Boolean)
+        return {
+          ...item,
+          depth: Math.max(0, segments.length - 1),
+          label: item.is_project_root ? projectNameById.get(item.project_id) || item.name : segments.at(-1) || item.name,
+          projectName: projectNameById.get(item.project_id) || 'Projeto',
+        }
+      })
+      .sort((a, b) => {
+        const projectCompare = a.projectName.localeCompare(b.projectName, 'pt-BR')
+        return projectCompare || a.path.localeCompare(b.path, 'pt-BR')
+      })
+  }, [folders, projectNameById])
+
   const uploadFileDirectly = async (file: File) => {
     const response = await fetch('/api/storage/presign-image-upload', {
       method: 'POST',
@@ -297,6 +315,36 @@ export default function ArquivosPage() {
     } finally {
       setIsCreatingFolder(false)
     }
+  }
+
+  const deleteFolder = async (folderToDelete: LibraryFolder) => {
+    const response = await fetch('/api/library-folders', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: folderToDelete.id }),
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      toast({
+        title: 'Erro ao excluir pasta',
+        description: payload.error || 'Não foi possível excluir a pasta.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setFolders((prev) => prev.filter((item) => item.id !== folderToDelete.id))
+    if (folder === folderToDelete.path || folder.startsWith(`${folderToDelete.path}/`)) {
+      const projectRoot = folders.find(
+        (item) => item.project_id === folderToDelete.project_id && item.is_project_root,
+      )
+      setFolder(projectRoot?.path || '/')
+    }
+    toast({
+      title: 'Pasta excluída',
+      description: 'A pasta vazia foi removida da biblioteca.',
+    })
   }
 
   const openMoveDialog = (ids: string[]) => {
@@ -591,6 +639,50 @@ export default function ArquivosPage() {
                     >
                       Cancelar
                     </Button>
+                  </div>
+                </div>
+              )}
+
+              {folderTreeRows.length > 0 && !showTrash && (
+                <div className="rounded-lg border border-border/50 bg-background/30 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Label>Pastas</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {folderTreeRows.length} pasta(s)
+                    </span>
+                  </div>
+                  <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {folderTreeRows.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex min-w-0 items-center gap-1 rounded-md border border-transparent bg-card/30 p-1"
+                      >
+                        <Button
+                          type="button"
+                          variant={folder === item.path ? 'secondary' : 'ghost'}
+                          size="sm"
+                          className="min-w-0 flex-1 justify-start gap-2"
+                          style={{ paddingLeft: `${8 + item.depth * 14}px` }}
+                          onClick={() => setFolder(item.path)}
+                        >
+                          <Folder className="h-4 w-4 shrink-0" />
+                          <span className="truncate">
+                            {selectedProject === 'all' ? `${item.projectName} / ${item.label}` : item.label}
+                          </span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                          disabled={item.is_project_root}
+                          onClick={() => deleteFolder(item)}
+                          aria-label={`Excluir pasta ${item.label}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

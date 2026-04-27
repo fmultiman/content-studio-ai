@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createS3FolderPlaceholder } from '@/lib/storage/s3'
+import { createS3FolderPlaceholder, deleteS3FolderPlaceholder } from '@/lib/storage/s3'
 
 type LibraryFolderBody = {
   projectId?: string | null
@@ -236,6 +236,93 @@ export async function POST(request: Request) {
     return NextResponse.json({ folder: data })
   } catch (error) {
     console.error('[Library Folders] POST error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro interno' },
+      { status: 500 },
+    )
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { supabase, user } = await getAuthenticatedClient()
+    if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+    const body = (await request.json()) as { id?: string | null }
+    if (!body.id) {
+      return NextResponse.json({ error: 'Pasta obrigatória' }, { status: 400 })
+    }
+
+    const { data: folder, error: folderError } = await supabase
+      .from('library_folders')
+      .select('*')
+      .eq('id', body.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (folderError || !folder) {
+      return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })
+    }
+
+    if (folder.is_project_root) {
+      return NextResponse.json({ error: 'A pasta raiz do projeto não pode ser excluída' }, { status: 400 })
+    }
+
+    const { data: projectFolders, error: foldersError } = await supabase
+      .from('library_folders')
+      .select('id, path')
+      .eq('user_id', user.id)
+      .eq('project_id', folder.project_id)
+
+    if (foldersError) {
+      return NextResponse.json({ error: foldersError.message, details: foldersError }, { status: 400 })
+    }
+
+    const hasChildFolder = (projectFolders || []).some(
+      (item) => item.id !== folder.id && item.path.startsWith(`${folder.path}/`),
+    )
+
+    if (hasChildFolder) {
+      return NextResponse.json({ error: 'Exclua ou mova as subpastas antes de apagar esta pasta' }, { status: 400 })
+    }
+
+    const { data: files, error: filesError } = await supabase
+      .from('library_files')
+      .select('id, folder')
+      .eq('user_id', user.id)
+      .eq('project_id', folder.project_id)
+
+    if (filesError) {
+      return NextResponse.json({ error: filesError.message, details: filesError }, { status: 400 })
+    }
+
+    const hasFiles = (files || []).some(
+      (file) => file.folder === folder.path || file.folder.startsWith(`${folder.path}/`),
+    )
+
+    if (hasFiles) {
+      return NextResponse.json({ error: 'Mova ou exclua os arquivos antes de apagar esta pasta' }, { status: 400 })
+    }
+
+    const { error: deleteError } = await supabase
+      .from('library_folders')
+      .delete()
+      .eq('id', folder.id)
+      .eq('user_id', user.id)
+
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message, details: deleteError }, { status: 400 })
+    }
+
+    await deleteS3FolderPlaceholder({
+      userId: user.id,
+      folder: 'library',
+      prefix: folder.path,
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('[Library Folders] DELETE error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro interno' },
       { status: 500 },
