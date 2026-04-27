@@ -38,6 +38,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/015_create_library_files.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/016_create_library_folders.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/017_add_library_folder_project_root.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/018_add_library_file_trash.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -158,7 +159,7 @@ async function main() {
       throw new Error(`Colunas de library_folders nao encontradas apos a migracao: ${missingLibraryFolderColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts workspace state, posts, storage metadata, and library folders')
+    console.log('migration ok: image_drafts workspace state, posts, storage metadata, library folders, and file trash')
   } finally {
     await sql.end()
   }

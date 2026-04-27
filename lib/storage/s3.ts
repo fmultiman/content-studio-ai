@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
@@ -171,6 +171,72 @@ export async function createS3FolderPlaceholder(input: {
     storagePath: path,
     fileSize: 0,
     mimeType: 'text/plain',
+  }
+}
+
+export async function deleteS3Object(path: string) {
+  const config = getS3Config()
+
+  if (!config) return false
+
+  const client = createS3Client(config)
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+    }),
+  )
+
+  return true
+}
+
+export async function moveLibraryS3Object(input: {
+  userId: string
+  currentPath: string
+  targetFolder: string
+}) {
+  const config = getS3Config()
+
+  if (!config) return null
+
+  const libraryPrefix = `users/${input.userId}/library/`
+  if (!input.currentPath.startsWith(libraryPrefix)) {
+    return null
+  }
+
+  const relativePath = input.currentPath.slice(libraryPrefix.length)
+  const parts = relativePath.split('/').filter(Boolean)
+  const tail = parts.length >= 2 ? parts.slice(-2).join('/') : parts.join('/')
+  const targetPrefix = storagePrefix(input.targetFolder)
+  const nextPath = `${libraryPrefix}${targetPrefix}${tail}`
+
+  if (nextPath === input.currentPath) {
+    return {
+      storagePath: input.currentPath,
+      publicUrl: publicUrl(config.publicBaseUrl, input.currentPath),
+    }
+  }
+
+  const client = createS3Client(config)
+  const copySource = `${config.bucket}/${input.currentPath.split('/').map(encodeURIComponent).join('/')}`
+
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: config.bucket,
+      Key: nextPath,
+      CopySource: copySource,
+    }),
+  )
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: input.currentPath,
+    }),
+  )
+
+  return {
+    storagePath: nextPath,
+    publicUrl: publicUrl(config.publicBaseUrl, nextPath),
   }
 }
 

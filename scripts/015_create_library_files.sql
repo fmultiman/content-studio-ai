@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS library_files (
   storage_path TEXT NOT NULL,
   public_url TEXT NOT NULL,
   thumbnail_url TEXT,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

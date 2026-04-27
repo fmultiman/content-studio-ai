@@ -157,6 +157,7 @@ export interface LibraryFile {
   storage_path: string
   public_url: string
   thumbnail_url: string | null
+  deleted_at: string | null
   created_at: string
   updated_at: string
 }

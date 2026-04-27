@@ -14,6 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -34,10 +40,13 @@ import {
   FileAudio,
   FileText,
   FileVideo,
+  FolderInput,
   FolderPlus,
   ImageIcon,
   Loader2,
+  MoreVertical,
   Plus,
+  RotateCcw,
   Trash2,
   UploadCloud,
 } from 'lucide-react'
@@ -99,6 +108,10 @@ export default function ArquivosPage() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [showFolderInput, setShowFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [showTrash, setShowTrash] = useState(false)
+  const [moveIds, setMoveIds] = useState<string[]>([])
+  const [moveTargetFolder, setMoveTargetFolder] = useState('/')
+  const [isMoving, setIsMoving] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   const imageFiles = useMemo(() => files.filter((file) => file.kind === 'image'), [files])
@@ -109,7 +122,8 @@ export default function ArquivosPage() {
     const params = new URLSearchParams()
     if (selectedProject !== 'all') params.set('projectId', selectedProject)
     if (selectedKind !== 'all') params.set('kind', selectedKind)
-    if (folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
+    if (!showTrash && folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
+    if (showTrash) params.set('trash', 'true')
 
     const foldersUrl = selectedProject !== 'all'
       ? `/api/library-folders?projectId=${encodeURIComponent(selectedProject)}`
@@ -138,7 +152,7 @@ export default function ArquivosPage() {
 
   useEffect(() => {
     loadFiles()
-  }, [selectedProject, selectedKind, folder])
+  }, [selectedProject, selectedKind, folder, showTrash])
 
   const availableFolders = useMemo(() => {
     return Array.from(new Set(['/', ...folders.map((item) => item.path), ...files.map((file) => file.folder)])).sort((a, b) =>
@@ -270,6 +284,43 @@ export default function ArquivosPage() {
     }
   }
 
+  const openMoveDialog = (ids: string[]) => {
+    setMoveIds(ids)
+    setMoveTargetFolder(folder)
+  }
+
+  const moveFiles = async () => {
+    if (moveIds.length === 0) return
+
+    setIsMoving(true)
+    try {
+      const response = await fetch('/api/library-files', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: moveIds, targetFolder: moveTargetFolder }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível mover os arquivos')
+
+      await loadFiles()
+      setSelectedIds((prev) => prev.filter((id) => !moveIds.includes(id)))
+      setMoveIds([])
+      toast({
+        title: moveIds.length > 1 ? 'Arquivos movidos' : 'Arquivo movido',
+        description: `Movido para ${moveTargetFolder === '/' ? 'Raiz' : moveTargetFolder}.`,
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro ao mover',
+        description: error instanceof Error ? error.message : 'Não foi possível mover os arquivos.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsMoving(false)
+    }
+  }
+
   const deleteFiles = async (ids: string[]) => {
     if (ids.length === 0) return
 
@@ -291,8 +342,60 @@ export default function ArquivosPage() {
     setFiles((prev) => prev.filter((file) => !ids.includes(file.id)))
     setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)))
     toast({
-      title: ids.length > 1 ? 'Arquivos excluídos' : 'Arquivo excluído',
-      description: 'O item saiu da biblioteca.',
+      title: ids.length > 1 ? 'Arquivos movidos para a lixeira' : 'Arquivo movido para a lixeira',
+      description: 'Você ainda pode restaurar ou excluir permanentemente.',
+    })
+  }
+
+  const restoreFiles = async (ids: string[]) => {
+    if (ids.length === 0) return
+
+    const response = await fetch('/api/library-files', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, restore: true }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      toast({
+        title: 'Erro ao restaurar',
+        description: data.error || 'Não foi possível restaurar os arquivos.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setFiles((prev) => prev.filter((file) => !ids.includes(file.id)))
+    setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)))
+    toast({
+      title: ids.length > 1 ? 'Arquivos restaurados' : 'Arquivo restaurado',
+      description: 'O item voltou para a biblioteca.',
+    })
+  }
+
+  const permanentDeleteFiles = async (ids: string[]) => {
+    if (ids.length === 0) return
+
+    const response = await fetch('/api/library-files', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, permanent: true }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      toast({
+        title: 'Erro ao excluir permanentemente',
+        description: data.error || 'Não foi possível excluir os arquivos.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setFiles((prev) => prev.filter((file) => !ids.includes(file.id)))
+    setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)))
+    toast({
+      title: ids.length > 1 ? 'Arquivos excluídos permanentemente' : 'Arquivo excluído permanentemente',
+      description: 'O arquivo também foi removido do MinIO.',
     })
   }
 
@@ -309,6 +412,7 @@ export default function ArquivosPage() {
     setSelectedIds([])
     setShowFolderInput(false)
     setNewFolderName('')
+    setShowTrash(false)
   }
 
   const openImagePreview = (fileId: string) => {
@@ -339,7 +443,7 @@ export default function ArquivosPage() {
             <p className="text-muted-foreground">
               Biblioteca geral de arquivos pesados no MinIO, organizada por projeto e pasta.
             </p>
-            <div>
+            <div className="flex flex-wrap gap-2">
               <input
                 id="library-upload"
                 type="file"
@@ -347,6 +451,18 @@ export default function ArquivosPage() {
                 className="sr-only"
                 onChange={(event) => handleUpload(event.target.files)}
               />
+              <Button
+                type="button"
+                variant={showTrash ? 'default' : 'outline'}
+                className="gap-2"
+                onClick={() => {
+                  setShowTrash((current) => !current)
+                  setSelectedIds([])
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Lixeira
+              </Button>
               <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
                 <label htmlFor="library-upload" className="cursor-pointer">
                   {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -464,10 +580,29 @@ export default function ArquivosPage() {
           {selectedIds.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-card/60 p-3">
               <Badge variant="secondary">{selectedIds.length} selecionado(s)</Badge>
-              <Button variant="destructive" size="sm" onClick={() => deleteFiles(selectedIds)} className="gap-2">
-                <Trash2 className="h-4 w-4" />
-                Excluir
-              </Button>
+              {showTrash ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => restoreFiles(selectedIds)} className="gap-2">
+                    <RotateCcw className="h-4 w-4" />
+                    Restaurar
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => permanentDeleteFiles(selectedIds)} className="gap-2">
+                    <Trash2 className="h-4 w-4" />
+                    Excluir permanentemente
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => openMoveDialog(selectedIds)} className="gap-2">
+                    <FolderInput className="h-4 w-4" />
+                    Mover
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => deleteFiles(selectedIds)} className="gap-2">
+                    <Trash2 className="h-4 w-4" />
+                    Excluir
+                  </Button>
+                </>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>
                 Limpar seleção
               </Button>
@@ -481,10 +616,16 @@ export default function ArquivosPage() {
           ) : files.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <UploadCloud className="mb-4 h-12 w-12 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Nenhum arquivo encontrado</h3>
+                {showTrash ? (
+                  <Trash2 className="mb-4 h-12 w-12 text-muted-foreground" />
+                ) : (
+                  <UploadCloud className="mb-4 h-12 w-12 text-muted-foreground" />
+                )}
+                <h3 className="text-lg font-semibold">
+                  {showTrash ? 'Lixeira vazia' : 'Nenhum arquivo encontrado'}
+                </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Envie arquivos para criar sua biblioteca.
+                  {showTrash ? 'Arquivos excluídos aparecerão aqui.' : 'Envie arquivos para criar sua biblioteca.'}
                 </p>
               </CardContent>
             </Card>
@@ -511,19 +652,45 @@ export default function ArquivosPage() {
                       className="absolute left-2 top-2 z-20 border-background bg-background shadow"
                       aria-label={`Selecionar ${file.name}`}
                     />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon"
-                      className="absolute right-2 top-2 z-20 h-8 w-8 bg-background/90 text-muted-foreground shadow hover:text-destructive"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        deleteFiles([file.id])
-                      }}
-                      aria-label={`Excluir ${file.name}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon"
+                          className="absolute right-2 top-2 z-20 h-8 w-8 bg-background/90 text-muted-foreground shadow"
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Opções de ${file.name}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                        {showTrash ? (
+                          <>
+                            <DropdownMenuItem onClick={() => restoreFiles([file.id])}>
+                              <RotateCcw className="h-4 w-4" />
+                              Restaurar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => permanentDeleteFiles([file.id])}>
+                              <Trash2 className="h-4 w-4" />
+                              Excluir permanentemente
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <>
+                            <DropdownMenuItem onClick={() => openMoveDialog([file.id])}>
+                              <FolderInput className="h-4 w-4" />
+                              Mover
+                            </DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => deleteFiles([file.id])}>
+                              <Trash2 className="h-4 w-4" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     {file.kind === 'image' ? (
                       <img
                         src={file.thumbnail_url || file.public_url}
@@ -609,6 +776,41 @@ export default function ArquivosPage() {
                 </Button>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={moveIds.length > 0} onOpenChange={(open) => !open && setMoveIds([])}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mover arquivo</DialogTitle>
+            <DialogDescription>
+              Escolha a pasta de destino para {moveIds.length} arquivo(s).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Pasta de destino</Label>
+            <Select value={moveTargetFolder} onValueChange={setMoveTargetFolder}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableFolders.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item === '/' ? 'Raiz' : item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setMoveIds([])}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={moveFiles} disabled={isMoving} className="gap-2">
+              {isMoving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderInput className="h-4 w-4" />}
+              Mover
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
