@@ -139,17 +139,28 @@ export async function createPresignedImageUpload(input: PresignedUploadInput) {
   }
 }
 
-export async function createPresignedReadUrl(path: string) {
+type PresignedReadOptions = {
+  filename?: string | null
+  disposition?: 'inline' | 'attachment'
+}
+
+export async function createPresignedReadUrl(path: string, options: PresignedReadOptions = {}) {
   const config = getS3Config()
 
   if (!config) return null
 
   const client = createS3Client(config)
+  const filename = options.filename?.trim()
+  const disposition = options.disposition || 'inline'
+
   return getSignedUrl(
     client,
     new GetObjectCommand({
       Bucket: config.bucket,
       Key: path,
+      ResponseContentDisposition: filename
+        ? `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`
+        : disposition,
     }),
     { expiresIn: 3600 },
   )
