@@ -33,6 +33,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/010_add_image_draft_workspace_state.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/011_add_image_draft_current_image_id.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/012_create_posts.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/013_add_storage_metadata.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -99,7 +100,42 @@ async function main() {
       throw new Error(`Colunas de posts nao encontradas apos a migracao: ${missingPostColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts workspace state and posts')
+    const storageColumns = await sql`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name in ('images', 'posts')
+        and column_name in (
+          'thumbnail_url',
+          'storage_provider',
+          'storage_path',
+          'thumbnail_path',
+          'file_size',
+          'mime_type'
+        )
+    `
+    const storageColumnKeys = new Set(
+      storageColumns.map((column) => `${column.table_name}.${column.column_name}`),
+    )
+    const requiredStorageColumns = ['images', 'posts'].flatMap((table) =>
+      [
+        'thumbnail_url',
+        'storage_provider',
+        'storage_path',
+        'thumbnail_path',
+        'file_size',
+        'mime_type',
+      ].map((column) => `${table}.${column}`),
+    )
+    const missingStorageColumns = requiredStorageColumns.filter(
+      (column) => !storageColumnKeys.has(column),
+    )
+
+    if (missingStorageColumns.length > 0) {
+      throw new Error(`Colunas de storage nao encontradas apos a migracao: ${missingStorageColumns.join(', ')}`)
+    }
+
+    console.log('migration ok: image_drafts workspace state, posts, and storage metadata')
   } finally {
     await sql.end()
   }

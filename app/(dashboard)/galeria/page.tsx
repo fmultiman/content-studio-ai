@@ -198,9 +198,9 @@ export default function GalleryPage() {
                   className="overflow-hidden border-border/50 bg-card/30 backdrop-blur-sm"
                 >
                   <div className="relative aspect-square bg-muted">
-                    {image.image_url ? (
+                    {image.thumbnail_url || image.image_url ? (
                       <img
-                        src={image.image_url}
+                        src={image.thumbnail_url || image.image_url || ''}
                         alt={image.user_input}
                         className="h-full w-full object-cover"
                       />

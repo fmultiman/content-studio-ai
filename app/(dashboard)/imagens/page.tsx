@@ -15,6 +15,16 @@ import { GenerationHistory } from '@/components/images/generation-history'
 import type { Project, Image as ImageType, ImageDraft, ImageEvaluation, GenerationAttempt } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
 
+type GeneratedImageResult = {
+  imageUrl: string
+  thumbnailUrl?: string | null
+  storageProvider?: string | null
+  storagePath?: string | null
+  thumbnailPath?: string | null
+  fileSize?: number | null
+  mimeType?: string | null
+}
+
 function ImagesPageContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -553,7 +563,15 @@ function ImagesPageContent() {
       throw new Error('A OpenAI nao retornou uma imagem')
     }
 
-    return data.imageUrl as string
+    return {
+      imageUrl: data.imageUrl as string,
+      thumbnailUrl: data.thumbnailUrl || null,
+      storageProvider: data.storageProvider || null,
+      storagePath: data.storagePath || null,
+      thumbnailPath: data.thumbnailPath || null,
+      fileSize: data.fileSize || null,
+      mimeType: data.mimeType || null,
+    } satisfies GeneratedImageResult
   }
 
   // Generate image with NanoBanana (via server route for security)
@@ -628,6 +646,16 @@ function ImagesPageContent() {
         const statusData = await statusRes.json()
 
         if (statusData.status === 'completed' && statusData.imageUrl) {
+          const storageResponse = await fetch('/api/storage/upload-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageUrl: statusData.imageUrl,
+              folder: 'images',
+            }),
+          })
+          const storageData = storageResponse.ok ? await storageResponse.json() : null
+          const storedImageUrl = storageData?.imageUrl || statusData.imageUrl
           const supabase = createClient()
           const { data: { user } } = await supabase.auth.getUser()
 
@@ -639,7 +667,13 @@ function ImagesPageContent() {
                   project_id: selectedProject,
                   user_input: userInput,
                   generated_prompt: promptToUse,
-                  image_url: statusData.imageUrl,
+                  image_url: storedImageUrl,
+                  thumbnail_url: storageData?.thumbnailUrl || null,
+                  storage_provider: storageData?.storageProvider || null,
+                  storage_path: storageData?.storagePath || null,
+                  thumbnail_path: storageData?.thumbnailPath || null,
+                  file_size: storageData?.fileSize || null,
+                  mime_type: storageData?.mimeType || null,
                   status: 'draft',
                   model,
                 })
@@ -656,7 +690,13 @@ function ImagesPageContent() {
                   project_id: selectedProject,
                   user_input: userInput,
                   generated_prompt: promptToUse,
-                  image_url: statusData.imageUrl,
+                  image_url: storedImageUrl,
+                  thumbnail_url: storageData?.thumbnailUrl || null,
+                  storage_provider: storageData?.storageProvider || null,
+                  storage_path: storageData?.storagePath || null,
+                  thumbnail_path: storageData?.thumbnailPath || null,
+                  file_size: storageData?.fileSize || null,
+                  mime_type: storageData?.mimeType || null,
                   status: 'draft',
                   model,
                 })
@@ -667,7 +707,7 @@ function ImagesPageContent() {
             }
           }
 
-          setImageUrl(statusData.imageUrl)
+          setImageUrl(storedImageUrl)
           setImageStatus('draft')
           setIsGeneratingNanoBanana(false)
           toast({
@@ -815,13 +855,19 @@ function ImagesPageContent() {
       if (insertError) throw insertError
 
       // Generate image with OpenAI through the server route, keeping the API key private.
-      const generatedUrl = await generateOpenAIImage(prompt, model)
+      const generatedImage = await generateOpenAIImage(prompt, model)
       
       // Update record with generated URL
       const { data: updatedImage } = await supabase
         .from('images')
         .update({
-          image_url: generatedUrl,
+          image_url: generatedImage.imageUrl,
+          thumbnail_url: generatedImage.thumbnailUrl,
+          storage_provider: generatedImage.storageProvider,
+          storage_path: generatedImage.storagePath,
+          thumbnail_path: generatedImage.thumbnailPath,
+          file_size: generatedImage.fileSize,
+          mime_type: generatedImage.mimeType,
           status: 'draft',
         })
         .eq('id', imageData.id)
@@ -829,7 +875,7 @@ function ImagesPageContent() {
         .single()
 
       setCurrentImage(updatedImage)
-      setImageUrl(generatedUrl)
+      setImageUrl(generatedImage.imageUrl)
       setImageStatus('draft')
 
       toast({
@@ -869,7 +915,7 @@ function ImagesPageContent() {
         return
       }
 
-      const generatedUrl = await generateOpenAIImage(result.prompt, selectedModel)
+      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel)
       
       // Update database if we have a current image
       if (currentImage) {
@@ -878,14 +924,20 @@ function ImagesPageContent() {
           .from('images')
           .update({
             generated_prompt: result.prompt,
-            image_url: generatedUrl,
+            image_url: generatedImage.imageUrl,
+            thumbnail_url: generatedImage.thumbnailUrl,
+            storage_provider: generatedImage.storageProvider,
+            storage_path: generatedImage.storagePath,
+            thumbnail_path: generatedImage.thumbnailPath,
+            file_size: generatedImage.fileSize,
+            mime_type: generatedImage.mimeType,
             status: 'draft',
             model: selectedModel,
           })
           .eq('id', currentImage.id)
       }
 
-      setImageUrl(generatedUrl)
+      setImageUrl(generatedImage.imageUrl)
       setImageStatus('draft')
 
       toast({

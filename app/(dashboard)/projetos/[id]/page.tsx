@@ -351,10 +351,10 @@ export default function ProjectDetailPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {images.map((image) => (
                     <Card key={image.id} className="overflow-hidden">
-                      {image.image_url && (
+                      {(image.thumbnail_url || image.image_url) && (
                         <div className="aspect-square">
                           <img
-                            src={image.image_url}
+                            src={image.thumbnail_url || image.image_url || ''}
                             alt={image.user_input}
                             className="h-full w-full object-cover"
                           />

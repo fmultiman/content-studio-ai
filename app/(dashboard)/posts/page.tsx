@@ -57,6 +57,12 @@ const emptyPost = {
   aiContext: '',
   feedText: '',
   imageUrl: null as string | null,
+  thumbnailUrl: null as string | null,
+  storageProvider: null as string | null,
+  storagePath: null as string | null,
+  thumbnailPath: null as string | null,
+  fileSize: null as number | null,
+  mimeType: null as string | null,
   projectId: 'none',
 }
 
@@ -144,6 +150,12 @@ export default function PostsPage() {
     form.aiContext,
     form.feedText,
     form.imageUrl,
+    form.thumbnailUrl,
+    form.storageProvider,
+    form.storagePath,
+    form.thumbnailPath,
+    form.fileSize,
+    form.mimeType,
     form.projectId,
     currentPostId,
     isDataReady,
@@ -176,6 +188,12 @@ export default function PostsPage() {
       aiContext: post.ai_context || '',
       feedText: post.feed_text || '',
       imageUrl: post.image_url || null,
+      thumbnailUrl: post.thumbnail_url || null,
+      storageProvider: post.storage_provider || null,
+      storagePath: post.storage_path || null,
+      thumbnailPath: post.thumbnail_path || null,
+      fileSize: post.file_size || null,
+      mimeType: post.mime_type || null,
       projectId: post.project_id || 'none',
     })
   }
@@ -226,6 +244,12 @@ export default function PostsPage() {
           aiContext: form.aiContext || null,
           feedText: form.feedText || null,
           imageUrl: form.imageUrl,
+          thumbnailUrl: form.thumbnailUrl,
+          storageProvider: form.storageProvider,
+          storagePath: form.storagePath,
+          thumbnailPath: form.thumbnailPath,
+          fileSize: form.fileSize,
+          mimeType: form.mimeType,
           status,
         }),
       })
@@ -262,8 +286,28 @@ export default function PostsPage() {
     if (!file) return
 
     try {
-      const imageUrl = await readImageAsDataUrl(file)
-      setForm((prev) => ({ ...prev, imageUrl }))
+      const imageDataUrl = await readImageAsDataUrl(file)
+      const response = await fetch('/api/storage/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageDataUrl, folder: 'posts' }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Nao foi possivel enviar a imagem')
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        imageUrl: data.imageUrl,
+        thumbnailUrl: data.thumbnailUrl,
+        storageProvider: data.storageProvider,
+        storagePath: data.storagePath,
+        thumbnailPath: data.thumbnailPath,
+        fileSize: data.fileSize,
+        mimeType: data.mimeType,
+      }))
     } catch {
       toast({
         title: 'Erro no upload',
@@ -354,6 +398,12 @@ export default function PostsPage() {
             aiContext: post.ai_context,
             feedText: post.feed_text,
             imageUrl: post.image_url,
+            thumbnailUrl: post.thumbnail_url,
+            storageProvider: post.storage_provider,
+            storagePath: post.storage_path,
+            thumbnailPath: post.thumbnail_path,
+            fileSize: post.file_size,
+            mimeType: post.mime_type,
             status,
           }),
         })
@@ -636,8 +686,8 @@ export default function PostsPage() {
                             )}
                           </button>
                           <div className="flex flex-col items-end gap-2">
-                            {post.image_url && (
-                              <img src={post.image_url} alt="" className="h-14 w-14 rounded-md object-cover" />
+                            {(post.thumbnail_url || post.image_url) && (
+                              <img src={post.thumbnail_url || post.image_url || ''} alt="" className="h-14 w-14 rounded-md object-cover" />
                             )}
                           </div>
                         </div>
@@ -742,7 +792,7 @@ export default function PostsPage() {
                     <Label htmlFor="editor-image">Imagem</Label>
                     <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted">
                       {form.imageUrl ? (
-                        <img src={form.imageUrl} alt="" className="h-full w-full object-cover" />
+                        <img src={form.thumbnailUrl || form.imageUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
                         <FileText className="h-10 w-10 text-muted-foreground" />
                       )}

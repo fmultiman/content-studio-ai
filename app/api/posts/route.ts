@@ -10,6 +10,12 @@ type PostBody = {
   aiContext?: string | null
   feedText?: string | null
   imageUrl?: string | null
+  thumbnailUrl?: string | null
+  storageProvider?: string | null
+  storagePath?: string | null
+  thumbnailPath?: string | null
+  fileSize?: number | null
+  mimeType?: string | null
   status?: string
 }
 
@@ -54,6 +60,12 @@ function buildPostPayload(body: PostBody) {
     ai_context: body.aiContext || null,
     feed_text: body.feedText || null,
     image_url: body.imageUrl || null,
+    thumbnail_url: body.thumbnailUrl || null,
+    storage_provider: body.storageProvider || null,
+    storage_path: body.storagePath || null,
+    thumbnail_path: body.thumbnailPath || null,
+    file_size: body.fileSize || null,
+    mime_type: body.mimeType || null,
     status: normalizeStatus(body.status),
   }
 }

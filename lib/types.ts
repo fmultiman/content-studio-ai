@@ -59,6 +59,12 @@ export interface Image {
   user_input: string
   generated_prompt: string | null
   image_url: string | null
+  thumbnail_url?: string | null
+  storage_provider?: string | null
+  storage_path?: string | null
+  thumbnail_path?: string | null
+  file_size?: number | null
+  mime_type?: string | null
   status: 'draft' | 'generating' | 'approved' | 'rejected'
   model: string | null
   aspect_ratio: string | null
@@ -112,6 +118,12 @@ export interface Post {
   ai_context: string | null
   feed_text: string | null
   image_url: string | null
+  thumbnail_url?: string | null
+  storage_provider?: string | null
+  storage_path?: string | null
+  thumbnail_path?: string | null
+  file_size?: number | null
+  mime_type?: string | null
   status: PostStatus
   created_at: string
   updated_at: string
