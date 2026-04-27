@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createPresignedReadUrl } from '@/lib/storage/s3'
 import type { LibraryFileKind } from '@/lib/types'
 
 type LibraryFileBody = {
@@ -63,7 +64,21 @@ export async function GET(request: Request) {
     const { data, error } = await query
     if (error) return NextResponse.json({ error: error.message, details: error }, { status: 400 })
 
-    return NextResponse.json({ files: data || [] })
+    const files = await Promise.all(
+      (data || []).map(async (file) => {
+        const signedUrl = file.storage_path
+          ? await createPresignedReadUrl(file.storage_path)
+          : null
+
+        return {
+          ...file,
+          public_url: signedUrl || file.public_url,
+          thumbnail_url: signedUrl || file.thumbnail_url,
+        }
+      }),
+    )
+
+    return NextResponse.json({ files })
   } catch (error) {
     console.error('[Library Files] GET error:', error)
     return NextResponse.json(

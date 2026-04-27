@@ -156,7 +156,11 @@ export default function ArquivosPage() {
     })
     const savePayload = await saveResponse.json()
     if (!saveResponse.ok) throw new Error(savePayload.error || 'Não foi possível salvar o arquivo')
-    return savePayload.file as LibraryFile
+    return {
+      ...savePayload.file,
+      public_url: data.imageUrl,
+      thumbnail_url: data.imageUrl,
+    } as LibraryFile
   }
 
   const handleUpload = async (fileList: FileList | null) => {
