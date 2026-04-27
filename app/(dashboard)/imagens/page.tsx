@@ -104,7 +104,7 @@ function ImagesPageContent() {
     const safeImageUrl = imageUrl?.startsWith('data:') ? undefined : imageUrl
     const safeGenerationAttempts = generationAttempts.map((attempt) => ({
       ...attempt,
-      imageId: attempt.imageId || (attempt.imageUrl === imageUrl ? currentImage?.id || null : null),
+      imageId: attempt.imageId || null,
       imageUrl: attempt.imageUrl?.startsWith('data:') ? null : attempt.imageUrl,
     }))
     const body: Record<string, unknown> = {
@@ -173,7 +173,7 @@ function ImagesPageContent() {
 
     const hydratedAttempts = draftAttempts.map((attempt) => ({
       ...attempt,
-      imageUrl: attempt.imageId ? imageById.get(attempt.imageId)?.image_url || attempt.imageUrl || null : attempt.imageUrl || null,
+      imageUrl: attempt.imageUrl || (attempt.imageId ? imageById.get(attempt.imageId)?.image_url || null : null),
     }))
     const currentDraftImage = draft.current_image_id ? imageById.get(draft.current_image_id) || null : null
     const currentDisplayUrl = await getDisplayUrlForImage(currentDraftImage)
@@ -600,6 +600,59 @@ function ImagesPageContent() {
     } satisfies GeneratedImageResult
   }
 
+  const saveGeneratedImageRecord = async (
+    generatedImage: GeneratedImageResult,
+    prompt: string,
+    model: ImageModel,
+    status: 'draft' | 'generating' | 'approved' | 'rejected' = 'draft',
+    existingImageId?: string | null,
+  ) => {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) throw new Error('Usuário não autenticado')
+
+    const payload = {
+      project_id: selectedProject,
+      user_input: userInput,
+      generated_prompt: prompt,
+      image_url: generatedImage.publicUrl || generatedImage.imageUrl,
+      thumbnail_url: generatedImage.thumbnailUrl || null,
+      storage_provider: generatedImage.storageProvider || null,
+      storage_path: generatedImage.storagePath || null,
+      thumbnail_path: generatedImage.thumbnailPath || null,
+      file_size: generatedImage.fileSize || null,
+      mime_type: generatedImage.mimeType || null,
+      status,
+      model,
+    }
+
+    if (existingImageId) {
+      const { data, error } = await supabase
+        .from('images')
+        .update(payload)
+        .eq('id', existingImageId)
+        .eq('user_id', user.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data as ImageType
+    }
+
+    const { data, error } = await supabase
+      .from('images')
+      .insert({
+        user_id: user.id,
+        ...payload,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data as ImageType
+  }
+
   // Generate image with NanoBanana (via server route for security)
   const handleGenerateNanoBanana = async (
     model: ImageModel = selectedModel,
@@ -683,57 +736,22 @@ function ImagesPageContent() {
           const storageData = storageResponse.ok ? await storageResponse.json() : null
           const storedDisplayUrl = storageData?.imageUrl || statusData.imageUrl
           const storedPublicUrl = storageData?.publicUrl || storageData?.imageUrl || statusData.imageUrl
-          const supabase = createClient()
-          const { data: { user } } = await supabase.auth.getUser()
+          const savedImage = await saveGeneratedImageRecord(
+            {
+              imageUrl: storedDisplayUrl,
+              publicUrl: storedPublicUrl,
+              thumbnailUrl: storageData?.thumbnailUrl || null,
+              storageProvider: storageData?.storageProvider || null,
+              storagePath: storageData?.storagePath || null,
+              thumbnailPath: storageData?.thumbnailPath || null,
+              fileSize: storageData?.fileSize || null,
+              mimeType: storageData?.mimeType || null,
+            },
+            promptToUse,
+            model,
+          )
 
-          if (user) {
-            if (currentImage) {
-              const { data: updatedImage } = await supabase
-                .from('images')
-                .update({
-                  project_id: selectedProject,
-                  user_input: userInput,
-                  generated_prompt: promptToUse,
-                  image_url: storedPublicUrl,
-                  thumbnail_url: storageData?.thumbnailUrl || null,
-                  storage_provider: storageData?.storageProvider || null,
-                  storage_path: storageData?.storagePath || null,
-                  thumbnail_path: storageData?.thumbnailPath || null,
-                  file_size: storageData?.fileSize || null,
-                  mime_type: storageData?.mimeType || null,
-                  status: 'draft',
-                  model,
-                })
-                .eq('id', currentImage.id)
-                .select()
-                .single()
-
-              if (updatedImage) setCurrentImage(updatedImage)
-            } else {
-              const { data: savedImage } = await supabase
-                .from('images')
-                .insert({
-                  user_id: user.id,
-                  project_id: selectedProject,
-                  user_input: userInput,
-                  generated_prompt: promptToUse,
-                  image_url: storedPublicUrl,
-                  thumbnail_url: storageData?.thumbnailUrl || null,
-                  storage_provider: storageData?.storageProvider || null,
-                  storage_path: storageData?.storagePath || null,
-                  thumbnail_path: storageData?.thumbnailPath || null,
-                  file_size: storageData?.fileSize || null,
-                  mime_type: storageData?.mimeType || null,
-                  status: 'draft',
-                  model,
-                })
-                .select()
-                .single()
-
-              if (savedImage) setCurrentImage(savedImage)
-            }
-          }
-
+          setCurrentImage(savedImage)
           setImageUrl(storedDisplayUrl)
           setImageStatus('draft')
           setIsGeneratingNanoBanana(false)
@@ -883,23 +901,13 @@ function ImagesPageContent() {
 
       // Generate image with OpenAI through the server route, keeping the API key private.
       const generatedImage = await generateOpenAIImage(prompt, model)
-      
-      // Update record with generated URL
-      const { data: updatedImage } = await supabase
-        .from('images')
-        .update({
-          image_url: generatedImage.publicUrl || generatedImage.imageUrl,
-          thumbnail_url: generatedImage.thumbnailUrl,
-          storage_provider: generatedImage.storageProvider,
-          storage_path: generatedImage.storagePath,
-          thumbnail_path: generatedImage.thumbnailPath,
-          file_size: generatedImage.fileSize,
-          mime_type: generatedImage.mimeType,
-          status: 'draft',
-        })
-        .eq('id', imageData.id)
-        .select()
-        .single()
+      const updatedImage = await saveGeneratedImageRecord(
+        generatedImage,
+        prompt,
+        model,
+        'draft',
+        imageData.id,
+      )
 
       const displayImageUrl = generatedImage.imageUrl
       setCurrentImage(updatedImage)
@@ -944,27 +952,14 @@ function ImagesPageContent() {
       }
 
       const generatedImage = await generateOpenAIImage(result.prompt, selectedModel)
-      
-      // Update database if we have a current image
-      if (currentImage) {
-        const supabase = createClient()
-        await supabase
-          .from('images')
-          .update({
-            generated_prompt: result.prompt,
-            image_url: generatedImage.publicUrl || generatedImage.imageUrl,
-            thumbnail_url: generatedImage.thumbnailUrl,
-            storage_provider: generatedImage.storageProvider,
-            storage_path: generatedImage.storagePath,
-            thumbnail_path: generatedImage.thumbnailPath,
-            file_size: generatedImage.fileSize,
-            mime_type: generatedImage.mimeType,
-            status: 'draft',
-            model: selectedModel,
-          })
-          .eq('id', currentImage.id)
-      }
 
+      const savedImage = await saveGeneratedImageRecord(
+        generatedImage,
+        result.prompt,
+        selectedModel,
+      )
+
+      setCurrentImage(savedImage)
       setImageUrl(generatedImage.imageUrl)
       setImageStatus('draft')
 
