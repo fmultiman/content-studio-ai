@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { uploadImageToS3 } from '@/lib/storage/s3'
+import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       })
 
       if (storage) {
-        imageUrl = storage.imageUrl
+        imageUrl = await createPresignedReadUrl(storage.storagePath) || storage.imageUrl
       }
     }
 
@@ -124,6 +124,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       imageUrl,
+      publicUrl: storage?.imageUrl || null,
       thumbnailUrl: storage?.thumbnailUrl || null,
       storageProvider: storage?.storageProvider || null,
       storagePath: storage?.storagePath || null,

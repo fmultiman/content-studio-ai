@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { uploadImageToS3 } from '@/lib/storage/s3'
+import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 
 export async function POST(request: Request) {
   try {
@@ -58,7 +58,13 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json(stored)
+    const signedImageUrl = await createPresignedReadUrl(stored.storagePath)
+
+    return NextResponse.json({
+      ...stored,
+      imageUrl: signedImageUrl || stored.imageUrl,
+      publicUrl: stored.imageUrl,
+    })
   } catch (error) {
     console.error('[Storage Upload Image] Error:', error)
     return NextResponse.json(

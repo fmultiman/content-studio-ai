@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast'
 
 type GeneratedImageResult = {
   imageUrl: string
+  publicUrl?: string | null
   thumbnailUrl?: string | null
   storageProvider?: string | null
   storagePath?: string | null
@@ -82,6 +83,19 @@ function ImagesPageContent() {
   // Refs para scroll automático
   const promptSectionRef = useRef<HTMLDivElement>(null)
   const resultSectionRef = useRef<HTMLDivElement>(null)
+
+  const getDisplayUrlForImage = async (image: ImageType | null) => {
+    if (!image) return null
+    if (!image.storage_path) return image.image_url
+
+    try {
+      const response = await fetch(`/api/images/${image.id}/signed-url`)
+      const payload = await response.json()
+      return response.ok ? payload.imageUrl || image.image_url : image.image_url
+    } catch {
+      return image.image_url
+    }
+  }
 
   const saveImageDraft = async () => {
     if (!userInput.trim() && !generatedPrompt.trim()) return null
@@ -159,16 +173,27 @@ function ImagesPageContent() {
 
     const hydratedAttempts = draftAttempts.map((attempt) => ({
       ...attempt,
-      imageUrl: attempt.imageUrl || (attempt.imageId ? imageById.get(attempt.imageId)?.image_url || null : null),
+      imageUrl: attempt.imageId ? imageById.get(attempt.imageId)?.image_url || attempt.imageUrl || null : attempt.imageUrl || null,
     }))
     const currentDraftImage = draft.current_image_id ? imageById.get(draft.current_image_id) || null : null
+    const currentDisplayUrl = await getDisplayUrlForImage(currentDraftImage)
+    const signedAttempts = await Promise.all(
+      hydratedAttempts.map(async (attempt) => {
+        const attemptImage = attempt.imageId ? imageById.get(attempt.imageId) || null : null
+        const displayUrl = await getDisplayUrlForImage(attemptImage)
+        return {
+          ...attempt,
+          imageUrl: displayUrl || attempt.imageUrl,
+        }
+      }),
+    )
 
     setPromptDetails(draft.prompt_details || null)
     setCurrentEvaluation(draft.current_evaluation || null)
-    setGenerationAttempts(hydratedAttempts)
+    setGenerationAttempts(signedAttempts)
     setCurrentAttempt(draft.current_attempt || 1)
     setCurrentImage(currentDraftImage)
-    setImageUrl(currentDraftImage?.image_url || draft.image_url || null)
+    setImageUrl(currentDisplayUrl || draft.image_url || null)
     setImageStatus(draft.image_status || 'draft')
 
     setCurrentDraftId(draft.id)
@@ -565,6 +590,7 @@ function ImagesPageContent() {
 
     return {
       imageUrl: data.imageUrl as string,
+      publicUrl: data.publicUrl || null,
       thumbnailUrl: data.thumbnailUrl || null,
       storageProvider: data.storageProvider || null,
       storagePath: data.storagePath || null,
@@ -655,7 +681,8 @@ function ImagesPageContent() {
             }),
           })
           const storageData = storageResponse.ok ? await storageResponse.json() : null
-          const storedImageUrl = storageData?.imageUrl || statusData.imageUrl
+          const storedDisplayUrl = storageData?.imageUrl || statusData.imageUrl
+          const storedPublicUrl = storageData?.publicUrl || storageData?.imageUrl || statusData.imageUrl
           const supabase = createClient()
           const { data: { user } } = await supabase.auth.getUser()
 
@@ -667,7 +694,7 @@ function ImagesPageContent() {
                   project_id: selectedProject,
                   user_input: userInput,
                   generated_prompt: promptToUse,
-                  image_url: storedImageUrl,
+                  image_url: storedPublicUrl,
                   thumbnail_url: storageData?.thumbnailUrl || null,
                   storage_provider: storageData?.storageProvider || null,
                   storage_path: storageData?.storagePath || null,
@@ -690,7 +717,7 @@ function ImagesPageContent() {
                   project_id: selectedProject,
                   user_input: userInput,
                   generated_prompt: promptToUse,
-                  image_url: storedImageUrl,
+                  image_url: storedPublicUrl,
                   thumbnail_url: storageData?.thumbnailUrl || null,
                   storage_provider: storageData?.storageProvider || null,
                   storage_path: storageData?.storagePath || null,
@@ -707,7 +734,7 @@ function ImagesPageContent() {
             }
           }
 
-          setImageUrl(storedImageUrl)
+          setImageUrl(storedDisplayUrl)
           setImageStatus('draft')
           setIsGeneratingNanoBanana(false)
           toast({
@@ -861,7 +888,7 @@ function ImagesPageContent() {
       const { data: updatedImage } = await supabase
         .from('images')
         .update({
-          image_url: generatedImage.imageUrl,
+          image_url: generatedImage.publicUrl || generatedImage.imageUrl,
           thumbnail_url: generatedImage.thumbnailUrl,
           storage_provider: generatedImage.storageProvider,
           storage_path: generatedImage.storagePath,
@@ -874,8 +901,9 @@ function ImagesPageContent() {
         .select()
         .single()
 
+      const displayImageUrl = generatedImage.imageUrl
       setCurrentImage(updatedImage)
-      setImageUrl(generatedImage.imageUrl)
+      setImageUrl(displayImageUrl)
       setImageStatus('draft')
 
       toast({
@@ -924,7 +952,7 @@ function ImagesPageContent() {
           .from('images')
           .update({
             generated_prompt: result.prompt,
-            image_url: generatedImage.imageUrl,
+            image_url: generatedImage.publicUrl || generatedImage.imageUrl,
             thumbnail_url: generatedImage.thumbnailUrl,
             storage_provider: generatedImage.storageProvider,
             storage_path: generatedImage.storagePath,
