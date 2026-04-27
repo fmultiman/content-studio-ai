@@ -29,6 +29,25 @@ export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    const getSignedImageUrls = async (image: ImageType) => {
+      if (!image.storage_path && !image.thumbnail_path) return image
+
+      try {
+        const response = await fetch(`/api/images/${image.id}/signed-url`)
+        const payload = await response.json()
+
+        if (!response.ok) return image
+
+        return {
+          ...image,
+          image_url: payload.imageUrl || image.image_url,
+          thumbnail_url: payload.thumbnailUrl || payload.imageUrl || image.thumbnail_url,
+        } as ImageType
+      } catch {
+        return image
+      }
+    }
+
     const fetchGallery = async () => {
       const supabase = createClient()
 
@@ -38,7 +57,10 @@ export default function GalleryPage() {
         .order('updated_at', { ascending: false })
 
       if (imagesData) {
-        setImages(imagesData)
+        const signedImages = await Promise.all(
+          imagesData.map((image) => getSignedImageUrls(image as ImageType)),
+        )
+        setImages(signedImages)
 
         const projectIds = [
           ...new Set(imagesData.map((image) => image.project_id).filter(Boolean)),
@@ -94,6 +116,8 @@ export default function GalleryPage() {
     if (!image.image_url) return
 
     const response = await fetch(image.image_url)
+    if (!response.ok) return
+
     const blob = await response.blob()
     const extension = blob.type === 'image/jpeg'
       ? 'jpg'

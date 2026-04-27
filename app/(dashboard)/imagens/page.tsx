@@ -97,16 +97,52 @@ function ImagesPageContent() {
     }
   }
 
+  const isTemporarySignedUrl = (url: string | null | undefined) => {
+    if (!url) return false
+
+    return (
+      url.includes('X-Amz-') ||
+      url.includes('AWSAccessKeyId=') ||
+      url.includes('Signature=')
+    )
+  }
+
+  const getPersistableImageUrl = (url: string | null | undefined) => {
+    if (!url || url.startsWith('data:') || isTemporarySignedUrl(url)) return null
+    return url
+  }
+
+  const getDisplayUrlForStoredUrl = async (url: string | null | undefined) => {
+    if (!url || url.startsWith('data:')) return null
+
+    try {
+      const response = await fetch('/api/storage/sign-image-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: url }),
+      })
+      const payload = await response.json()
+
+      return response.ok ? payload.imageUrl || null : null
+    } catch {
+      return null
+    }
+  }
+
   const saveImageDraft = async () => {
     if (!userInput.trim() && !generatedPrompt.trim()) return null
 
     const draftName = userInput.split('\n')[0].trim().slice(0, 50) || 'Rascunho sem titulo'
-    const safeImageUrl = imageUrl?.startsWith('data:') ? undefined : imageUrl
-    const safeGenerationAttempts = generationAttempts.map((attempt) => ({
-      ...attempt,
-      imageId: attempt.imageId || null,
-      imageUrl: attempt.imageUrl?.startsWith('data:') ? null : attempt.imageUrl,
-    }))
+    const safeImageUrl = getPersistableImageUrl(imageUrl)
+    const safeGenerationAttempts = generationAttempts.map((attempt) => {
+      const imageId = attempt.imageId || null
+
+      return {
+        ...attempt,
+        imageId,
+        imageUrl: imageId ? null : getPersistableImageUrl(attempt.imageUrl),
+      }
+    })
     const body: Record<string, unknown> = {
       id: currentDraftId,
       name: draftName,
@@ -124,7 +160,7 @@ function ImagesPageContent() {
       selectedModel,
     }
 
-    if (safeImageUrl !== undefined) {
+    if (safeImageUrl) {
       body.imageUrl = safeImageUrl
     }
 
@@ -171,19 +207,16 @@ function ImagesPageContent() {
       imageById = new Map((images || []).map((image) => [image.id, image as ImageType]))
     }
 
-    const hydratedAttempts = draftAttempts.map((attempt) => ({
-      ...attempt,
-      imageUrl: attempt.imageUrl || (attempt.imageId ? imageById.get(attempt.imageId)?.image_url || null : null),
-    }))
     const currentDraftImage = draft.current_image_id ? imageById.get(draft.current_image_id) || null : null
     const currentDisplayUrl = await getDisplayUrlForImage(currentDraftImage)
     const signedAttempts = await Promise.all(
-      hydratedAttempts.map(async (attempt) => {
+      draftAttempts.map(async (attempt) => {
         const attemptImage = attempt.imageId ? imageById.get(attempt.imageId) || null : null
-        const displayUrl = await getDisplayUrlForImage(attemptImage)
+        const historicalDisplayUrl = await getDisplayUrlForStoredUrl(attempt.imageUrl)
+        const displayUrl = historicalDisplayUrl || await getDisplayUrlForImage(attemptImage)
         return {
           ...attempt,
-          imageUrl: displayUrl || attempt.imageUrl,
+          imageUrl: displayUrl || attempt.imageUrl || null,
         }
       }),
     )
@@ -504,18 +537,34 @@ function ImagesPageContent() {
 
       setCurrentEvaluation(evaluation)
 
-      // Add to history
-      const attemptRecord: GenerationAttempt = {
-        id: `attempt-${Date.now()}`,
-        attempt: currentAttempt,
-        prompt: generatedPrompt,
-        imageUrl,
-        imageId: currentImage?.id || null,
-        model: selectedModel,
-        evaluation,
-        timestamp: new Date().toISOString(),
-      }
-      setGenerationAttempts(prev => [...prev, attemptRecord])
+      // Attach evaluation to the generated image already present in history.
+      setGenerationAttempts((prev) => {
+        const existingIndex = currentImage?.id
+          ? prev.findIndex((attempt) => attempt.imageId === currentImage.id)
+          : -1
+        const attemptNumber = existingIndex >= 0 ? prev[existingIndex].attempt : prev.length + 1
+        const attemptRecord: GenerationAttempt = {
+          id: currentImage?.id ? `attempt-${currentImage.id}` : `attempt-${Date.now()}`,
+          attempt: attemptNumber,
+          prompt: generatedPrompt,
+          imageUrl,
+          imageId: currentImage?.id || null,
+          model: selectedModel,
+          evaluation,
+          timestamp: new Date().toISOString(),
+        }
+
+        if (existingIndex >= 0) {
+          const next = [...prev]
+          next[existingIndex] = {
+            ...next[existingIndex],
+            ...attemptRecord,
+          }
+          return next
+        }
+
+        return [...prev, attemptRecord]
+      })
 
       toast({
         title: evaluation.approved ? 'Imagem aprovada!' : 'Sugestões de melhoria',
@@ -653,6 +702,41 @@ function ImagesPageContent() {
     return data as ImageType
   }
 
+  const recordGenerationAttempt = (
+    image: ImageType,
+    displayUrl: string | null,
+    prompt: string,
+    model: ImageModel,
+    evaluation: ImageEvaluation | null = null,
+  ) => {
+    setGenerationAttempts((prev) => {
+      const existingIndex = prev.findIndex((attempt) => attempt.imageId === image.id)
+      const attemptNumber = existingIndex >= 0 ? prev[existingIndex].attempt : prev.length + 1
+      const attemptRecord: GenerationAttempt = {
+        id: `attempt-${image.id}`,
+        attempt: attemptNumber,
+        prompt,
+        imageUrl: displayUrl,
+        imageId: image.id,
+        model,
+        evaluation,
+        timestamp: new Date().toISOString(),
+      }
+
+      if (existingIndex >= 0) {
+        const next = [...prev]
+        next[existingIndex] = {
+          ...next[existingIndex],
+          ...attemptRecord,
+          evaluation: evaluation || next[existingIndex].evaluation || null,
+        }
+        return next
+      }
+
+      return [...prev, attemptRecord]
+    })
+  }
+
   // Generate image with NanoBanana (via server route for security)
   const handleGenerateNanoBanana = async (
     model: ImageModel = selectedModel,
@@ -754,6 +838,7 @@ function ImagesPageContent() {
           setCurrentImage(savedImage)
           setImageUrl(storedDisplayUrl)
           setImageStatus('draft')
+          recordGenerationAttempt(savedImage, storedDisplayUrl, promptToUse, model)
           setIsGeneratingNanoBanana(false)
           toast({
             title: 'Imagem gerada!',
@@ -913,6 +998,7 @@ function ImagesPageContent() {
       setCurrentImage(updatedImage)
       setImageUrl(displayImageUrl)
       setImageStatus('draft')
+      recordGenerationAttempt(updatedImage, displayImageUrl, prompt, model)
 
       toast({
         title: 'Imagem criada!',
@@ -962,6 +1048,7 @@ function ImagesPageContent() {
       setCurrentImage(savedImage)
       setImageUrl(generatedImage.imageUrl)
       setImageStatus('draft')
+      recordGenerationAttempt(savedImage, generatedImage.imageUrl, result.prompt, selectedModel)
 
       toast({
         title: 'Imagem regenerada!',
