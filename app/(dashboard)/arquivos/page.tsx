@@ -23,9 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useToast } from '@/hooks/use-toast'
-import type { LibraryFile, LibraryFileKind, Project } from '@/lib/types'
+import type { LibraryFile, LibraryFileKind, LibraryFolder, Project } from '@/lib/types'
 import {
   ChevronLeft,
   ChevronRight,
@@ -35,6 +34,7 @@ import {
   FileAudio,
   FileText,
   FileVideo,
+  FolderPlus,
   ImageIcon,
   Loader2,
   Plus,
@@ -88,6 +88,7 @@ function formatFileSize(size: number | null | undefined) {
 export default function ArquivosPage() {
   const { toast } = useToast()
   const [files, setFiles] = useState<LibraryFile[]>([])
+  const [folders, setFolders] = useState<LibraryFolder[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedProject, setSelectedProject] = useState('all')
@@ -95,6 +96,9 @@ export default function ArquivosPage() {
   const [folder, setFolder] = useState('/')
   const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
+  const [showFolderInput, setShowFolderInput] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   const imageFiles = useMemo(() => files.filter((file) => file.kind === 'image'), [files])
@@ -107,14 +111,21 @@ export default function ArquivosPage() {
     if (selectedKind !== 'all') params.set('kind', selectedKind)
     if (folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
 
-    const [filesResponse, projectsResult] = await Promise.all([
+    const foldersUrl = selectedProject !== 'all'
+      ? `/api/library-folders?projectId=${encodeURIComponent(selectedProject)}`
+      : null
+    const [filesResponse, foldersResponse, projectsResult] = await Promise.all([
       fetch(`/api/library-files?${params.toString()}`),
+      foldersUrl ? fetch(foldersUrl) : Promise.resolve(null),
       createClient().from('projects').select('*').order('created_at', { ascending: false }),
     ])
     const filesPayload = await filesResponse.json()
+    const foldersPayload = foldersResponse ? await foldersResponse.json() : { folders: [] }
 
     if (filesResponse.ok) setFiles(filesPayload.files || [])
     else console.error('[v0] Library files load error:', filesPayload)
+    if (!foldersResponse || foldersResponse.ok) setFolders(foldersPayload.folders || [])
+    else console.error('[v0] Library folders load error:', foldersPayload)
     if (projectsResult.data) setProjects(projectsResult.data)
     setIsLoading(false)
   }
@@ -123,11 +134,18 @@ export default function ArquivosPage() {
     loadFiles()
   }, [selectedProject, selectedKind, folder])
 
-  const filteredFolders = useMemo(() => {
-    return Array.from(new Set(files.map((file) => file.folder))).sort((a, b) =>
+  useEffect(() => {
+    setFolder('/')
+    setSelectedIds([])
+    setShowFolderInput(false)
+    setNewFolderName('')
+  }, [selectedProject])
+
+  const availableFolders = useMemo(() => {
+    return Array.from(new Set(['/', ...folders.map((item) => item.path), ...files.map((file) => file.folder)])).sort((a, b) =>
       a.localeCompare(b, 'pt-BR'),
     )
-  }, [files])
+  }, [files, folders])
 
   const uploadFileDirectly = async (file: File) => {
     const response = await fetch('/api/storage/presign-image-upload', {
@@ -196,6 +214,60 @@ export default function ArquivosPage() {
       })
     } finally {
       setIsUploading(false)
+    }
+  }
+
+  const createFolder = async () => {
+    if (selectedProject === 'all') {
+      toast({
+        title: 'Selecione um projeto',
+        description: 'Pastas só podem ser criadas dentro de um projeto.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const name = newFolderName.trim()
+    if (!name) {
+      toast({
+        title: 'Nome obrigatório',
+        description: 'Informe o nome da nova pasta.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsCreatingFolder(true)
+    try {
+      const response = await fetch('/api/library-folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedProject,
+          parentPath: folder,
+          name,
+        }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível criar a pasta')
+
+      setFolders((prev) => [...prev, payload.folder])
+      setFolder(payload.folder.path)
+      setNewFolderName('')
+      setShowFolderInput(false)
+      toast({
+        title: 'Pasta criada',
+        description: `A pasta ${payload.folder.path} está pronta para receber arquivos.`,
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro ao criar pasta',
+        description: error instanceof Error ? error.message : 'Não foi possível criar a pasta.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsCreatingFolder(false)
     }
   }
 
@@ -297,33 +369,86 @@ export default function ArquivosPage() {
                   </Select>
                 </div>
 
-                <div className="min-w-[220px] space-y-2">
+                <div className="min-w-[240px] space-y-2">
                   <Label>Pasta</Label>
-                  <Input value={folder} onChange={(event) => setFolder(event.target.value || '/')} />
+                  <Select value={folder} onValueChange={setFolder}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableFolders.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item === '/' ? 'Raiz' : item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <ToggleGroup
-                  type="single"
-                  value={selectedKind}
-                  onValueChange={(value: KindFilter) => value && setSelectedKind(value)}
-                  className="flex-wrap justify-start rounded-lg border border-border/50"
+                <div className="min-w-[180px] space-y-2">
+                  <Label>Tipo</Label>
+                  <Select value={selectedKind} onValueChange={(value: KindFilter) => setSelectedKind(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="image">Imagens</SelectItem>
+                      <SelectItem value="video">Vídeos</SelectItem>
+                      <SelectItem value="audio">Áudios</SelectItem>
+                      <SelectItem value="document">Documentos</SelectItem>
+                      <SelectItem value="other">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={selectedProject === 'all'}
+                  onClick={() => setShowFolderInput((current) => !current)}
                 >
-                  <ToggleGroupItem value="all">Todos</ToggleGroupItem>
-                  <ToggleGroupItem value="image">Imagens</ToggleGroupItem>
-                  <ToggleGroupItem value="video">Vídeos</ToggleGroupItem>
-                  <ToggleGroupItem value="audio">Áudios</ToggleGroupItem>
-                  <ToggleGroupItem value="document">Docs</ToggleGroupItem>
-                  <ToggleGroupItem value="other">Outros</ToggleGroupItem>
-                </ToggleGroup>
+                  <FolderPlus className="h-4 w-4" />
+                  Nova pasta
+                </Button>
               </div>
 
-              {filteredFolders.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {filteredFolders.map((item) => (
-                    <Button key={item} variant="outline" size="sm" onClick={() => setFolder(item)}>
-                      {item}
+              {selectedProject === 'all' && (
+                <p className="text-sm text-muted-foreground">
+                  Selecione um projeto para criar pastas e organizar os uploads por campanha.
+                </p>
+              )}
+
+              {showFolderInput && selectedProject !== 'all' && (
+                <div className="flex flex-col gap-2 rounded-lg border border-border/50 bg-background/40 p-3 sm:flex-row sm:items-end">
+                  <div className="flex-1 space-y-2">
+                    <Label>Nova pasta em {folder === '/' ? 'Raiz' : folder}</Label>
+                    <Input
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                      placeholder="Ex: Referências, Capas, Roteiros"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') createFolder()
+                      }}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" onClick={createFolder} disabled={isCreatingFolder} className="gap-2">
+                      {isCreatingFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
+                      Criar
                     </Button>
-                  ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowFolderInput(false)
+                        setNewFolderName('')
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

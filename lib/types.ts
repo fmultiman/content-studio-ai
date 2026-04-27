@@ -161,6 +161,17 @@ export interface LibraryFile {
   updated_at: string
 }
 
+export interface LibraryFolder {
+  id: string
+  user_id: string
+  project_id: string
+  name: string
+  path: string
+  parent_path: string
+  created_at: string
+  updated_at: string
+}
+
 export interface VideoScene {
   id: string
   order: number

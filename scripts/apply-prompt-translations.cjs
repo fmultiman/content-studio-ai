@@ -36,6 +36,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/013_add_storage_metadata.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/014_add_post_images.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/015_create_library_files.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/016_create_library_folders.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -139,7 +140,24 @@ async function main() {
       throw new Error(`Colunas de storage nao encontradas apos a migracao: ${missingStorageColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts workspace state, posts, and storage metadata')
+    const libraryFolderColumns = await sql`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'library_folders'
+        and column_name in ('id', 'user_id', 'project_id', 'name', 'path', 'parent_path')
+    `
+    const foundLibraryFolderColumns = new Set(libraryFolderColumns.map((column) => column.column_name))
+    const requiredLibraryFolderColumns = ['id', 'user_id', 'project_id', 'name', 'path', 'parent_path']
+    const missingLibraryFolderColumns = requiredLibraryFolderColumns.filter(
+      (column) => !foundLibraryFolderColumns.has(column),
+    )
+
+    if (missingLibraryFolderColumns.length > 0) {
+      throw new Error(`Colunas de library_folders nao encontradas apos a migracao: ${missingLibraryFolderColumns.join(', ')}`)
+    }
+
+    console.log('migration ok: image_drafts workspace state, posts, storage metadata, and library folders')
   } finally {
     await sql.end()
   }
