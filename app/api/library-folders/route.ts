@@ -146,7 +146,25 @@ export async function GET(request: Request) {
     const projectId = searchParams.get('projectId')
 
     if (!projectId || projectId === 'all') {
-      return NextResponse.json({ folders: [] })
+      const { data: projects, error: projectsError } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+
+      if (projectsError) {
+        return NextResponse.json({ error: projectsError.message, details: projectsError }, { status: 400 })
+      }
+
+      await Promise.all((projects || []).map((project) => ensureProjectRootFolder(supabase, user.id, project.id)))
+
+      const { data, error } = await supabase
+        .from('library_folders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('path', { ascending: true })
+
+      if (error) return NextResponse.json({ error: error.message, details: error }, { status: 400 })
+      return NextResponse.json({ folders: data || [] })
     }
 
     await ensureProjectRootFolder(supabase, user.id, projectId)

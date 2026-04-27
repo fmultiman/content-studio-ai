@@ -18,6 +18,8 @@ type LibraryFileBody = {
   permanent?: boolean
   restore?: boolean
   targetFolder?: string | null
+  targetFolderId?: string | null
+  targetProjectId?: string | null
 }
 
 async function getAuthenticatedClient() {
@@ -116,8 +118,26 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    if (body.targetFolder) {
-      const targetFolder = normalizeFolder(body.targetFolder)
+    if (body.targetFolder || body.targetFolderId) {
+      let targetFolder = normalizeFolder(body.targetFolder)
+      let targetProjectId: string | null | undefined = body.targetProjectId
+
+      if (body.targetFolderId) {
+        const { data: folder, error: folderError } = await supabase
+          .from('library_folders')
+          .select('id, project_id, path')
+          .eq('id', body.targetFolderId)
+          .eq('user_id', user.id)
+          .single()
+
+        if (folderError || !folder) {
+          return NextResponse.json({ error: 'Pasta de destino não encontrada' }, { status: 404 })
+        }
+
+        targetFolder = normalizeFolder(folder.path)
+        targetProjectId = folder.project_id
+      }
+
       const { data: files, error: fetchError } = await supabase
         .from('library_files')
         .select('*')
@@ -137,13 +157,19 @@ export async function PATCH(request: Request) {
             })
           : null
 
+        const updatePayload: Record<string, unknown> = {
+          folder: targetFolder,
+          storage_path: moved?.storagePath || file.storage_path,
+          public_url: moved?.publicUrl || file.public_url,
+        }
+
+        if (targetProjectId !== undefined) {
+          updatePayload.project_id = targetProjectId
+        }
+
         const { data: updated, error: updateError } = await supabase
           .from('library_files')
-          .update({
-            folder: targetFolder,
-            storage_path: moved?.storagePath || file.storage_path,
-            public_url: moved?.publicUrl || file.public_url,
-          })
+          .update(updatePayload)
           .eq('id', file.id)
           .eq('user_id', user.id)
           .select()

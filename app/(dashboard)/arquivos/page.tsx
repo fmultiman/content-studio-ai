@@ -110,7 +110,7 @@ export default function ArquivosPage() {
   const [newFolderName, setNewFolderName] = useState('')
   const [showTrash, setShowTrash] = useState(false)
   const [moveIds, setMoveIds] = useState<string[]>([])
-  const [moveTargetFolder, setMoveTargetFolder] = useState('/')
+  const [moveTarget, setMoveTarget] = useState('root')
   const [isMoving, setIsMoving] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
@@ -125,20 +125,21 @@ export default function ArquivosPage() {
     if (!showTrash && folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
     if (showTrash) params.set('trash', 'true')
 
-    const foldersUrl = selectedProject !== 'all'
-      ? `/api/library-folders?projectId=${encodeURIComponent(selectedProject)}`
-      : null
+    const foldersUrl = `/api/library-folders${selectedProject !== 'all'
+      ? `?projectId=${encodeURIComponent(selectedProject)}`
+      : ''
+    }`
     const [filesResponse, foldersResponse, projectsResult] = await Promise.all([
       fetch(`/api/library-files?${params.toString()}`),
-      foldersUrl ? fetch(foldersUrl) : Promise.resolve(null),
+      fetch(foldersUrl),
       createClient().from('projects').select('*').order('created_at', { ascending: false }),
     ])
     const filesPayload = await filesResponse.json()
-    const foldersPayload = foldersResponse ? await foldersResponse.json() : { folders: [] }
+    const foldersPayload = await foldersResponse.json()
 
     if (filesResponse.ok) setFiles(filesPayload.files || [])
     else console.error('[v0] Library files load error:', filesPayload)
-    if (!foldersResponse || foldersResponse.ok) {
+    if (foldersResponse.ok) {
       const nextFolders = foldersPayload.folders || []
       setFolders(nextFolders)
       const projectRoot = nextFolders.find((item: LibraryFolder) => item.is_project_root)
@@ -159,6 +160,20 @@ export default function ArquivosPage() {
       a.localeCompare(b, 'pt-BR'),
     )
   }, [files, folders])
+
+  const projectNameById = useMemo(() => {
+    return new Map(projects.map((project) => [project.id, project.name]))
+  }, [projects])
+
+  const moveTargets = useMemo(() => {
+    return [
+      { value: 'root', label: 'Sem projeto / Raiz' },
+      ...folders.map((item) => ({
+        value: `folder:${item.id}`,
+        label: `${projectNameById.get(item.project_id) || 'Projeto'} / ${item.path === '/' ? 'Raiz' : item.path}`,
+      })),
+    ]
+  }, [folders, projectNameById])
 
   const uploadFileDirectly = async (file: File) => {
     const response = await fetch('/api/storage/presign-image-upload', {
@@ -286,7 +301,8 @@ export default function ArquivosPage() {
 
   const openMoveDialog = (ids: string[]) => {
     setMoveIds(ids)
-    setMoveTargetFolder(folder)
+    const currentFolder = folders.find((item) => item.path === folder && item.project_id === selectedProject)
+    setMoveTarget(currentFolder ? `folder:${currentFolder.id}` : 'root')
   }
 
   const moveFiles = async () => {
@@ -297,7 +313,11 @@ export default function ArquivosPage() {
       const response = await fetch('/api/library-files', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: moveIds, targetFolder: moveTargetFolder }),
+        body: JSON.stringify(
+          moveTarget === 'root'
+            ? { ids: moveIds, targetFolder: '/', targetProjectId: null }
+            : { ids: moveIds, targetFolderId: moveTarget.replace('folder:', '') },
+        ),
       })
       const payload = await response.json()
 
@@ -308,7 +328,7 @@ export default function ArquivosPage() {
       setMoveIds([])
       toast({
         title: moveIds.length > 1 ? 'Arquivos movidos' : 'Arquivo movido',
-        description: `Movido para ${moveTargetFolder === '/' ? 'Raiz' : moveTargetFolder}.`,
+        description: `Movido para ${moveTargets.find((item) => item.value === moveTarget)?.label || 'a pasta selecionada'}.`,
       })
     } catch (error) {
       toast({
@@ -790,14 +810,14 @@ export default function ArquivosPage() {
           </DialogHeader>
           <div className="space-y-2">
             <Label>Pasta de destino</Label>
-            <Select value={moveTargetFolder} onValueChange={setMoveTargetFolder}>
+            <Select value={moveTarget} onValueChange={setMoveTarget}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {availableFolders.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item === '/' ? 'Raiz' : item}
+                {moveTargets.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
