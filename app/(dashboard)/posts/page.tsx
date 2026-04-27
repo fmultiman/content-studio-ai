@@ -71,15 +71,23 @@ const publicationOptions: Array<{
   label: string
   icon: typeof Instagram
 }> = [
-  { value: 'instagram_post', label: 'Instagram Post', icon: Instagram },
-  { value: 'instagram_story', label: 'Instagram Story', icon: Instagram },
-  { value: 'youtube_post', label: 'YouTube Post', icon: Youtube },
-  { value: 'youtube_shorts', label: 'YouTube Shorts', icon: Youtube },
-  { value: 'youtube_video', label: 'YouTube Video', icon: Youtube },
+  { value: 'instagram_post', label: 'Post', icon: Instagram },
+  { value: 'instagram_story', label: 'Story', icon: Instagram },
+  { value: 'youtube_post', label: 'Post', icon: Youtube },
+  { value: 'youtube_shorts', label: 'Shorts', icon: Youtube },
+  { value: 'youtube_video', label: 'VÃ­deo', icon: Youtube },
 ]
 
 function channelLabel(channel: PublicationType) {
-  return publicationOptions.find((option) => option.value === channel)?.label || 'Instagram Post'
+  const labels: Record<PublicationType, string> = {
+    instagram_post: 'Instagram Post',
+    instagram_story: 'Instagram Story',
+    youtube_post: 'YouTube Post',
+    youtube_shorts: 'YouTube Shorts',
+    youtube_video: 'YouTube VÃ­deo',
+  }
+
+  return labels[channel] || 'Instagram Post'
 }
 
 function statusLabel(status: PostStatus) {
@@ -445,7 +453,7 @@ export default function PostsPage() {
 
   return (
     <>
-      <Header title="PublicaÃ§Ãµes" />
+      <Header title="Publicações" />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -522,7 +530,23 @@ export default function PostsPage() {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="post-image">Imagem do post</Label>
-                    <Input id="post-image" type="file" accept="image/*" onChange={(event) => handleImageChange(event.target.files?.[0] || null)} />
+                    <input
+                      id="post-image"
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
+                    />
+                    <label
+                      htmlFor="post-image"
+                      className="flex aspect-[16/9] cursor-pointer items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/40 transition-colors hover:border-violet-500/70 hover:bg-muted"
+                    >
+                      {form.imageUrl ? (
+                        <img src={form.thumbnailUrl || form.imageUrl} alt="" className="h-full w-full rounded-lg object-cover" />
+                      ) : (
+                        <Plus className="h-8 w-8 text-muted-foreground" />
+                      )}
+                    </label>
                   </div>
                   <Button onClick={createPost} className="gap-2">
                     <Plus className="h-4 w-4" />
@@ -556,7 +580,7 @@ export default function PostsPage() {
               type="single"
               value={selectedChannel}
               onValueChange={(value: ChannelFilter) => value && setSelectedChannel(value)}
-              className="rounded-lg border border-border/50"
+              className="flex-wrap justify-start rounded-lg border border-border/50"
             >
               <ToggleGroupItem value="all" className="gap-2 text-xs">
                 Todos
@@ -790,14 +814,23 @@ export default function PostsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="editor-image">Imagem</Label>
-                    <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted">
+                    <input
+                      id="editor-image"
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(event) => handleImageChange(event.target.files?.[0] || null)}
+                    />
+                    <label
+                      htmlFor="editor-image"
+                      className="flex aspect-square cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border/70 bg-muted transition-colors hover:border-violet-500/70"
+                    >
                       {form.imageUrl ? (
                         <img src={form.thumbnailUrl || form.imageUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <FileText className="h-10 w-10 text-muted-foreground" />
+                        <Plus className="h-10 w-10 text-muted-foreground" />
                       )}
-                    </div>
-                    <Input id="editor-image" type="file" accept="image/*" onChange={(event) => handleImageChange(event.target.files?.[0] || null)} />
+                    </label>
                   </div>
                 </div>
 

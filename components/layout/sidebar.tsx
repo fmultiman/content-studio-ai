@@ -40,7 +40,7 @@ const navItems = [
     icon: Video,
   },
   {
-    label: 'PublicaÃ§Ãµes',
+    label: 'Publicações',
     href: '/posts',
     icon: FileText,
   },
