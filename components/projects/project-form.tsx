@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -22,7 +29,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useToast } from '@/hooks/use-toast'
-import type { Project } from '@/lib/types'
+import type { EvaluationMode, Project } from '@/lib/types'
 
 interface ProjectFormProps {
   open: boolean
@@ -41,6 +48,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
     description: '',
     context: '',
     style_profile: '',
+    evaluation_mode: 'default' as EvaluationMode,
   })
 
   const isEditing = !!project
@@ -53,6 +61,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         description: project.description || '',
         context: project.context || '',
         style_profile: project.style_profile || '',
+        evaluation_mode: project.evaluation_mode || 'default',
       })
     } else {
       setFormData({
@@ -60,6 +69,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         description: '',
         context: '',
         style_profile: '',
+        evaluation_mode: 'default',
       })
     }
   }, [project, open])
@@ -87,6 +97,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             description: formData.description || null,
             context: formData.context || null,
             style_profile: formData.style_profile || null,
+            evaluation_mode: formData.evaluation_mode,
           })
           .eq('id', project.id)
 
@@ -106,6 +117,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             description: formData.description || null,
             context: formData.context || null,
             style_profile: formData.style_profile || null,
+            evaluation_mode: formData.evaluation_mode,
           })
           .select('id')
           .single()
@@ -133,7 +145,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         })
       }
 
-      setFormData({ name: '', description: '', context: '', style_profile: '' })
+      setFormData({ name: '', description: '', context: '', style_profile: '', evaluation_mode: 'default' })
       onOpenChange(false)
       onSuccess?.()
       router.refresh()
@@ -252,6 +264,30 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             />
             <p className="text-xs text-muted-foreground">
               O perfil de estilo será aplicado automaticamente às gerações deste projeto.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="evaluation_mode">Modo de Avaliacao</Label>
+            <Select
+              value={formData.evaluation_mode}
+              onValueChange={(value: EvaluationMode) =>
+                setFormData({ ...formData, evaluation_mode: value })
+              }
+            >
+              <SelectTrigger id="evaluation_mode" className="bg-background/50">
+                <SelectValue placeholder="Selecione o modo de avaliacao" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Padrao</SelectItem>
+                <SelectItem value="conceptual">Conceitual</SelectItem>
+                <SelectItem value="aesthetic">Estetico</SelectItem>
+                <SelectItem value="commercial">Comercial</SelectItem>
+                <SelectItem value="experimental">Experimental</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Define como a IA deve julgar imagens deste projeto durante a revisao.
             </p>
           </div>
 

@@ -7,10 +7,13 @@ export interface Project {
   description: string | null
   context: string | null
   style_profile: string | null
+  evaluation_mode: EvaluationMode
   status: 'active' | 'archived'
   created_at: string
   updated_at: string
 }
+
+export type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
 
 export interface UserSettings {
   id: string
@@ -189,6 +192,7 @@ export interface CreateProjectForm {
   name: string
   description: string
   context: string
+  evaluation_mode: EvaluationMode
 }
 
 export interface CreateImageForm {

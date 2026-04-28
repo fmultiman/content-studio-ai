@@ -525,6 +525,7 @@ function ImagesPageContent() {
           projectId: selectedProject,
           styleProfile: selectedProjectData?.style_profile || null,
           context: selectedProjectData?.context || null,
+          evaluation_mode: selectedProjectData?.evaluation_mode || 'default',
           attempt: currentAttempt,
         }),
       })

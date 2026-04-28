@@ -39,6 +39,7 @@ async function main() {
     await sql.unsafe(fs.readFileSync('scripts/016_create_library_folders.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/017_add_library_folder_project_root.sql', 'utf8'))
     await sql.unsafe(fs.readFileSync('scripts/018_add_library_file_trash.sql', 'utf8'))
+    await sql.unsafe(fs.readFileSync('scripts/019_add_project_evaluation_mode.sql', 'utf8'))
 
     const columns = await sql`
       select column_name
@@ -159,7 +160,19 @@ async function main() {
       throw new Error(`Colunas de library_folders nao encontradas apos a migracao: ${missingLibraryFolderColumns.join(', ')}`)
     }
 
-    console.log('migration ok: image_drafts workspace state, posts, storage metadata, library folders, and file trash')
+    const projectColumns = await sql`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'projects'
+        and column_name = 'evaluation_mode'
+    `
+
+    if (projectColumns.length === 0) {
+      throw new Error('Coluna projects.evaluation_mode nao encontrada apos a migracao')
+    }
+
+    console.log('migration ok: image_drafts workspace state, posts, storage metadata, library folders, file trash, and project evaluation mode')
   } finally {
     await sql.end()
   }
