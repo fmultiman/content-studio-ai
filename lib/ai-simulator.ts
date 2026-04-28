@@ -12,6 +12,8 @@ export interface PromptGenerationResult {
   composition: string
 }
 
+type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
+
 // Prepared for intelligent loop (future implementation)
 export interface GenerationAttempt {
   attemptNumber: number
@@ -27,6 +29,7 @@ export interface WebhookPayload {
   input: string
   context?: string
   styleProfile?: string
+  evaluationMode?: EvaluationMode
   retryCount?: number
   metadata?: Record<string, unknown>
 }
@@ -36,6 +39,7 @@ export interface GenerationContext {
   userInput: string
   projectContext?: string | null
   styleProfile?: string | null
+  evaluationMode?: EvaluationMode
   intention?: string
   retryCount?: number
   previousAttempts?: GenerationAttempt[]
@@ -155,32 +159,93 @@ async function generateWithOpenAI(
   userInput: string,
   projectContext?: string | null,
   styleProfile?: string | null,
-  apiKey?: string
+  apiKey?: string,
+  evaluationMode: EvaluationMode = 'default'
 ): Promise<PromptGenerationResult | null> {
   if (!apiKey) return null
 
   try {
-    const systemPrompt = `You are an expert image prompt engineer. Generate detailed, cinematic prompts for AI image generation.
+    const systemPrompt = `Voce e um gerador de prompts para imagens com IA.
 
-Your prompts should include:
-1. Main subject and action
-2. Artistic style (cinematic, photorealistic, etc.)
-3. Lighting description (dramatic, soft, golden hour, etc.)
-4. Composition details (rule of thirds, wide shot, etc.)
-5. Technical quality terms (8k, ultra detailed, etc.)
+Seu objetivo e transformar uma ideia inicial (userInput) em um prompt estruturado, especifico e de alta qualidade.
 
-Always respond in English, even if the input is in another language.
-Format your response as a single detailed prompt paragraph.`
+INPUTS:
 
-    let userMessage = `Generate an optimized image prompt based on this description: "${userInput}"`
-    
-    if (projectContext) {
-      userMessage += `\n\nProject context to consider: ${projectContext}`
-    }
-    
-    if (styleProfile) {
-      userMessage += `\n\nStyle profile to apply: ${styleProfile}`
-    }
+- userInput
+- context
+- style_profile
+- evaluation_mode
+
+REGRAS BASE:
+
+- Sempre usar o contexto do projeto como base principal
+- Aplicar o style_profile de forma consistente
+- Evitar cliches comuns de IA
+- Criar prompts claros, especificos e nao genericos
+
+COMPORTAMENTO POR evaluation_mode:
+
+Se evaluation_mode = "conceptual":
+- priorizar simbolismo e significado profundo
+- evitar imagens literais e obvias
+- criar tensao entre elementos
+- introduzir ideias de sistema, transformacao, analise ou abstracao
+
+Se evaluation_mode = "aesthetic":
+- priorizar composicao visual, iluminacao e harmonia
+- foco em estetica refinada
+- manter clareza visual e equilibrio
+
+Se evaluation_mode = "commercial":
+- priorizar impacto visual imediato
+- clareza do sujeito principal
+- imagem chamativa e facil de entender
+- forte foco em atencao e engajamento
+
+Se evaluation_mode = "experimental":
+- incentivar originalidade e criatividade
+- permitir abstracao e quebra de padrao
+- evitar estruturas previsiveis
+- introduzir elementos inesperados
+
+Se evaluation_mode = "default":
+- equilibrar conceito, estetica e clareza
+
+ESTRUTURA DO PROMPT:
+
+O prompt deve incluir:
+- descricao clara do cenario
+- sujeito principal
+- ambiente
+- iluminacao
+- composicao
+- estilo visual
+
+EVITAR:
+
+- frases genericas como "ultra detailed", "8k", sem necessidade
+- repeticoes
+- cliches visuais comuns, como figura meditando sem contexto
+
+OBJETIVO FINAL:
+
+Gerar um prompt que ja esteja alinhado com o modo de avaliacao, reduzindo a necessidade de refinamento posterior.
+
+Responda apenas com um unico prompt final em ingles, sem explicacoes, sem markdown e sem JSON.`
+
+    const userMessage = `INPUTS RECEBIDOS
+
+userInput:
+${userInput}
+
+context:
+${projectContext || 'Not specified'}
+
+style_profile:
+${styleProfile || 'Not specified'}
+
+evaluation_mode:
+${evaluationMode}`
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -227,16 +292,31 @@ Format your response as a single detailed prompt paragraph.`
 }
 
 // Fallback simulation when no API key is available
-function generateSimulated(userInput: string): PromptGenerationResult {
-  const detectedStyle = detectStyle(userInput)
+function getModeGuidance(evaluationMode: EvaluationMode) {
+  const guidance: Record<EvaluationMode, string> = {
+    conceptual: 'symbolic, layered meaning, tension between elements, abstract system transformation, non-literal interpretation',
+    aesthetic: 'refined visual harmony, elegant composition, controlled lighting, balanced color palette, polished art direction',
+    commercial: 'clear main subject, immediate visual impact, strong readable message, attention-grabbing composition, social media appeal',
+    experimental: 'unexpected visual structure, original abstraction, unconventional composition, surprising material contrasts, creative risk',
+    default: 'balanced concept, visual clarity, coherent composition, intentional atmosphere',
+  }
+
+  return guidance[evaluationMode]
+}
+
+function generateSimulated(
+  userInput: string,
+  projectContext?: string | null,
+  styleProfile?: string | null,
+  evaluationMode: EvaluationMode = 'default',
+): PromptGenerationResult {
+  const detectedStyle = styleProfile || detectStyle(userInput)
   const lighting = getRandomElement(lightingOptions)
   const composition = getRandomElement(compositionOptions)
-  const quality = [
-    getRandomElement(qualityEnhancements),
-    getRandomElement(qualityEnhancements),
-  ].join(', ')
+  const modeGuidance = getModeGuidance(evaluationMode)
+  const contextClause = projectContext ? `, grounded in this project context: ${projectContext}` : ''
 
-  const enhancedPrompt = `${userInput}, ${detectedStyle}, ${lighting}, ${composition}, ${quality}, highly detailed, masterpiece`
+  const enhancedPrompt = `${userInput}${contextClause}, ${modeGuidance}, ${detectedStyle}, clear main subject, intentional environment, ${lighting}, ${composition}, specific visual details, avoid generic AI cliches`
   const translatedPrompt = translateToEnglish(enhancedPrompt)
 
   return {
@@ -252,17 +332,18 @@ export async function generateImagePrompt(
   userInput: string,
   projectContext?: string | null,
   styleProfile?: string | null,
-  apiKey?: string
+  apiKey?: string,
+  evaluationMode: EvaluationMode = 'default',
 ): Promise<PromptGenerationResult> {
   // Try OpenAI first
   if (apiKey) {
-    const result = await generateWithOpenAI(userInput, projectContext, styleProfile, apiKey)
+    const result = await generateWithOpenAI(userInput, projectContext, styleProfile, apiKey, evaluationMode)
     if (result) return result
   }
 
   // Fallback to simulation
   await delay(1500)
-  return generateSimulated(userInput)
+  return generateSimulated(userInput, projectContext, styleProfile, evaluationMode)
 }
 
 export async function regeneratePrompt(currentPrompt: string): Promise<PromptGenerationResult> {
@@ -466,7 +547,9 @@ export async function intelligentGenerationLoop(
   const result = await generateImagePrompt(
     context.userInput,
     context.projectContext,
-    context.styleProfile
+    context.styleProfile,
+    undefined,
+    context.evaluationMode || 'default',
   )
   
   // Track attempt (for future use)

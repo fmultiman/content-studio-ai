@@ -889,12 +889,14 @@ function ImagesPageContent() {
       // Get project context and style profile if selected
       let projectContext: string | null = null
       let styleProfile: string | null = null
+      let evaluationMode: 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental' = 'default'
       
       if (selectedProject) {
         const project = projects.find(p => p.id === selectedProject)
         if (project) {
           projectContext = project.context
           styleProfile = project.style_profile
+          evaluationMode = project.evaluation_mode || 'default'
         }
       }
 
@@ -902,7 +904,8 @@ function ImagesPageContent() {
         userInput,
         projectContext,
         styleProfile,
-        openaiApiKey || undefined
+        openaiApiKey || undefined,
+        evaluationMode,
       )
       
       updateGeneratedPrompt(result.prompt)
