@@ -15,6 +15,19 @@ export interface Project {
 
 export type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
 
+export type ProductionType = 'editorial' | 'branding' | 'campaign'
+
+export interface Production {
+  id: string
+  user_id: string
+  project_id: string
+  title: string
+  intention: string
+  type: ProductionType
+  created_at: string
+  updated_at: string
+}
+
 export interface UserSettings {
   id: string
   user_id: string
@@ -115,6 +128,7 @@ export interface Post {
   id: string
   user_id: string
   project_id: string | null
+  production_id: string | null
   name: string
   channel: PublicationType
   description: string | null
@@ -223,6 +237,7 @@ export interface ImageDraft {
   image_url: string | null
   current_image_id?: string | null
   selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null
+  production_id: string | null
   created_at: string
   updated_at: string
 }
@@ -231,6 +246,7 @@ export interface VideoDraft {
   id: string
   user_id: string
   project_id: string | null
+  production_id: string | null
   name: string
   scenes: VideoScene[]
   created_at: string
