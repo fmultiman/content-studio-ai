@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { ProductionType } from '@/lib/types'
 
 const VALID_TYPES: ProductionType[] = ['editorial', 'branding', 'campaign']
+const ALLOWED_POST_KEYS = new Set(['projectId', 'title', 'intention', 'type'])
 
 async function getAuthenticatedClient() {
   const supabase = await createClient()
@@ -41,16 +42,14 @@ export async function GET(request: Request) {
       .order('updated_at', { ascending: false })
 
     if (error) {
-      return NextResponse.json({ error: error.message, details: error }, { status: 400 })
+      console.error('[Productions] GET list error:', error)
+      return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
     }
 
     return NextResponse.json({ productions: data || [] })
   } catch (error) {
     console.error('[Productions] GET error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro interno' },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
 
@@ -62,7 +61,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
 
-    const body = await request.json()
+    let body: Record<string, unknown>
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Body invalido: JSON esperado' }, { status: 400 })
+    }
+
+    const unknownKeys = Object.keys(body).filter((k) => !ALLOWED_POST_KEYS.has(k))
+    if (unknownKeys.length > 0) {
+      return NextResponse.json(
+        { error: `Campos nao permitidos: ${unknownKeys.join(', ')}` },
+        { status: 400 },
+      )
+    }
 
     const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
     const title = typeof body.title === 'string' ? body.title.trim() : ''
@@ -77,14 +89,14 @@ export async function POST(request: Request) {
     if (!intention) {
       return NextResponse.json({ error: 'intention obrigatoria' }, { status: 400 })
     }
-    if (!VALID_TYPES.includes(body.type)) {
+    if (!VALID_TYPES.includes(body.type as ProductionType)) {
       return NextResponse.json(
         { error: `type invalido. Valores aceitos: ${VALID_TYPES.join(', ')}` },
         { status: 400 },
       )
     }
 
-    const type: ProductionType = body.type
+    const type: ProductionType = body.type as ProductionType
 
     const { data, error } = await supabase
       .from('productions')
@@ -93,15 +105,19 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message, details: error }, { status: 400 })
+      console.error('[Productions] POST insert error:', error)
+      if (error.code === '23503') {
+        return NextResponse.json(
+          { error: 'Projeto nao encontrado ou nao autorizado' },
+          { status: 400 },
+        )
+      }
+      return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
     }
 
     return NextResponse.json({ production: data }, { status: 201 })
   } catch (error) {
     console.error('[Productions] POST error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro interno' },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
