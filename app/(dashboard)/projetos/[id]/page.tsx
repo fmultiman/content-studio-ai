@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
@@ -82,6 +82,8 @@ export default function ProjectDetailPage() {
   // Production form state
   const [showProductionForm, setShowProductionForm] = useState(false)
   const [editingProduction, setEditingProduction] = useState<Production | null>(null)
+
+  const tabsSectionRef = useRef<HTMLDivElement>(null)
 
   // Production delete state
   const [showDeleteProductionDialog, setShowDeleteProductionDialog] = useState(false)
@@ -426,6 +428,7 @@ export default function ProjectDetailPage() {
           </Card>
 
           {/* Content Tabs */}
+          <div ref={tabsSectionRef} className="scroll-mt-24">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="images" className="gap-2">
@@ -630,6 +633,7 @@ export default function ProjectDetailPage() {
               )}
             </TabsContent>
           </Tabs>
+          </div>
         </div>
       </div>
 
@@ -699,6 +703,9 @@ export default function ProjectDetailPage() {
               onClick={() => {
                 setShowProductionsBlockDialog(false)
                 setActiveTab('productions')
+                requestAnimationFrame(() => {
+                  tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                })
               }}
               className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
             >
