@@ -18,7 +18,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ProjectForm } from '@/components/projects/project-form'
+import { ProductionForm } from '@/components/productions/production-form'
 import {
   ArrowLeft,
   Loader2,
@@ -32,9 +41,17 @@ import {
   Palette,
   Copy,
   Check,
+  Layers,
+  Plus,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Image as ImageType, Video as VideoType } from '@/lib/types'
+import type { Project, Image as ImageType, Video as VideoType, Production } from '@/lib/types'
+
+const PRODUCTION_TYPE_LABELS: Record<string, string> = {
+  editorial: 'Editorial',
+  branding: 'Branding',
+  campaign: 'Campanha',
+}
 
 export default function ProjectDetailPage() {
   const params = useParams()
@@ -42,22 +59,40 @@ export default function ProjectDetailPage() {
   const projectId = params.id as string
 
   const { toast } = useToast()
+
+  // Project + content state
   const [project, setProject] = useState<Project | null>(null)
   const [images, setImages] = useState<ImageType[]>([])
   const [videos, setVideos] = useState<VideoType[]>([])
+  const [productions, setProductions] = useState<Production[]>([])
+  const [productionsError, setProductionsError] = useState(false)
+
+  // Page state
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('images')
+  const [copiedSection, setCopiedSection] = useState<string | null>(null)
+
+  // Project edit/delete state
   const [showEditForm, setShowEditForm] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [copiedSection, setCopiedSection] = useState<string | null>(null)
+  const [showProductionsBlockDialog, setShowProductionsBlockDialog] = useState(false)
+
+  // Production form state
+  const [showProductionForm, setShowProductionForm] = useState(false)
+  const [editingProduction, setEditingProduction] = useState<Production | null>(null)
+
+  // Production delete state
+  const [showDeleteProductionDialog, setShowDeleteProductionDialog] = useState(false)
+  const [deletingProductionId, setDeletingProductionId] = useState<string | null>(null)
+  const [isDeletingProduction, setIsDeletingProduction] = useState(false)
 
   useEffect(() => {
     const fetchProjectData = async () => {
       const supabase = createClient()
 
       try {
-        // Fetch project
         const { data: projectData, error: projectError } = await supabase
           .from('projects')
           .select('*')
@@ -67,23 +102,30 @@ export default function ProjectDetailPage() {
         if (projectError) throw projectError
         setProject(projectData)
 
-        // Fetch images for this project
-        const { data: imagesData } = await supabase
-          .from('images')
-          .select('*')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false })
+        // Fetch images, videos, productions in parallel
+        const [imagesResult, videosResult, productionsRes] = await Promise.all([
+          supabase
+            .from('images')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('videos')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: false }),
+          fetch(`/api/productions?projectId=${projectId}`),
+        ])
 
-        if (imagesData) setImages(imagesData)
+        if (imagesResult.data) setImages(imagesResult.data)
+        if (videosResult.data) setVideos(videosResult.data)
 
-        // Fetch videos for this project
-        const { data: videosData } = await supabase
-          .from('videos')
-          .select('*')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false })
-
-        if (videosData) setVideos(videosData)
+        if (productionsRes.ok) {
+          const productionsData = await productionsRes.json()
+          setProductions(productionsData.productions || [])
+        } else {
+          setProductionsError(true)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar projeto')
       } finally {
@@ -94,6 +136,16 @@ export default function ProjectDetailPage() {
     fetchProjectData()
   }, [projectId])
 
+  // ── Project handlers ──────────────────────────────────────────────────────
+
+  const handleDeleteButtonClick = () => {
+    if (productions.length > 0) {
+      setShowProductionsBlockDialog(true)
+    } else {
+      setShowDeleteDialog(true)
+    }
+  }
+
   const handleDelete = async () => {
     if (!project) return
 
@@ -101,11 +153,29 @@ export default function ProjectDetailPage() {
     const supabase = createClient()
 
     try {
-      await supabase.from('projects').delete().eq('id', project.id)
-      toast({
-        title: 'Projeto excluído',
-        description: 'O projeto foi excluído com sucesso.',
-      })
+      const { error: deleteError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', project.id)
+
+      if (deleteError) {
+        if (deleteError.code === '23503') {
+          toast({
+            title: 'Projeto possui Produções',
+            description: 'Remova as Produções antes de excluir o Projeto.',
+            variant: 'destructive',
+          })
+        } else {
+          toast({
+            title: 'Erro',
+            description: 'Não foi possível excluir o projeto.',
+            variant: 'destructive',
+          })
+        }
+        return
+      }
+
+      toast({ title: 'Projeto excluído', description: 'O projeto foi excluído com sucesso.' })
       router.push('/projetos')
     } catch (error) {
       console.error('Erro ao deletar projeto:', error)
@@ -122,16 +192,13 @@ export default function ProjectDetailPage() {
 
   const handleEditSuccess = async () => {
     setShowEditForm(false)
-    // Refresh project data
     const supabase = createClient()
     const { data: projectData } = await supabase
       .from('projects')
       .select('*')
       .eq('id', projectId)
       .single()
-    if (projectData) {
-      setProject(projectData)
-    }
+    if (projectData) setProject(projectData)
   }
 
   const handleCopySection = async (section: string, text: string) => {
@@ -140,13 +207,55 @@ export default function ProjectDetailPage() {
       setCopiedSection(section)
       setTimeout(() => setCopiedSection(null), 2000)
     } catch {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível copiar o texto.',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: 'Não foi possível copiar o texto.', variant: 'destructive' })
     }
   }
+
+  // ── Production handlers ───────────────────────────────────────────────────
+
+  const handleProductionSuccess = (saved: Production) => {
+    setProductions((prev) => {
+      const idx = prev.findIndex((p) => p.id === saved.id)
+      if (idx >= 0) {
+        const next = [...prev]
+        next[idx] = saved
+        return next
+      }
+      return [saved, ...prev]
+    })
+  }
+
+  const handleDeleteProduction = async () => {
+    if (!deletingProductionId) return
+    setIsDeletingProduction(true)
+
+    try {
+      const res = await fetch(`/api/productions/${deletingProductionId}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast({
+          title: 'Erro',
+          description: data.error || 'Não foi possível excluir a Produção.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      setProductions((prev) => prev.filter((p) => p.id !== deletingProductionId))
+      setShowDeleteProductionDialog(false)
+      setDeletingProductionId(null)
+      toast({ title: 'Produção excluída', description: 'A Produção foi removida com sucesso.' })
+    } catch {
+      toast({ title: 'Erro', description: 'Erro de conexão. Tente novamente.', variant: 'destructive' })
+    } finally {
+      setIsDeletingProduction(false)
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -174,13 +283,14 @@ export default function ProjectDetailPage() {
     )
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
     })
-  }
+
+  const deletingProduction = productions.find((p) => p.id === deletingProductionId)
 
   return (
     <>
@@ -188,11 +298,7 @@ export default function ProjectDetailPage() {
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
           {/* Back Button */}
-          <Button
-            variant="ghost"
-            onClick={() => router.push('/projetos')}
-            className="gap-2"
-          >
+          <Button variant="ghost" onClick={() => router.push('/projetos')} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
             Voltar para Projetos
           </Button>
@@ -211,29 +317,27 @@ export default function ProjectDetailPage() {
                       <Calendar className="h-3.5 w-3.5" />
                       Criado em {formatDate(project.created_at)}
                     </span>
-                    <Badge
-                      variant={project.status === 'active' ? 'default' : 'secondary'}
-                    >
+                    <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
                       {project.status === 'active' ? 'Ativo' : 'Arquivado'}
                     </Badge>
                   </div>
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="gap-2"
                   onClick={() => setShowEditForm(true)}
                 >
                   <Edit2 className="h-4 w-4" />
                   Editar
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="gap-2 text-destructive hover:text-destructive"
-                  onClick={() => setShowDeleteDialog(true)}
+                  onClick={handleDeleteButtonClick}
                 >
                   <Trash2 className="h-4 w-4" />
                   Excluir
@@ -298,7 +402,9 @@ export default function ProjectDetailPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleCopySection('style_profile', project.style_profile || '')}
+                      onClick={() =>
+                        handleCopySection('style_profile', project.style_profile || '')
+                      }
                       className="h-7 w-7 text-muted-foreground hover:text-foreground"
                       aria-label="Copiar perfil de estilo"
                     >
@@ -310,7 +416,9 @@ export default function ProjectDetailPage() {
                     </Button>
                   </div>
                   <div className="rounded-lg border border-border/50 bg-background/50 p-4">
-                    <p className="whitespace-pre-wrap text-sm text-foreground">{project.style_profile}</p>
+                    <p className="whitespace-pre-wrap text-sm text-foreground">
+                      {project.style_profile}
+                    </p>
                   </div>
                 </div>
               )}
@@ -318,8 +426,8 @@ export default function ProjectDetailPage() {
           </Card>
 
           {/* Content Tabs */}
-          <Tabs defaultValue="images" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="images" className="gap-2">
                 <ImageIcon className="h-4 w-4" />
                 Imagens ({images.length})
@@ -328,8 +436,13 @@ export default function ProjectDetailPage() {
                 <Video className="h-4 w-4" />
                 Vídeos ({videos.length})
               </TabsTrigger>
+              <TabsTrigger value="productions" className="gap-2">
+                <Layers className="h-4 w-4" />
+                Produções ({productions.length})
+              </TabsTrigger>
             </TabsList>
 
+            {/* Images tab */}
             <TabsContent value="images" className="mt-4">
               {images.length === 0 ? (
                 <Card className="border-dashed">
@@ -374,6 +487,7 @@ export default function ProjectDetailPage() {
               )}
             </TabsContent>
 
+            {/* Videos tab */}
             <TabsContent value="videos" className="mt-4">
               {videos.length === 0 ? (
                 <Card className="border-dashed">
@@ -416,6 +530,105 @@ export default function ProjectDetailPage() {
                 </div>
               )}
             </TabsContent>
+
+            {/* Productions tab */}
+            <TabsContent value="productions" className="mt-4">
+              <div className="mb-4 flex justify-end">
+                <Button
+                  size="sm"
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                  onClick={() => {
+                    setEditingProduction(null)
+                    setShowProductionForm(true)
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Nova Produção
+                </Button>
+              </div>
+
+              {productionsError ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      Erro ao carregar Produções. Tente recarregar a página.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : productions.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Nenhuma Produção ainda</h3>
+                    <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">
+                      Produções são unidades de trabalho criativo dentro deste Projeto.
+                    </p>
+                    <Button
+                      className="mt-4"
+                      onClick={() => {
+                        setEditingProduction(null)
+                        setShowProductionForm(true)
+                      }}
+                    >
+                      Criar primeira Produção
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {productions.map((prod) => (
+                    <Card key={prod.id} className="border-border/50 bg-card/30">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate font-semibold">{prod.title}</h3>
+                              <Badge variant="outline" className="shrink-0">
+                                {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                              {prod.intention}
+                            </p>
+                            <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              Atualizado em {formatDate(prod.updated_at)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setEditingProduction(prod)
+                                setShowProductionForm(true)
+                              }}
+                              aria-label="Editar Produção"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                setDeletingProductionId(prod.id)
+                                setShowDeleteProductionDialog(true)
+                              }}
+                              aria-label="Excluir Produção"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </div>
       </div>
@@ -428,14 +641,26 @@ export default function ProjectDetailPage() {
         onSuccess={handleEditSuccess}
       />
 
-      {/* Delete Confirmation Dialog */}
+      {/* Production Form Modal (create + edit) */}
+      <ProductionForm
+        open={showProductionForm}
+        onOpenChange={(open) => {
+          setShowProductionForm(open)
+          if (!open) setEditingProduction(null)
+        }}
+        projectId={projectId}
+        production={editingProduction}
+        onSuccess={handleProductionSuccess}
+      />
+
+      {/* Delete Project Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir projeto?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. Todas as imagens e vídeos
-              associados a este projeto perderão a referência.
+              Esta ação não pode ser desfeita. As imagens, vídeos e publicações associados
+              não serão excluídos — apenas perderão o vínculo com este projeto.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -446,6 +671,72 @@ export default function ProjectDetailPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Block dialog: project has productions */}
+      <Dialog open={showProductionsBlockDialog} onOpenChange={setShowProductionsBlockDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Projeto não pode ser excluído</DialogTitle>
+            <DialogDescription>
+              Este Projeto possui{' '}
+              <strong>
+                {productions.length} {productions.length === 1 ? 'Produção' : 'Produções'}
+              </strong>{' '}
+              e não pode ser excluído.
+              <br />
+              Remova as Produções antes de excluir o Projeto.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowProductionsBlockDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setShowProductionsBlockDialog(false)
+                setActiveTab('productions')
+              }}
+              className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+            >
+              Ir para Produções
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Production Confirmation */}
+      <AlertDialog
+        open={showDeleteProductionDialog}
+        onOpenChange={setShowDeleteProductionDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Produção?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A Produção{' '}
+              <strong>&quot;{deletingProduction?.title}&quot;</strong> será removida
+              permanentemente. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setShowDeleteProductionDialog(false)
+                setDeletingProductionId(null)
+              }}
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProduction}
+              disabled={isDeletingProduction}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingProduction ? 'Excluindo...' : 'Excluir'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
