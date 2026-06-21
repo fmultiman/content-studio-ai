@@ -41,42 +41,53 @@ function VideosPageContent() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
   const [showStoryboard, setShowStoryboard] = useState(false)
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Fetch projects and drafts on mount
   useEffect(() => {
+    let cancelled = false
+    setLoadError(null)
+
     const fetchData = async () => {
+      // Apply URL params before any await so the banner and project selector
+      // are visible even when subsequent async fetches fail.
+      const projectId = searchParams.get('project')
+      const prodId = searchParams.get('production')
+      if (projectId) setSelectedProject(projectId)
+      if (prodId) setProductionId(prodId)
+
       try {
         const supabase = createClient()
-        
-        // Fetch projects
+
         const { data: projectsData } = await supabase
           .from('projects')
           .select('*')
           .order('created_at', { ascending: false })
-        
-        if (projectsData) setProjects(projectsData)
-        setIsLoadingProjects(false)
+
+        if (!cancelled && projectsData) setProjects(projectsData)
+        if (!cancelled) setIsLoadingProjects(false)
 
         const draftsResponse = await fetch('/api/video-drafts?limit=5')
         const draftsData = await draftsResponse.json()
 
-        if (draftsResponse.ok) {
-          setDrafts(draftsData.drafts || [])
-        } else {
-          console.error('[v0] Video drafts load error:', draftsData)
+        if (!cancelled) {
+          if (draftsResponse.ok) {
+            setDrafts(draftsData.drafts || [])
+          } else {
+            console.error('[v0] Video drafts load error:', draftsData)
+          }
+          setIsLoadingDrafts(false)
         }
 
-        setIsLoadingDrafts(false)
-
-        // Load draft from URL if present
         const draftId = searchParams.get('draft')
-        if (draftId) {
+        if (draftId && !cancelled) {
           const draftResponse = await fetch(`/api/video-drafts?id=${draftId}`)
           const draftPayload = await draftResponse.json()
-          
-          if (draftResponse.ok && draftPayload.draft) {
+
+          if (draftResponse.ok && draftPayload.draft && !cancelled) {
             const draftData = draftPayload.draft as VideoDraft
             setCurrentDraftId(draftData.id)
             setVideoName(draftData.name)
@@ -87,33 +98,34 @@ function VideosPageContent() {
           }
         }
 
-        // Load project from URL if present
-        const projectId = searchParams.get('project')
-        if (projectId) {
-          setSelectedProject(projectId)
-        }
-
-        // Load production context from URL if present
-        const prodId = searchParams.get('production')
-        if (prodId) {
-          setProductionId(prodId)
+        if (prodId && !cancelled) {
           const prodRes = await fetch(`/api/productions/${prodId}`)
-          if (prodRes.ok) {
+          if (prodRes.ok && !cancelled) {
             const prodData = await prodRes.json()
-            setProductionTitle(prodData.production?.title || null)
-            setProductionProjectId(prodData.production?.project_id || null)
+            if (!cancelled) {
+              setProductionTitle(prodData.production?.title || null)
+              setProductionProjectId(prodData.production?.project_id || null)
+            }
           }
         }
+
+        if (!cancelled) setIsDataReady(true)
       } catch (error) {
         console.error('[v0] Video data load error:', error)
+        if (!cancelled) {
+          setLoadError('Não foi possível carregar os dados. Verifique sua conexão e tente novamente.')
+        }
       } finally {
-        setIsLoadingProjects(false)
-        setIsLoadingDrafts(false)
-        setIsDataReady(true)
+        if (!cancelled) {
+          setIsLoadingProjects(false)
+          setIsLoadingDrafts(false)
+        }
       }
     }
+
     fetchData()
-  }, [searchParams])
+    return () => { cancelled = true }
+  }, [searchParams, retryKey])
 
   useEffect(() => {
     if (!isDataReady) return
@@ -431,6 +443,17 @@ function VideosPageContent() {
       )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {loadError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+              <p className="text-sm text-destructive">{loadError}</p>
+              <button
+                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
+                onClick={() => setRetryKey((k) => k + 1)}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
           {/* Drafts Section */}
           {!isLoadingDrafts && drafts.length > 0 && (
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
