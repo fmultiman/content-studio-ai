@@ -342,8 +342,25 @@ Estas questões devem ser respondidas antes de avançar para o Nível 2:
 **Não implementar nenhuma das evoluções acima sem:**
 1. Responder às 6 questões da seção 9.
 2. Definir qual nível (1, 2 ou 3) é o alvo da próxima iteração.
-3. Escrever uma migração de dados para `posts` → `content_drafts` + `post_variants` (se necessário).
+3. Escrever uma migração de dados para `posts` → novas entidades (se necessário).
 4. Revisar todos os arquivos listados na seção 8.
 5. Obter aprovação explícita do responsável pelo produto.
 
 **A integração atual (Nível 1) está funcional e preservada. Qualquer modificação deve começar por aqui.**
+
+---
+
+## Status: Decisões Concluídas
+
+As 6 questões da Seção 9 foram respondidas formalmente em
+**[PUBLICATION_DOMAIN_DECISIONS.md](./PUBLICATION_DOMAIN_DECISIONS.md)** (2026-06-21).
+
+**Resumo das decisões principais:**
+- A entidade central se chama `EditorialContent` (não `ContentDraft`)
+- A adaptação de canal se chama `ChannelPiece` (não `PostVariant`)
+- O modelo é `EditorialContent → ChannelPiece → Distribution`
+- `Distribution` está adiada — requer integração com APIs externas
+- Um `Post` atual mapeia para 1 `EditorialContent` + 1 `ChannelPiece`
+- A tabela `posts` permanece congelada até migração formal aprovada
+
+Leia `PUBLICATION_DOMAIN_DECISIONS.md` antes de qualquer implementação.

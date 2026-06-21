@@ -80,18 +80,56 @@ Leia antes de escrever qualquer código para a entidade `Production`. Contém:
 
 ---
 
+### 6. [PUBLICATION_DOMAIN_DISCOVERY.md](./PUBLICATION_DOMAIN_DISCOVERY.md)
+**Descoberta de domínio — Publicações**
+
+Leia antes de qualquer trabalho no domínio de publicações. Diagnóstico da entidade
+`Post` híbrida existente: por que mistura conteúdo editorial, adaptação de canal e
+distribuição numa única entidade. Inclui 10 cenários mandatórios, avaliação de
+nomenclatura e modelo progressivo em 3 níveis (MVP / Próxima Evolução / Futuro).
+
+Congelado: nenhuma nova funcionalidade na entidade `Post` até decisões de domínio
+concluídas.
+
+---
+
+### 7. [PUBLICATION_DOMAIN_DECISIONS.md](./PUBLICATION_DOMAIN_DECISIONS.md)
+**Decisões formais de domínio — Publicações**
+
+Leia antes de qualquer implementação das entidades de publicação. Converte o
+mapeamento exploratório da descoberta em 15 decisões formais (PUB-D1 a PUB-D15):
+
+- PUB-D1/D2: Por que `EditorialContent` e `ChannelPiece` (não `ContentDraft`, não `PostVariant`)
+- PUB-D3: Modelo central `EditorialContent → ChannelPiece → Distribution`
+- PUB-D4: `Distribution` adiada — requer integração com APIs externas
+- PUB-D5/D6/D7: Restrições de FK (`project_id` NOT NULL, `production_id` SET NULL, `editorial_content_id` CASCADE)
+- PUB-D8–D15: Canal, cardinalidades, aprovação, assets, legado `Post`, congelamento
+
+Inclui mapeamento do legado `Post`, ciclo de vida de cada entidade, fluxos de uso
+(publicação rápida e pós-vídeo), estrutura da aba Publicações e escopo da próxima fase.
+
+---
+
+## Relação entre os documentos
+
+---
+
 ## Relação entre os documentos
 
 ```
-ARCHITECTURE.md                →  "o que existe hoje"
+ARCHITECTURE.md                   →  "o que existe hoje"
      ↓
-DOMAIN_EVOLUTION.md            →  "o que deve existir e por quê"
+DOMAIN_EVOLUTION.md               →  "o que deve existir e por quê"
      ↓
-PRODUCTION_LIFECYCLE.md        →  "como a nova entidade se comporta"
+PRODUCTION_LIFECYCLE.md           →  "como a Production se comporta"
      ↓
-PRODUCTION_DECISIONS.md        →  "o que decidir antes de implementar"
+PRODUCTION_DECISIONS.md           →  "o que decidir antes de implementar Production"
      ↓
-PRODUCTION_IMPLEMENTATION_PLAN →  "como implementar, em que ordem, com que critérios"
+PRODUCTION_IMPLEMENTATION_PLAN    →  "como implementar Production, em que ordem"
+     ↓
+PUBLICATION_DOMAIN_DISCOVERY.md   →  "diagnóstico do Post híbrido e 10 cenários"
+     ↓
+PUBLICATION_DOMAIN_DECISIONS.md   →  "decisões formais do domínio de publicações"
 ```
 
 ---
@@ -161,6 +199,17 @@ para a base de conhecimento da Fase 2.
 - Como representar redes de Produções derivadas na UI sem criar complexidade?
 - Produções derivadas herdam `evaluation_mode` da fonte ou do Projeto?
 - UI de migração de Produções entre Projetos.
+
+**Respondidas em PUBLICATION_DOMAIN_DECISIONS.md (prontas para o Incremento de Publicações):**
+- ~~Como separar o `Post` híbrido em responsabilidades distintas?~~ → PUB-D3
+- ~~A entidade central de conteúdo se chama `ContentDraft` ou o quê?~~ → PUB-D1 (`EditorialContent`)
+- ~~A adaptação de canal se chama `PostVariant` ou o quê?~~ → PUB-D2 (`ChannelPiece`)
+- ~~Quem decide o canal — o conteúdo ou a adaptação?~~ → PUB-D8 (`ChannelPiece`)
+- ~~`EditorialContent` pode existir sem `ChannelPiece`?~~ → PUB-D9 (sim)
+- ~~O que a aba Publicações da Produção exibe?~~ → PUB-D10 (`EditorialContent`s com `ChannelPiece`s expandíveis)
+- ~~Aprovação formal é necessária nesta fase?~~ → PUB-D11 (não — manual)
+- ~~`Distribution` deve ser implementada agora?~~ → PUB-D4 (não — adiada)
+- ~~Como `Post` mapeia para o novo modelo?~~ → PUB-D13 (1 Post → 1 EditorialContent + 1 ChannelPiece)
 
 **Pendentes para versões multi-usuário (futuro):**
 - Quem tem autoridade para aprovação de entrega em equipes?
