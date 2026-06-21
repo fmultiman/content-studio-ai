@@ -581,7 +581,11 @@ export default function ProjectDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {productions.map((prod) => (
-                    <Card key={prod.id} className="border-border/50 bg-card/30">
+                    <Card
+                      key={prod.id}
+                      className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
+                      onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
@@ -604,7 +608,8 @@ export default function ProjectDetailPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 setEditingProduction(prod)
                                 setShowProductionForm(true)
                               }}
@@ -616,7 +621,8 @@ export default function ProjectDetailPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation()
                                 setDeletingProductionId(prod.id)
                                 setShowDeleteProductionDialog(true)
                               }}
