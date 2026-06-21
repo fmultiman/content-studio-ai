@@ -30,6 +30,7 @@ function VideosPageContent() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
   const [productionId, setProductionId] = useState<string | null>(null)
   const [productionTitle, setProductionTitle] = useState<string | null>(null)
+  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -100,6 +101,7 @@ function VideosPageContent() {
           if (prodRes.ok) {
             const prodData = await prodRes.json()
             setProductionTitle(prodData.production?.title || null)
+            setProductionProjectId(prodData.production?.project_id || null)
           }
         }
       } catch (error) {
@@ -142,6 +144,7 @@ function VideosPageContent() {
             id: currentDraftId,
             name: draftName,
             projectId: selectedProject,
+            productionId,
             scenes,
           }),
         })
@@ -319,7 +322,18 @@ function VideosPageContent() {
     setCurrentDraftId(draft.id)
     setVideoName(draft.name)
     setSelectedProject(draft.project_id)
-    if (draft.production_id) setProductionId(draft.production_id)
+    if (draft.production_id && !productionId) {
+      setProductionId(draft.production_id)
+      fetch(`/api/productions/${draft.production_id}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => {
+          if (d?.production) {
+            setProductionTitle(d.production.title || null)
+            setProductionProjectId(d.production.project_id || null)
+          }
+        })
+        .catch(() => null)
+    }
     setScenes(draft.scenes || [])
 
     toast({
@@ -363,10 +377,9 @@ function VideosPageContent() {
   const clearForm = () => {
     setVideoName('')
     setScenes([])
-    setSelectedProject(null)
-    setProductionId(null)
-    setProductionTitle(null)
     setCurrentDraftId(null)
+    // Production context and project are preserved intentionally:
+    // creating a new video within a Production keeps the workspace context.
   }
 
   const handleNewVideo = async () => {
@@ -398,9 +411,9 @@ function VideosPageContent() {
             size="sm"
             className="gap-2 text-muted-foreground hover:text-foreground"
             onClick={() => {
-              const projectId = selectedProject
-              if (projectId) {
-                router.push(`/projetos/${projectId}/producoes/${productionId}`)
+              const projId = productionProjectId || selectedProject
+              if (projId && productionId) {
+                router.push(`/projetos/${projId}/producoes/${productionId}`)
               } else {
                 router.back()
               }

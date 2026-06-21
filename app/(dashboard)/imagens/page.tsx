@@ -35,6 +35,7 @@ function ImagesPageContent() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
   const [productionId, setProductionId] = useState<string | null>(null)
   const [productionTitle, setProductionTitle] = useState<string | null>(null)
+  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -235,7 +236,19 @@ function ImagesPageContent() {
     setCurrentDraftId(draft.id)
     setUserInput(draft.user_input)
     setSelectedProject(draft.project_id)
-    if (draft.production_id) setProductionId(draft.production_id)
+    if (draft.production_id && !productionId) {
+      setProductionId(draft.production_id)
+      // Fetch title and project for back button when loading a production-linked draft outside URL context
+      fetch(`/api/productions/${draft.production_id}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => {
+          if (d?.production) {
+            setProductionTitle(d.production.title || null)
+            setProductionProjectId(d.production.project_id || null)
+          }
+        })
+        .catch(() => null)
+    }
     setGeneratedPrompt(draft.generated_prompt || '')
     setGeneratedPromptPt(draft.generated_prompt_pt || '')
     setAutoMode(draft.auto_mode)
@@ -363,11 +376,11 @@ function ImagesPageContent() {
       const prodId = searchParams.get('production')
       if (prodId) {
         setProductionId(prodId)
-        // Fetch production title for the back button label
         const prodRes = await fetch(`/api/productions/${prodId}`)
         if (prodRes.ok) {
           const prodData = await prodRes.json()
           setProductionTitle(prodData.production?.title || null)
+          setProductionProjectId(prodData.production?.project_id || null)
         }
       }
 
@@ -448,9 +461,6 @@ function ImagesPageContent() {
     setPromptDetails(null)
     setImageUrl(null)
     setCurrentImage(null)
-    setSelectedProject(null)
-    setProductionId(null)
-    setProductionTitle(null)
     setCurrentDraftId(null)
     setAutoMode(false)
     setImageStatus('draft')
@@ -458,6 +468,8 @@ function ImagesPageContent() {
     setCurrentEvaluation(null)
     setGenerationAttempts([])
     setCurrentAttempt(1)
+    // Production context and project are preserved intentionally:
+    // creating a new image within a Production keeps the workspace context.
   }
 
   const handleNewImage = async () => {
@@ -1156,9 +1168,9 @@ function ImagesPageContent() {
             size="sm"
             className="gap-2 text-muted-foreground hover:text-foreground"
             onClick={() => {
-              const projectId = selectedProject
-              if (projectId) {
-                router.push(`/projetos/${projectId}/producoes/${productionId}`)
+              const projId = productionProjectId || selectedProject
+              if (projId && productionId) {
+                router.push(`/projetos/${projId}/producoes/${productionId}`)
               } else {
                 router.back()
               }

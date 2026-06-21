@@ -132,6 +132,12 @@ export async function GET(request: Request) {
 
     const productionId = searchParams.get('productionId')
 
+    // Validate UUID format when productionId filter is used
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (productionId && !UUID_RE.test(productionId)) {
+      return NextResponse.json({ error: 'productionId inválido.' }, { status: 400 })
+    }
+
     let query = supabase
       .from('image_drafts')
       .select('*')
@@ -139,7 +145,8 @@ export async function GET(request: Request) {
       .order('updated_at', { ascending: false })
 
     if (productionId) {
-      query = query.eq('production_id', productionId)
+      // No pagination infrastructure yet; 200 is a defensive cap for MVP
+      query = query.eq('production_id', productionId).limit(200)
     } else if (limit) {
       const parsedLimit = Number(limit)
       query = query.limit(Number.isFinite(parsedLimit) ? parsedLimit : 5)
@@ -275,8 +282,23 @@ export async function PATCH(request: Request) {
 
     // Mode: only update production_id (link/unlink), no full draft overwrite
     if (body.linkOnly === true) {
+      const allowedKeys = new Set(['id', 'productionId', 'linkOnly'])
+      const extraKeys = Object.keys(body).filter((k) => !allowedKeys.has(k))
+      if (extraKeys.length > 0) {
+        return NextResponse.json({ error: 'Campos não permitidos em modo linkOnly.' }, { status: 400 })
+      }
+
       if (body.productionId) {
-        const validationError = await validateProductionOwnership(supabase, user.id, body.productionId)
+        // Fetch artifact project_id to validate project coherence
+        const { data: artifact } = await supabase
+          .from('image_drafts')
+          .select('project_id')
+          .eq('id', body.id)
+          .eq('user_id', user.id)
+          .single()
+        const validationError = await validateProductionOwnership(
+          supabase, user.id, body.productionId, artifact?.project_id,
+        )
         if (validationError) {
           return NextResponse.json({ error: validationError }, { status: 400 })
         }
