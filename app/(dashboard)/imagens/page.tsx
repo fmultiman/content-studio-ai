@@ -10,7 +10,7 @@ import { ImageResult } from '@/components/images/image-result'
 import { generateImagePrompt, regeneratePrompt } from '@/lib/ai-simulator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileText, ChevronRight, Loader2 } from 'lucide-react'
+import { FileText, ChevronRight, Loader2, ArrowLeft } from 'lucide-react'
 import { GenerationHistory } from '@/components/images/generation-history'
 import type { Project, Image as ImageType, ImageDraft, ImageEvaluation, GenerationAttempt } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
@@ -33,6 +33,8 @@ function ImagesPageContent() {
   
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [productionId, setProductionId] = useState<string | null>(null)
+  const [productionTitle, setProductionTitle] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -147,6 +149,7 @@ function ImagesPageContent() {
       id: currentDraftId,
       name: draftName,
       projectId: selectedProject,
+      productionId,
       userInput,
       generatedPrompt: generatedPrompt || null,
       generatedPromptPt: generatedPromptPt || null,
@@ -232,6 +235,7 @@ function ImagesPageContent() {
     setCurrentDraftId(draft.id)
     setUserInput(draft.user_input)
     setSelectedProject(draft.project_id)
+    if (draft.production_id) setProductionId(draft.production_id)
     setGeneratedPrompt(draft.generated_prompt || '')
     setGeneratedPromptPt(draft.generated_prompt_pt || '')
     setAutoMode(draft.auto_mode)
@@ -282,6 +286,7 @@ function ImagesPageContent() {
     currentAttempt,
     imageStatus,
     selectedProject,
+    productionId,
     autoMode,
     imageUrl,
     selectedModel,
@@ -353,6 +358,19 @@ function ImagesPageContent() {
       if (projectId) {
         setSelectedProject(projectId)
       }
+
+      // Load production context from URL if present
+      const prodId = searchParams.get('production')
+      if (prodId) {
+        setProductionId(prodId)
+        // Fetch production title for the back button label
+        const prodRes = await fetch(`/api/productions/${prodId}`)
+        if (prodRes.ok) {
+          const prodData = await prodRes.json()
+          setProductionTitle(prodData.production?.title || null)
+        }
+      }
+
       setIsDataReady(true)
     }
     fetchData()
@@ -431,6 +449,8 @@ function ImagesPageContent() {
     setImageUrl(null)
     setCurrentImage(null)
     setSelectedProject(null)
+    setProductionId(null)
+    setProductionTitle(null)
     setCurrentDraftId(null)
     setAutoMode(false)
     setImageStatus('draft')
@@ -1129,6 +1149,31 @@ function ImagesPageContent() {
   return (
     <>
       <Header title="Geração de Imagens" />
+      {productionId && (
+        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const projectId = selectedProject
+              if (projectId) {
+                router.push(`/projetos/${projectId}/producoes/${productionId}`)
+              } else {
+                router.back()
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Produção
+          </Button>
+          {productionTitle && (
+            <span className="text-sm text-muted-foreground">
+              · {productionTitle}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
           {/* Drafts Section */}

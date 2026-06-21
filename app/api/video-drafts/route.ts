@@ -2,6 +2,26 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { VideoScene } from '@/lib/types'
 
+async function validateProductionOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  productionId: unknown,
+  projectId?: unknown,
+): Promise<string | null> {
+  if (!productionId || typeof productionId !== 'string') return null
+  const { data, error } = await supabase
+    .from('productions')
+    .select('id, project_id')
+    .eq('id', productionId)
+    .eq('user_id', userId)
+    .single()
+  if (error || !data) return 'Production não encontrada ou acesso negado.'
+  if (projectId && typeof projectId === 'string' && data.project_id !== projectId) {
+    return 'Production não pertence a este Projeto.'
+  }
+  return null
+}
+
 function getDraftName(name: unknown, scenes: VideoScene[]) {
   if (typeof name === 'string' && name.trim()) {
     return name.trim()
@@ -39,6 +59,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     const limit = Number(searchParams.get('limit') || 5)
+    const productionId = searchParams.get('productionId')
 
     if (id) {
       const { data, error } = await supabase
@@ -58,12 +79,19 @@ export async function GET(request: Request) {
       return NextResponse.json({ draft: data })
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('video_drafts')
       .select('*')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
-      .limit(Number.isFinite(limit) ? limit : 5)
+
+    if (productionId) {
+      query = query.eq('production_id', productionId)
+    } else {
+      query = query.limit(Number.isFinite(limit) ? limit : 5)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       return NextResponse.json(
@@ -94,14 +122,26 @@ export async function POST(request: Request) {
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
 
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      user_id: user.id,
+      name,
+      project_id: body.projectId || null,
+      scenes,
+    }
+    if (Object.hasOwn(body, 'productionId')) {
+      insertPayload.production_id = body.productionId || null
+    }
+
     const { data, error } = await supabase
       .from('video_drafts')
-      .insert({
-        user_id: user.id,
-        name,
-        project_id: body.projectId || null,
-        scenes,
-      })
+      .insert(insertPayload)
       .select()
       .single()
 
@@ -139,16 +179,49 @@ export async function PATCH(request: Request) {
       )
     }
 
+    // Mode: only update production_id (link/unlink)
+    if (body.linkOnly === true) {
+      if (body.productionId) {
+        const validationError = await validateProductionOwnership(supabase, user.id, body.productionId)
+        if (validationError) {
+          return NextResponse.json({ error: validationError }, { status: 400 })
+        }
+      }
+      const { data, error } = await supabase
+        .from('video_drafts')
+        .update({ production_id: body.productionId || null })
+        .eq('id', body.id)
+        .eq('user_id', user.id)
+        .select()
+        .single()
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.json({ draft: data })
+    }
+
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
+    }
+
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
 
+    const updatePayload: Record<string, unknown> = {
+      name,
+      project_id: body.projectId || null,
+      scenes,
+    }
+    if (Object.hasOwn(body, 'productionId')) {
+      updatePayload.production_id = body.productionId || null
+    }
+
     const { data, error } = await supabase
       .from('video_drafts')
-      .update({
-        name,
-        project_id: body.projectId || null,
-        scenes,
-      })
+      .update(updatePayload)
       .eq('id', body.id)
       .eq('user_id', user.id)
       .select()

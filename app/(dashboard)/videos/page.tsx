@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, VideoScene, VideoDraft } from '@/lib/types'
 
@@ -28,6 +28,8 @@ function VideosPageContent() {
   
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [productionId, setProductionId] = useState<string | null>(null)
+  const [productionTitle, setProductionTitle] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -88,6 +90,17 @@ function VideosPageContent() {
         const projectId = searchParams.get('project')
         if (projectId) {
           setSelectedProject(projectId)
+        }
+
+        // Load production context from URL if present
+        const prodId = searchParams.get('production')
+        if (prodId) {
+          setProductionId(prodId)
+          const prodRes = await fetch(`/api/productions/${prodId}`)
+          if (prodRes.ok) {
+            const prodData = await prodRes.json()
+            setProductionTitle(prodData.production?.title || null)
+          }
         }
       } catch (error) {
         console.error('[v0] Video data load error:', error)
@@ -162,7 +175,7 @@ function VideosPageContent() {
       window.clearTimeout(timeoutId)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [videoName, scenes, selectedProject, currentDraftId, isDataReady])
+  }, [videoName, scenes, selectedProject, productionId, currentDraftId, isDataReady])
 
   const addScene = () => {
     const newScene: VideoScene = {
@@ -254,6 +267,7 @@ function VideosPageContent() {
           id: currentDraftId,
           name: draftName,
           projectId: selectedProject,
+          productionId,
           scenes,
         }),
       })
@@ -265,7 +279,8 @@ function VideosPageContent() {
 
       if (data.draft) {
         setCurrentDraftId(data.draft.id)
-        setDrafts((prev) => {
+          if (data.draft.production_id) setProductionId(data.draft.production_id)
+          setDrafts((prev) => {
           const withoutCurrent = prev.filter((draft) => draft.id !== data.draft.id)
           return [data.draft, ...withoutCurrent].slice(0, 5)
         })
@@ -304,6 +319,7 @@ function VideosPageContent() {
     setCurrentDraftId(draft.id)
     setVideoName(draft.name)
     setSelectedProject(draft.project_id)
+    if (draft.production_id) setProductionId(draft.production_id)
     setScenes(draft.scenes || [])
 
     toast({
@@ -348,6 +364,8 @@ function VideosPageContent() {
     setVideoName('')
     setScenes([])
     setSelectedProject(null)
+    setProductionId(null)
+    setProductionTitle(null)
     setCurrentDraftId(null)
   }
 
@@ -373,6 +391,31 @@ function VideosPageContent() {
   return (
     <>
       <Header title="Geração de Vídeos" />
+      {productionId && (
+        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const projectId = selectedProject
+              if (projectId) {
+                router.push(`/projetos/${projectId}/producoes/${productionId}`)
+              } else {
+                router.back()
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Produção
+          </Button>
+          {productionTitle && (
+            <span className="text-sm text-muted-foreground">
+              · {productionTitle}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
           {/* Drafts Section */}

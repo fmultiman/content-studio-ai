@@ -55,6 +55,10 @@ function buildDraftPayload(body: Record<string, unknown>, includePromptPt = true
     image_status: body.imageStatus || 'draft',
   }
 
+  if (Object.hasOwn(body, 'productionId')) {
+    payload.production_id = body.productionId || null
+  }
+
   if (Object.hasOwn(body, 'imageUrl')) {
     payload.image_url = body.imageUrl || null
   }
@@ -126,13 +130,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ draft: data })
     }
 
+    const productionId = searchParams.get('productionId')
+
     let query = supabase
       .from('image_drafts')
       .select('*')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
 
-    if (limit) {
+    if (productionId) {
+      query = query.eq('production_id', productionId)
+    } else if (limit) {
       const parsedLimit = Number(limit)
       query = query.limit(Number.isFinite(parsedLimit) ? parsedLimit : 5)
     }
@@ -156,6 +164,26 @@ export async function GET(request: Request) {
   }
 }
 
+async function validateProductionOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  productionId: unknown,
+  projectId?: unknown,
+): Promise<string | null> {
+  if (!productionId || typeof productionId !== 'string') return null
+  const { data, error } = await supabase
+    .from('productions')
+    .select('id, project_id')
+    .eq('id', productionId)
+    .eq('user_id', userId)
+    .single()
+  if (error || !data) return 'Production não encontrada ou acesso negado.'
+  if (projectId && typeof projectId === 'string' && data.project_id !== projectId) {
+    return 'Production não pertence a este Projeto.'
+  }
+  return null
+}
+
 export async function POST(request: Request) {
   try {
     const { supabase, user } = await getAuthenticatedClient()
@@ -171,6 +199,13 @@ export async function POST(request: Request) {
         { error: 'Conteudo do rascunho obrigatorio' },
         { status: 400 },
       )
+    }
+
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
     }
 
     const payload = await attachImageFromReference(supabase, user.id, body, {
@@ -236,6 +271,34 @@ export async function PATCH(request: Request) {
         { error: 'ID do rascunho obrigatorio' },
         { status: 400 },
       )
+    }
+
+    // Mode: only update production_id (link/unlink), no full draft overwrite
+    if (body.linkOnly === true) {
+      if (body.productionId) {
+        const validationError = await validateProductionOwnership(supabase, user.id, body.productionId)
+        if (validationError) {
+          return NextResponse.json({ error: validationError }, { status: 400 })
+        }
+      }
+      const { data, error } = await supabase
+        .from('image_drafts')
+        .update({ production_id: body.productionId || null })
+        .eq('id', body.id)
+        .eq('user_id', user.id)
+        .select()
+        .single()
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.json({ draft: data })
+    }
+
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
     }
 
     const payload = await attachImageFromReference(

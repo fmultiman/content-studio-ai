@@ -5,6 +5,7 @@ type PostBody = {
   id?: string
   name?: string
   projectId?: string | null
+  productionId?: string | null
   channel?: string
   description?: string | null
   aiContext?: string | null
@@ -18,6 +19,27 @@ type PostBody = {
   mimeType?: string | null
   postImages?: unknown[] | null
   status?: string
+  linkOnly?: boolean
+}
+
+async function validateProductionOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  productionId: unknown,
+  projectId?: unknown,
+): Promise<string | null> {
+  if (!productionId || typeof productionId !== 'string') return null
+  const { data, error } = await supabase
+    .from('productions')
+    .select('id, project_id')
+    .eq('id', productionId)
+    .eq('user_id', userId)
+    .single()
+  if (error || !data) return 'Production não encontrada ou acesso negado.'
+  if (projectId && typeof projectId === 'string' && data.project_id !== projectId) {
+    return 'Production não pertence a este Projeto.'
+  }
+  return null
 }
 
 async function getAuthenticatedClient() {
@@ -53,7 +75,7 @@ function normalizeStatus(status: unknown) {
 }
 
 function buildPostPayload(body: PostBody) {
-  return {
+  const payload: Record<string, unknown> = {
     name: body.name?.trim() || 'Post sem titulo',
     project_id: body.projectId || null,
     channel: normalizeChannel(body.channel),
@@ -70,6 +92,10 @@ function buildPostPayload(body: PostBody) {
     post_images: Array.isArray(body.postImages) ? body.postImages : [],
     status: normalizeStatus(body.status),
   }
+  if (Object.hasOwn(body, 'productionId')) {
+    payload.production_id = body.productionId || null
+  }
+  return payload
 }
 
 export async function GET(request: Request) {
@@ -82,6 +108,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
+    const productionId = searchParams.get('productionId')
 
     if (id) {
       const { data, error } = await supabase
@@ -98,11 +125,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ post: data })
     }
 
-    const { data, error } = await supabase
+    let postsQuery = supabase
       .from('posts')
       .select('*')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
+
+    if (productionId) {
+      postsQuery = postsQuery.eq('production_id', productionId)
+    }
+
+    const { data, error } = await postsQuery
 
     if (error) {
       return NextResponse.json({ error: error.message, details: error }, { status: 400 })
@@ -127,6 +160,14 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as PostBody
+
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
+    }
+
     const payload = {
       user_id: user.id,
       ...buildPostPayload(body),
@@ -164,6 +205,34 @@ export async function PATCH(request: Request) {
 
     if (!body.id) {
       return NextResponse.json({ error: 'ID obrigatorio' }, { status: 400 })
+    }
+
+    // Mode: only update production_id (link/unlink)
+    if (body.linkOnly === true) {
+      if (body.productionId) {
+        const validationError = await validateProductionOwnership(supabase, user.id, body.productionId)
+        if (validationError) {
+          return NextResponse.json({ error: validationError }, { status: 400 })
+        }
+      }
+      const { data, error } = await supabase
+        .from('posts')
+        .update({ production_id: body.productionId || null })
+        .eq('id', body.id)
+        .eq('user_id', user.id)
+        .select()
+        .single()
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      return NextResponse.json({ post: data })
+    }
+
+    if (body.productionId) {
+      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
     }
 
     const { data, error } = await supabase
