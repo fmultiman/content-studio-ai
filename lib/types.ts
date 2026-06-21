@@ -253,7 +253,65 @@ export interface VideoDraft {
   updated_at: string
 }
 
+// ---------------------------------------------------------------------------
+// Publication domain types (P1 — PUBLICATION_DOMAIN_DECISIONS.md Rev. 2)
+// ---------------------------------------------------------------------------
+
+export type PublicationChannel =
+  | 'instagram'
+  | 'youtube'
+  | 'whatsapp'
+  | 'linkedin'
+  | 'x'
+  | 'tiktok'
+
+export type PublicationFormat =
+  | 'feed'
+  | 'story'
+  | 'reel'
+  | 'short'
+  | 'video_description'
+  | 'post'
+  | 'channel_message'
+  | 'carousel'
+  | 'article'
+
+export type EditorialContentStatus = 'draft' | 'ready' | 'archived'
+
+export type ChannelPieceStatus = 'draft' | 'ready' | 'approved' | 'archived'
+
+export interface EditorialContent {
+  id: string
+  user_id: string
+  project_id: string
+  production_id: string | null
+  title: string
+  body: string | null
+  ai_context: string | null
+  status: EditorialContentStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ChannelPiece {
+  id: string
+  user_id: string
+  editorial_content_id: string
+  channel: PublicationChannel
+  format: PublicationFormat
+  title: string | null
+  body: string | null
+  cta: string | null
+  hashtags: string | null
+  status: ChannelPieceStatus
+  created_at: string
+  updated_at: string
+}
+
+// ---------------------------------------------------------------------------
 // API Response types
+// ---------------------------------------------------------------------------
+
 export interface ApiResponse<T> {
   data: T | null
   error: string | null

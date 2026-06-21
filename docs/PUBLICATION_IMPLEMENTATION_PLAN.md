@@ -198,10 +198,38 @@ Estas inconsistências foram identificadas e registradas. **Não bloqueiam P1–
 
 ---
 
-## P1 — Schema e Tipos
+## P1 — Schema e Tipos ✓ CONCLUÍDO — branch feat/publication-p1-schema
 
 **Objetivo:** criar as tabelas `editorial_contents` e `channel_pieces` no banco e os
 tipos TypeScript correspondentes em `lib/types.ts`.
+
+**Status:** concluído. Commit `feat: add publication domain schema and types` em `feat/publication-p1-schema`.
+
+**Arquivos reais criados/modificados:**
+
+| Arquivo | Ação |
+|---------|------|
+| `scripts/021_create_publication_entities.sql` | Criado |
+| `lib/types.ts` | Atualizado — adicionadas interfaces e tipos de publicação |
+| `lib/publication-channels.ts` | Criado (antecipado de P2 — ver divergências abaixo) |
+
+**Divergências entre plano e implementação:**
+
+- `lib/publication-channels.ts` foi criado em P1 (o plano original o colocava em P2).
+  Razão: os tipos em `lib/types.ts` referenciavam `PublicationChannel` e `PublicationFormat`,
+  e o arquivo de constantes runtime é necessário desde P1 para manter consistência entre
+  tipos de compilação e valores aceitos pelo banco. A API em P2 já encontrará o arquivo pronto.
+
+**Resultado de typecheck (`pnpm exec tsc --noEmit`):**
+- 1 erro pré-existente em `app/(dashboard)/imagens/rascunhos/page.tsx:43` (TS7006 — parâmetro `d` sem tipo)
+- 0 erros introduzidos por P1
+
+**Resultado de build (`pnpm build`):**
+- Build bem-sucedido — 30 páginas geradas sem erros
+
+**Migration aplicada no Supabase:** não — aguarda autorização explícita.
+
+
 
 ### Escopo
 
