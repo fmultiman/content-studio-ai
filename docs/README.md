@@ -94,19 +94,41 @@ concluídas.
 ---
 
 ### 7. [PUBLICATION_DOMAIN_DECISIONS.md](./PUBLICATION_DOMAIN_DECISIONS.md)
-**Decisões formais de domínio — Publicações**
+**Decisões formais de domínio — Publicações (Rev. 2)**
 
 Leia antes de qualquer implementação das entidades de publicação. Converte o
-mapeamento exploratório da descoberta em 15 decisões formais (PUB-D1 a PUB-D15):
+mapeamento exploratório da descoberta em 20 decisões formais (PUB-D1 a PUB-D20):
 
 - PUB-D1/D2: Por que `EditorialContent` e `ChannelPiece` (não `ContentDraft`, não `PostVariant`)
 - PUB-D3: Modelo central `EditorialContent → ChannelPiece → Distribution`
 - PUB-D4: `Distribution` adiada — requer integração com APIs externas
-- PUB-D5/D6/D7: Restrições de FK (`project_id` NOT NULL, `production_id` SET NULL, `editorial_content_id` CASCADE)
+- PUB-D5/D6/D7: Restrições de FK (`project_id` NOT NULL RESTRICT, `production_id` SET NULL, `editorial_content_id` CASCADE)
 - PUB-D8–D15: Canal, cardinalidades, aprovação, assets, legado `Post`, congelamento
+- PUB-D16: `channel` e `format` são campos separados; `PublicationType` não é herdado
+- PUB-D17: `ChannelPiece.status` não inclui `published` — ato de publicação pertence a `Distribution`
+- PUB-D18: Campo de texto adaptado se chama `body` (não `feed_text`)
+- PUB-D19: `image_url` não entra em `ChannelPiece` em P1–P5
+- PUB-D20: Rotas aprovadas — `/publicacoes` (hub), `/projetos/[id]/conteudos/[id]` (detalhe)
 
-Inclui mapeamento do legado `Post`, ciclo de vida de cada entidade, fluxos de uso
-(publicação rápida e pós-vídeo), estrutura da aba Publicações e escopo da próxima fase.
+Inclui mapeamento do legado `Post` com channel+format, ciclo de vida de cada entidade,
+fluxos de uso (publicação rápida e pós-vídeo), estrutura da aba Publicações, rotas
+aprovadas e escopo de P1–P6.
+
+---
+
+### 8. [PUBLICATION_IMPLEMENTATION_PLAN.md](./PUBLICATION_IMPLEMENTATION_PLAN.md)
+**Plano incremental de implementação — Publicações**
+
+Leia antes de escrever qualquer código para as entidades de publicação. Contém:
+
+- Estado confirmado do código atual (tabelas, APIs, padrões de FK e RLS)
+- Schema completo de `editorial_contents` e `channel_pieces` com SQL da migration 021
+- Valores válidos de `channel` e `format` com mapeamento do legado `PublicationType`
+- Rotas aprovadas e comportamento de cada uma
+- Estratégia de migração de `posts` (condicionada a auditoria — não em P1–P6)
+- 6 incrementos (P1–P6) com: objetivo, escopo, dependências, arquivos afetados,
+  critérios de aceite, testes, riscos e rollback individuais
+- Dívida documental registrada (não bloqueia implementação)
 
 ---
 
@@ -129,7 +151,9 @@ PRODUCTION_IMPLEMENTATION_PLAN    →  "como implementar Production, em que orde
      ↓
 PUBLICATION_DOMAIN_DISCOVERY.md   →  "diagnóstico do Post híbrido e 10 cenários"
      ↓
-PUBLICATION_DOMAIN_DECISIONS.md   →  "decisões formais do domínio de publicações"
+PUBLICATION_DOMAIN_DECISIONS.md   →  "decisões formais do domínio de publicações (Rev. 2)"
+     ↓
+PUBLICATION_IMPLEMENTATION_PLAN   →  "como implementar publicações, em que ordem (P1–P6)"
 ```
 
 ---
@@ -200,7 +224,7 @@ para a base de conhecimento da Fase 2.
 - Produções derivadas herdam `evaluation_mode` da fonte ou do Projeto?
 - UI de migração de Produções entre Projetos.
 
-**Respondidas em PUBLICATION_DOMAIN_DECISIONS.md (prontas para o Incremento de Publicações):**
+**Respondidas em PUBLICATION_DOMAIN_DECISIONS.md Rev. 2 (prontas para implementação P1–P6):**
 - ~~Como separar o `Post` híbrido em responsabilidades distintas?~~ → PUB-D3
 - ~~A entidade central de conteúdo se chama `ContentDraft` ou o quê?~~ → PUB-D1 (`EditorialContent`)
 - ~~A adaptação de canal se chama `PostVariant` ou o quê?~~ → PUB-D2 (`ChannelPiece`)
@@ -210,6 +234,11 @@ para a base de conhecimento da Fase 2.
 - ~~Aprovação formal é necessária nesta fase?~~ → PUB-D11 (não — manual)
 - ~~`Distribution` deve ser implementada agora?~~ → PUB-D4 (não — adiada)
 - ~~Como `Post` mapeia para o novo modelo?~~ → PUB-D13 (1 Post → 1 EditorialContent + 1 ChannelPiece)
+- ~~Canal e formato devem ser campos separados?~~ → PUB-D16 (sim; `PublicationType` não é herdado)
+- ~~`ChannelPiece.status` deve ter `published`?~~ → PUB-D17 (não; pertence a `Distribution`)
+- ~~O campo de texto adaptado se chama `feed_text`?~~ → PUB-D18 (não; se chama `body`)
+- ~~`image_url` entra no schema de `ChannelPiece`?~~ → PUB-D19 (não em P1–P5)
+- ~~Qual é a rota global de publicações?~~ → PUB-D20 (`/publicacoes` e `/projetos/[id]/conteudos/[id]`)
 
 **Pendentes para versões multi-usuário (futuro):**
 - Quem tem autoridade para aprovação de entrega em equipes?

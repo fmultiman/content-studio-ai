@@ -1,11 +1,11 @@
 # Content Agent Studio — Decisões de Domínio: Publicações
-**Fase 2 · Pós-Descoberta · Junho 2026**
+**Fase 2 · Pós-Descoberta · Revisão 2 · Junho 2026**
 
 > Este documento converte o mapeamento exploratório de `PUBLICATION_DOMAIN_DISCOVERY.md`
-> em decisões formais de domínio.
+> em decisões formais de domínio e incorpora os refinamentos da segunda sessão de modelagem.
 >
 > **Não implementar código, migration, schema, API ou UI.**
-> As decisões aqui são conceituais e servem de contrato para a próxima fase de implementação.
+> As decisões aqui são conceituais e servem de contrato para a fase de implementação.
 
 ---
 
@@ -13,26 +13,31 @@
 
 Cada seção responde uma pergunta que, se deixada em aberto, criaria ambiguidade
 na implementação. As seções 1–3 fornecem contexto. As seções 4–9 definem as entidades.
-As seções 10–15 descrevem relações e fluxos. As seções 16–19 respondem às questões
-em aberto da descoberta. As seções 20–21 delimitam o escopo. O Registro de Decisões
-(PUB-D*) consolida ao final.
+As seções 10–15 descrevem relações e fluxos. A seção 15.1 define as rotas de UI.
+As seções 16–19 respondem às questões em aberto da descoberta. As seções 20–21
+delimitam o escopo. O Registro de Decisões (PUB-D*) consolida ao final.
 
 ```
-D1: Nomenclatura — EditorialContent
-D2: Nomenclatura — ChannelPiece
-D3: Modelo central em três camadas
-D4: Distribution adiada
-D5: EditorialContent.project_id obrigatório
-D6: Vínculo com Production — não destrutivo
-D7: ChannelPiece — cascade vs. set null
-D8: Canal pertence ao ChannelPiece
-D9: EditorialContent sem ChannelPiece é válido
+D1:  Nomenclatura — EditorialContent
+D2:  Nomenclatura — ChannelPiece
+D3:  Modelo central em três camadas
+D4:  Distribution adiada
+D5:  EditorialContent.project_id obrigatório
+D6:  Vínculo com Production — não destrutivo
+D7:  ChannelPiece — cascade vs. set null
+D8:  Canal pertence ao ChannelPiece
+D9:  EditorialContent sem ChannelPiece é válido
 D10: Aba Publicações — estrutura de exibição
 D11: Aprovação manual, sem workflow formal
 D12: ChannelPieceAsset — N:N futura
 D13: Mapeamento de Post legado
 D14: Congelamento de posts
 D15: Integração com APIs externas fora do escopo
+D16: Canal e formato são campos separados em ChannelPiece
+D17: ChannelPiece.status não inclui 'published'
+D18: Corpo do conteúdo do ChannelPiece se chama body
+D19: image_url não entra no schema de ChannelPiece em P1
+D20: Rotas de Publicações aprovadas
 ```
 
 ---
@@ -44,7 +49,7 @@ modelado. `PUBLICATION_DOMAIN_DISCOVERY.md` diagnosticou que o `Post` atual é u
 entidade híbrida — mistura três responsabilidades que deveriam ser separadas:
 
 1. **Conteúdo editorial** — a mensagem que o criador quer comunicar
-2. **Adaptação de canal** — a forma dessa mensagem em um canal específico
+2. **Adaptação de canal** — a forma dessa mensagem em um canal e formato específicos
 3. **Ato de distribuição** — o registro de que a mensagem foi publicada
 
 Este documento decide como separar essas responsabilidades, como nomear as novas
@@ -87,7 +92,7 @@ interface Post {
   production_id: string | null // produção de origem
 
   // Adaptação de canal
-  channel: PublicationType  // canal de destino
+  channel: PublicationType  // canal + formato colapsados
   feed_text: string | null  // texto adaptado para o canal
   image_url: string | null  // mídia (URL direta, sem FK)
   post_images?: PostImage[] // imagens adicionais (JSONB, sem FK)
@@ -124,8 +129,8 @@ EditorialContent
 │   Existe dentro de um Projeto e opcionalmente de uma Produção.
 │
 └── ChannelPiece  (zero a N por EditorialContent)
-    │   A adaptação do conteúdo para um canal específico.
-    │   Tem feed_text próprio e assets vinculados ao canal.
+    │   A adaptação do conteúdo para um canal e formato específicos.
+    │   Tem body próprio, cta, hashtags e status editorial.
     │
     └── Distribution  (zero a N por ChannelPiece — ADIADA)
         O ato de publicar a ChannelPiece em um momento específico.
@@ -172,12 +177,12 @@ como "entidade proposta" e é rejeitado:
 | Problema com `PostVariant` | Justificativa |
 |----------------------------|---------------|
 | "Post" é ambíguo | `PostVariant` implica que é variante de um `Post` — mas `Post` é justamente o que estamos substituindo. A dependência circular de nomes cria confusão na leitura do código. |
-| "Variant" sugere alternativa inferior | Uma `ChannelPiece` não é uma "variante" do conteúdo — é a expressão canônica para aquele canal. Não há hierarquia entre peças de canais diferentes. |
-| Não expressa a dimensão de canal | O elemento central desta camada é o canal de destino. `ChannelPiece` comunica isso diretamente. |
+| "Variant" sugere alternativa inferior | Uma `ChannelPiece` não é uma "variante" do conteúdo — é a expressão canônica para aquele canal e formato. Não há hierarquia entre peças de canais diferentes. |
+| Não expressa a dimensão de canal | O elemento central desta camada é o canal e o formato de destino. `ChannelPiece` comunica isso diretamente. |
 
 `ChannelPiece` comunica:
 - É uma peça (unidade completa e independente)
-- Para um canal específico (não genérica)
+- Para um canal e formato específicos (não genérica)
 - Não é rascunho, não é variante — é a versão canônica para aquele canal
 
 **Convenção de código:** tabela `channel_pieces`, FK `channel_piece_id`,
@@ -195,8 +200,8 @@ para qual propósito, dentro do contexto de um Projeto e opcionalmente de uma Pr
 | Campo | Tipo | Restrição | Descrição |
 |-------|------|-----------|-----------|
 | `id` | uuid | PK | Identificador único |
-| `user_id` | uuid | FK → auth.users NOT NULL | Proprietário |
-| `project_id` | uuid | FK → projects NOT NULL | Contexto de projeto — obrigatório |
+| `user_id` | uuid | FK → auth.users NOT NULL CASCADE | Proprietário |
+| `project_id` | uuid | FK → projects NOT NULL ON DELETE RESTRICT | Contexto de projeto — obrigatório |
 | `production_id` | uuid | FK → productions nullable ON DELETE SET NULL | Produção de origem — opcional |
 | `title` | text | NOT NULL | Título editorial |
 | `body` | text | nullable | Corpo do conteúdo — rascunho editorial livre |
@@ -208,6 +213,11 @@ para qual propósito, dentro do contexto de um Projeto e opcionalmente de uma Pr
 **`project_id` é obrigatório (NOT NULL):** `EditorialContent` sempre existe dentro
 de um Projeto. A mesma regra se aplica à `Production` (PD-D4 de `PRODUCTION_DECISIONS.md`).
 O Projeto fornece o contexto semântico que os agentes precisam para trabalhar com coerência.
+
+**`ON DELETE RESTRICT` em `project_id`:** um `EditorialContent` não pode existir sem
+Projeto. Se o usuário tentar excluir um Projeto que tem `EditorialContent`s, o banco
+bloqueia a operação com erro `23503`. A UI deve orientar o usuário a excluir ou mover os
+conteúdos antes de excluir o Projeto — mesmo padrão implementado para `productions`.
 
 **`production_id` é nullable:** um conteúdo editorial pode nascer fora de uma Produção
 formal — fluxo rápido, rascunho espontâneo, exploração inicial. A relação com a
@@ -223,19 +233,24 @@ correção foi confirmada em teste.
 
 ## 8. Definição de `ChannelPiece` — Adaptação de Canal
 
-`ChannelPiece` é a expressão de um `EditorialContent` para um canal específico:
-o texto adaptado, o formato, e o status de publicação naquele canal.
+`ChannelPiece` é a expressão de um `EditorialContent` para um canal e formato
+específicos: o texto adaptado, a estrutura, o call-to-action, as hashtags, e o
+status editorial dessa peça.
 
 **Campos:**
 
 | Campo | Tipo | Restrição | Descrição |
 |-------|------|-----------|-----------|
 | `id` | uuid | PK | Identificador único |
-| `user_id` | uuid | FK → auth.users NOT NULL | Proprietário |
+| `user_id` | uuid | FK → auth.users NOT NULL CASCADE | Proprietário |
 | `editorial_content_id` | uuid | FK → editorial_contents NOT NULL ON DELETE CASCADE | Conteúdo de origem |
-| `channel` | text | NOT NULL CHECK (PublicationType) | Canal de destino |
-| `feed_text` | text | nullable | Texto adaptado para o canal |
-| `status` | text | CHECK ('draft','approved','published') | Estado da peça de canal |
+| `channel` | text | NOT NULL CHECK (ver PUB-D16) | Canal de destino |
+| `format` | text | NOT NULL CHECK (ver PUB-D16) | Formato dentro do canal |
+| `title` | text | nullable | Override de título para este canal (quando difere do EC) |
+| `body` | text | nullable | Texto adaptado para o canal e formato (ver PUB-D18) |
+| `cta` | text | nullable | Chamada para ação específica do canal |
+| `hashtags` | text | nullable | Hashtags em string livre (estruturação em array reservada para fase futura) |
+| `status` | text | CHECK ('draft','ready','approved','archived') | Estado editorial da peça (ver PUB-D17) |
 | `created_at` | timestamptz | NOT NULL | |
 | `updated_at` | timestamptz | NOT NULL | |
 
@@ -244,19 +259,85 @@ existe sem seu `EditorialContent`. Se o conteúdo editorial for excluído, todas
 suas peças de canal são excluídas em cascata. Uma peça de canal é semanticamente
 dependente do conteúdo que adapta — não tem identidade própria desvinculada.
 
-**Canais válidos (`PublicationType`)** conforme `lib/types.ts:119`:
-```typescript
-type PublicationType =
-  | 'instagram_post'
-  | 'instagram_story'
-  | 'youtube_post'
-  | 'youtube_shorts'
-  | 'youtube_video'
-```
-Novos canais são adicionados ao tipo sem alterar a estrutura de `ChannelPiece`.
+**Por que `channel` e `format` são campos separados (PUB-D16):** consulte a
+Seção 8.1. Em síntese, os valores anteriores de `PublicationType` colapsavam canal
+e formato numa única string (ex: `instagram_post`), impedindo a extensão independente
+de cada dimensão.
+
+**Por que `body` e não `feed_text` (PUB-D18):** `feed_text` é um nome de campo
+da entidade `Post` legada, específico para conteúdo de feed. Em `ChannelPiece`, o
+conteúdo principal se chama `body` — mais neutro e aplicável a qualquer canal. Um
+story, uma descrição de vídeo, um artigo ou uma mensagem de WhatsApp não é
+um "feed text". `body` é o texto do conteúdo para aquele canal e formato.
+
+**Por que sem `image_url` (PUB-D19):** nenhum fluxo concreto de P1 a P5 requer
+`image_url` diretamente em `ChannelPiece`. Assets visuais serão modelados via
+`ChannelPieceAsset` (Seção 11, fase futura). Incluir `image_url` agora seria
+especulação sem caso de uso confirmado, gerando dívida técnica.
 
 **Cardinalidade:** zero `ChannelPiece`s por `EditorialContent` é válido — um rascunho
 editorial pode existir sem adaptação de canal definida (PUB-D9).
+
+---
+
+## 8.1 Canal e Formato — Separação Estrutural (PUB-D16)
+
+**Decisão: `channel` e `format` são campos separados em `ChannelPiece`.
+`PublicationType` não é herdado como modelo de dados de `ChannelPiece`.**
+
+O type `PublicationType` existente (`instagram_post`, `instagram_story`, etc.)
+colapsa canal e formato numa única string. Isso impossibilita adicionar formatos
+novos dentro de um canal (ex: `instagram + reel`) sem alterar o enum inteiro.
+
+### Valores de `channel` (P1)
+
+| Valor | Canal |
+|-------|-------|
+| `instagram` | Instagram |
+| `youtube` | YouTube |
+| `whatsapp` | WhatsApp |
+| `linkedin` | LinkedIn |
+| `x` | X (Twitter) |
+| `tiktok` | TikTok |
+
+### Valores de `format` (P1)
+
+| Valor | Descrição |
+|-------|-----------|
+| `feed` | Post no feed (Instagram, LinkedIn) |
+| `story` | Story (Instagram, WhatsApp) |
+| `reel` | Reel / vídeo curto (Instagram, TikTok) |
+| `short` | YouTube Short |
+| `video_description` | Descrição de vídeo do YouTube |
+| `post` | Post padrão (LinkedIn, X) |
+| `channel_message` | Mensagem de canal (WhatsApp) |
+| `carousel` | Carrossel (Instagram, LinkedIn) |
+| `article` | Artigo longo (LinkedIn) |
+
+Novos canais e formatos são adicionados ao `CHECK` constraint via migration sem
+alterar a estrutura da tabela ou o código de agentes.
+
+**Validação de combinações:** a validade da combinação `channel + format`
+(ex: `youtube + story` não é válida) é responsabilidade da camada de aplicação.
+O banco valida cada campo individualmente. Uma tabela de combinações válidas
+é mantida no código (`lib/publication-channels.ts` ou similar) e usada pela API
+e pela UI.
+
+### Mapeamento de `PublicationType` legado → `channel + format`
+
+Este mapeamento orienta a futura migração dos dados de `posts` para
+`editorial_contents + channel_pieces`. Não é executado em P1–P6.
+
+| `PublicationType` (posts legados) | `channel` | `format` |
+|----------------------------------|-----------|----------|
+| `instagram_post` | `instagram` | `feed` |
+| `instagram_story` | `instagram` | `story` |
+| `youtube_post` | `youtube` | `post` |
+| `youtube_shorts` | `youtube` | `short` |
+| `youtube_video` | `youtube` | `video_description` |
+
+O type `PublicationType` em `lib/types.ts` permanece inalterado enquanto a
+tabela `posts` estiver ativa. Ele não é referenciado em `ChannelPiece`.
 
 ---
 
@@ -267,7 +348,7 @@ em um momento específico. É imutável após publicação.
 
 **Por que a camada existe:** a separação entre "peça aprovada" e "ato de publicação"
 é necessária para suportar agendamento, republicação e rastreamento de resultados externos.
-Sem essa separação, uma peça "published" não tem data de publicação, URL pública,
+Sem essa separação, uma peça "publicada" não tem data de publicação, URL pública,
 nem histórico de tentativas.
 
 **Por que está adiada (PUB-D4):** `Distribution` requer:
@@ -279,9 +360,11 @@ nem histórico de tentativas.
 Nenhum desses pré-requisitos existe no sistema atual. Implementar `Distribution`
 sem eles criaria uma entidade vazia sem valor para o usuário.
 
-**O que substitui temporariamente:** `ChannelPiece.status = 'published'` marca que
-a peça foi publicada manualmente pelo usuário. Não há registro automático. Isso é
-aceitável para o MVP desta fase.
+**O que substitui temporariamente:** publicação manual não está modelada como estado
+no schema de P1. `ChannelPiece.status` não inclui `published` (ver PUB-D17). A
+necessidade de registrar publicação manual é reconhecida como um gap de produto a
+ser resolvido — por `Distribution` quando implementada ou por um campo específico
+quando a necessidade for validada com usuários.
 
 **Campos futuros de `Distribution`:**
 
@@ -322,7 +405,7 @@ que pode nascer dentro de uma Produção mas tem existência independente. A Pro
 **Implicação para a aba Publicações:** a aba lista `EditorialContent`s pelo
 `production_id`. Quando um `EditorialContent` é desvinculado da Produção (PATCH
 para `production_id = null`), some da aba — mas continua existindo e acessível
-diretamente. Comportamento idêntico ao de `Post` e `ImageDraft` atuais.
+diretamente em `/publicacoes`. Comportamento idêntico ao de `ImageDraft` e `VideoDraft`.
 
 ---
 
@@ -333,8 +416,7 @@ via tabela intermediária `ChannelPieceAsset` (N:N), a ser implementada em fase 
 
 **Por que N:N:**
 - Uma `ChannelPiece` pode ter múltiplos assets (carrossel com 5 imagens, vídeo + thumbnail)
-- Um asset (imagem em `images`, arquivo em `library_files`) pode ser referenciado
-  por múltiplas `ChannelPiece`s sem duplicação de storage
+- Um asset pode ser referenciado por múltiplas `ChannelPiece`s sem duplicação de storage
 
 **Campos conceituais de `ChannelPieceAsset`:**
 
@@ -348,18 +430,18 @@ via tabela intermediária `ChannelPieceAsset` (N:N), a ser implementada em fase 
 | `role` | text | 'primary' \| 'alternate' \| 'thumbnail' |
 | `created_at` | timestamptz | NOT NULL | |
 
+**Nota sobre `asset_kind + asset_id`:** este é um padrão de associação polimórfica.
+O banco não consegue garantir integridade referencial via FK convencional — `asset_id`
+não tem FK definida. A integridade é responsabilidade da camada de aplicação.
+Quando `ChannelPieceAsset` for implementada, a decisão entre manter o padrão
+polimórfico ou usar FKs separadas (`image_id nullable`, `library_file_id nullable`)
+deve ser revisitada.
+
 **Por que está adiada:**
 1. Requer que `images` e `library_files` sejam tratados como "Assets" com interface
    unificada — Fase A de `DOMAIN_EVOLUTION.md`
 2. Requer que o schema de `EditorialContent` e `ChannelPiece` esteja estável
    antes de adicionar a relação intermediária
-3. Enquanto não existe, `ChannelPiece` pode ter `image_url` como campo transitório
-   de compatibilidade (herdado da migração de `Post`)
-
-**O que `Post.post_images` (JSONB) representa:** é a versão rudimentar do que
-`ChannelPieceAsset` formalizará. Cada item de `PostImage[]` se tornará um registro
-em `ChannelPieceAsset` com FK real para `images`. Essa migração pertence à fase
-de migração de dados, não a esta fase.
 
 ---
 
@@ -369,23 +451,17 @@ de migração de dados, não a esta fase.
 atual. Estas imagens são os candidatos naturais a assets primários de `ChannelPiece`.
 
 **Aba Arquivos** (`/arquivos`): exibe `LibraryFile`s — uploads manuais do usuário.
-Também são candidatos a assets de `ChannelPiece` (ex: logotipos, templates, mídias
-de referência).
+Também são candidatos a assets de `ChannelPiece`.
 
 **Relação atual com `Post`:** `Post.image_url` aponta para URL da imagem sem FK
 para a tabela `images`. `Post.post_images` (JSONB) duplica dados de storage sem
 rastreabilidade. Não há vínculo formal entre `Post` e `Image` ou `LibraryFile`.
 
 **Relação futura com `ChannelPiece`:** via `ChannelPieceAsset`, a relação será
-formalizada com FK. A `ChannelPiece` saberá exatamente qual `Image` aprovada
-ou qual `LibraryFile` está associada — com rastreabilidade completa e sem duplicação.
+formalizada com rastreabilidade real entre `ChannelPiece` e `Image` ou `LibraryFile`.
 
-**Nenhuma mudança nas telas de Galeria ou Arquivos** é requerida nesta fase.
+**Nenhuma mudança nas telas de Galeria ou Arquivos** é requerida em P1–P6.
 A integração formal via `ChannelPieceAsset` pertence à fase posterior.
-
-**Campo transitório aceito:** `ChannelPiece` pode ter `image_url` como campo
-de compatibilidade herdado da migração de `Post`. Não é o modelo final — é um
-campo aceito para não bloquear a implementação do núcleo `EditorialContent + ChannelPiece`.
 
 ---
 
@@ -397,27 +473,24 @@ Produção formal — uso espontâneo, post único, exploração rápida.
 **Fluxo:**
 
 ```
-1. Usuário acessa /publicacoes (ou fluxo equivalente)
-2. Clica em "Novo Conteúdo Editorial"
-3. Seleciona Projeto (obrigatório)
-   → EditorialContent nasce com project_id definido, production_id = null
-4. Preenche title e body do conteúdo editorial
-5. Opcionalmente usa IA para refinar (ai_context → Feed Generator)
-6. EditorialContent salvo com status = 'draft'
-7. Cria ChannelPiece para canal específico (ex: instagram_post)
-8. Feed Generator adapta feed_text para o canal
-9. Associa imagem via image_url transitório (ou ChannelPieceAsset quando disponível)
-10. ChannelPiece salvo com status = 'draft'
-11. Usuário revisa → muda ChannelPiece.status para 'approved'
-12. Após publicação manual na plataforma → muda para 'published'
+1.  Usuário acessa /publicacoes
+2.  Clica em "Novo Conteúdo Editorial"
+3.  Seleciona Projeto (obrigatório)
+    → EditorialContent nasce com project_id definido, production_id = null
+4.  Preenche title e body do conteúdo editorial
+5.  Opcionalmente usa IA para refinar (ai_context → Feed Generator ou rota editorial)
+6.  EditorialContent salvo com status = 'draft'
+7.  Navega para detalhe: /projetos/[projectId]/conteudos/[editorialContentId]
+8.  Cria ChannelPiece: seleciona channel (ex: instagram) e format (ex: feed)
+9.  Geração assistida adapta body para o canal e formato
+10. Preenche cta e hashtags conforme necessário
+11. ChannelPiece salvo com status = 'draft'
+12. Usuário revisa → muda ChannelPiece.status para 'approved'
+    (publicação manual externa — não registrada no sistema nesta fase)
 ```
 
 **O que não existe neste fluxo:** agendamento (`Distribution` adiada), integração
-automática com APIs, aprovação formal por agentes.
-
-**Compatibilidade com o fluxo atual de `Post` sem Produção:** o fluxo de criação
-rápida mapeia diretamente para este fluxo — `Post` atual sem `production_id` se
-torna `EditorialContent` + `ChannelPiece` com `production_id = null`.
+automática com APIs, registro de publicação manual, aprovação formal por agentes.
 
 ---
 
@@ -429,43 +502,45 @@ conteúdo editorial baseado no trabalho realizado.
 **Fluxo:**
 
 ```
-1. Usuário está em /videos com VideoDraft concluído
-   → VideoDraft.production_id = <production_uuid>
-   → VideoDraft.project_id = <project_uuid>
-2. Navega para a Produção → aba Publicações
-3. Clica em "Novo Conteúdo Editorial"
-4. EditorialContent criado com:
-   → project_id = <project_uuid>  (mesmo do VideoDraft)
-   → production_id = <production_uuid>  (mesma Produção)
-   → title derivado do VideoDraft.name (sugestão)
-5. Cria ChannelPiece para canal de vídeo (ex: youtube_video)
-6. Feed Generator gera descrição adaptada para YouTube usando
-   EditorialContent.body + ai_context + Project.context
-7. Associa o arquivo de vídeo (ChannelPieceAsset futuro, ou image_url transitório)
-8. ChannelPiece.status → 'approved'
-9. Usuário publica manualmente → status → 'published'
+1.  Usuário está em /videos com VideoDraft concluído
+    → VideoDraft.production_id = <production_uuid>
+    → VideoDraft.project_id = <project_uuid>
+2.  Banner contextual: "Criar conteúdo editorial para esta Produção"
+3.  Clica → abre criação de EditorialContent com:
+    → project_id = <project_uuid>  (mesmo do VideoDraft)
+    → production_id = <production_uuid>  (mesma Produção)
+    → title sugerido a partir de VideoDraft.name
+4.  Cria ChannelPiece com:
+    → channel = youtube, format = video_description  (pré-selecionado)
+5.  Geração assistida: body para descrição de vídeo YouTube usando
+    EditorialContent.body + ai_context + Project.context
+6.  Preenche cta e hashtags
+7.  ChannelPiece.status → 'approved'
+    (publicação manual externa — não registrada nesta fase)
 ```
 
-**O que não existe neste fluxo:** FK direta de `ChannelPiece` para `VideoDraft`.
-A relação é implícita pelo `production_id` compartilhado entre `VideoDraft` e
-`EditorialContent`. Uma FK explícita entre eles seria uma adição futura opcional.
+**Rastreabilidade causal:** a relação `VideoDraft → EditorialContent` é implícita
+pelo `production_id` compartilhado. Não há FK direta entre as entidades —
+isso é documentado como lacuna a resolver em fase futura (FK opcional
+`source_video_draft_id` em `EditorialContent`).
 
 ---
 
 ## 15. Estrutura da Aba Publicações na Produção
 
-**Contexto:** a tela `/producao/[id]` tem uma aba "Publicações". No modelo atual,
-ela lista `posts` com `production_id = <id>`. No novo modelo:
+**Contexto:** a tela `/projetos/[projectId]/producoes/[productionId]` tem uma aba
+"Publicações". No modelo atual, ela lista `posts` com `production_id = <id>`. No
+novo modelo (implementado em P5):
 
 **Novo layout da aba:**
 
 ```
 Aba Publicações
 ├── EditorialContent A  [status: ready]
-│   ├── ChannelPiece: instagram_post  [approved]
-│   └── ChannelPiece: youtube_post    [draft]
+│   ├── ChannelPiece: instagram / feed  [approved]
+│   └── ChannelPiece: youtube / video_description  [draft]
 ├── EditorialContent B  [status: draft]
-│   └── ChannelPiece: instagram_story [published]
+│   └── ChannelPiece: instagram / story  [approved]
 ├── EditorialContent C  [status: draft]
 │   └── (sem ChannelPieces — rascunho editorial puro)
 └── [+ Novo Conteúdo Editorial]
@@ -476,12 +551,55 @@ Aba Publicações
 - Cada `EditorialContent` é expansível para mostrar suas `ChannelPiece`s
 - Status de cada `ChannelPiece` é visível sem expandir (indicador visual)
 - `EditorialContent` com zero `ChannelPiece`s aparece como "Sem peça de canal"
-- Conteúdo desvinculado da Produção (`production_id` setado para null) some da aba
-  mas continua existindo e acessível fora do contexto da Produção
+- Conteúdo desvinculado da Produção some da aba mas continua existindo em `/publicacoes`
 
 **Contribuição para o status da Produção:**
-A aba fornece a visão de progresso editorial da Produção:
-`N conteúdos editoriais, M peças aprovadas, K publicadas`.
+`N conteúdos editoriais · M peças aprovadas`
+
+---
+
+## 15.1 Rotas de Publicações (PUB-D20)
+
+**Decisão: três contextos de acesso ao domínio de publicações, com rotas distintas
+e responsabilidades claras.**
+
+### Rota global — `/publicacoes`
+
+Entry point principal da sidebar para o domínio de publicações. Exibe:
+- Lista de `EditorialContent`s do usuário (todos os projetos, filtrável)
+- Seção "Posts legados" com link para `/posts` (durante a transição)
+- Botão "+ Novo Conteúdo Editorial" com seleção obrigatória de Projeto
+- Filtros: por Projeto e por Production
+
+### Rota de detalhe editorial — `/projetos/[projectId]/conteudos/[editorialContentId]`
+
+Workspace completo de um `EditorialContent`. Esta rota:
+- Exibe e permite editar `title`, `body`, `ai_context`, `status`
+- Lista e permite criar e editar `ChannelPiece`s (inline, sem rota própria)
+- Exibe breadcrumb: Projeto → Conteúdo Editorial
+- Está acessível a partir de `/publicacoes` e da aba Publicações da Production
+
+O `projectId` na URL não é redundante — `EditorialContent.project_id` é obrigatório
+e o contexto de Projeto é necessário para o breadcrumb e para pré-preencher o
+seletor de Production.
+
+### Rota de Production — `/projetos/[projectId]/producoes/[productionId]`
+
+A rota já existente permanece. A aba "Publicações" é expandida em P5 para exibir
+`EditorialContent`s filtrados por `production_id`, com `ChannelPiece`s expandíveis.
+O link de cada `EditorialContent` navega para a rota de detalhe editorial.
+
+### ChannelPieces — sem rota própria
+
+`ChannelPiece`s são gerenciadas exclusivamente dentro da página de detalhe do
+`EditorialContent`. Não há rota `/channel-pieces/[id]` exposta na UI.
+
+### Sidebar durante a transição
+
+O item da sidebar "Publicações" aponta para `/publicacoes` (novo).
+A rota `/posts` permanece funcional mas não é o item primário da sidebar.
+Os Posts legados são visíveis em `/publicacoes` como seção secundária, claramente
+marcada como legado, até que a migração formal seja executada.
 
 ---
 
@@ -493,12 +611,11 @@ As 6 questões de `PUBLICATION_DOMAIN_DISCOVERY.md` Seção 9 recebem respostas 
 
 **Q1: Quem decide o canal?**
 
-**R:** O canal é definido no momento de criação da `ChannelPiece`, pelo criador de
-conteúdo (PUB-D8).
+**R:** O canal e o formato são definidos no momento de criação da `ChannelPiece`,
+pelo criador de conteúdo (PUB-D8, PUB-D16).
 
 O `EditorialContent` não tem canal — é independente de canal por design. O usuário
-decide para qual canal adaptar o conteúdo ao criar cada `ChannelPiece`. Se quiser
-publicar em Instagram e LinkedIn, cria duas `ChannelPiece`s — uma por canal.
+decide para qual canal e formato adaptar o conteúdo ao criar cada `ChannelPiece`.
 
 ---
 
@@ -507,8 +624,7 @@ publicar em Instagram e LinkedIn, cria duas `ChannelPiece`s — uma por canal.
 **R:** Sim. Zero `ChannelPiece`s é um estado válido (PUB-D9).
 
 Um `EditorialContent` com `status = 'draft'` e zero `ChannelPiece`s é um rascunho
-editorial puro — o criador elabora o conteúdo antes de decidir para qual canal vai
-adaptar. O sistema não força a criação imediata de uma `ChannelPiece`.
+editorial puro — o criador elabora o conteúdo antes de decidir para qual canal adaptar.
 
 ---
 
@@ -516,11 +632,6 @@ adaptar. O sistema não força a criação imediata de uma `ChannelPiece`.
 
 **R:** A aba exibe `EditorialContent`s como entidade principal, com `ChannelPiece`s
 expandíveis dentro de cada um (PUB-D10).
-
-`EditorialContent` é a unidade de trabalho editorial. A aba organiza por conteúdo,
-não por canal. As `ChannelPiece`s são detalhes de cada conteúdo, visíveis ao expandir.
-Isso evita proliferação de itens quando o mesmo conteúdo tem múltiplas peças de canal
-(ex: Instagram + YouTube + LinkedIn seriam 3 itens soltos sem esta estrutura).
 
 ---
 
@@ -530,9 +641,7 @@ Isso evita proliferação de itens quando o mesmo conteúdo tem múltiplas peça
 simples, sem workflow formal (PUB-D11).
 
 O princípio de `PRODUCTION_DECISIONS.md` D7 se aplica: "IA aprova qualidade;
-humano aprova uso." Nesta fase não há agente avaliador de conteúdo editorial. A
-aprovação é uma ação manual do usuário (mudança de status). Workflow formal com
-aprovadores múltiplos é escopo de fase futura (multi-usuário).
+humano aprova uso." Nesta fase não há agente avaliador de conteúdo editorial.
 
 ---
 
@@ -540,21 +649,12 @@ aprovadores múltiplos é escopo de fase futura (multi-usuário).
 
 **R:** Fora do escopo desta fase. `user_id` permanece como único proprietário.
 
-O modelo atual é mono-usuário. Colaboração e aprovação multi-usuário são requisitos
-de uma fase futura. Esta decisão não bloqueia nenhuma implementação presente — o
-campo `user_id` existe em todas as entidades e pode ser expandido para RLS de equipe
-quando o produto precisar.
-
 ---
 
 **Q6: Integração com APIs externas é no escopo do produto?**
 
-**R:** Não nesta fase. `Distribution` é adiada. Publicação é marcação manual (PUB-D15).
-
-`ChannelPiece.status = 'published'` é uma marcação manual pelo usuário — sem
-confirmação de plataforma externa, sem `external_id`, sem `external_url`. Esses
-campos existirão apenas quando `Distribution` for implementada com integração real
-às APIs de redes sociais.
+**R:** Não nesta fase. `Distribution` é adiada. Publicação manual não está modelada
+como estado no schema (PUB-D15, PUB-D17).
 
 ---
 
@@ -564,16 +664,16 @@ A entidade `Post` em `lib/types.ts` (linha 127) mapeia para o novo modelo:
 
 | Campo do `Post` atual | Entidade alvo | Campo alvo | Observação |
 |-----------------------|---------------|------------|------------|
-| `id` | — | Novo UUID em cada entidade | Não reutilizar o mesmo ID |
+| `id` | — | Novo UUID em cada entidade | Não reutilizar |
 | `user_id` | `EditorialContent` | `user_id` | |
 | `project_id` | `EditorialContent` | `project_id` | |
 | `production_id` | `EditorialContent` | `production_id` | |
-| `name` | `EditorialContent` | `title` | Renomeado para clareza |
+| `name` | `EditorialContent` | `title` | Renomeado |
 | `description` | `EditorialContent` | `body` | |
 | `ai_context` | `EditorialContent` | `ai_context` | |
-| `channel` | `ChannelPiece` | `channel` | Migrado para a camada de canal |
-| `feed_text` | `ChannelPiece` | `feed_text` | |
-| `image_url` | `ChannelPiece` | `image_url` (transitório) | FK futura via `ChannelPieceAsset` |
+| `channel` (PublicationType) | `ChannelPiece` | `channel + format` | Separados (ver Seção 8.1) |
+| `feed_text` | `ChannelPiece` | `body` | Renomeado (PUB-D18) |
+| `image_url` | `ChannelPieceAsset` (futuro) | `asset_id` + `asset_kind = 'image'` | Sem campo transitório |
 | `thumbnail_url` | `ChannelPieceAsset` (futuro) | `role: 'thumbnail'` | |
 | `storage_provider`, `storage_path`, `file_size`, `mime_type` | `ChannelPieceAsset` (futuro) | campos de asset | |
 | `post_images` (JSONB) | `ChannelPieceAsset` (futuro) | N registros | Cada `PostImage` → 1 `ChannelPieceAsset` |
@@ -582,25 +682,29 @@ A entidade `Post` em `lib/types.ts` (linha 127) mapeia para o novo modelo:
 
 **Um `Post` atual mapeia para um par `EditorialContent` + uma `ChannelPiece`.**
 
-Este mapeamento é a base do plano de migração — quando a migração for executada,
-cada `Post` existente gerará exatamente um `EditorialContent` e uma `ChannelPiece`.
-Isso preserva todos os dados existentes sem perda.
+Esta migração está condicionada a uma auditoria dos dados legados antes de qualquer
+execução. A auditoria deve verificar:
 
-**`Post.post_images` (PostImage[]):** o campo JSONB atual duplica dados de storage
-sem FK para `images`. Na migração para `ChannelPieceAsset`, cada `PostImage` se torna
-um registro com FK real. Esta migração pertence a uma fase futura — não ao incremento
-de criação das novas tabelas.
+- Posts com `project_id = null` (violam `EditorialContent.project_id NOT NULL`)
+- Posts com `channel` ausente ou fora dos valores de `PublicationType`
+- Posts com `description` e `feed_text` ambos vazios
+- Posts com `status = 'saved'` mas sem `feed_text` (aprovado sem conteúdo)
+- Posts com `post_images` JSONB não-vazio (cada item → `ChannelPieceAsset` futuro)
+- Posts com `image_url` sem rastreabilidade para a tabela `images`
+- Posts com `production_id` vs sem `production_id` (impacto nas proporções)
+
+**Nenhuma migration de dados entra em P1–P6.**
 
 ---
 
 ## 18. Cardinalidades
 
 ```
-Project         1 ──────────── N  EditorialContent
-Production      1 ──────────── N  EditorialContent  (production_id nullable)
-EditorialContent 1 ──────────── N  ChannelPiece
-ChannelPiece    1 ──────────── N  Distribution       (adiada)
-ChannelPiece    N ──────────── N  Asset              (via ChannelPieceAsset — futuro)
+Project          1    ──────────── N   EditorialContent
+Production       0..1 ──────────── N   EditorialContent  (production_id nullable)
+EditorialContent 1    ──────────── N   ChannelPiece
+ChannelPiece     1    ──────────── N   Distribution       (adiada)
+ChannelPiece     N    ──────────── N   Asset              (via ChannelPieceAsset — futuro)
 ```
 
 **Mínimos válidos:**
@@ -612,9 +716,9 @@ ChannelPiece    N ──────────── N  Asset              (vi
 | `ChannelPiece` com 0 assets | Sim | Peça de texto puro, sem mídia |
 | `EditorialContent` sem `production_id` | Sim | Fluxo rápido fora de Produção |
 
-**Unicidade de canal por `EditorialContent`:** não há restrição de unicidade.
-O mesmo `EditorialContent` pode ter duas `ChannelPiece`s com o mesmo canal
-(ex: duas versões de texto para `instagram_post` — teste A/B). Isso é intencional.
+**Unicidade de canal+formato por `EditorialContent`:** não há restrição de unicidade.
+O mesmo `EditorialContent` pode ter duas `ChannelPiece`s com o mesmo `channel + format`
+(ex: dois textos diferentes para `instagram + feed` — teste A/B). Isso é intencional.
 
 ---
 
@@ -635,25 +739,37 @@ archived →  Conteúdo encerrado pelo usuário. Não ativo, guardado como refer
 
 **Transições:**
 - `draft ↔ ready` (reversível — o criador pode revisitar)
-- `qualquer → archived` (irreversível por convenção; reativação exige ação explícita)
+- `qualquer → archived` (reversível; reativação exige ação explícita)
 
 ### `ChannelPiece.status`
 
 ```
-draft     →  Adaptação de canal em elaboração. feed_text sendo escrito.
+draft     →  Adaptação de canal em elaboração. body sendo escrito.
               Ainda não revisada pelo criador.
 
-approved  →  A peça foi revisada e aprovada pelo criador para publicação.
-              Pronta para ser publicada manualmente (nesta fase).
+ready     →  Peça completa e revisada pelo criador. Pronta para aprovação final.
+              Pode estar aguardando revisão de um colaborador futuro.
 
-published →  Publicada no canal. Imutável por convenção — a publicação aconteceu.
+approved  →  A peça foi aprovada pelo criador para publicação.
+              "IA aprova qualidade; humano aprova uso." (D7 de PRODUCTION_DECISIONS.md)
+              Nesta fase, aprovação é ação manual. Sem workflow formal.
+
+archived  →  Peça encerrada. Não será publicada. Guardada como referência.
 ```
 
 **Transições:**
-- `draft → approved` (criador aprova)
-- `approved → draft` (criador reverte para ajuste)
-- `approved → published` (criador marca como publicado após publicação manual)
-- `published` não reverte — imutabilidade convencional do ato de publicação
+- `draft → ready` (criador termina de escrever)
+- `ready → draft` (criador reverte para ajuste)
+- `ready → approved` (criador aprova)
+- `approved → ready` (criador reverte para ajuste pós-aprovação)
+- `qualquer → archived` (encerramento)
+- `archived → draft` (reativação explícita)
+
+**Por que sem `published` (PUB-D17):** o ato de publicação é responsabilidade de
+`Distribution` (adiada). Usar `published` como estado de `ChannelPiece` colapsaria
+uma decisão editorial ("aprovado para publicar") com um fato operacional ("foi
+publicado") — as mesmas responsabilidades misturadas que levaram ao diagnóstico do
+`Post` híbrido. Esta fase não registra publicações.
 
 ### `Distribution.status` (adiada — referência para fase futura)
 
@@ -668,25 +784,26 @@ cancelled   →  Agendamento cancelado antes da publicação.
 
 ## 20. Escopo da Próxima Fase de Implementação
 
-**O que deve ser implementado no Incremento de Publicações:**
+**O que deve ser implementado em P1–P6:**
 
 1. **Tabela `editorial_contents`** com os campos definidos na Seção 7
-2. **Tabela `channel_pieces`** com os campos definidos na Seção 8
+2. **Tabela `channel_pieces`** com os campos definidos na Seção 8 (`channel`, `format`, `body`, `cta`, `hashtags` — sem `image_url`)
 3. **RLS** seguindo o padrão `user_id = auth.uid()` das tabelas existentes
 4. **API routes:**
-   - `GET / POST / PATCH / DELETE /api/editorial-contents`
-   - `GET / POST / PATCH / DELETE /api/channel-pieces`
-5. **UI de criação de `EditorialContent`** com seleção de Projeto obrigatória
-6. **UI de criação de `ChannelPiece`** dentro de um `EditorialContent`
-7. **Feed Generator** integrado à `ChannelPiece` (rota existente — adaptar input)
-8. **Aba Publicações na Produção** exibindo `EditorialContent`s com `ChannelPiece`s expandíveis
+   - `GET / POST / PATCH / DELETE /api/editorial-contents` e `/api/editorial-contents/[id]`
+   - `GET / POST / PATCH / DELETE /api/channel-pieces` e `/api/channel-pieces/[id]`
+5. **Rota global `/publicacoes`** listando `EditorialContent`s + acesso a Posts legados
+6. **Rota de detalhe** `/projetos/[projectId]/conteudos/[editorialContentId]`
+7. **UI de criação de `ChannelPiece`** (inline no detalhe do `EditorialContent`)
+8. **Geração assistida de `body`** para o canal e formato (rota editorial nova — P4)
+9. **Aba Publicações na Produção** exibindo `EditorialContent`s com `ChannelPiece`s (P5)
 
-**Pré-condições para iniciar:**
-- Schema da entidade `Production` implementado (concluído no Incremento 5)
-- O código `// INTEGRAÇÃO PROVISÓRIA` em `app/api/posts/route.ts` permanece intacto
-  durante todo este incremento — `posts` não é migrado nem alterado agora
-- A tela de Produção existente com aba Publicações deve estar minimamente funcional
-  para receber a aba de `EditorialContent`s
+**Pré-condições confirmadas:**
+- Schema da entidade `Production` implementado em `scripts/020_create_productions.sql` ✓
+- APIs `/api/productions/` implementadas ✓
+- Rota de detalhe da Production: `/projetos/[id]/producoes/[productionId]/page.tsx` ✓
+- O banner `// INTEGRAÇÃO PROVISÓRIA` em `app/api/posts/route.ts` permanece intacto ✓
+- `Feed Generator` (`app/api/posts/generate-feed-text/route.ts`) **não é alterado em P1 ou P2**
 
 ---
 
@@ -697,17 +814,17 @@ Estas decisões são explicitamente adiadas:
 | Item | Razão do adiamento |
 |------|-------------------|
 | Entidade `Distribution` | Requer integração com APIs externas e serviço de agendamento |
+| Registro de publicação manual | Não modelado como estado — gap de produto reconhecido |
 | Tabela `ChannelPieceAsset` | Requer unificação do conceito de Asset (Fase A de `DOMAIN_EVOLUTION.md`) |
-| Migração de `posts` → `editorial_contents` + `channel_pieces` | Requer rollback plan, preservação de dados e aprovação explícita |
+| Migração de `posts` → `editorial_contents + channel_pieces` | Requer auditoria de dados legados e aprovação explícita |
 | Workflow de aprovação formal | Requer multi-usuário (fase futura) |
 | Integração com Instagram, YouTube, LinkedIn | Requer credenciais de API, OAuth, webhooks |
 | Agendamento de publicações | Requer `Distribution` implementada |
-| Rastreamento de resultados (impressões, cliques) | Requer integração com analytics de plataformas |
-| Análise de desempenho de conteúdo | Fase D de `DOMAIN_EVOLUTION.md` |
-| Republicação e múltiplas distribuições | Requer `Distribution` |
-| FK de `ChannelPiece` para `VideoDraft` ou `ImageDraft` | Relação futura opcional — implícita via `production_id` compartilhado |
-| Agente avaliador de conteúdo editorial | Requer Planejador de Produção implementado (Fase C) |
-| Geração automática de `ChannelPiece`s por agente | Requer Planejador de Produção (Fase C) |
+| FK direta `EditorialContent → VideoDraft` | Relação futura opcional — implícita via `production_id` compartilhado |
+| Agente avaliador de conteúdo editorial | Requer Planejador de Produção (Fase C) |
+| `image_url` transitório em `ChannelPiece` | Nenhum fluxo de P1–P5 requer (PUB-D19) |
+| `manually_published_at` | Sem decisão de produto validada — aguarda `Distribution` |
+| Atualização retrospectiva completa de `ARCHITECTURE.md` | Dívida documental — não bloqueia P1–P6 |
 
 ---
 
@@ -715,24 +832,29 @@ Estas decisões são explicitamente adiadas:
 
 | Código | Decisão | Seção |
 |--------|---------|-------|
-| PUB-D1 | A entidade central do conteúdo editorial se chama `EditorialContent` — não `ContentDraft` (draft é estado, não natureza), não `Post` | 5 |
-| PUB-D2 | A entidade de adaptação de canal se chama `ChannelPiece` — não `PostVariant` (variant implica hierarquia que não existe) | 6 |
+| PUB-D1 | A entidade central do conteúdo editorial se chama `EditorialContent` | 5 |
+| PUB-D2 | A entidade de adaptação de canal se chama `ChannelPiece` | 6 |
 | PUB-D3 | O modelo é em três camadas: `EditorialContent → ChannelPiece → Distribution` | 4 |
-| PUB-D4 | `Distribution` é adiada — não implementar sem integração com APIs externas de redes sociais e serviço de agendamento | 9 |
+| PUB-D4 | `Distribution` é adiada — não implementar sem integração com APIs externas | 9 |
 | PUB-D5 | `EditorialContent.project_id` é NOT NULL — todo conteúdo editorial requer um Projeto | 7 |
-| PUB-D6 | `EditorialContent.production_id` é nullable com ON DELETE SET NULL — conteúdo sobrevive à Produção | 7, 10 |
-| PUB-D7 | `ChannelPiece.editorial_content_id` usa ON DELETE CASCADE — peças de canal não existem sem o conteúdo de origem | 8 |
-| PUB-D8 | Canal (`channel`) é propriedade de `ChannelPiece`, não de `EditorialContent` — o núcleo é independente de canal | 8, 16 |
-| PUB-D9 | `EditorialContent` com zero `ChannelPiece`s é um estado válido (rascunho editorial puro) | 8, 16, 18 |
-| PUB-D10 | A aba Publicações exibe `EditorialContent`s como item principal; `ChannelPiece`s são expandíveis dentro de cada um | 15, 16 |
-| PUB-D11 | Aprovação é ação manual do usuário (`ChannelPiece.status = 'approved'`); sem workflow formal nesta fase | 16 |
-| PUB-D12 | `ChannelPieceAsset` (N:N) é tabela futura; esta fase usa `image_url` como campo transitório em `ChannelPiece` | 11, 12 |
-| PUB-D13 | Um `Post` atual mapeia para exatamente um `EditorialContent` + uma `ChannelPiece` na migração futura | 17 |
-| PUB-D14 | A tabela `posts` e a API `/api/posts` permanecem congeladas e intactas até migração formal aprovada | 17, 20 |
-| PUB-D15 | Integração com APIs externas de publicação não é escopo desta fase; publicação é marcação manual pelo usuário | 16, 21 |
+| PUB-D6 | `EditorialContent.production_id` é nullable com ON DELETE SET NULL | 7, 10 |
+| PUB-D7 | `ChannelPiece.editorial_content_id` usa ON DELETE CASCADE | 8 |
+| PUB-D8 | Canal e formato são propriedade de `ChannelPiece`, não de `EditorialContent` | 8, 8.1 |
+| PUB-D9 | `EditorialContent` com zero `ChannelPiece`s é um estado válido | 8, 18 |
+| PUB-D10 | A aba Publicações exibe `EditorialContent`s; `ChannelPiece`s são expandíveis | 15 |
+| PUB-D11 | Aprovação é ação manual (`ChannelPiece.status = 'approved'`); sem workflow formal | 16 |
+| PUB-D12 | `ChannelPieceAsset` (N:N) é tabela futura; sem `image_url` em P1 | 11, 21 |
+| PUB-D13 | Um `Post` atual mapeia para exatamente um `EditorialContent` + uma `ChannelPiece` | 17 |
+| PUB-D14 | A tabela `posts` e a API `/api/posts` permanecem congeladas e intactas | 20 |
+| PUB-D15 | Integração com APIs externas fora do escopo; publicação não é modelada nesta fase | 16, 21 |
+| PUB-D16 | `channel` e `format` são campos separados em `ChannelPiece`; `PublicationType` não é herdado | 8.1 |
+| PUB-D17 | `ChannelPiece.status` não inclui `published`; o ato de publicação pertence a `Distribution` | 8, 19 |
+| PUB-D18 | O campo de texto adaptado em `ChannelPiece` se chama `body`, não `feed_text` | 8 |
+| PUB-D19 | `image_url` não entra no schema de `ChannelPiece` em P1–P5; sem campo transitório | 8, 21 |
+| PUB-D20 | Rotas: `/publicacoes` (hub global), `/projetos/[id]/conteudos/[id]` (detalhe), Production existente | 15.1 |
 
 ---
 
 *Documento produzido na sessão de modelagem de domínio da Fase 2.*
-*Próximo passo: implementar `editorial_contents` + `channel_pieces` (Incremento de Publicações)
-com base nestas decisões e nas pré-condições da Seção 20.*
+*Revisão 2 incorpora refinamentos de canal/formato, status, rotas e campos de ChannelPiece.*
+*Próximo passo: implementar as entidades com base em `PUBLICATION_IMPLEMENTATION_PLAN.md`.*
