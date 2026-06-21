@@ -169,6 +169,60 @@ export async function POST(request: Request) {
   }
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { supabase, user } = await getAuthenticatedClient()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'ID do rascunho obrigatorio' },
+        { status: 400 },
+      )
+    }
+
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: 'ID inválido.' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('video_drafts')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id')
+
+    if (error) {
+      return NextResponse.json(
+        { error: error.message, details: error },
+        { status: 400 },
+      )
+    }
+
+    if (!data || data.length === 0) {
+      return NextResponse.json(
+        { error: 'Rascunho não encontrado.' },
+        { status: 404 },
+      )
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('[Video Drafts DELETE] Error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro interno' },
+      { status: 500 },
+    )
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
     const { supabase, user } = await getAuthenticatedClient()
