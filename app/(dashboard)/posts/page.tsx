@@ -1,3 +1,7 @@
+// INTEGRAÇÃO PROVISÓRIA — pendente de revisão de domínio.
+// O modelo de Publicações (Post, canal, distribuição) ainda não foi definido.
+// Não alterar esta página sem antes concluir a descoberta de domínio em docs/PUBLICATION_DOMAIN_DISCOVERY.md.
+
 'use client'
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
