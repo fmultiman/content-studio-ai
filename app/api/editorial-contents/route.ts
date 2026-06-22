@@ -77,8 +77,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Body invalido: JSON esperado' }, { status: 400 })
     }
 
-    if (Array.isArray(body)) {
-      return NextResponse.json({ error: 'Body invalido: objeto esperado, array recebido' }, { status: 400 })
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Body invalido: objeto esperado' }, { status: 400 })
     }
 
     const unknownKeys = Object.keys(body).filter((k) => !ALLOWED_POST_KEYS.has(k))

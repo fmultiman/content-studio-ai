@@ -17,9 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, VideoScene, VideoDraft } from '@/lib/types'
+import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -44,6 +45,7 @@ function VideosPageContent() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const [showStoryboard, setShowStoryboard] = useState(false)
+  const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Fetch projects and drafts on mount
@@ -550,6 +552,15 @@ function VideosPageContent() {
                     )}
                     Gerar Vídeo
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowQuickFlowDialog(true)}
+                    disabled={!videoName.trim() && scenes.length === 0}
+                    className="gap-2"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Preparar publicação
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -690,6 +701,26 @@ function VideosPageContent() {
         scenes={scenes}
         videoName={videoName}
         onSelectScene={handleSelectStoryboardScene}
+      />
+
+      <QuickFlowDialog
+        open={showQuickFlowDialog}
+        onOpenChange={setShowQuickFlowDialog}
+        projects={projects}
+        lockedProjectId={selectedProject ?? undefined}
+        lockedProductionId={productionId ?? undefined}
+        initialTitle={videoName}
+        initialBody={scenes
+          .map((s) => s.description)
+          .filter(Boolean)
+          .join('\n\n')
+          .slice(0, 3000)}
+        initialAiContext={scenes
+          .map((s) => s.prompt)
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 1500)}
+        sourceLabel={videoName || undefined}
       />
     </>
   )

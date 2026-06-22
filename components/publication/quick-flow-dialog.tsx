@@ -55,6 +55,14 @@ interface QuickFlowDialogProps {
   projects?: Project[]
   lockedProjectId?: string
   lockedProductionId?: string
+  /** Pre-filled title for the editorial content (editable by user) */
+  initialTitle?: string
+  /** Pre-filled body for the editorial content (editable by user) */
+  initialBody?: string
+  /** Pre-filled AI context for the editorial content (editable by user) */
+  initialAiContext?: string
+  /** UI-only label shown in step 1 describing the origin (e.g. video name) */
+  sourceLabel?: string
 }
 
 export function QuickFlowDialog({
@@ -63,6 +71,10 @@ export function QuickFlowDialog({
   projects = [],
   lockedProjectId,
   lockedProductionId,
+  initialTitle = '',
+  initialBody = '',
+  initialAiContext = '',
+  sourceLabel,
 }: QuickFlowDialogProps) {
   const { toast } = useToast()
   const router = useRouter()
@@ -70,8 +82,9 @@ export function QuickFlowDialog({
   const [step, setStep] = useState<1 | 2>(1)
 
   // Step 1 fields
-  const [title, setTitle] = useState('')
-  const [ecBody, setEcBody] = useState('')
+  const [title, setTitle] = useState(initialTitle)
+  const [ecBody, setEcBody] = useState(initialBody)
+  const [aiContext, setAiContext] = useState(initialAiContext)
   const [projectId, setProjectId] = useState(lockedProjectId ?? 'none')
   const [productionId, setProductionId] = useState(lockedProductionId ?? 'none')
   const [productions, setProductions] = useState<Production[]>([])
@@ -99,8 +112,9 @@ export function QuickFlowDialog({
   useEffect(() => {
     if (!open) return
     setStep(1)
-    setTitle('')
-    setEcBody('')
+    setTitle(initialTitle)
+    setEcBody(initialBody)
+    setAiContext(initialAiContext)
     setProjectId(lockedProjectId ?? 'none')
     setProductionId(lockedProductionId ?? 'none')
     setProductions([])
@@ -110,7 +124,7 @@ export function QuickFlowDialog({
     setCpBody('')
     setCta('')
     setHashtags('')
-  }, [open, lockedProjectId, lockedProductionId])
+  }, [open, lockedProjectId, lockedProductionId, initialTitle, initialBody, initialAiContext])
 
   // Load productions when project changes (only when project is not locked)
   useEffect(() => {
@@ -179,6 +193,7 @@ export function QuickFlowDialog({
         try {
           const patchPayload: Record<string, string | null> = { title: title.trim() }
           patchPayload.body = ecBody.trim() || null
+          patchPayload.aiContext = aiContext.trim() || null
           await fetch(`/api/editorial-contents/${createdEcId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -201,6 +216,7 @@ export function QuickFlowDialog({
         }
         if (resolvedProductionId !== 'none') payload.productionId = resolvedProductionId
         if (ecBody.trim()) payload.body = ecBody.trim()
+        if (aiContext.trim()) payload.aiContext = aiContext.trim()
 
         const res = await fetch('/api/editorial-contents', {
           method: 'POST',
@@ -319,6 +335,12 @@ export function QuickFlowDialog({
 
         {step === 1 ? (
           <div className="space-y-4 py-2">
+            {sourceLabel && (
+              <p className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                Preparando publicação a partir do vídeo <strong>&ldquo;{sourceLabel}&rdquo;</strong>.
+              </p>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="qf-title">Título *</Label>
               <Input
@@ -372,6 +394,17 @@ export function QuickFlowDialog({
                 onChange={(e) => setEcBody(e.target.value)}
                 placeholder="Resumo ou rascunho do conteúdo editorial..."
                 rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="qf-ai-context">Contexto para IA (opcional)</Label>
+              <Textarea
+                id="qf-ai-context"
+                value={aiContext}
+                onChange={(e) => setAiContext(e.target.value)}
+                placeholder="Objetivo, tom, público-alvo..."
+                rows={2}
               />
             </div>
           </div>

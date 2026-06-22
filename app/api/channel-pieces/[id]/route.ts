@@ -75,7 +75,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Body invalido: JSON esperado' }, { status: 400 })
     }
 
-    if (Array.isArray(body)) {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return NextResponse.json({ error: 'Body invalido: objeto esperado' }, { status: 400 })
     }
 
