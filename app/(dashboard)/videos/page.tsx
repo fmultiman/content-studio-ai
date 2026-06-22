@@ -94,6 +94,7 @@ function VideosPageContent() {
             setCurrentDraftId(draftData.id)
             setVideoName(draftData.name)
             setSelectedProject(draftData.project_id)
+            if (draftData.production_id) setProductionId(draftData.production_id)
             setScenes(draftData.scenes || [])
           } else if (!draftResponse.ok) {
             console.error('[v0] Video draft load error:', draftPayload)
