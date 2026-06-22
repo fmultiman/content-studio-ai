@@ -77,3 +77,7 @@ export function isValidChannel(value: string): value is PublicationChannel {
 export function isValidFormat(value: string): value is PublicationFormat {
   return PUBLICATION_FORMATS.includes(value as PublicationFormat)
 }
+
+export function getFormatsForChannel(channel: PublicationChannel): PublicationFormat[] {
+  return PUBLICATION_FORMATS.filter((format) => VALID_COMBINATIONS.has(`${channel}:${format}`))
+}
