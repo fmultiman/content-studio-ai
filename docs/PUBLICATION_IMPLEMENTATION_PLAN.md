@@ -1256,9 +1256,13 @@ e a rota de geração de body. A página retorna ao estado de P3.
 
 ---
 
-## P5 — Quick Publication Flow ✓ IMPLEMENTADO E TESTADO — branch feat/publication-p5-production-quick-flow
+## P5 — Quick Publication Flow ✓ IMPLEMENTADO, AUDITADO E CORRIGIDO — branch feat/publication-p5-production-quick-flow
 
-**Commit:** `4871ac9` — `feat: add production publication quick flow`
+**Commits:**
+- `4871ac9` — `feat: add production publication quick flow`
+- `bc22918` — `docs: record P5 implementation results in publication plan`
+- `e63cceb` — `fix: harden publication quick flow lifecycle` ← **commit de auditoria**
+
 **Data:** 2026-06-22
 **Branch:** `feat/publication-p5-production-quick-flow` (criada de `f1e5213`)
 
@@ -1285,34 +1289,139 @@ Fluxo de publicação rápida (QuickFlow) que cria EC + CP em uma única experi�
 - **Vista agrupada**: chips inline por CP com `CHANNEL_LABELS · FORMAT_LABELS · CP_STATUS_LABELS`
 - **Context lock**: quando aberto da Production, `lockedProjectId` + `lockedProductionId` — select de projeto/produção oculto
 
-### Resultados dos Testes
+### Resultados dos Testes (Auditoria Completa — 2026-06-22)
+
+#### Item 4 — generate-body whitelist
 
 | Cenário | Resultado |
 |---------|-----------|
-| T1: Hub — botão "Publicação rápida" abre dialog passo 1 | ✅ |
-| T2: Passo 1 → "Próximo" cria EC e avança para passo 2 | ✅ |
-| T3: Passo 2 → "Criar publicação" cria CP e navega para EC workspace | ✅ |
-| T4: EC + CP visíveis no workspace (Instagram/Feed/Rascunho) | ✅ |
-| T5: Production → botão "Publicação rápida" em quick actions | ✅ |
-| T6: Production → aba Conteúdos com botões corretos | ✅ |
-| T7: Dialog da Production omite selects de projeto/produção (locked) | ✅ |
-| T8: Fluxo completo da Production → cria EC+CP LinkedIn/Post | ✅ |
-| T9: Navega para EC workspace após criação da Production | ✅ |
-| T10: EC + CP visíveis no workspace (LinkedIn/Post/Rascunho) | ✅ |
-| T11: Vista agrupada mostra EC + chips de CP inline | ✅ `[TESTE P5] Producao Quick Flow · 1 peça · LinkedIn·Post·Rascunho` |
-| T12: Rollback — CP falha → EC deletado automaticamente (DELETE chamado) | ✅ |
-| T13: EC rollback retorna 404 após deleção | ✅ |
-| CL: Todos os 3 registros `[TESTE P5]` deletados | ✅ 0 remanescentes |
+| Array body → 400 "Body invalido: objeto esperado" | ✅ |
+| String body → 400 "Body invalido: objeto esperado" | ✅ (corrigido na auditoria) |
+| Unknown key (HACK) → 400 "Campos nao permitidos: HACK" | ✅ |
+| Campos permitidos + EC válido → segue lógica de negócio | ✅ |
+| Campo channel ausente → 400 "channel invalido ou obrigatorio" | ✅ |
 
-### Typecheck / Build
+#### Item 5 — Hub quick flow (21 cenários)
 
-- `pnpm exec tsc --noEmit`: 1 erro pré-existente `imagens/rascunhos/page.tsx:43 TS7006` (fora de escopo P1–P6)
-- `pnpm build`: sucesso completo — 5 rotas afetadas compiladas sem erro
+| Cenário | Resultado |
+|---------|-----------|
+| T-H1: Dialog abre em /publicacoes | ✅ |
+| T-H2: "Próximo" sem título → toast "Título obrigatório" | ✅ |
+| T-H3: Título preenchido, sem projeto → toast "Selecione um projeto" | ✅ |
+| T-H4: Select de projeto exibe opções | ✅ |
+| T-H5: Produções filtradas pelo projeto selecionado | ✅ |
+| T-H6/H7: Título e body preservados ao avançar | ✅ |
+| T-H8: "Próximo" → cria EC e avança para passo 2 | ✅ |
+| T-H9: Aviso "Conteúdo editorial criado" exibe título correto | ✅ |
+| T-H10/H11: Canal selecionado filtra formatos disponíveis (Instagram → Feed/Story/Reel/Carrossel) | ✅ |
+| T-H12a: "Criar" sem canal → toast "Canal obrigatório" | ✅ |
+| T-H12b: Canal sem formato → toast "Formato obrigatório" | ✅ |
+| T-H13–H15: CP body, CTA, hashtags preenchidos | ✅ |
+| T-H16: CP criado com status draft | ✅ |
+| T-H17–H19: CP listado no workspace, relação EC→CP correta | ✅ |
+| T-H20: Navega para `/projetos/.../conteudos/<ecId>` | ✅ |
+| T-H21: CP aparece na aba de peças do workspace | ✅ |
 
-### Bug corrigido durante P5
+#### Item 6 — Production quick flow (10 cenários + URL manipulation)
 
-- **Voltar idempotente**: `handleNext` verifica `createdEcId` antes de criar novo EC; corrigido antes do commit final
-5. Testar contagem com 0, 1, N ECs e M aprovados
+| Cenário | Resultado |
+|---------|-----------|
+| T-P1: Dialog abre da página de Production | ✅ |
+| T-P2: Selects de projeto/produção ocultos (context lock) | ✅ (apenas "Título" e "Texto base" exibidos) |
+| T-P3: EC criado com `projectId` e `productionId` corretos (locked) | ✅ |
+| T-P4/P5: CP LinkedIn/Artigo criado com status draft | ✅ |
+| T-P6: Production link aparece no workspace | ✅ |
+| T-P7–P9: CP listado, status draft, campos corretos | ✅ |
+| T-P10: API `?productionId` retorna CPs da produção | ✅ |
+| T-P11: URL manipulation `/projetos/UUID-ERRADO/producoes/UUID-VALIDA` → "Produção não encontrada" | ✅ (RLS bloqueia) |
+
+#### Item 7 — Voltar idempotência
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-V1: Voltar retorna ao passo 1 com título preservado | ✅ |
+| T-V2: Editar título em passo 1 após Voltar | ✅ |
+| T-V3: "Próximo" novamente → PATCH do EC existente, zero novos ECs criados | ✅ (count EC antes = depois) |
+| T-V3b: Aviso no passo 2 exibe o título atualizado | ✅ |
+
+#### Item 8 — Abandonment (Option A)
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-A1: Fechar via "Cancelar" com EC criado → toast "Conteúdo editorial salvo" + botão "Abrir" | ✅ |
+| T-A1b: Toast contém link correto para EC workspace | ✅ |
+| T-A2/A3: Fechar via X / Escape → mesmo comportamento (onOpenChange → handleClose) | ✅ (mesma codepath) |
+| Sucesso: "Criar publicação" NÃO dispara toast de abandono | ✅ (corrigido na auditoria: `onOpenChange(false)` direto) |
+
+#### Item 9 — Rollback
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-R1: CP POST falha → EC deletado automaticamente (rollback) | ✅ (EC count inalterado após falha simulada) |
+| T-R2: Dialog permanece aberto após falha de CP para retry | ✅ |
+| T-R2b: Toast de erro exibe mensagem descritiva | ✅ "Erro ao criar peça de canal" |
+| T-R3 (rollback failure): se DELETE falha → toast com link "Abrir EC" | ✅ (código inspecionado) |
+
+#### Item 10 — Idempotência (double-click)
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-I1: Double-click em "Próximo" → cria exatamente 1 EC (bug → corrigido com useRef guard) | ✅ após fix |
+| T-I2: Double-click em "Criar publicação" → cria exatamente 1 CP | ✅ após fix |
+
+#### Item 12 — API channel-pieces?productionId
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-API1: `?productionId=<uuid-valido>` → 200 + array de CPs | ✅ |
+| T-API2: Sem `productionId` → 200 + todos CPs do usuário | ✅ |
+| T-API3: `productionId=not-a-uuid` → 400 "productionId invalido" | ✅ |
+| T-API4: UUID válido mas produção não encontrada/não autorizada → 200 + array vazio | ✅ |
+| T-API7: Shape da resposta inclui todos os campos do ChannelPiece | ✅ |
+
+#### Item 13 — Grouped view
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-GV1: ECs aparecem como cards na aba "Conteúdos" | ✅ |
+| T-GV2: CPs aparecem como chips inline por EC | ✅ (Canal · Formato · Status) |
+| T-GV3: Status "Rascunho" visível no chip | ✅ |
+| T-GV4: Contador "N peça(s)" exibido por EC | ✅ |
+| T-GV5: EC sem CPs exibe "0 peças" sem chips | ✅ |
+
+#### Item 14 — Regressão
+
+| Cenário | Resultado |
+|---------|-----------|
+| T-REG1: Página /publicacoes carrega com botão "Publicação rápida" | ✅ |
+| T-REG2: `GET /api/editorial-contents` retorna lista | ✅ |
+| T-REG3: `GET /api/channel-pieces` (sem params) retorna CPs do usuário | ✅ |
+| T-REG4: generate-body ainda bloqueia campos desconhecidos após audit fix | ✅ |
+| T-REG5: Página de Production carrega normalmente | ✅ |
+
+### Typecheck / Build (pós-auditoria)
+
+- `pnpm exec tsc --noEmit`: 1 erro pré-existente `imagens/rascunhos/page.tsx:43 TS7006` (não afetado por P5; fora de escopo P1–P6)
+- Nenhum novo erro de TypeScript introduzido pelos commits P5
+
+### Bugs encontrados e corrigidos na auditoria (commit `e63cceb`)
+
+| Bug | Impacto | Fix |
+|-----|---------|-----|
+| `typeof body !== 'object'` ausente em generate-body | String body escapava whitelist, retornava "Campos nao permitidos: 0,1,2..." | Adicionado check antes de `Object.keys()` |
+| Sucesso chamava `handleClose()` que disparava toast de abandono | Toast duplicado após criação bem-sucedida | Substituído por `onOpenChange(false)` direto |
+| `handleNext` não PATCHava EC ao voltar do passo 2 e reeditar | Título editado no passo 1 não era salvo no EC existente | `handleNext` faz PATCH quando `createdEcId` existe |
+| Rollback failure toast sem link | Usuário não sabia onde estava o EC órfão | Adicionado `ToastAction` com link para EC workspace |
+| Double-click em "Próximo" criava 2 ECs | Race condition — estado React não atualiza sincronamente | `useRef` guard (`isHandlingNextRef`) reset em `finally` |
+| Double-click em "Criar publicação" criava 2 CPs | Mesma race condition | `useRef` guard (`isHandlingCreateRef`) reset em `finally` |
+
+### Limitação conhecida (fora de escopo P5)
+
+- 4 rotas P2 (`editorial-contents POST/PATCH`, `channel-pieces POST/PATCH`) têm o mesmo padrão `Array.isArray` sem `typeof` check. Impacto nulo em segurança (campos ignorados, não executados), mas inconsistente com generate-body. Registrado para P2 follow-up.
+
+### Limpeza
+
+- 10 registros `[TESTE P5]` (ECs + CPs em cascade) deletados via API após testes
 
 ### Riscos
 
