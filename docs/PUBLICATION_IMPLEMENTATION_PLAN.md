@@ -420,10 +420,75 @@ Remover as interfaces adicionadas de `lib/types.ts`.
 
 ---
 
-## P2 — APIs CRUD
+## P2 — APIs CRUD ✓ CONCLUÍDO — branch feat/publication-p2-api
 
 **Objetivo:** implementar rotas de CRUD para `EditorialContent` e `ChannelPiece`.
 API pura sem UI. Sem alterar rotas existentes.
+
+**Status:** concluído. Commit `feat: add publication domain APIs` em `feat/publication-p2-api`.
+
+**Arquivos reais criados/modificados:**
+
+| Arquivo | Ação |
+|---------|------|
+| `app/api/editorial-contents/route.ts` | Criado — GET (lista) + POST |
+| `app/api/editorial-contents/[id]/route.ts` | Criado — GET + PATCH + DELETE |
+| `app/api/channel-pieces/route.ts` | Criado — GET (lista) + POST |
+| `app/api/channel-pieces/[id]/route.ts` | Criado — GET + PATCH + DELETE |
+
+**Resultado de typecheck (`pnpm exec tsc --noEmit`):**
+- 1 erro pré-existente em `app/(dashboard)/imagens/rascunhos/page.tsx:43` (TS7006 — herdado de P1)
+- 0 erros introduzidos por P2
+
+**Resultado de build (`pnpm build`):**
+- Build bem-sucedido — 4 rotas dinâmicas confirmadas no output:
+  `ƒ /api/editorial-contents`, `ƒ /api/editorial-contents/[id]`,
+  `ƒ /api/channel-pieces`, `ƒ /api/channel-pieces/[id]`
+
+**Validação de schema via Supabase MCP (modo read-only):**
+
+| Item | Resultado |
+|------|-----------|
+| Tabelas existem com RLS habilitada | ✓ |
+| `editorial_contents`: 8 colunas, checks de title/body/ai_context/status | ✓ |
+| `channel_pieces`: 11 colunas, checks de channel/format/title/body/cta/hashtags/status | ✓ |
+| FK `editorial_contents.project_id → projects` ON DELETE RESTRICT | ✓ |
+| FK `editorial_contents.production_id → productions` ON DELETE SET NULL | ✓ |
+| FK `channel_pieces.editorial_content_id → editorial_contents` ON DELETE CASCADE | ✓ |
+| RLS SELECT: `auth.uid() = user_id` (ambas tabelas) | ✓ |
+| RLS INSERT `editorial_contents`: uid=user_id + project ownership + production ownership | ✓ |
+| RLS INSERT `channel_pieces`: uid=user_id + editorial_content ownership | ✓ |
+| RLS UPDATE: mesmas regras do INSERT (ambas tabelas) | ✓ |
+| RLS DELETE: `auth.uid() = user_id` (ambas tabelas) | ✓ |
+
+**Testes HTTP autenticados:** não executados — o servidor de desenvolvimento não pôde
+ser iniciado porque `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` não
+estão presentes em `.env.local` (essas variáveis são injetadas pelo ambiente do usuário
+ao iniciar o servidor manualmente). Os testes de integração ficam pendentes para
+execução manual pelo responsável do produto ao iniciar `pnpm dev` em sessão autenticada.
+
+**Divergências entre plano e implementação:**
+
+1. **`projectId` é editável no PATCH de `EditorialContent`** — o plano dizia que
+   `project_id` nunca seria editável. A spec de P2 expandiu esse comportamento para
+   permitir a movimentação de EC entre projetos do mesmo usuário, com revalidação da
+   Production existente contra o novo projeto.
+
+2. **`editorialContentId` é editável no PATCH de `ChannelPiece`** — o plano dizia
+   que `editorial_content_id` era imutável. A spec de P2 permite mover uma ChannelPiece
+   para outro EC do mesmo usuário, com validação de ownership do EC destino.
+
+3. **Modo `linkOnly` não implementado** — o plano descrevia um modo `linkOnly: true`
+   no PATCH de EC. A spec de P2 unificou o comportamento: o PATCH padrão já aceita
+   `productionId` e `projectId` com toda a validação cruzada necessária, tornando o
+   `linkOnly` desnecessário.
+
+4. **GET de `channel_pieces` não exige `editorialContentId` como obrigatório** — o
+   plano dizia "(obrigatório)". A spec de P2 tornou todos os filtros opcionais,
+   aplicando apenas `.eq('user_id', user.id)` como restrição base (RLS defense in depth).
+
+5. **Limite de caracteres aplicado em dupla camada** — validação na API (400 imediato)
+   e CHECK no banco (fallback). Garante mensagens de erro úteis antes de chegar ao banco.
 
 ### Escopo
 
