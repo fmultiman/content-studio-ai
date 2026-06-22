@@ -42,7 +42,7 @@ const navItems = [
   },
   {
     label: 'Publicações',
-    href: '/posts',
+    href: '/publicacoes',
     icon: FileText,
   },
   {

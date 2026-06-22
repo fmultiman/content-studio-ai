@@ -1,6 +1,11 @@
+// INTEGRAÇÃO PROVISÓRIA — pendente de revisão de domínio.
+// O modelo de Publicações (Post, canal, distribuição) ainda não foi definido.
+// Não alterar esta página sem antes concluir a descoberta de domínio em docs/PUBLICATION_DOMAIN_DISCOVERY.md.
+
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +36,7 @@ import {
   FileText,
   FolderKanban,
   Instagram,
+  ArrowLeft,
   Loader2,
   MoreVertical,
   Plus,
@@ -127,8 +133,10 @@ function createThumbnail(file: File) {
   })
 }
 
-export default function PostsPage() {
+function PostsPageContent() {
   const { toast } = useToast()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [selectedProject, setSelectedProject] = useState('all')
@@ -142,6 +150,9 @@ export default function PostsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isUploadingImages, setIsUploadingImages] = useState(false)
+  const [productionId, setProductionId] = useState<string | null>(null)
+  const [productionTitle, setProductionTitle] = useState<string | null>(null)
+  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
 
   const currentPost = posts.find((post) => post.id === currentPostId) || null
 
@@ -158,12 +169,28 @@ export default function PostsPage() {
       if (postsResponse.ok) setPosts(postsPayload.posts || [])
       else console.error('[v0] Posts load error:', postsPayload)
 
+      // Production context from URL
+      const prodId = searchParams.get('production')
+      const projId = searchParams.get('project')
+      if (prodId) {
+        setProductionId(prodId)
+        const prodRes = await fetch(`/api/productions/${prodId}`)
+        if (prodRes.ok) {
+          const prodData = await prodRes.json()
+          setProductionTitle(prodData.production?.title || null)
+          setProductionProjectId(prodData.production?.project_id || null)
+        }
+      }
+      if (projId) {
+        setSelectedProject(projId)
+      }
+
       setIsLoading(false)
       setIsDataReady(true)
     }
 
     loadData()
-  }, [])
+  }, [searchParams])
 
   useEffect(() => {
     if (!isDataReady || !currentPostId) return
@@ -258,6 +285,7 @@ export default function PostsPage() {
           id: currentPostId,
           name: form.name,
           projectId: form.projectId === 'none' ? null : form.projectId,
+          productionId,
           channel: form.channel,
           description: form.description || null,
           aiContext: form.aiContext || null,
@@ -546,6 +574,31 @@ export default function PostsPage() {
   return (
     <>
       <Header title="Publicações" />
+      {productionId && (
+        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const projId = productionProjectId || selectedProject
+              if (projId && projId !== 'all') {
+                router.push(`/projetos/${projId}/producoes/${productionId}`)
+              } else {
+                router.back()
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Produção
+          </Button>
+          {productionTitle && (
+            <span className="text-sm text-muted-foreground">
+              · {productionTitle}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -890,5 +943,13 @@ export default function PostsPage() {
         </div>
       </div>
     </>
+  )
+}
+
+export default function PostsPage() {
+  return (
+    <Suspense>
+      <PostsPageContent />
+    </Suspense>
   )
 }

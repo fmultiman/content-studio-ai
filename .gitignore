@@ -19,3 +19,8 @@ node_modules
 
 .vercel
 .env*.local
+.env*
+
+# Local tooling / generated
+.mcp.json
+tsconfig.tsbuildinfo

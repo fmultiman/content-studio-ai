@@ -10,7 +10,7 @@ import { ImageResult } from '@/components/images/image-result'
 import { generateImagePrompt, regeneratePrompt } from '@/lib/ai-simulator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileText, ChevronRight, Loader2 } from 'lucide-react'
+import { FileText, ChevronRight, Loader2, ArrowLeft } from 'lucide-react'
 import { GenerationHistory } from '@/components/images/generation-history'
 import type { Project, Image as ImageType, ImageDraft, ImageEvaluation, GenerationAttempt } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
@@ -33,6 +33,9 @@ function ImagesPageContent() {
   
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [productionId, setProductionId] = useState<string | null>(null)
+  const [productionTitle, setProductionTitle] = useState<string | null>(null)
+  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -62,6 +65,8 @@ function ImagesPageContent() {
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
   const [isTranslatingPrompt, setIsTranslatingPrompt] = useState(false)
   
   // API Key state
@@ -147,6 +152,7 @@ function ImagesPageContent() {
       id: currentDraftId,
       name: draftName,
       projectId: selectedProject,
+      productionId,
       userInput,
       generatedPrompt: generatedPrompt || null,
       generatedPromptPt: generatedPromptPt || null,
@@ -232,6 +238,19 @@ function ImagesPageContent() {
     setCurrentDraftId(draft.id)
     setUserInput(draft.user_input)
     setSelectedProject(draft.project_id)
+    if (draft.production_id && !productionId) {
+      setProductionId(draft.production_id)
+      // Fetch title and project for back button when loading a production-linked draft outside URL context
+      fetch(`/api/productions/${draft.production_id}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => {
+          if (d?.production) {
+            setProductionTitle(d.production.title || null)
+            setProductionProjectId(d.production.project_id || null)
+          }
+        })
+        .catch(() => null)
+    }
     setGeneratedPrompt(draft.generated_prompt || '')
     setGeneratedPromptPt(draft.generated_prompt_pt || '')
     setAutoMode(draft.auto_mode)
@@ -282,6 +301,7 @@ function ImagesPageContent() {
     currentAttempt,
     imageStatus,
     selectedProject,
+    productionId,
     autoMode,
     imageUrl,
     selectedModel,
@@ -291,72 +311,97 @@ function ImagesPageContent() {
 
   // Fetch projects and drafts on mount
   useEffect(() => {
+    let cancelled = false
+    setLoadError(null)
+
     const fetchData = async () => {
-      const supabase = createClient()
-      
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (projectsData) setProjects(projectsData)
-
-      // Fetch user settings for API key
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: settingsData } = await supabase
-          .from('user_settings')
-          .select('openai_api_key, nanobanana_api_key, automation_enabled, default_image_model, image_evaluator_enabled, max_refinement_iterations')
-          .eq('user_id', user.id)
-          .single()
-        
-        if (settingsData?.openai_api_key) {
-          setOpenaiApiKey(settingsData.openai_api_key)
-        }
-        if (settingsData?.nanobanana_api_key) {
-          setNanobananaApiKey(settingsData.nanobanana_api_key)
-        }
-        setAutomationEnabled(settingsData?.automation_enabled ?? false)
-        const model = normalizeImageModel(settingsData?.default_image_model)
-        setDefaultImageModel(model)
-        setSelectedModel(model)
-        setEvaluatorEnabled(settingsData?.image_evaluator_enabled ?? false)
-        setMaxRefinements(settingsData?.max_refinement_iterations ?? 2)
-      }
-
-      const draftsResponse = await fetch('/api/image-drafts?limit=5')
-      const draftsPayload = await draftsResponse.json()
-
-      if (draftsResponse.ok) {
-        setDrafts(draftsPayload.drafts || [])
-      } else {
-        console.error('[v0] Image drafts load error:', draftsPayload)
-      }
-      setIsLoadingDrafts(false)
-
-      // Load draft from URL if present
-      const draftId = searchParams.get('draft')
-      if (draftId) {
-        const draftResponse = await fetch(`/api/image-drafts?id=${draftId}`)
-        const draftPayload = await draftResponse.json()
-        
-        if (draftResponse.ok && draftPayload.draft) {
-          const draftData = draftPayload.draft as ImageDraft
-          await applyDraftState(draftData)
-        } else if (!draftResponse.ok) {
-          console.error('[v0] Image draft load error:', draftPayload)
-        }
-      }
-
-      // Load project from URL if present
+      // Apply URL params before any await so the banner and project selector
+      // are visible even when subsequent async fetches fail.
       const projectId = searchParams.get('project')
-      if (projectId) {
-        setSelectedProject(projectId)
+      const prodId = searchParams.get('production')
+      if (projectId) setSelectedProject(projectId)
+      if (prodId) setProductionId(prodId)
+
+      try {
+        const supabase = createClient()
+
+        const { data: projectsData } = await supabase
+          .from('projects')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (!cancelled && projectsData) setProjects(projectsData)
+
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!cancelled && user) {
+          const { data: settingsData } = await supabase
+            .from('user_settings')
+            .select('openai_api_key, nanobanana_api_key, automation_enabled, default_image_model, image_evaluator_enabled, max_refinement_iterations')
+            .eq('user_id', user.id)
+            .single()
+
+          if (settingsData?.openai_api_key) {
+            setOpenaiApiKey(settingsData.openai_api_key)
+          }
+          if (settingsData?.nanobanana_api_key) {
+            setNanobananaApiKey(settingsData.nanobanana_api_key)
+          }
+          setAutomationEnabled(settingsData?.automation_enabled ?? false)
+          const model = normalizeImageModel(settingsData?.default_image_model)
+          setDefaultImageModel(model)
+          setSelectedModel(model)
+          setEvaluatorEnabled(settingsData?.image_evaluator_enabled ?? false)
+          setMaxRefinements(settingsData?.max_refinement_iterations ?? 2)
+        }
+
+        const draftsResponse = await fetch('/api/image-drafts?limit=5')
+        const draftsPayload = await draftsResponse.json()
+
+        if (!cancelled) {
+          if (draftsResponse.ok) {
+            setDrafts(draftsPayload.drafts || [])
+          } else {
+            console.error('[v0] Image drafts load error:', draftsPayload)
+          }
+        }
+
+        const draftId = searchParams.get('draft')
+        if (draftId && !cancelled) {
+          const draftResponse = await fetch(`/api/image-drafts?id=${draftId}`)
+          const draftPayload = await draftResponse.json()
+
+          if (draftResponse.ok && draftPayload.draft && !cancelled) {
+            await applyDraftState(draftPayload.draft as ImageDraft)
+          } else if (!draftResponse.ok) {
+            console.error('[v0] Image draft load error:', draftPayload)
+          }
+        }
+
+        if (prodId && !cancelled) {
+          const prodRes = await fetch(`/api/productions/${prodId}`)
+          if (prodRes.ok && !cancelled) {
+            const prodData = await prodRes.json()
+            if (!cancelled) {
+              setProductionTitle(prodData.production?.title || null)
+              setProductionProjectId(prodData.production?.project_id || null)
+            }
+          }
+        }
+
+        if (!cancelled) setIsDataReady(true)
+      } catch (err) {
+        console.error('[v0] Image data load error:', err)
+        if (!cancelled) {
+          setLoadError('Não foi possível carregar os dados. Verifique sua conexão e tente novamente.')
+        }
+      } finally {
+        if (!cancelled) setIsLoadingDrafts(false)
       }
-      setIsDataReady(true)
     }
+
     fetchData()
-  }, [searchParams])
+    return () => { cancelled = true }
+  }, [searchParams, retryKey])
 
   // Save draft handler
   const handleSaveDraft = async () => {
@@ -430,7 +475,6 @@ function ImagesPageContent() {
     setPromptDetails(null)
     setImageUrl(null)
     setCurrentImage(null)
-    setSelectedProject(null)
     setCurrentDraftId(null)
     setAutoMode(false)
     setImageStatus('draft')
@@ -438,6 +482,8 @@ function ImagesPageContent() {
     setCurrentEvaluation(null)
     setGenerationAttempts([])
     setCurrentAttempt(1)
+    // Production context and project are preserved intentionally:
+    // creating a new image within a Production keeps the workspace context.
   }
 
   const handleNewImage = async () => {
@@ -1129,8 +1175,44 @@ function ImagesPageContent() {
   return (
     <>
       <Header title="Geração de Imagens" />
+      {productionId && (
+        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const projId = productionProjectId || selectedProject
+              if (projId && productionId) {
+                router.push(`/projetos/${projId}/producoes/${productionId}`)
+              } else {
+                router.back()
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Produção
+          </Button>
+          {productionTitle && (
+            <span className="text-sm text-muted-foreground">
+              · {productionTitle}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {loadError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+              <p className="text-sm text-destructive">{loadError}</p>
+              <button
+                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
+                onClick={() => setRetryKey((k) => k + 1)}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
           {/* Drafts Section */}
           {!isLoadingDrafts && drafts.length > 0 && (
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">

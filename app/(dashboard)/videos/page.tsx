@@ -17,9 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, VideoScene, VideoDraft } from '@/lib/types'
+import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -28,6 +29,9 @@ function VideosPageContent() {
   
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
+  const [productionId, setProductionId] = useState<string | null>(null)
+  const [productionTitle, setProductionTitle] = useState<string | null>(null)
+  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
@@ -38,67 +42,93 @@ function VideosPageContent() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
   const [showStoryboard, setShowStoryboard] = useState(false)
+  const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Fetch projects and drafts on mount
   useEffect(() => {
+    let cancelled = false
+    setLoadError(null)
+
     const fetchData = async () => {
+      // Apply URL params before any await so the banner and project selector
+      // are visible even when subsequent async fetches fail.
+      const projectId = searchParams.get('project')
+      const prodId = searchParams.get('production')
+      if (projectId) setSelectedProject(projectId)
+      if (prodId) setProductionId(prodId)
+
       try {
         const supabase = createClient()
-        
-        // Fetch projects
+
         const { data: projectsData } = await supabase
           .from('projects')
           .select('*')
           .order('created_at', { ascending: false })
-        
-        if (projectsData) setProjects(projectsData)
-        setIsLoadingProjects(false)
+
+        if (!cancelled && projectsData) setProjects(projectsData)
+        if (!cancelled) setIsLoadingProjects(false)
 
         const draftsResponse = await fetch('/api/video-drafts?limit=5')
         const draftsData = await draftsResponse.json()
 
-        if (draftsResponse.ok) {
-          setDrafts(draftsData.drafts || [])
-        } else {
-          console.error('[v0] Video drafts load error:', draftsData)
+        if (!cancelled) {
+          if (draftsResponse.ok) {
+            setDrafts(draftsData.drafts || [])
+          } else {
+            console.error('[v0] Video drafts load error:', draftsData)
+          }
+          setIsLoadingDrafts(false)
         }
 
-        setIsLoadingDrafts(false)
-
-        // Load draft from URL if present
         const draftId = searchParams.get('draft')
-        if (draftId) {
+        if (draftId && !cancelled) {
           const draftResponse = await fetch(`/api/video-drafts?id=${draftId}`)
           const draftPayload = await draftResponse.json()
-          
-          if (draftResponse.ok && draftPayload.draft) {
+
+          if (draftResponse.ok && draftPayload.draft && !cancelled) {
             const draftData = draftPayload.draft as VideoDraft
             setCurrentDraftId(draftData.id)
             setVideoName(draftData.name)
             setSelectedProject(draftData.project_id)
+            if (draftData.production_id) setProductionId(draftData.production_id)
             setScenes(draftData.scenes || [])
           } else if (!draftResponse.ok) {
             console.error('[v0] Video draft load error:', draftPayload)
           }
         }
 
-        // Load project from URL if present
-        const projectId = searchParams.get('project')
-        if (projectId) {
-          setSelectedProject(projectId)
+        if (prodId && !cancelled) {
+          const prodRes = await fetch(`/api/productions/${prodId}`)
+          if (prodRes.ok && !cancelled) {
+            const prodData = await prodRes.json()
+            if (!cancelled) {
+              setProductionTitle(prodData.production?.title || null)
+              setProductionProjectId(prodData.production?.project_id || null)
+            }
+          }
         }
+
+        if (!cancelled) setIsDataReady(true)
       } catch (error) {
         console.error('[v0] Video data load error:', error)
+        if (!cancelled) {
+          setLoadError('Não foi possível carregar os dados. Verifique sua conexão e tente novamente.')
+        }
       } finally {
-        setIsLoadingProjects(false)
-        setIsLoadingDrafts(false)
-        setIsDataReady(true)
+        if (!cancelled) {
+          setIsLoadingProjects(false)
+          setIsLoadingDrafts(false)
+        }
       }
     }
+
     fetchData()
-  }, [searchParams])
+    return () => { cancelled = true }
+  }, [searchParams, retryKey])
 
   useEffect(() => {
     if (!isDataReady) return
@@ -129,6 +159,7 @@ function VideosPageContent() {
             id: currentDraftId,
             name: draftName,
             projectId: selectedProject,
+            productionId,
             scenes,
           }),
         })
@@ -162,7 +193,7 @@ function VideosPageContent() {
       window.clearTimeout(timeoutId)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [videoName, scenes, selectedProject, currentDraftId, isDataReady])
+  }, [videoName, scenes, selectedProject, productionId, currentDraftId, isDataReady])
 
   const addScene = () => {
     const newScene: VideoScene = {
@@ -254,6 +285,7 @@ function VideosPageContent() {
           id: currentDraftId,
           name: draftName,
           projectId: selectedProject,
+          productionId,
           scenes,
         }),
       })
@@ -265,7 +297,8 @@ function VideosPageContent() {
 
       if (data.draft) {
         setCurrentDraftId(data.draft.id)
-        setDrafts((prev) => {
+          if (data.draft.production_id) setProductionId(data.draft.production_id)
+          setDrafts((prev) => {
           const withoutCurrent = prev.filter((draft) => draft.id !== data.draft.id)
           return [data.draft, ...withoutCurrent].slice(0, 5)
         })
@@ -304,6 +337,18 @@ function VideosPageContent() {
     setCurrentDraftId(draft.id)
     setVideoName(draft.name)
     setSelectedProject(draft.project_id)
+    if (draft.production_id && !productionId) {
+      setProductionId(draft.production_id)
+      fetch(`/api/productions/${draft.production_id}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => {
+          if (d?.production) {
+            setProductionTitle(d.production.title || null)
+            setProductionProjectId(d.production.project_id || null)
+          }
+        })
+        .catch(() => null)
+    }
     setScenes(draft.scenes || [])
 
     toast({
@@ -347,8 +392,9 @@ function VideosPageContent() {
   const clearForm = () => {
     setVideoName('')
     setScenes([])
-    setSelectedProject(null)
     setCurrentDraftId(null)
+    // Production context and project are preserved intentionally:
+    // creating a new video within a Production keeps the workspace context.
   }
 
   const handleNewVideo = async () => {
@@ -373,8 +419,44 @@ function VideosPageContent() {
   return (
     <>
       <Header title="Geração de Vídeos" />
+      {productionId && (
+        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const projId = productionProjectId || selectedProject
+              if (projId && productionId) {
+                router.push(`/projetos/${projId}/producoes/${productionId}`)
+              } else {
+                router.back()
+              }
+            }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Produção
+          </Button>
+          {productionTitle && (
+            <span className="text-sm text-muted-foreground">
+              · {productionTitle}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {loadError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+              <p className="text-sm text-destructive">{loadError}</p>
+              <button
+                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
+                onClick={() => setRetryKey((k) => k + 1)}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
           {/* Drafts Section */}
           {!isLoadingDrafts && drafts.length > 0 && (
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
@@ -470,6 +552,15 @@ function VideosPageContent() {
                       <Play className="h-4 w-4" />
                     )}
                     Gerar Vídeo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowQuickFlowDialog(true)}
+                    disabled={!videoName.trim() && scenes.length === 0}
+                    className="gap-2"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Preparar publicação
                   </Button>
                 </div>
               </div>
@@ -611,6 +702,26 @@ function VideosPageContent() {
         scenes={scenes}
         videoName={videoName}
         onSelectScene={handleSelectStoryboardScene}
+      />
+
+      <QuickFlowDialog
+        open={showQuickFlowDialog}
+        onOpenChange={setShowQuickFlowDialog}
+        projects={projects}
+        lockedProjectId={selectedProject ?? undefined}
+        lockedProductionId={productionId ?? undefined}
+        initialTitle={videoName}
+        initialBody={scenes
+          .map((s) => s.description)
+          .filter(Boolean)
+          .join('\n\n')
+          .slice(0, 3000)}
+        initialAiContext={scenes
+          .map((s) => s.prompt)
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 1500)}
+        sourceLabel={videoName || undefined}
       />
     </>
   )

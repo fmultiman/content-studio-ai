@@ -15,6 +15,19 @@ export interface Project {
 
 export type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
 
+export type ProductionType = 'editorial' | 'branding' | 'campaign'
+
+export interface Production {
+  id: string
+  user_id: string
+  project_id: string
+  title: string
+  intention: string
+  type: ProductionType
+  created_at: string
+  updated_at: string
+}
+
 export interface UserSettings {
   id: string
   user_id: string
@@ -115,6 +128,7 @@ export interface Post {
   id: string
   user_id: string
   project_id: string | null
+  production_id: string | null
   name: string
   channel: PublicationType
   description: string | null
@@ -223,6 +237,7 @@ export interface ImageDraft {
   image_url: string | null
   current_image_id?: string | null
   selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null
+  production_id: string | null
   created_at: string
   updated_at: string
 }
@@ -231,13 +246,72 @@ export interface VideoDraft {
   id: string
   user_id: string
   project_id: string | null
+  production_id: string | null
   name: string
   scenes: VideoScene[]
   created_at: string
   updated_at: string
 }
 
+// ---------------------------------------------------------------------------
+// Publication domain types (P1 — PUBLICATION_DOMAIN_DECISIONS.md Rev. 2)
+// ---------------------------------------------------------------------------
+
+export type PublicationChannel =
+  | 'instagram'
+  | 'youtube'
+  | 'whatsapp'
+  | 'linkedin'
+  | 'x'
+  | 'tiktok'
+
+export type PublicationFormat =
+  | 'feed'
+  | 'story'
+  | 'reel'
+  | 'short'
+  | 'video_description'
+  | 'post'
+  | 'channel_message'
+  | 'carousel'
+  | 'article'
+
+export type EditorialContentStatus = 'draft' | 'ready' | 'archived'
+
+export type ChannelPieceStatus = 'draft' | 'ready' | 'approved' | 'archived'
+
+export interface EditorialContent {
+  id: string
+  user_id: string
+  project_id: string
+  production_id: string | null
+  title: string
+  body: string | null
+  ai_context: string | null
+  status: EditorialContentStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ChannelPiece {
+  id: string
+  user_id: string
+  editorial_content_id: string
+  channel: PublicationChannel
+  format: PublicationFormat
+  title: string | null
+  body: string | null
+  cta: string | null
+  hashtags: string | null
+  status: ChannelPieceStatus
+  created_at: string
+  updated_at: string
+}
+
+// ---------------------------------------------------------------------------
 // API Response types
+// ---------------------------------------------------------------------------
+
 export interface ApiResponse<T> {
   data: T | null
   error: string | null
