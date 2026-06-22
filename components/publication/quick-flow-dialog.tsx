@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Dialog,
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { ToastAction } from '@/components/ui/toast'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import type { Production, Project } from '@/lib/types'
 import type { PublicationChannel, PublicationFormat } from '@/lib/types'
@@ -87,6 +88,10 @@ export function QuickFlowDialog({
   const [hashtags, setHashtags] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
+  // Synchronous ref guards — state updates are async and cannot prevent concurrent calls
+  const isHandlingNextRef = useRef(false)
+  const isHandlingCreateRef = useRef(false)
+
   const resolvedProjectId = lockedProjectId ?? projectId
   const resolvedProductionId = lockedProductionId ?? productionId
 
@@ -140,64 +145,103 @@ export function QuickFlowDialog({
   }, [channel])
 
   function handleClose() {
+    if (createdEcId) {
+      const ecPath = `/projetos/${resolvedProjectId}/conteudos/${createdEcId}`
+      toast({
+        title: 'Conteúdo editorial salvo',
+        description: `"${title.trim() || 'Conteúdo'}" foi salvo como rascunho. Adicione peças de canal quando quiser.`,
+        action: (
+          <ToastAction altText="Abrir workspace" onClick={() => router.push(ecPath)}>
+            Abrir
+          </ToastAction>
+        ),
+      })
+    }
     onOpenChange(false)
   }
 
   async function handleNext() {
-    if (!title.trim()) {
-      toast({ title: 'Título obrigatório', variant: 'destructive' })
-      return
-    }
-    if (resolvedProjectId === 'none') {
-      toast({ title: 'Selecione um projeto', variant: 'destructive' })
-      return
-    }
-
-    // EC already created (user went back from step 2) — skip creation
-    if (createdEcId) {
-      setStep(2)
-      return
-    }
-
-    setIsCreatingEc(true)
+    if (isHandlingNextRef.current) return
+    isHandlingNextRef.current = true
     try {
-      const payload: Record<string, string> = {
-        title: title.trim(),
-        projectId: resolvedProjectId,
+      if (!title.trim()) {
+        toast({ title: 'Título obrigatório', variant: 'destructive' })
+        return
       }
-      if (resolvedProductionId !== 'none') payload.productionId = resolvedProductionId
-      if (ecBody.trim()) payload.body = ecBody.trim()
+      if (resolvedProjectId === 'none') {
+        toast({ title: 'Selecione um projeto', variant: 'destructive' })
+        return
+      }
 
-      const res = await fetch('/api/editorial-contents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao criar conteúdo editorial')
-      setCreatedEcId(data.editorialContent.id)
-      setStep(2)
-    } catch (err) {
-      toast({
-        title: 'Erro ao criar conteúdo editorial',
-        description: err instanceof Error ? err.message : 'Tente novamente.',
-        variant: 'destructive',
-      })
+      // EC already created (user went back from step 2) — PATCH with current values then advance
+      if (createdEcId) {
+        setIsCreatingEc(true)
+        try {
+          const patchPayload: Record<string, string | null> = { title: title.trim() }
+          patchPayload.body = ecBody.trim() || null
+          await fetch(`/api/editorial-contents/${createdEcId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patchPayload),
+          })
+        } catch {
+          // non-fatal: advance anyway; EC keeps previous values
+        } finally {
+          setIsCreatingEc(false)
+        }
+        setStep(2)
+        return
+      }
+
+      setIsCreatingEc(true)
+      try {
+        const payload: Record<string, string> = {
+          title: title.trim(),
+          projectId: resolvedProjectId,
+        }
+        if (resolvedProductionId !== 'none') payload.productionId = resolvedProductionId
+        if (ecBody.trim()) payload.body = ecBody.trim()
+
+        const res = await fetch('/api/editorial-contents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Erro ao criar conteúdo editorial')
+        setCreatedEcId(data.editorialContent.id)
+        setStep(2)
+      } catch (err) {
+        toast({
+          title: 'Erro ao criar conteúdo editorial',
+          description: err instanceof Error ? err.message : 'Tente novamente.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsCreatingEc(false)
+      }
     } finally {
-      setIsCreatingEc(false)
+      isHandlingNextRef.current = false
     }
   }
 
   async function handleCreate() {
+    if (isHandlingCreateRef.current) return
+    isHandlingCreateRef.current = true
     if (channel === 'none') {
       toast({ title: 'Canal obrigatório', variant: 'destructive' })
+      isHandlingCreateRef.current = false
       return
     }
     if (format === 'none') {
       toast({ title: 'Formato obrigatório', variant: 'destructive' })
+      isHandlingCreateRef.current = false
       return
     }
-    if (!createdEcId) return
+    if (!createdEcId) {
+      isHandlingCreateRef.current = false
+      return
+    }
 
     setIsSaving(true)
     try {
@@ -223,10 +267,16 @@ export function QuickFlowDialog({
           method: 'DELETE',
         })
         if (!rollbackRes.ok) {
+          const ecPath = `/projetos/${resolvedProjectId}/conteudos/${createdEcId}`
           toast({
             title: 'Erro ao criar peça de canal',
-            description: `Não foi possível criar a peça de canal. Um Conteúdo Editorial foi criado e não pôde ser removido automaticamente. Acesse Publicações para gerenciá-lo.`,
+            description: `A peça não foi criada. O Conteúdo Editorial "${title.trim()}" permanece salvo e não pôde ser removido automaticamente.`,
             variant: 'destructive',
+            action: (
+              <ToastAction altText="Abrir conteúdo" onClick={() => router.push(ecPath)}>
+                Abrir EC
+              </ToastAction>
+            ),
           })
         } else {
           toast({
@@ -239,7 +289,7 @@ export function QuickFlowDialog({
       }
 
       toast({ title: 'Publicação rápida criada', description: 'Redirecionando para o workspace...' })
-      handleClose()
+      onOpenChange(false)
       router.push(`/projetos/${resolvedProjectId}/conteudos/${createdEcId}`)
     } catch (err) {
       toast({
@@ -249,6 +299,7 @@ export function QuickFlowDialog({
       })
     } finally {
       setIsSaving(false)
+      isHandlingCreateRef.current = false
     }
   }
 

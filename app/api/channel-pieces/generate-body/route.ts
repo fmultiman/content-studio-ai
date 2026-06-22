@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Body invalido: JSON esperado' }, { status: 400 })
     }
 
-    if (Array.isArray(body)) {
+    if (Array.isArray(body) || typeof body !== 'object' || body === null) {
       return NextResponse.json({ error: 'Body invalido: objeto esperado' }, { status: 400 })
     }
 
