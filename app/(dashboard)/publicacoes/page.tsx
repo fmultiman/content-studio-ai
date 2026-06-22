@@ -27,7 +27,8 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useToast } from '@/hooks/use-toast'
 import type { EditorialContent, EditorialContentStatus, Production, Project } from '@/lib/types'
-import { ExternalLink, FileText, FolderKanban, Loader2, Plus, RefreshCw } from 'lucide-react'
+import { ExternalLink, FileText, FolderKanban, Loader2, Plus, RefreshCw, Zap } from 'lucide-react'
+import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 type StatusFilter = 'all' | EditorialContentStatus
 
@@ -55,6 +56,8 @@ function PublicacoesPageContent() {
   const [createTitle, setCreateTitle] = useState('')
   const [createProjectId, setCreateProjectId] = useState('none')
   const [isCreating, setIsCreating] = useState(false)
+
+  const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
 
   useEffect(() => {
     setIsLoading(true)
@@ -157,13 +160,23 @@ function PublicacoesPageContent() {
             <p className="text-muted-foreground">
               Gerencie Conteúdos Editoriais por canal e formato.
             </p>
-            <Button
-              className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-              onClick={openCreateDialog}
-            >
-              <Plus className="h-4 w-4" />
-              Novo Conteúdo
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowQuickFlowDialog(true)}
+              >
+                <Zap className="h-4 w-4" />
+                Publicação rápida
+              </Button>
+              <Button
+                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                onClick={openCreateDialog}
+              >
+                <Plus className="h-4 w-4" />
+                Novo Conteúdo
+              </Button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -298,6 +311,12 @@ function PublicacoesPageContent() {
           </div>
         </div>
       </div>
+
+      <QuickFlowDialog
+        open={showQuickFlowDialog}
+        onOpenChange={setShowQuickFlowDialog}
+        projects={projects}
+      />
 
       {/* Create EC Dialog — criação mínima: título + projeto; demais campos no workspace */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

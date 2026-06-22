@@ -43,9 +43,39 @@ import {
   Plus,
   Link2Off,
   ExternalLink,
+  Zap,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Production, ImageDraft, VideoDraft, Post, EditorialContent } from '@/lib/types'
+import type { Project, Production, ImageDraft, VideoDraft, Post, EditorialContent, ChannelPiece } from '@/lib/types'
+import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+
+const CHANNEL_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  youtube: 'YouTube',
+  whatsapp: 'WhatsApp',
+  linkedin: 'LinkedIn',
+  x: 'X',
+  tiktok: 'TikTok',
+}
+
+const FORMAT_LABELS: Record<string, string> = {
+  feed: 'Feed',
+  story: 'Story',
+  reel: 'Reel',
+  short: 'Short',
+  video_description: 'Desc. Vídeo',
+  post: 'Post',
+  channel_message: 'Canal',
+  carousel: 'Carrossel',
+  article: 'Artigo',
+}
+
+const CP_STATUS_LABELS: Record<string, string> = {
+  draft: 'Rascunho',
+  ready: 'Pronta',
+  approved: 'Aprovada',
+  archived: 'Arquivada',
+}
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -80,6 +110,13 @@ export default function ProductionDetailPage() {
   const [showCreateEcDialog, setShowCreateEcDialog] = useState(false)
   const [createEcTitle, setCreateEcTitle] = useState('')
   const [isCreatingEc, setIsCreatingEc] = useState(false)
+
+  // Channel pieces grouped under ECs
+  const [channelPieces, setChannelPieces] = useState<ChannelPiece[]>([])
+  const [isLoadingCps, setIsLoadingCps] = useState(false)
+
+  // Quick flow dialog
+  const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
 
   // Unlink state
   const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video' | 'post'; id: string; name: string } | null>(null)
@@ -159,6 +196,22 @@ export default function ProductionDetailPage() {
     }
     loadWorkspace()
   }, [production, productionId])
+
+  // Load channel pieces for all ECs of this production (independent of workspace load)
+  useEffect(() => {
+    if (editorialContents.length === 0) {
+      setChannelPieces([])
+      return
+    }
+    let cancelled = false
+    setIsLoadingCps(true)
+    fetch(`/api/channel-pieces?productionId=${productionId}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setChannelPieces(d.channelPieces || []) })
+      .catch(() => { if (!cancelled) setChannelPieces([]) })
+      .finally(() => { if (!cancelled) setIsLoadingCps(false) })
+    return () => { cancelled = true }
+  }, [editorialContents, productionId])
 
   const handleCreateEc = async () => {
     if (!createEcTitle.trim()) {
@@ -485,6 +538,15 @@ export default function ProductionDetailPage() {
                         <FileText className="h-4 w-4" />
                         Criar Publicação
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => setShowQuickFlowDialog(true)}
+                      >
+                        <Zap className="h-4 w-4" />
+                        Publicação rápida
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -674,18 +736,29 @@ export default function ProductionDetailPage() {
                       ? 'Nenhum conteúdo editorial vinculado.'
                       : `${editorialContents.length} conteúdo${editorialContents.length > 1 ? 's' : ''} editorial${editorialContents.length > 1 ? 'is' : ''} vinculado${editorialContents.length > 1 ? 's' : ''}.`}
                   </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => {
-                      setCreateEcTitle('')
-                      setShowCreateEcDialog(true)
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Criar Conteúdo
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => setShowQuickFlowDialog(true)}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Publicação rápida
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => {
+                        setCreateEcTitle('')
+                        setShowCreateEcDialog(true)
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Criar Conteúdo
+                    </Button>
+                  </div>
                 </div>
 
                 {isLoadingWorkspace ? (
@@ -702,31 +775,68 @@ export default function ProductionDetailPage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="space-y-2">
-                    {editorialContents.map((ec) => (
-                      <Card key={ec.id} className="border-border/50 bg-card/30">
-                        <CardContent className="flex items-center justify-between p-4">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">{ec.title}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {ec.status === 'ready' ? 'Pronto' : ec.status === 'archived' ? 'Arquivado' : 'Rascunho'} ·{' '}
-                              {new Date(ec.updated_at).toLocaleDateString('pt-BR')}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="ml-4 shrink-0 gap-1 text-xs"
-                            onClick={() =>
-                              router.push(`/projetos/${projectId}/conteudos/${ec.id}`)
-                            }
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Abrir
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  <div className="space-y-3">
+                    {editorialContents.map((ec) => {
+                      const ecCps = channelPieces.filter((cp) => cp.editorial_content_id === ec.id)
+                      return (
+                        <Card key={ec.id} className="border-border/50 bg-card/30">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate font-medium">{ec.title}</p>
+                                  <Badge variant={ec.status === 'ready' ? 'default' : 'secondary'} className="shrink-0">
+                                    {ec.status === 'ready' ? 'Pronto' : ec.status === 'archived' ? 'Arquivado' : 'Rascunho'}
+                                  </Badge>
+                                  {!isLoadingCps && (
+                                    <span className="shrink-0 text-xs text-muted-foreground">
+                                      {ecCps.length} peça{ecCps.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {new Date(ec.updated_at).toLocaleDateString('pt-BR')}
+                                </p>
+                                {isLoadingCps ? (
+                                  <div className="mt-2 flex items-center gap-1.5">
+                                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">Carregando peças...</span>
+                                  </div>
+                                ) : ecCps.length > 0 ? (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {ecCps.map((cp) => (
+                                      <span
+                                        key={cp.id}
+                                        className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-background/60 px-2 py-0.5 text-xs text-muted-foreground"
+                                      >
+                                        <span className="font-medium text-foreground">
+                                          {CHANNEL_LABELS[cp.channel] ?? cp.channel}
+                                        </span>
+                                        <span>·</span>
+                                        <span>{FORMAT_LABELS[cp.format] ?? cp.format}</span>
+                                        <span>·</span>
+                                        <span>{CP_STATUS_LABELS[cp.status] ?? cp.status}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-2 shrink-0 gap-1 text-xs"
+                                onClick={() =>
+                                  router.push(`/projetos/${projectId}/conteudos/${ec.id}`)
+                                }
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Abrir
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -814,6 +924,13 @@ export default function ProductionDetailPage() {
           </Tabs>
         </div>
       </div>
+
+      <QuickFlowDialog
+        open={showQuickFlowDialog}
+        onOpenChange={setShowQuickFlowDialog}
+        lockedProjectId={projectId}
+        lockedProductionId={productionId}
+      />
 
       {/* Edit Production Modal */}
       <ProductionForm

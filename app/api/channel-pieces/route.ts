@@ -31,12 +31,16 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const editorialContentId = searchParams.get('editorialContentId')
+    const productionId = searchParams.get('productionId')
     const channel = searchParams.get('channel')
     const format = searchParams.get('format')
     const status = searchParams.get('status')
 
     if (editorialContentId && !UUID_RE.test(editorialContentId)) {
       return NextResponse.json({ error: 'editorialContentId invalido' }, { status: 400 })
+    }
+    if (productionId && !UUID_RE.test(productionId)) {
+      return NextResponse.json({ error: 'productionId invalido' }, { status: 400 })
     }
     if (channel && !isValidChannel(channel)) {
       return NextResponse.json(
@@ -55,6 +59,29 @@ export async function GET(request: Request) {
         { error: `status invalido. Valores aceitos: ${VALID_CP_STATUSES.join(', ')}` },
         { status: 400 },
       )
+    }
+
+    // productionId filter: resolve EC IDs for that production first, then filter CPs
+    if (productionId) {
+      const { data: ecs } = await supabase
+        .from('editorial_contents')
+        .select('id')
+        .eq('production_id', productionId)
+        .eq('user_id', user.id)
+      const ecIds = (ecs || []).map((e: { id: string }) => e.id)
+      if (ecIds.length === 0) return NextResponse.json({ channelPieces: [] })
+      const { data, error } = await supabase
+        .from('channel_pieces')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('editorial_content_id', ecIds)
+        .order('updated_at', { ascending: false })
+        .limit(500)
+      if (error) {
+        console.error('[ChannelPieces] GET productionId error:', error)
+        return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+      }
+      return NextResponse.json({ channelPieces: data ?? [] })
     }
 
     let query = supabase

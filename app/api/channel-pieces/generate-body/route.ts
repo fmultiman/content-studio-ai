@@ -7,6 +7,10 @@ const DEFAULT_MODEL = 'gpt-4o-mini'
 const MAX_EC_BODY_CHARS = 8000
 const MAX_AI_CONTEXT_CHARS = 2000
 
+const ALLOWED_POST_KEYS = new Set([
+  'editorialContentId', 'channel', 'format', 'currentBody', 'instructions',
+])
+
 const CHANNEL_FORMAT_CONTEXT: Record<string, { label: string; instruction: string }> = {
   'instagram:feed': {
     label: 'Instagram Feed',
@@ -87,6 +91,18 @@ export async function POST(request: Request) {
       body = await request.json()
     } catch {
       return NextResponse.json({ error: 'Body invalido: JSON esperado' }, { status: 400 })
+    }
+
+    if (Array.isArray(body)) {
+      return NextResponse.json({ error: 'Body invalido: objeto esperado' }, { status: 400 })
+    }
+
+    const unknownKeys = Object.keys(body).filter((k) => !ALLOWED_POST_KEYS.has(k))
+    if (unknownKeys.length > 0) {
+      return NextResponse.json(
+        { error: `Campos nao permitidos: ${unknownKeys.join(', ')}` },
+        { status: 400 },
+      )
     }
 
     const { editorialContentId, channel, format, instructions } = body as Record<string, string | undefined>
