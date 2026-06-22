@@ -180,8 +180,12 @@ export default function ProductionDetailPage() {
       setEditorialContents((prev) => [data.editorialContent, ...prev])
       setShowCreateEcDialog(false)
       setCreateEcTitle('')
-    } catch {
-      // silently fail — user will see empty list
+    } catch (err) {
+      toast({
+        title: 'Erro ao criar conteúdo',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      })
     } finally {
       setIsCreatingEc(false)
     }

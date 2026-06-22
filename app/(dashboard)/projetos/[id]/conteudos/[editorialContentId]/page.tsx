@@ -37,7 +37,7 @@ import type {
   PublicationChannel,
   PublicationFormat,
 } from '@/lib/types'
-import { Loader2, Save, Trash2 } from 'lucide-react'
+import { Loader2, RefreshCw, Save, Trash2 } from 'lucide-react'
 
 const STATUS_LABELS: Record<EditorialContentStatus, string> = {
   draft: 'Rascunho',
@@ -79,6 +79,7 @@ export default function EditorialContentDetailPage() {
   const { toast } = useToast()
 
   const ecId = params.editorialContentId as string
+  const projectId = params.id as string
 
   const [ec, setEc] = useState<EditorialContent | null>(null)
   const [channelPieces, setChannelPieces] = useState<ChannelPiece[]>([])
@@ -90,6 +91,7 @@ export default function EditorialContentDetailPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
 
   // Form state
   const [formTitle, setFormTitle] = useState('')
@@ -100,6 +102,9 @@ export default function EditorialContentDetailPage() {
   const [formProductionId, setFormProductionId] = useState('none')
 
   useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+    let cancelled = false
     const load = async () => {
       try {
         const supabase = createClient()
@@ -107,6 +112,8 @@ export default function EditorialContentDetailPage() {
           fetch(`/api/editorial-contents/${ecId}`),
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
         ])
+
+        if (cancelled) return
 
         if (!ecRes.ok) {
           setError(
@@ -119,6 +126,15 @@ export default function EditorialContentDetailPage() {
 
         const ecData = await ecRes.json()
         const loaded: EditorialContent = ecData.editorialContent
+
+        if (cancelled) return
+
+        // Validate URL projectId matches the EC's actual project
+        if (loaded.project_id !== projectId) {
+          setError('Conteúdo editorial não encontrado.')
+          return
+        }
+
         setEc(loaded)
         setFormTitle(loaded.title)
         setFormBody(loaded.body || '')
@@ -129,13 +145,14 @@ export default function EditorialContentDetailPage() {
 
         if (projectsData) setProjects(projectsData)
       } catch {
-        setError('Erro inesperado. Tente novamente.')
+        if (!cancelled) setError('Erro inesperado. Tente novamente.')
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
     load()
-  }, [ecId])
+    return () => { cancelled = true }
+  }, [ecId, projectId, retryKey])
 
   // Load productions when formProjectId changes
   useEffect(() => {
@@ -143,21 +160,25 @@ export default function EditorialContentDetailPage() {
       setProductions([])
       return
     }
+    let cancelled = false
     fetch(`/api/productions?projectId=${formProjectId}`)
       .then((r) => r.json())
-      .then((d) => setProductions(d.productions || []))
-      .catch(() => setProductions([]))
+      .then((d) => { if (!cancelled) setProductions(d.productions || []) })
+      .catch(() => { if (!cancelled) setProductions([]) })
+    return () => { cancelled = true }
   }, [formProjectId])
 
   // Load channel pieces
   useEffect(() => {
     if (!ecId) return
     setIsLoadingCps(true)
+    let cancelled = false
     fetch(`/api/channel-pieces?editorialContentId=${ecId}`)
       .then((r) => r.json())
-      .then((d) => setChannelPieces(d.channelPieces || []))
+      .then((d) => { if (!cancelled) setChannelPieces(d.channelPieces || []) })
       .catch(() => {})
-      .finally(() => setIsLoadingCps(false))
+      .finally(() => { if (!cancelled) setIsLoadingCps(false) })
+    return () => { cancelled = true }
   }, [ecId])
 
   const handleSave = async () => {
@@ -238,9 +259,15 @@ export default function EditorialContentDetailPage() {
         <Header title="Erro" />
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-muted-foreground">{error || 'Conteúdo editorial não encontrado'}</p>
-          <Button variant="outline" onClick={() => router.push('/publicacoes')}>
-            Voltar para Publicações
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setRetryKey((k) => k + 1)} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Tentar novamente
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/publicacoes')}>
+              Voltar para Publicações
+            </Button>
+          </div>
         </div>
       </>
     )
