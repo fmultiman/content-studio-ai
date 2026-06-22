@@ -1437,12 +1437,99 @@ a mostrar posts). Os ECs criados permanecem, apenas a integração da aba é rem
 
 ---
 
-## P6 — Pós-Vídeo
+## P6 — Pós-Vídeo ✓ CONCLUÍDO — branch feat/publication-p6-post-video-flow
 
-**Objetivo:** quando um `VideoDraft` está vinculado a uma Production, exibir CTA
-contextual para criar `EditorialContent` com dados pré-preenchidos.
+**Objetivo:** quando o usuário está editando um `VideoDraft`, oferecer CTA
+contextual para iniciar publicação com dados pré-preenchidos do vídeo.
 
-### Escopo
+**Status:** concluído. Commit `47625e4` (`feat: add post-video publication flow`) em `feat/publication-p6-post-video-flow`.
+
+**Arquivos reais criados/modificados:**
+
+| Arquivo | Ação |
+|---------|------|
+| `app/(dashboard)/videos/page.tsx` | Adicionados import `Zap`, `QuickFlowDialog`, estado `showQuickFlowDialog`, botão "Preparar publicação" e `<QuickFlowDialog>` com mapeamento de contexto |
+| `components/publication/quick-flow-dialog.tsx` | Estendido com props `initialTitle`, `initialBody`, `initialAiContext`, `sourceLabel`; reset ao abrir usa os valores iniciais; banner de origem exibido no passo 1 |
+| `app/api/editorial-contents/route.ts` | Fix isPlainObject: `typeof body !== 'object' \|\| body === null \|\| Array.isArray(body)` |
+| `app/api/editorial-contents/[id]/route.ts` | Mesmo fix (já estava correto mas confirmado) |
+| `app/api/channel-pieces/route.ts` | Fix isPlainObject (idem) |
+| `app/api/channel-pieces/[id]/route.ts` | Fix isPlainObject (idem) |
+
+**Decisão de domínio (Opção A — single piece):** o fluxo P6 reutiliza o `QuickFlowDialog` existente diretamente (sem wrapper nem componente novo). O usuário cria 1 CP inicial e pode adicionar mais peças no workspace. Sem FK entre `video_drafts` e `editorial_contents`.
+
+**Mapeamento de contexto VideoDraft → QuickFlowDialog:**
+
+| Campo do vídeo | Prop do dialog |
+|----------------|----------------|
+| `videoName` | `initialTitle` |
+| `scenes[].description` (join `\n\n`, max 3000 chars) | `initialBody` |
+| `scenes[].prompt` (join `\n`, max 1500 chars) | `initialAiContext` |
+| `selectedProject` (quando não-null) | `lockedProjectId` |
+| `productionId` (quando não-null) | `lockedProductionId` |
+| `videoName` | `sourceLabel` (banner no passo 1) |
+
+### Testes executados (2026-06-22)
+
+#### Contrato — isPlainObject guard (10 cenários)
+
+| ID | Rota | Payload | Resultado |
+|----|------|---------|-----------|
+| T1 | editorial-contents POST | array | ✅ 400 "Body invalido: objeto esperado" |
+| T2 | editorial-contents POST | string | ✅ 400 |
+| T3 | editorial-contents POST | null | ✅ 400 |
+| T4 | channel-pieces POST | array | ✅ 400 |
+| T5 | channel-pieces POST | string | ✅ 400 |
+| T6 | channel-pieces PATCH /[id] | array | ✅ 400 |
+| T7 | editorial-contents PATCH /[id] | array | ✅ 400 |
+| T8 | editorial-contents POST | objeto sem projectId | ✅ 400 "projectId obrigatorio" |
+| T9 | channel-pieces POST | objeto sem editorialContentId | ✅ 400 "editorialContentId obrigatorio" |
+| T10 | channel-pieces/generate-body POST | objeto vazio | ✅ 400 "editorialContentId obrigatorio" |
+
+#### Entry point — /videos (cenários funcionais)
+
+| Cenário | Resultado |
+|---------|-----------|
+| Botão "Preparar publicação" visível no CardHeader ao lado de "Gerar Vídeo" | ✅ |
+| Botão desabilitado com videoName vazio e sem cenas | ✅ |
+| Botão habilitado após carregar draft com nome e cenas | ✅ |
+| Clicar abre QuickFlowDialog com banner "Preparando publicação a partir do vídeo…" | ✅ |
+| Título pré-preenchido com nome do draft | ✅ |
+| Corpo pré-preenchido com descrições das cenas | ✅ |
+| Contexto para IA pré-preenchido com prompts das cenas | ✅ |
+| Projeto travado quando draft tem `selectedProject` | ✅ (lockedProjectId) |
+
+#### Regressão
+
+| Cenário | Resultado |
+|---------|-----------|
+| Hub /publicacoes: "Publicação rápida" abre dialog sem banner, campos vazios | ✅ |
+| Production detail: "Publicação rápida" abre dialog sem banner, locked project/production | ✅ |
+| Fluxo completo de 2 passos EC→CP não regredido | ✅ (confirmado visualmente) |
+
+#### Limpeza
+
+- 0 registros `[TESTE P6]` criados (testes de contrato todos retornaram 400; nenhum EC/CP persistido)
+
+### Typecheck e build
+
+- `pnpm exec tsc --noEmit`: 1 erro pré-existente `imagens/rascunhos/page.tsx:43 TS7006`; 0 erros introduzidos por P6
+- `pnpm build`: bem-sucedido — todas as rotas geradas sem erros
+
+### Divergências entre plano e implementação
+
+1. **Abordagem escolhida foi Opção A (reuso direto do QuickFlowDialog)** em vez do banner de navegação descrito no plano original. Razão: o usuário inicia o fluxo de publicação no contexto do vídeo sem mudar de página; mais coeso e evita um ciclo de navegação.
+2. **Sem query params em `/publicacoes`**: o plano original mencionava `?project=<id>&production=<id>`. Não foi necessário — o contexto é passado diretamente via props ao dialog inline.
+3. **`channel = youtube / format = video_description` pré-selecionado removido do escopo**: a spec final pediu apenas pré-preenchimento de EC (título, corpo, aiContext); a pré-seleção de canal/formato no passo 2 ficou como melhoria futura para não acoplar o fluxo de vídeo a um canal específico.
+4. **Rastreabilidade causal implícita via `production_id`**: mantida a decisão de não criar FK entre `editorial_contents` e `video_drafts`.
+
+### Rastreabilidade causal
+
+A relação "este EC foi criado a partir deste VideoDraft" é implícita pelo
+`production_id` compartilhado. **Não há FK direta** entre `EditorialContent` e
+`video_drafts`. Esta lacuna é documentada como melhoria futura (campo opcional
+`source_video_draft_id` em `editorial_contents`).
+
+### Escopo original (para referência)
 
 - Banner/CTA na tela de `VideoDraft` quando `production_id` está definido
 - Ao clicar: navega para `/publicacoes?project=<id>&production=<id>` com sugestões
@@ -1458,25 +1545,6 @@ contextual para criar `EditorialContent` com dados pré-preenchidos.
 ### Dependências
 
 - P5 concluído (EC criado com production_id funciona no contexto da Production)
-
-### Arquivos afetados (prováveis)
-
-| Arquivo | Ação |
-|---------|------|
-| `app/(dashboard)/videos/page.tsx` ou componente de VideoDraft | Atualizar — adicionar banner contextual |
-| `app/(dashboard)/publicacoes/page.tsx` | Verificar se aceita query params de pré-preenchimento |
-
-### Rastreabilidade causal
-
-A relação "este EC foi criado a partir deste VideoDraft" é implícita pelo
-`production_id` compartilhado. **Não há FK direta** entre `EditorialContent` e
-`video_drafts`. Esta lacuna é documentada como melhoria futura (campo opcional
-`source_video_draft_id` em `editorial_contents`).
-
-### Critérios de aceite
-
-- [ ] VideoDraft sem `production_id`: nenhum banner exibido
-- [ ] VideoDraft com `production_id`: banner "Criar conteúdo editorial para esta Produção" visível
 - [ ] Clicar no banner → formulário de criação de EC com project_id e production_id pré-preenchidos
 - [ ] Título sugerido = `VideoDraft.name` (editável — não obrigatório aceitar)
 - [ ] ChannelPiece sugerida = youtube/video_description (pré-selecionada, removível)
