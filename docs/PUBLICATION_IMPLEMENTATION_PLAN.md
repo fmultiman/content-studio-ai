@@ -420,7 +420,7 @@ Remover as interfaces adicionadas de `lib/types.ts`.
 
 ---
 
-## P2 — APIs CRUD ✓ CONCLUÍDO — branch feat/publication-p2-api
+## P2 — APIs CRUD ✓ CONCLUÍDO E VALIDADO — branch feat/publication-p2-api
 
 **Objetivo:** implementar rotas de CRUD para `EditorialContent` e `ChannelPiece`.
 API pura sem UI. Sem alterar rotas existentes.
@@ -461,11 +461,44 @@ API pura sem UI. Sem alterar rotas existentes.
 | RLS UPDATE: mesmas regras do INSERT (ambas tabelas) | ✓ |
 | RLS DELETE: `auth.uid() = user_id` (ambas tabelas) | ✓ |
 
-**Testes HTTP autenticados:** não executados — o servidor de desenvolvimento não pôde
-ser iniciado porque `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` não
-estão presentes em `.env.local` (essas variáveis são injetadas pelo ambiente do usuário
-ao iniciar o servidor manualmente). Os testes de integração ficam pendentes para
-execução manual pelo responsável do produto ao iniciar `pnpm dev` em sessão autenticada.
+**Testes HTTP autenticados:** executados via `vercel env run -e production -- pnpm dev`
+(porta 3000). Sessão autenticada real via cookie Supabase SSR. 73 cenários testados
+via `fetch` no contexto do browser autenticado.
+
+**Resumo dos resultados (73 testes):**
+
+| Grupo | Total | Passou | Falhou |
+|-------|-------|--------|--------|
+| EC criação e leitura (T1–T9) | 9 | 9 | 0 |
+| EC validações POST (T10–T20) | 11 | 11 | 0 |
+| EC PATCH (T22–T31) | 10 | 10 | 0 |
+| CP criação e leitura (T32–T37) | 6 | 6 | 0 |
+| CP validações POST (T38–T45) | 8 | 8 | 0 |
+| CP PATCH / combinações (T47–T53) | 7 | 7 | 0 |
+| CP movimento entre ECs (T54–T57) | 4 | 4 | 0 |
+| Exclusão e CASCADE (T58–T63) | 6 | 6 | 0 |
+| Acesso não autenticado (T64–T73) | 10 | 10 | 0 |
+| **Total** | **73** | **73** | **0** |
+
+**UUIDs temporários utilizados (todos removidos):**
+- EC1 (sem production): `78de9b9a-60ef-4069-bfb7-a0324ab3907f` — deletado
+- EC2 (com production): `714b5dc1-af8c-4fa8-8fad-1f27aadfe039` — deletado
+- CP1 (instagram/feed → youtube/short): `bba34c38-5988-4490-b952-4781f14bbe9b` — deletado
+- CP cascade: `26025e0c-0e49-49d3-b26d-c4394a651a43` — deletado via CASCADE
+
+**Dados reais utilizados (não modificados):**
+- Projeto: `0b04df8b-dfd3-45c5-b7b7-8fe7b95e8187`
+- Production: `c859d21f-dd05-4445-a0aa-ba254cafa50b` (vinculada/desvinculada/revinculada — sem alteração permanente)
+
+**Limpeza:** 0 registros `[TESTE P2]` remanescentes. Projeto e Production reais intactos.
+
+**Limitações dos testes executados:**
+- Teste cross-user não executado (apenas uma conta disponível).
+  RLS e `.eq('user_id', user.id)` inspecionados em código — isolamento por usuário
+  garantido em tripla camada: middleware → API explícita → RLS no banco.
+- T27 (projectId editável com production incompatível de projeto diferente) testado com
+  projeto inexistente, não com dois projetos reais distintos. Lógica de validação cruzada
+  confirmada em inspeção de código: `production.project_id !== finalProjectId → 400`.
 
 **Divergências entre plano e implementação:**
 
