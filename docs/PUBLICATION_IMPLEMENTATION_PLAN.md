@@ -659,49 +659,107 @@ Deletar os 4 novos arquivos de API e `lib/publication-channels.ts`.
 
 ---
 
-## P3 — Workspace Editorial ✓ CONCLUÍDO E VALIDADO — branch feat/publication-p3-editorial-workspace
+## P3 — Workspace Editorial ✓ CONCLUÍDO E AUDITADO — branch feat/publication-p3-editorial-workspace
 
 **Objetivo:** telas de listagem (`/publicacoes`) e detalhe
 (`/projetos/[projectId]/conteudos/[editorialContentId]`).
 Criação e edição de `EditorialContent`. Acesso a Posts legados. Sem ChannelPieces.
 
-### Resultado da implementação (2026-06-22)
+### Resultado da implementação e auditoria (2026-06-22)
 
 **Branch:** `feat/publication-p3-editorial-workspace`
+**Commits:** `feat: add editorial content workspace` + `fix: harden editorial workspace behavior`
 
 **Arquivos criados/modificados:**
-- `app/(dashboard)/publicacoes/page.tsx` — hub com filtros por projeto e status, criação via dialog, link para Posts legados
-- `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` — detalhe com form de edição e seção read-only de ChannelPieces
-- `components/layout/sidebar.tsx` — "Publicações" agora aponta para `/publicacoes`
-- `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` — nova aba "Conteúdos" com listagem e criação contextualizada
+- `app/(dashboard)/publicacoes/page.tsx` — hub com filtros por projeto, production e status, criação via dialog, retry, link para Posts legados
+- `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` — detalhe com form de edição, seção read-only de ChannelPieces, validação de URL projectId, mounted guard, retry
+- `components/layout/sidebar.tsx` — "Publicações" aponta para `/publicacoes`
+- `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` — nova aba "Conteúdos" com listagem e criação contextualizada; toast de erro no catch
 
-**Testes funcionais executados (17 cenários via browser fetch):**
+**Testes funcionais executados (31 cenários via browser fetch autenticado):**
 
-| ID | Cenário | Resultado |
-|----|---------|-----------|
-| T01 | GET /publicacoes (rota hub acessível) | ✅ 200 |
-| T02 | GET /api/editorial-contents (lista vazia inicial) | ✅ 200 count=0 |
-| T03 | POST /api/editorial-contents com title+projectId+productionId | ✅ 201 |
-| T04 | Hub lista o EC criado | ✅ count=1, hasTestEc=true |
-| T05 | Rota /projetos/[id]/conteudos/[ecId] resolve 200 | ✅ |
-| T06 | GET /api/editorial-contents/[id] retorna EC | ✅ 200 |
-| T07 | PATCH EC (título, body, status, projeto, produção) | ✅ 200 status=ready |
-| T08 | Filtro por status=ready | ✅ count=1 |
-| T09 | Filtro por projectId | ✅ count=1 |
-| T10 | POST ChannelPiece para EC (para testar seção read-only) | ✅ 201 |
-| T11 | GET /api/channel-pieces?editorialContentId=X | ✅ 200 count=1 |
-| T12 | Filtro /api/editorial-contents?productionId=X | ✅ count=1 |
-| T13 | Aba Produção: GET ECs por productionId | ✅ count=1 |
-| T14 | Aba Produção: POST EC contextualizado (projectId+productionId) | ✅ 201 |
-| T15 | GET EC inexistente retorna 404 | ✅ 404 |
-| T16 | DELETE EC1 (CASCADE deleta CP) | ✅ 200 |
-| T17 | DELETE EC2 e verificação de cleanup | ✅ 200 remainingTestEcs=0 |
+| ID | Cenário | Resultado | HTTP |
+|----|---------|-----------|------|
+| T01 | GET /publicacoes (hub acessível) | ✅ PASS | 200 |
+| T02 | GET /api/editorial-contents (zero inicial) | ✅ PASS | 200 count=0 |
+| T03 | POST EC com title+projectId+productionId | ✅ PASS | 201 |
+| T04 | Hub lista EC criado | ✅ PASS | count=1 |
+| T05 | Rota /projetos/[id]/conteudos/[ecId] resolve | ✅ PASS | 200 |
+| T06 | GET EC por id | ✅ PASS | 200 |
+| T07 | PATCH EC (todos os campos) | ✅ PASS | 200 |
+| T08 | Filtro status=ready | ✅ PASS | count=1 |
+| T09 | Filtro projectId | ✅ PASS | count=1 |
+| T10 | POST ChannelPiece vinculado ao EC | ✅ PASS | 201 |
+| T11 | GET channel-pieces?editorialContentId=X | ✅ PASS | 200 count=1 |
+| T12 | Filtro productionId no hub | ✅ PASS | count=1 |
+| T13 | Aba Produção: ECs por productionId | ✅ PASS | count=1 |
+| T14 | Aba Produção: POST EC contextualizado | ✅ PASS | 201 |
+| T15 | GET EC inexistente | ✅ PASS | 404 |
+| T16 | DELETE EC1 (CASCADE deleta CP) | ✅ PASS | 200 |
+| T17 | EC inexistente após DELETE | ✅ PASS | 404 |
+| T18 | POST EC sem production_id | ✅ PASS | production_id=null |
+| T19 | PATCH projectId com production incompatível | ✅ PASS | 400 |
+| T20 | GET ECs filtrando project+status | ✅ PASS | count correto |
+| T21 | ChannelPieces: create/read only (no edit/delete via UI) | ✅ PASS | read-only confirmado |
+| T22 | DELETE EC2 | ✅ PASS | 200 |
+| T23 | CASCADE: CPs zeraram após DELETE EC1 | ✅ PASS | count=0 |
+| T24 | Production e Project intactos após DELETEs | ✅ PASS | ainda existem |
+| T25 | URL projectId errado → BUG PRÉ-CORREÇÃO detectado | ❌→✅ FIXED | 200→bloqueado |
+| T26 | GET /posts (legado acessível) | ✅ PASS | 200 |
+| T27 | GET /api/posts (legado intacto) | ✅ PASS | 200 |
+| T28 | Filtros status: draft/ready/archived | ✅ PASS | counts corretos |
+| T29 | Cleanup: 0 registros [TESTE P3] remanescentes | ✅ PASS | 0 |
+| T30 | Nomenclatura abas Production: "Conteúdos" vs "Posts" | ✅ SEM AMBIGUIDADE | — |
+| T31 | Filtro production no hub carrega produções do projeto | ✅ PASS (pós-fix) | 200 |
 
-**Build:** ✅ `pnpm build` passou sem erros. Rotas aparecem no manifest:
+**Typecheck (pós-correções):** ✅ `pnpm exec tsc --noEmit` — erro pré-existente em `imagens/rascunhos/page.tsx:43` (TS7006); 0 erros introduzidos por P3.
+
+**Build (pós-correções):** ✅ `pnpm build` — 33 páginas geradas sem erros. Rotas no manifest:
 - `/publicacoes` (Static)
 - `/projetos/[id]/conteudos/[editorialContentId]` (Dynamic)
 
-**Typecheck:** ✅ `pnpm exec tsc --noEmit` sem erros em arquivos P3 (erro pré-existente em `imagens/rascunhos/page.tsx` não introduzido neste incremento).
+### Bug encontrado e corrigido na auditoria
+
+**BUG CRÍTICO (T25) — URL Security:** `GET /projetos/WRONG_PROJECT_ID/conteudos/VALID_EC_ID` retornava HTTP 200 e renderizava o formulário de edição completo. A página carregava o EC pelo `editorialContentId` sem verificar que `ec.project_id === params.id`.
+
+**Correção:** adicionada validação em `page.tsx` logo após o carregamento do EC:
+```typescript
+if (loaded.project_id !== projectId) {
+  setError('Conteúdo editorial não encontrado.')
+  return
+}
+```
+
+### Divergências entre especificação e implementação
+
+1. **Filtro Production no hub (ausente na implementação inicial, adicionado na auditoria):** o spec pede filtro por Production no hub. A implementação inicial tinha apenas filtros por Projeto e Status. Corrigido na auditoria: o filtro de Production aparece quando um Projeto é selecionado, carrega as produções desse projeto via `GET /api/productions?projectId=X`, e filtra client-side por `production_id`.
+
+2. **Diálogo de criação mínimo (decisão de UX):** o diálogo do hub oferece apenas `título + projeto`. Corpo, contexto de IA e produção são configurados no workspace de detalhe. Razão: fluxo mais ágil — o usuário cria rapidamente e ajusta no detalhe. Documentado como decisão intencional.
+
+3. **Retry buttons ausentes na implementação inicial, adicionados na auditoria:** estados de erro no hub e no detalhe tinham apenas texto estático. Adicionados botões "Tentar novamente" via padrão `retryKey` (contador incrementado no `useEffect` dep array).
+
+4. **Mounted guard ausente na implementação inicial, adicionado na auditoria:** `useEffect` chains no detalhe não tinham cleanup. Adicionado padrão `let cancelled = false` / `return () => { cancelled = true }` em todos os 3 effects do detalhe e no effect de productions do hub.
+
+5. **handleCreateEc silenciava erros (Production tab):** o catch era vazio. Corrigido para exibir `toast` de erro com a mensagem da API.
+
+### Decisões de UX documentadas
+
+- **Nomenclatura das abas da Production:** "Conteúdos" (ECs) e "Posts" (legado). Sem ambiguidade — audiências distintas e semântica clara.
+- **Breadcrumb na página de detalhe:** `Publicações > [EC.title]` sem Projeto intermediário. Simplicidade > completude.
+- **Seção ChannelPieces:** read-only na P3. Badge de channel/format/status + título. Nenhuma ação de criação/edição exposta.
+- **Criação dentro de Production:** não navega para o detalhe do EC após criar (permanece na aba). Decisão: contexto da Production é o foco; o usuário navega quando quiser via botão "Abrir".
+
+### Limitações conhecidas
+
+- Teste cross-user não executado (apenas uma conta disponível). Isolamento validado em inspeção de código e RLS.
+- Filtro Production no hub é client-side (dados já carregados). Aceitável para o volume atual.
+- `ChannelPieces` não têm actions na página de detalhe — gerenciadas em P4.
+
+**Dados reais utilizados:**
+- Projeto: `0b04df8b-dfd3-45c5-b7b7-8fe7b95e8187`
+- Production: `c859d21f-dd05-4445-a0aa-ba254cafa50b`
+
+**Limpeza:** 0 registros `[TESTE P3]` remanescentes. Projeto e Production reais intactos.
 
 ### Escopo
 
