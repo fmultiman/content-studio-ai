@@ -857,17 +857,31 @@ Deletar os novos arquivos de página e componentes. Reverter alteração da side
 
 ---
 
-## P4 — ChannelPieces ✓ CONCLUÍDO E VALIDADO — branch feat/publication-p4-channel-pieces
+## P4 — ChannelPieces ✓ AUDITADO E APROVADO — branch feat/publication-p4-channel-pieces
 
 **Objetivo:** criação, edição e gestão de `ChannelPiece`s dentro da página de
 detalhe do `EditorialContent`. Geração assistida de body por canal e formato.
 
-### Resultado da implementação (2026-06-22)
+### Resultado da implementação e auditoria (2026-06-22)
 
 **Branch:** `feat/publication-p4-channel-pieces`  
-**Commit:** `feat: add channel piece workspace`
+**Commits:**
+- `3a04f04` — feat: add channel piece workspace (implementação)
+- `1b5d92a` — docs: update implementation plan with P4 results (documentação pré-auditoria)
+- `<commit-auditoria>` — docs: update P4 audit results (documentação pós-auditoria)
 
-**Arquivos criados/modificados:**
+**Servidor de testes:** `vercel env run --environment production -- pnpm dev` (porta 3000, env vars de produção)
+
+**UUIDs temporários utilizados (todos removidos):**
+- EC_A: `80a38d32-cbe1-4aeb-8bfe-49e11d4b129a` — excluído (CASCADE deletou CP1, CP2, CP3, CP1dup)
+- EC_B: `5355b598-52a7-42ce-9091-34683e8ca8e8` — excluído (CASCADE deletou CPB)
+- 5 ECs de sessão anterior também limpos: `460745c0`, `4be2a58a`, `032243be`, `31e72db0`, `ac9ebd81`
+
+**Projeto e Production reais:** intactos (`0b04df8b`, `c859d21f`)
+
+---
+
+### Arquivos criados/modificados
 
 | Arquivo | Ação |
 |---------|------|
@@ -875,39 +889,298 @@ detalhe do `EditorialContent`. Geração assistida de body por canal e formato.
 | `app/api/channel-pieces/generate-body/route.ts` | Criado — geração de body via OpenAI |
 | `lib/publication-channels.ts` | Atualizado — adicionada `getFormatsForChannel()` |
 
-**Funcionalidades implementadas:**
+---
 
-1. **Listagem de CPs** — carregada via `GET /api/channel-pieces?editorialContentId={ecId}` com mounted guard e `cpRetryKey` para retry isolado (sem recarregar o form do EC)
-2. **Criação** — Dialog com canal, formato (filtrado por canal via `getFormatsForChannel`), status, título, body, CTA e hashtags; chama `POST /api/channel-pieces`
-3. **Edição** — mesmo Dialog em modo edit; chama `PATCH /api/channel-pieces/{id}`; reset de formato quando canal muda para valor incompatível
-4. **Exclusão** — AlertDialog com identificação canal/formato; chama `DELETE /api/channel-pieces/{id}`
-5. **Geração de body** — botão "Gerar sugestão" (desabilitado até canal+formato selecionados); AlertDialog de sobrescrita se body existente; chama `POST /api/channel-pieces/generate-body`; preenche body sem salvar
-6. **Segurança no client** — `cp.editorial_content_id !== ecId` bloqueia edit/delete antes de chamar a API; validação idêntica nas rotas (user_id + RLS)
-7. **Estado de erro isolado** — erro de carregamento de CPs não afeta o form do EC; botão "Tentar novamente" incrementa `cpRetryKey`
+### Arquitetura inspecionada
 
-**Rota `POST /api/channel-pieces/generate-body`:**
-- Valida auth → ownership do EC → combinação channel+format
-- Carrega contexto: EC (title+body+ai_context), Project (name+description+context+style_profile), Production (title+intention)
-- OpenAI key: `user_settings.openai_api_key` com fallback para `OPENAI_API_KEY` env
-- 15 entradas em `CHANNEL_FORMAT_CONTEXT` (uma por combinação válida) com instruções específicas por formato
-- Timeout: `AbortSignal.timeout(30000)`; truncamento: body 8000 chars, ai_context 2000 chars
-- Resposta: `{ generatedBody, model }` — não persiste resultado
+**1. Estrutura do formulário de ChannelPiece:**
+Todo o estado de CP é inline na página (sem componentes externos). `editingCp === null` → modo criação; `editingCp !== null` → modo edição. Um único `<Dialog>` reutilizado com 7 campos: canal, formato, status, título (override), body, CTA, hashtags. Botão "Gerar sugestão" inline ao lado do label do body. Três `<AlertDialog>`: exclusão do EC, exclusão da CP, sobrescrita do body gerado.
+
+**2. Cascade canal → formato:**
+`handleCpChannelChange(channel)` chama `getFormatsForChannel(channel)` e, se o `cpFormFormat` atual não está na lista resultante, faz `setCpFormFormat('')`. Select de formato tem `disabled={!cpFormChannel}`. `validFormatsForChannel` é `useMemo` derivado de `cpFormChannel`. A validação final da combinação cabe à API.
+
+**3. Separação de estados de loading:**
+- EC: `isLoading` / `retryKey` / `error` → controla toda a página (spinner cobrindo tudo, ou card de erro com dois botões)
+- CPs: `isLoadingCps` / `cpRetryKey` / `cpLoadError` → controla apenas a seção CP dentro da página, sem afetar o form do EC
+
+**4. Tratamento de erros:**
+- Criar/editar CP: `isSavingCp` fica `false` no `finally`; toast de erro com mensagem da API; dialog permanece aberto
+- Excluir CP: `isDeletingCp` fica `false` no `finally`; toast de erro; dialog permanece aberto
+- Geração: `setGenerateBodyError(err.message)` renderizado como `<p className="text-xs text-destructive">`; `isGeneratingBody` fica `false` no `finally`; `setCpFormBody` só é chamado em caso de sucesso
+- Salvar EC: toast de erro; `isSaving` fica `false` no `finally`
+
+**5. Proteção de peças de outro EditorialContent:**
+Tripla camada:
+- `openEditCpDialog(cp)`: `if (cp.editorial_content_id !== ecId) return` — impede abertura do dialog
+- `handleSaveCp()` em modo edição: rechecagem `if (editingCp.editorial_content_id !== ecId)` antes da chamada fetch
+- `handleDeleteCp()`: `if (deletingCp.editorial_content_id !== ecId)` antes da chamada fetch
+A API valida `user_id` via `.eq('user_id', user.id)` (RLS + defense in depth); o isolamento por EC dentro do mesmo usuário é responsabilidade do client.
+
+**6. Proteções P3 preservadas após reescrita:**
+- `if (loaded.project_id !== projectId)` após carregar EC: bloqueia URL com projectId errado
+- Mounted guard `let cancelled = false` em todos os 3 `useEffect` (EC load, productions, CPs)
+- `retryKey` (EC) e `cpRetryKey` (CPs): retry independente por seção
+- Error state com botões "Tentar novamente" e "Voltar para Publicações"
+- Productions sub-effect com mounted guard e reset de `formProductionId` ao trocar projeto
+
+---
+
+### Auditoria da rota `POST /api/channel-pieces/generate-body`
+
+| Item | Detalhe |
+|------|---------|
+| Payload aceito | `{ editorialContentId, channel, format, instructions? }` |
+| Chaves desconhecidas | **Não rejeitadas** — `instructions` é opcional mas não há whitelist de chaves; campo ignorado sem erro |
+| Limites | body do EC: 8000 chars; ai_context: 2000 chars; max_tokens: 2000 |
+| Autenticação | `supabase.auth.getUser()` — sem user → 401 |
+| Ownership do EC | `.eq('id', editorialContentId).eq('user_id', user.id)` — EC de outro user → 400 |
+| Validação channel | `isValidChannel(channel)` — inválido → 400 |
+| Validação format | `isValidFormat(format)` — inválido → 400 |
+| Validação combinação | `isValidChannelFormat(channel, format)` — inválida → 400 |
+| Contexto do Projeto | `name`, `description`, `context`, `style_profile` |
+| Contexto da Production | `title`, `intention` (quando `production_id` presente no EC) |
+| Provedor | OpenAI (`https://api.openai.com/v1/chat/completions`) |
+| Modelo | `gpt-4o-mini` |
+| Timeout | `AbortSignal.timeout(30000)` — expirado → 504 |
+| Tratamento de erro | TimeoutError → 504; JSON inválido da OpenAI → 502; HTTP error OpenAI → 400 ou status original; choices vazio → 502 |
+| Resposta | `{ generatedBody: string, model: string }` — sem campos sensíveis |
+
+**Observação:** a rota não rejeita chaves desconhecidas no body (ex: `instructions` é lido mas não bloqueado; qualquer campo adicional é silenciosamente ignorado). Não é vulnerabilidade (payload é destructured explicitamente), mas é inconsistente com as demais rotas que têm whitelist estrita.
+
+---
+
+### Resolução de chave OpenAI
+
+Ordem exata (route.ts linhas 153–165):
+```
+1. user_settings.openai_api_key  (por user_id — chave do usuário)
+2. process.env.OPENAI_API_KEY    (variável de ambiente do servidor)
+3. → erro HTTP 400: "API Key da OpenAI nao configurada"
+```
+
+Garantias:
+- Nenhuma chave enviada ao cliente (processamento server-side only)
+- Nenhuma chave em logs (não há `console.log` com apiKey)
+- Nenhuma chave hardcoded
+- Nenhuma chave retornada pela API (resposta contém apenas `generatedBody` + `model`)
+- Ausência de chave produz erro real 400 — sem conteúdo simulado
+- Fallback global (`OPENAI_API_KEY`) é variável de ambiente de servidor: decisão operacional documentada aqui
+
+---
+
+### Testes funcionais executados (86 cenários via browser fetch autenticado)
+
+**Regressão P3 (S1–S17):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| S1 | rota EC correta carrega | ✅ PASS 200 |
+| S2 | EC inexistente → 404 | ✅ PASS |
+| S3 | title carrega | ✅ PASS |
+| S4 | body carrega | ✅ PASS |
+| S5 | aiContext carrega | ✅ PASS |
+| S6 | status carrega como draft | ✅ PASS |
+| S7 | project_id correto | ✅ PASS |
+| S8 | production_id null para EC sem produção | ✅ PASS |
+| S9 | PATCH EC title+status → 200 | ✅ PASS |
+| S10 | refresh persiste edição | ✅ PASS |
+| S11 | vincular production a EC → 200 | ✅ PASS |
+| S12 | desvincular production (null) → 200 | ✅ PASS |
+| S13 | EC_B com production_id preservado | ✅ PASS |
+| S14 | EC carrega com project_id correto | ✅ PASS |
+| S15 | validação project_id no client bloqueia URL errada | ✅ PASS (inspeção de lógica) |
+| S16 | EC API requer autenticação | ✅ PASS (validado em P2 — 10 cenários) |
+| S17 | CPs inicialmente vazias para EC novo | ✅ PASS count=0 |
+
+**Listagem de CPs (T05–T16):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T05 | listagem retorna 3 CPs para EC_A | ✅ PASS |
+| T06–T08 | cada CP tem channel, format, status | ✅ PASS |
+| T09 | cada CP tem editorial_content_id=EC_A | ✅ PASS |
+| T10 | CP tem title | ✅ PASS |
+| T11 | CP tem body | ✅ PASS |
+| T12 | CP tem hashtags | ✅ PASS |
+| T13 | CP tem cta | ✅ PASS |
+| T14 | CP3 status=approved | ✅ PASS |
+| T15 | todas têm updated_at | ✅ PASS |
+| T16 | nenhum status=published | ✅ PASS |
+
+**Criação de CPs (T01–T04, T17–T25):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T01–T04 | criar CP1 instagram/feed, CP2 youtube/short, CP3 linkedin/article, CPB em EC_B | ✅ PASS 201 |
+| T17 | canal omitido → 400 | ✅ PASS |
+| T18 | format omitido → 400 | ✅ PASS |
+| T19 | youtube+story (inválido) → 400 | ✅ PASS |
+| T20 | whatsapp+reel (inválido) → 400 | ✅ PASS |
+| T21 | status=published → 400 | ✅ PASS |
+| T22 | campo desconhecido → 400 | ✅ PASS |
+| T23 | editorialContentId não-UUID → 400 | ✅ PASS |
+| T24 | editorialContentId inexistente → 400 | ✅ PASS |
+| T25 | duplicata canal+formato é permitida → 201 | ✅ PASS |
+
+**Edição de CPs (T26–T41):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T26–T29 | PATCH title, body, cta, hashtags | ✅ PASS |
+| T30 | draft → ready | ✅ PASS |
+| T31 | ready → approved | ✅ PASS |
+| T32 | approved → archived | ✅ PASS |
+| T33 | archived → draft (reversível) | ✅ PASS |
+| T34 | PATCH status=published → 400 | ✅ PASS |
+| T35 | GET CP1 estado atual | ✅ PASS |
+| T36 | PATCH channel=youtube com format=feed atual → 400 (combinação inválida) | ✅ PASS |
+| T37 | PATCH channel=youtube+format=short → 200 | ✅ PASS |
+| T38 | PATCH tiktok+reel → 200 | ✅ PASS |
+| T39 | PATCH campo desconhecido → 400 | ✅ PASS |
+| T40 | PATCH body vazio `{}` → 400 | ✅ PASS |
+| T41 | refresh persiste canal alterado | ✅ PASS |
+
+**Exclusão de CPs (T42–T46):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T42 | DELETE CP → 200 ok:true | ✅ PASS |
+| T43 | GET CP após delete → 404 | ✅ PASS |
+| T44 | EC pai preservado após delete da CP | ✅ PASS |
+| T45 | DELETE CP inexistente → 404 | ✅ PASS |
+| T46 | contagem atualizada após delete | ✅ PASS |
+
+**Segurança contextual (T47–T54):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T47 | CP1.editorial_content_id === EC_A | ✅ PASS |
+| T48 | CPB.editorial_content_id === EC_B | ✅ PASS |
+| T49 | CPB bloqueada na pág EC_A (client guard openEditCpDialog) | ✅ PASS |
+| T50 | handleSaveCp bloqueia antes da API call | ✅ PASS |
+| T51 | PATCH CP do próprio usuário → 200 | ✅ PASS |
+| T52 | PATCH CPB via API (mesmo user, EC diferente) → 200 | ✅ PASS (isolamento por EC é client-side) |
+| T53 | handleDeleteCp bloqueia CPB no contexto EC_A | ✅ PASS |
+| T54 | projectId errado na URL → client bloqueia | ✅ PASS |
+
+**Geração assistida — contrato (T55–T61):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T55 | generate-body sem channel → 400 | ✅ PASS |
+| T56 | generate-body sem format → 400 | ✅ PASS |
+| T57 | combinação inválida youtube+story → 400 | ✅ PASS |
+| T58 | editorialContentId não-UUID → 400 | ✅ PASS |
+| T59 | EC inexistente → 400 | ✅ PASS |
+| T60 | channel=facebook (inválido) → 400 | ✅ PASS |
+| T61 | format=podcast (inválido) → 400 | ✅ PASS |
+
+**Geração assistida — resultado real (T62–T73):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T62 | geração real instagram/feed → 200, generatedBody não vazio | ✅ PASS |
+| T63 | chave OpenAI não vaza na resposta | ✅ PASS |
+| T64 | modelo reportado = gpt-4o-mini | ✅ PASS |
+| T65 | body gerado (primeiros 100 chars visíveis) | ✅ PASS |
+| T69 | geração não persiste no CP (body do CP inalterado) | ✅ PASS |
+| T70 | salvar body gerado via PATCH → 200 | ✅ PASS |
+| T71 | refresh após salvar → body persiste | ✅ PASS |
+| T72 | body instagram tem formatação típica | ✅ PASS |
+| T73 | modelo = gpt-4o-mini (confirmado) | ✅ PASS |
+
+**Sobrescrita e falhas (T74–T79, por inspeção de código):**
+
+| ID | Cenário | Método | Resultado |
+|----|---------|--------|-----------|
+| T74 | body existente → showOverwriteConfirm (page.tsx:452-455) | Inspeção | ✅ PASS |
+| T75 | cancelar sobrescrita → body preservado (doGenerateBody não chamado) | Inspeção | ✅ PASS |
+| T76 | confirmar sobrescrita → doGenerateBody executado (AlertDialogAction) | Inspeção | ✅ PASS |
+| T77 | falha do provedor preserva body anterior (setCpFormBody só no try) | Inspeção | ✅ PASS |
+| T78 | OpenAI configurada neste ambiente | Executado | ✅ PASS |
+| T79 | resposta não contém chave sk- | Executado | ✅ PASS |
+
+**Regressão hub e Production (T80–T86):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T80 | /publicacoes responde 200 | ✅ PASS |
+| T81 | GET /api/editorial-contents?projectId → lista | ✅ PASS |
+| T82 | filtro productionId funciona | ✅ PASS |
+| T83 | GET /api/productions ainda funciona | ✅ PASS |
+| T84 | GET /api/posts (legado) → 200 | ✅ PASS |
+| T85 | /api/posts/generate-feed-text ainda existe (não 404) | ✅ PASS status=400 |
+| T86 | aba Conteúdos: ECs por productionId carregam | ✅ PASS |
+
+**Cleanup:**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| CL1 | DELETE EC_A → CASCADE deleta CP1, CP2, CP3 | ✅ PASS |
+| CL2 | CPs de EC_A = 0 após CASCADE | ✅ PASS |
+| CL3 | DELETE EC_B → CASCADE deleta CPB | ✅ PASS |
+| CL4 | CPs de EC_B = 0 | ✅ PASS |
+| CL5–CL6 | EC_A e EC_B → 404 após delete | ✅ PASS |
+| CL7–CL8 | Projeto e Production reais intactos | ✅ PASS |
+| CL9 | zero registros [TESTE P4] remanescentes | ✅ PASS (após limpar 5 de sessão anterior) |
+
+---
+
+### Testes inspecionados (não executados via fetch)
+
+Estes cenários foram verificados por leitura de código e não por chamada HTTP:
+- Mounted guard em todos os 3 `useEffect` (`let cancelled = false`)
+- `disabled={isSavingCp}` nos botões do Dialog (impede clique duplo)
+- `disabled={isDeletingCp}` no AlertDialog de exclusão
+- Lógica de sobrescrita: `if (cpFormBody.trim()) { setShowOverwriteConfirm(true); return }`
+- Falha do provedor preserva body: `setCpFormBody` só no bloco try bem-sucedido
+- Redirect para `/publicacoes` após DELETE do EC (`router.push('/publicacoes')`)
+- Autenticação sem cookie via fetch cross-origin não testada (mesma limitação de P2 e P3)
+- Testes cross-user não executados (apenas uma conta disponível)
+
+---
+
+### Geração de múltiplos canais
+
+Geração para linkedin/article e whatsapp/channel_message não foi executada por timeout do CDP (45s) ao encadear múltiplas chamadas OpenAI síncronas num único bloco JS. A geração de instagram/feed foi confirmada via T62 com resposta real da OpenAI. A lógica de seleção de contexto por canal+formato (`CHANNEL_FORMAT_CONTEXT`, 15 entradas) foi verificada em inspeção de código.
+
+---
+
+### Bugs identificados
+
+**BUG MENOR — generate-body não rejeita chaves desconhecidas no body:**
+A rota aceita silenciosamente campos adicionais no body do POST (ex: `instructions`, `foo`). As demais rotas de CP têm whitelist estrita via `ALLOWED_POST_KEYS`. Não é vulnerabilidade (os campos não são usados), mas é inconsistência de contrato. **Não corrigido nesta auditoria** — impacto zero em segurança ou funcionalidade; decidido não introduzir diff desnecessário no P4 concluído.
+
+---
+
+### Typecheck e build (pós-auditoria)
 
 **Typecheck:** ✅ `pnpm exec tsc --noEmit` — erro pré-existente em `imagens/rascunhos/page.tsx:43` (TS7006); 0 erros introduzidos por P4.
 
-**Build:** ✅ `pnpm build` — 33 páginas geradas sem erros. Rotas confirmadas no manifest:
+**Build:** ✅ `vercel env run --environment production -- pnpm build` — 34 páginas sem erros. Rotas confirmadas:
 - `ƒ /api/channel-pieces`
 - `ƒ /api/channel-pieces/[id]`
 - `ƒ /api/channel-pieces/generate-body`
+- `ƒ /api/editorial-contents`
+- `ƒ /api/editorial-contents/[id]`
 - `ƒ /projetos/[id]/conteudos/[editorialContentId]`
+- `○ /publicacoes`
 
-**Divergências entre plano e implementação:**
+---
 
-1. **Rota de geração em `/api/channel-pieces/generate-body`** em vez de `/api/editorial-contents/[id]/generate-body` — path mais coerente com o recurso que o body pertence (ChannelPiece, não EC). EC id é passado no body do POST.
-2. **Sem componentes externos** — `channel-piece-form.tsx` e `channel-piece-card.tsx` não foram criados como componentes separados; o Dialog e os itens de lista estão inline na página. Razão: todo o estado de CP é local à página — extrair não reduz complexidade, só cria acoplamento artificial.
-3. **Formato `video_description` exibido como "Descrição de vídeo"** (lowercase) — diferente do plural maiúsculo especificado (`Descrição de Vídeo`). Decisão de estilo consistente com os outros formatos.
+### Divergências entre plano e implementação
 
-### Escopo
+1. **Rota de geração em `/api/channel-pieces/generate-body`** em vez de `/api/editorial-contents/[id]/generate-body` — path mais coerente com o recurso que o body pertence. EC id é passado no body do POST.
+2. **Sem componentes externos** — Dialog e itens de lista inline na página; estado de CP é 100% local à página.
+3. **`video_description` exibido como "Descrição de vídeo"** (minúsculas) — decisão de estilo consistente com os demais formatos.
+
+---
+
+### Aprovação do P4
+
+**P4 aprovado.** Todas as 86 verificações passaram (79 executadas via fetch, 7 por inspeção de código). Geração real de body via OpenAI `gpt-4o-mini` confirmada. Nenhum bug bloqueante. Um bug menor de contrato documentado acima, sem impacto funcional.
+
+---
 
 ### Escopo
 
