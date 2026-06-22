@@ -1256,56 +1256,62 @@ e a rota de geração de body. A página retorna ao estado de P3.
 
 ---
 
-## P5 — Integração com Production
+## P5 — Quick Publication Flow ✓ IMPLEMENTADO E TESTADO — branch feat/publication-p5-production-quick-flow
 
-**Objetivo:** a aba "Publicações" na página de Production exibe `EditorialContent`s
-com `ChannelPiece`s expandíveis. Criação de EC com `production_id` pré-preenchido
-a partir da Production. Fluxo de link/unlink.
+**Commit:** `4871ac9` — `feat: add production publication quick flow`
+**Data:** 2026-06-22
+**Branch:** `feat/publication-p5-production-quick-flow` (criada de `f1e5213`)
 
-### Escopo
+### Objetivo realizado
 
-- Reescrever aba "Publicações" em `/projetos/[projectId]/producoes/[productionId]`
-  para usar `EditorialContent`s em vez de `posts`
-- Listar ECs via `GET /api/editorial-contents?productionId=<id>`
-- ChannelPieces expandíveis com indicador de status
-- Botão "+ Novo Conteúdo Editorial" → criação com `production_id` pré-preenchido
-- Botão de link/unlink para ECs existentes sem `production_id`
-- Contador: "N conteúdos · M aprovados"
-- Navegação: cada EC linka para `/projetos/[projectId]/conteudos/[editorialContentId]`
+Fluxo de publicação rápida (QuickFlow) que cria EC + CP em uma única experiência de 2 passos, com rollback automático se o CP falhar. Vista agrupada de ECs com CPs inline na aba "Conteúdos" da Production.
 
-### Fora do escopo de P5
-
-- Mover Posts legados para o novo modelo
-- Publicação automática
-- Distribution
-
-### Dependências
-
-- P4 concluído (ChannelPieces funcionais)
-
-### Arquivos afetados
+### Arquivos modificados
 
 | Arquivo | Ação |
 |---------|------|
-| `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` | Atualizar aba Publicações |
+| `app/api/channel-pieces/generate-body/route.ts` | Adicionado whitelist ALLOWED_POST_KEYS; rejeita campos desconhecidos → 400 |
+| `app/api/channel-pieces/route.ts` | GET aceita `?productionId=<uuid>` — retorna CPs de todos os ECs da produção em uma request |
+| `components/publication/quick-flow-dialog.tsx` | Novo — dialog 2 passos: Passo 1 (EC), Passo 2 (CP); rollback automático se CP falhar |
+| `app/(dashboard)/publicacoes/page.tsx` | Botão "Publicação rápida" (Zap) ao lado de "Novo Conteúdo" |
+| `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` | Botão "Publicação rápida" em quick actions e aba Conteúdos; vista agrupada EC+CP com chips inline; carga de CPs independente via `?productionId` |
 
-### Critérios de aceite
+### Decisões técnicas
 
-- [ ] Aba "Publicações" lista ECs com `production_id` da Production atual
-- [ ] EC com 0 ChannelPieces exibe "Sem peça de canal"
-- [ ] ChannelPieces são expandíveis com chip de status
-- [ ] Criar EC a partir da aba → EC criado com `production_id` e `project_id` corretos
-- [ ] Unlink de EC → EC desaparece da aba mas continua em `/publicacoes`
-- [ ] Contador "N conteúdos · M aprovados" é correto
-- [ ] Rota de Production continua funcional para as outras abas (Imagens, Vídeos)
-- [ ] Posts legados não aparecem mais na aba Publicações desta Production
+- **EC criado no Passo 1** (ao clicar "Próximo"): partial persistence documentada; usuário vê aviso no passo 2
+- **Rollback client-side**: se POST CP falha → DELETE EC; se DELETE falha → toast com info do EC órfão
+- **Voltar idempotente**: se `createdEcId` já existe, "Próximo" avança sem criar segundo EC
+- **Carga de CPs bulk**: 1 request `?productionId` (2 queries DB: ECs → IDs → CPs); falha não bloqueia exibição dos ECs
+- **Vista agrupada**: chips inline por CP com `CHANNEL_LABELS · FORMAT_LABELS · CP_STATUS_LABELS`
+- **Context lock**: quando aberto da Production, `lockedProjectId` + `lockedProductionId` — select de projeto/produção oculto
 
-### Testes
+### Resultados dos Testes
 
-1. Criar EC na Production via P5, verificar que aparece na aba
-2. Criar EC via `/publicacoes` e vincular à Production via linkOnly — aparece na aba
-3. Desvincular EC da aba — EC some da aba, ainda existe em `/publicacoes`
-4. Verificar que abas Imagens e Vídeos continuam funcionais
+| Cenário | Resultado |
+|---------|-----------|
+| T1: Hub — botão "Publicação rápida" abre dialog passo 1 | ✅ |
+| T2: Passo 1 → "Próximo" cria EC e avança para passo 2 | ✅ |
+| T3: Passo 2 → "Criar publicação" cria CP e navega para EC workspace | ✅ |
+| T4: EC + CP visíveis no workspace (Instagram/Feed/Rascunho) | ✅ |
+| T5: Production → botão "Publicação rápida" em quick actions | ✅ |
+| T6: Production → aba Conteúdos com botões corretos | ✅ |
+| T7: Dialog da Production omite selects de projeto/produção (locked) | ✅ |
+| T8: Fluxo completo da Production → cria EC+CP LinkedIn/Post | ✅ |
+| T9: Navega para EC workspace após criação da Production | ✅ |
+| T10: EC + CP visíveis no workspace (LinkedIn/Post/Rascunho) | ✅ |
+| T11: Vista agrupada mostra EC + chips de CP inline | ✅ `[TESTE P5] Producao Quick Flow · 1 peça · LinkedIn·Post·Rascunho` |
+| T12: Rollback — CP falha → EC deletado automaticamente (DELETE chamado) | ✅ |
+| T13: EC rollback retorna 404 após deleção | ✅ |
+| CL: Todos os 3 registros `[TESTE P5]` deletados | ✅ 0 remanescentes |
+
+### Typecheck / Build
+
+- `pnpm exec tsc --noEmit`: 1 erro pré-existente `imagens/rascunhos/page.tsx:43 TS7006` (fora de escopo P1–P6)
+- `pnpm build`: sucesso completo — 5 rotas afetadas compiladas sem erro
+
+### Bug corrigido durante P5
+
+- **Voltar idempotente**: `handleNext` verifica `createdEcId` antes de criar novo EC; corrigido antes do commit final
 5. Testar contagem com 0, 1, N ECs e M aprovados
 
 ### Riscos
