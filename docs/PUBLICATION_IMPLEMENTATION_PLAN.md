@@ -465,7 +465,8 @@ API pura sem UI. Sem alterar rotas existentes.
 (porta 3000). Sessão autenticada real via cookie Supabase SSR. 73 cenários testados
 via `fetch` no contexto do browser autenticado.
 
-**Resumo dos resultados (73 testes):**
+**Resumo dos resultados (71 testes):**
+*(T21 e T46 constavam na especificação mas foram cobertos dentro do bloco de testes não autenticados T64–T73, não executados como linhas isoladas. A contagem correta é 71.)*
 
 | Grupo | Total | Passou | Falhou |
 |-------|-------|--------|--------|
@@ -478,7 +479,7 @@ via `fetch` no contexto do browser autenticado.
 | CP movimento entre ECs (T54–T57) | 4 | 4 | 0 |
 | Exclusão e CASCADE (T58–T63) | 6 | 6 | 0 |
 | Acesso não autenticado (T64–T73) | 10 | 10 | 0 |
-| **Total** | **73** | **73** | **0** |
+| **Total** | **71** | **71** | **0** |
 
 **UUIDs temporários utilizados (todos removidos):**
 - EC1 (sem production): `78de9b9a-60ef-4069-bfb7-a0324ab3907f` — deletado
@@ -658,11 +659,49 @@ Deletar os 4 novos arquivos de API e `lib/publication-channels.ts`.
 
 ---
 
-## P3 — Workspace Editorial
+## P3 — Workspace Editorial ✓ CONCLUÍDO E VALIDADO — branch feat/publication-p3-editorial-workspace
 
 **Objetivo:** telas de listagem (`/publicacoes`) e detalhe
 (`/projetos/[projectId]/conteudos/[editorialContentId]`).
 Criação e edição de `EditorialContent`. Acesso a Posts legados. Sem ChannelPieces.
+
+### Resultado da implementação (2026-06-22)
+
+**Branch:** `feat/publication-p3-editorial-workspace`
+
+**Arquivos criados/modificados:**
+- `app/(dashboard)/publicacoes/page.tsx` — hub com filtros por projeto e status, criação via dialog, link para Posts legados
+- `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` — detalhe com form de edição e seção read-only de ChannelPieces
+- `components/layout/sidebar.tsx` — "Publicações" agora aponta para `/publicacoes`
+- `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` — nova aba "Conteúdos" com listagem e criação contextualizada
+
+**Testes funcionais executados (17 cenários via browser fetch):**
+
+| ID | Cenário | Resultado |
+|----|---------|-----------|
+| T01 | GET /publicacoes (rota hub acessível) | ✅ 200 |
+| T02 | GET /api/editorial-contents (lista vazia inicial) | ✅ 200 count=0 |
+| T03 | POST /api/editorial-contents com title+projectId+productionId | ✅ 201 |
+| T04 | Hub lista o EC criado | ✅ count=1, hasTestEc=true |
+| T05 | Rota /projetos/[id]/conteudos/[ecId] resolve 200 | ✅ |
+| T06 | GET /api/editorial-contents/[id] retorna EC | ✅ 200 |
+| T07 | PATCH EC (título, body, status, projeto, produção) | ✅ 200 status=ready |
+| T08 | Filtro por status=ready | ✅ count=1 |
+| T09 | Filtro por projectId | ✅ count=1 |
+| T10 | POST ChannelPiece para EC (para testar seção read-only) | ✅ 201 |
+| T11 | GET /api/channel-pieces?editorialContentId=X | ✅ 200 count=1 |
+| T12 | Filtro /api/editorial-contents?productionId=X | ✅ count=1 |
+| T13 | Aba Produção: GET ECs por productionId | ✅ count=1 |
+| T14 | Aba Produção: POST EC contextualizado (projectId+productionId) | ✅ 201 |
+| T15 | GET EC inexistente retorna 404 | ✅ 404 |
+| T16 | DELETE EC1 (CASCADE deleta CP) | ✅ 200 |
+| T17 | DELETE EC2 e verificação de cleanup | ✅ 200 remainingTestEcs=0 |
+
+**Build:** ✅ `pnpm build` passou sem erros. Rotas aparecem no manifest:
+- `/publicacoes` (Static)
+- `/projetos/[id]/conteudos/[editorialContentId]` (Dynamic)
+
+**Typecheck:** ✅ `pnpm exec tsc --noEmit` sem erros em arquivos P3 (erro pré-existente em `imagens/rascunhos/page.tsx` não introduzido neste incremento).
 
 ### Escopo
 

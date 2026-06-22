@@ -18,6 +18,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ProductionForm } from '@/components/productions/production-form'
 import {
   ArrowLeft,
@@ -35,7 +45,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Production, ImageDraft, VideoDraft, Post } from '@/lib/types'
+import type { Project, Production, ImageDraft, VideoDraft, Post, EditorialContent } from '@/lib/types'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -64,6 +74,12 @@ export default function ProductionDetailPage() {
   const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false)
+
+  // Editorial contents state
+  const [editorialContents, setEditorialContents] = useState<EditorialContent[]>([])
+  const [showCreateEcDialog, setShowCreateEcDialog] = useState(false)
+  const [createEcTitle, setCreateEcTitle] = useState('')
+  const [isCreatingEc, setIsCreatingEc] = useState(false)
 
   // Unlink state
   const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video' | 'post'; id: string; name: string } | null>(null)
@@ -119,19 +135,22 @@ export default function ProductionDetailPage() {
     const loadWorkspace = async () => {
       setIsLoadingWorkspace(true)
       try {
-        const [imgRes, vidRes, postRes] = await Promise.all([
+        const [imgRes, vidRes, postRes, ecRes] = await Promise.all([
           fetch(`/api/image-drafts?productionId=${productionId}`),
           fetch(`/api/video-drafts?productionId=${productionId}`),
           fetch(`/api/posts?productionId=${productionId}`),
+          fetch(`/api/editorial-contents?productionId=${productionId}`),
         ])
-        const [imgData, vidData, postData] = await Promise.all([
+        const [imgData, vidData, postData, ecData] = await Promise.all([
           imgRes.json(),
           vidRes.json(),
           postRes.json(),
+          ecRes.json(),
         ])
         if (imgRes.ok) setImageDrafts(imgData.drafts || [])
         if (vidRes.ok) setVideoDrafts(vidData.drafts || [])
         if (postRes.ok) setPosts(postData.posts || [])
+        if (ecRes.ok) setEditorialContents(ecData.editorialContents || [])
       } catch {
         // silently fail — workspace items are non-critical
       } finally {
@@ -140,6 +159,33 @@ export default function ProductionDetailPage() {
     }
     loadWorkspace()
   }, [production, productionId])
+
+  const handleCreateEc = async () => {
+    if (!createEcTitle.trim()) {
+      return
+    }
+    setIsCreatingEc(true)
+    try {
+      const res = await fetch('/api/editorial-contents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: createEcTitle.trim(),
+          projectId,
+          productionId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar')
+      setEditorialContents((prev) => [data.editorialContent, ...prev])
+      setShowCreateEcDialog(false)
+      setCreateEcTitle('')
+    } catch {
+      // silently fail — user will see empty list
+    } finally {
+      setIsCreatingEc(false)
+    }
+  }
 
   const handleEditSuccess = (updated: Production) => {
     setProduction(updated)
@@ -321,7 +367,7 @@ export default function ProductionDetailPage() {
 
           {/* Workspace Tabs */}
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview" className="gap-2">
                 <Layers className="h-4 w-4" />
                 Visão Geral
@@ -334,9 +380,13 @@ export default function ProductionDetailPage() {
                 <Video className="h-4 w-4" />
                 Vídeos {videoDrafts.length > 0 && `(${videoDrafts.length})`}
               </TabsTrigger>
+              <TabsTrigger value="editorial" className="gap-2">
+                <FileText className="h-4 w-4" />
+                Conteúdos {editorialContents.length > 0 && `(${editorialContents.length})`}
+              </TabsTrigger>
               <TabsTrigger value="posts" className="gap-2">
                 <FileText className="h-4 w-4" />
-                Publicações {posts.length > 0 && `(${posts.length})`}
+                Posts {posts.length > 0 && `(${posts.length})`}
               </TabsTrigger>
             </TabsList>
 
@@ -611,7 +661,74 @@ export default function ProductionDetailPage() {
               </div>
             </TabsContent>
 
-            {/* Publicações */}
+            {/* Conteúdos Editoriais */}
+            <TabsContent value="editorial" className="mt-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {editorialContents.length === 0
+                      ? 'Nenhum conteúdo editorial vinculado.'
+                      : `${editorialContents.length} conteúdo${editorialContents.length > 1 ? 's' : ''} editorial${editorialContents.length > 1 ? 'is' : ''} vinculado${editorialContents.length > 1 ? 's' : ''}.`}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      setCreateEcTitle('')
+                      setShowCreateEcDialog(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Criar Conteúdo
+                  </Button>
+                </div>
+
+                {isLoadingWorkspace ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : editorialContents.length === 0 ? (
+                  <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-10">
+                      <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum conteúdo editorial vinculado a esta Produção.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-2">
+                    {editorialContents.map((ec) => (
+                      <Card key={ec.id} className="border-border/50 bg-card/30">
+                        <CardContent className="flex items-center justify-between p-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{ec.title}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {ec.status === 'ready' ? 'Pronto' : ec.status === 'archived' ? 'Arquivado' : 'Rascunho'} ·{' '}
+                              {new Date(ec.updated_at).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-4 shrink-0 gap-1 text-xs"
+                            onClick={() =>
+                              router.push(`/projetos/${projectId}/conteudos/${ec.id}`)
+                            }
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Abrir
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Publicações (legado) */}
             <TabsContent value="posts" className="mt-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -733,6 +850,39 @@ export default function ProductionDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create EC Dialog */}
+      <Dialog open={showCreateEcDialog} onOpenChange={setShowCreateEcDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo Conteúdo Editorial</DialogTitle>
+            <DialogDescription>
+              Será criado vinculado a esta Produção e ao seu Projeto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="prod-ec-title">Título *</Label>
+              <Input
+                id="prod-ec-title"
+                value={createEcTitle}
+                onChange={(e) => setCreateEcTitle(e.target.value)}
+                placeholder="Ex: Post de lançamento"
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateEc()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateEcDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateEc} disabled={isCreatingEc || !createEcTitle.trim()}>
+              {isCreatingEc && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Criar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Unlink Confirmation */}
       <AlertDialog open={!!unlinkTarget} onOpenChange={(open) => { if (!open) setUnlinkTarget(null) }}>
