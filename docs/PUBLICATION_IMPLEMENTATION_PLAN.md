@@ -857,10 +857,57 @@ Deletar os novos arquivos de página e componentes. Reverter alteração da side
 
 ---
 
-## P4 — ChannelPieces
+## P4 — ChannelPieces ✓ CONCLUÍDO E VALIDADO — branch feat/publication-p4-channel-pieces
 
 **Objetivo:** criação, edição e gestão de `ChannelPiece`s dentro da página de
 detalhe do `EditorialContent`. Geração assistida de body por canal e formato.
+
+### Resultado da implementação (2026-06-22)
+
+**Branch:** `feat/publication-p4-channel-pieces`  
+**Commit:** `feat: add channel piece workspace`
+
+**Arquivos criados/modificados:**
+
+| Arquivo | Ação |
+|---------|------|
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Atualizado — seção CP interativa (antes read-only) |
+| `app/api/channel-pieces/generate-body/route.ts` | Criado — geração de body via OpenAI |
+| `lib/publication-channels.ts` | Atualizado — adicionada `getFormatsForChannel()` |
+
+**Funcionalidades implementadas:**
+
+1. **Listagem de CPs** — carregada via `GET /api/channel-pieces?editorialContentId={ecId}` com mounted guard e `cpRetryKey` para retry isolado (sem recarregar o form do EC)
+2. **Criação** — Dialog com canal, formato (filtrado por canal via `getFormatsForChannel`), status, título, body, CTA e hashtags; chama `POST /api/channel-pieces`
+3. **Edição** — mesmo Dialog em modo edit; chama `PATCH /api/channel-pieces/{id}`; reset de formato quando canal muda para valor incompatível
+4. **Exclusão** — AlertDialog com identificação canal/formato; chama `DELETE /api/channel-pieces/{id}`
+5. **Geração de body** — botão "Gerar sugestão" (desabilitado até canal+formato selecionados); AlertDialog de sobrescrita se body existente; chama `POST /api/channel-pieces/generate-body`; preenche body sem salvar
+6. **Segurança no client** — `cp.editorial_content_id !== ecId` bloqueia edit/delete antes de chamar a API; validação idêntica nas rotas (user_id + RLS)
+7. **Estado de erro isolado** — erro de carregamento de CPs não afeta o form do EC; botão "Tentar novamente" incrementa `cpRetryKey`
+
+**Rota `POST /api/channel-pieces/generate-body`:**
+- Valida auth → ownership do EC → combinação channel+format
+- Carrega contexto: EC (title+body+ai_context), Project (name+description+context+style_profile), Production (title+intention)
+- OpenAI key: `user_settings.openai_api_key` com fallback para `OPENAI_API_KEY` env
+- 15 entradas em `CHANNEL_FORMAT_CONTEXT` (uma por combinação válida) com instruções específicas por formato
+- Timeout: `AbortSignal.timeout(30000)`; truncamento: body 8000 chars, ai_context 2000 chars
+- Resposta: `{ generatedBody, model }` — não persiste resultado
+
+**Typecheck:** ✅ `pnpm exec tsc --noEmit` — erro pré-existente em `imagens/rascunhos/page.tsx:43` (TS7006); 0 erros introduzidos por P4.
+
+**Build:** ✅ `pnpm build` — 33 páginas geradas sem erros. Rotas confirmadas no manifest:
+- `ƒ /api/channel-pieces`
+- `ƒ /api/channel-pieces/[id]`
+- `ƒ /api/channel-pieces/generate-body`
+- `ƒ /projetos/[id]/conteudos/[editorialContentId]`
+
+**Divergências entre plano e implementação:**
+
+1. **Rota de geração em `/api/channel-pieces/generate-body`** em vez de `/api/editorial-contents/[id]/generate-body` — path mais coerente com o recurso que o body pertence (ChannelPiece, não EC). EC id é passado no body do POST.
+2. **Sem componentes externos** — `channel-piece-form.tsx` e `channel-piece-card.tsx` não foram criados como componentes separados; o Dialog e os itens de lista estão inline na página. Razão: todo o estado de CP é local à página — extrair não reduz complexidade, só cria acoplamento artificial.
+3. **Formato `video_description` exibido como "Descrição de vídeo"** (lowercase) — diferente do plural maiúsculo especificado (`Descrição de Vídeo`). Decisão de estilo consistente com os outros formatos.
+
+### Escopo
 
 ### Escopo
 
