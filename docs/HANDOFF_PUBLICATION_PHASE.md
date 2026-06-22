@@ -118,10 +118,22 @@ Todos os branches P1–P6 estão em `feat/publication-p*` (não mergeados em `ma
 Branch P6 (`feat/publication-p6-post-video-flow`) é o HEAD mais recente e contém todas as correções acumuladas.
 
 Commits relevantes do P6:
+- `24bd05a` — `fix: harden post-video publication workflow` (P6 audit fix — ver abaixo)
+- `9ebdc18` — docs P6 audit results
 - `47625e4` — `feat: add post-video publication flow (P6)`
 - `e63cceb` — `fix: harden publication quick flow lifecycle` (P5 audit fixes)
 - `bc22918` — docs P5
 - `4871ac9` — `feat: add production publication quick flow` (P5 feature)
+
+### Fix aplicado na auditoria P6 (24bd05a)
+
+**Bug:** Ao carregar `/videos?draft=<id>`, o `productionId` state não era setado a partir de `draftData.production_id`. Resultado: `QuickFlowDialog` recebia `lockedProductionId=undefined`, exibia seletor de produção (em vez de travado), e o EC era criado com `production_id=null`.
+
+**Root cause:** Dois efeitos colaterais combinados:
+1. A linha `if (draftData.production_id) setProductionId(draftData.production_id)` estava ausente no path de carregamento via URL `?draft=` (existia apenas no `loadDraft()` click path).
+2. O auto-save enviava `productionId: null` no PATCH, sobrescrevendo o valor correto do banco antes mesmo de a tela terminar de carregar.
+
+**Fix:** Adicionar `if (draftData.production_id) setProductionId(draftData.production_id)` ao useEffect de carregamento por URL (`videos/page.tsx` linha 97). Com React 18 automatic batching, `productionId` fica correto quando o auto-save dispara.
 
 ---
 
