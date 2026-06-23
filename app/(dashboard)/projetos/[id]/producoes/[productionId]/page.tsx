@@ -439,11 +439,11 @@ export default function ProductionDetailPage() {
               </TabsTrigger>
               <TabsTrigger value="editorial" className="gap-2">
                 <FileText className="h-4 w-4" />
-                Conteúdos {editorialContents.length > 0 && `(${editorialContents.length})`}
+                Conteúdos editoriais {editorialContents.length > 0 && `(${editorialContents.length})`}
               </TabsTrigger>
               <TabsTrigger value="posts" className="gap-2">
                 <FileText className="h-4 w-4" />
-                Posts {posts.length > 0 && `(${posts.length})`}
+                Posts legados {posts.length > 0 && `(${posts.length})`}
               </TabsTrigger>
             </TabsList>
 
@@ -484,11 +484,11 @@ export default function ProductionDetailPage() {
                         <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/50 p-3">
                           <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
                           <div>
-                            <p className="text-sm font-medium">Publicações</p>
+                            <p className="text-sm font-medium">Conteúdos editoriais</p>
                             <p className="text-xs text-muted-foreground">
-                              {posts.length === 0
-                                ? 'Sem publicações vinculadas'
-                                : `${posts.length} post${posts.length > 1 ? 's' : ''}`}
+                              {editorialContents.length === 0
+                                ? 'Sem conteúdos vinculados'
+                                : `${editorialContents.length} conteúdo${editorialContents.length > 1 ? 's' : ''}`}
                             </p>
                           </div>
                         </div>
