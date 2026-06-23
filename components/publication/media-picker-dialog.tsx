@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import type { ChannelPieceMediaResolved, Image as ImageType, LibraryFile, LibraryFileKind } from '@/lib/types'
-import { FileText, ImageIcon, Loader2, Music, Video } from 'lucide-react'
+import { FileText, ImageIcon, Loader2, Music, Upload, Video, X } from 'lucide-react'
 
 // ─── Sub-icons ────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,16 @@ interface Props {
   onAssociated: () => void
 }
 
+const ACCEPTED_MIME = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime'
+const ALLOWED_UPLOAD_MIMES = new Set(ACCEPTED_MIME.split(','))
+const MAX_UPLOAD_MB = 50
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -162,15 +173,31 @@ export function MediaPickerDialog({
   onAssociated,
 }: Props) {
   const { toast } = useToast()
-  const [tab, setTab] = useState<'galeria' | 'biblioteca'>('galeria')
+
+  // Tab state
+  const [tab, setTab] = useState<'galeria' | 'biblioteca' | 'envio'>('galeria')
+
+  // Galeria state
   const [images, setImages] = useState<ImageType[]>([])
-  const [files, setFiles] = useState<LibraryFile[]>([])
   const [loadingGaleria, setLoadingGaleria] = useState(false)
-  const [loadingBiblioteca, setLoadingBiblioteca] = useState(false)
   const [galeriaError, setGaleriaError] = useState<string | null>(null)
+
+  // Biblioteca state
+  const [files, setFiles] = useState<LibraryFile[]>([])
+  const [loadingBiblioteca, setLoadingBiblioteca] = useState(false)
   const [bibliotecaError, setBibliotecaError] = useState<string | null>(null)
+
+  // Association spinner (galeria + biblioteca tabs)
   const [assigningId, setAssigningId] = useState<string | null>(null)
   const isAssigningRef = useRef(false)
+
+  // Upload state (envio tab)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const isUploadingRef = useRef(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const nextRole = currentItems.some((i) => i.role === 'primary') ? 'carousel_item' : 'primary'
   const nextPosition =
@@ -213,7 +240,7 @@ export function MediaPickerDialog({
       })
   }, [open, tab, projectId, files.length, loadingBiblioteca])
 
-  // Reset state when dialog closes so next open reloads fresh data
+  // Reset all state when dialog closes
   useEffect(() => {
     if (open) return
     setImages([])
@@ -223,7 +250,19 @@ export function MediaPickerDialog({
     setAssigningId(null)
     isAssigningRef.current = false
     setTab('galeria')
+    // Upload state
+    setSelectedFile(null)
+    setUploadError(null)
+    setIsUploading(false)
+    isUploadingRef.current = false
+    setIsDragging(false)
   }, [open])
+
+  // Block closing dialog during upload
+  const handleOpenChange = (v: boolean) => {
+    if (!v && isUploading) return
+    onOpenChange(v)
+  }
 
   const isDuplicateImage = (imageId: string) =>
     currentItems.some((i) => i.image_id === imageId)
@@ -231,6 +270,7 @@ export function MediaPickerDialog({
   const isDuplicateFile = (fileId: string) =>
     currentItems.some((i) => i.library_file_id === fileId)
 
+  // Associate existing image or library file (galeria + biblioteca tabs)
   const associate = async (
     body: { imageId?: string; libraryFileId?: string },
     idForSpinner: string,
@@ -272,26 +312,80 @@ export function MediaPickerDialog({
     }
   }
 
+  // Validate and set a file for upload
+  const handleFileSelect = (file: File) => {
+    setUploadError(null)
+    if (!ALLOWED_UPLOAD_MIMES.has(file.type)) {
+      setUploadError('Arquivo não suportado. Formatos aceitos: JPEG, PNG, WebP, GIF, MP4, WebM, MOV.')
+      return
+    }
+    if (file.size === 0) {
+      setUploadError('Arquivo não pode ser vazio.')
+      return
+    }
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setUploadError(`O arquivo excede o limite de ${MAX_UPLOAD_MB} MB.`)
+      return
+    }
+    setSelectedFile(file)
+  }
+
+  // Upload the selected file (envio tab)
+  const handleUpload = async () => {
+    if (!selectedFile || isUploadingRef.current) return
+    isUploadingRef.current = true
+    setIsUploading(true)
+    setUploadError(null)
+
+    const formData = new FormData()
+    formData.append('file', selectedFile)
+    formData.append('channelPieceId', channelPieceId)
+
+    try {
+      const res = await fetch('/api/channel-piece-media/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error((d as { error?: string }).error || 'Não foi possível enviar o arquivo.')
+      onAssociated()
+      toast({
+        title: 'Arquivo enviado',
+        description: 'Mídia adicionada à versão com sucesso.',
+      })
+      onOpenChange(false)
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Não foi possível enviar o arquivo.')
+    } finally {
+      isUploadingRef.current = false
+      setIsUploading(false)
+    }
+  }
+
+  const anyBusy = !!assigningId || isUploading
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[80vh] max-w-3xl flex-col gap-0 p-0">
         <DialogHeader className="px-6 pb-3 pt-6">
           <DialogTitle>Adicionar mídia</DialogTitle>
           <DialogDescription>
-            Escolha uma imagem gerada ou um arquivo existente deste projeto.
+            Escolha uma imagem gerada, um arquivo existente ou envie um novo arquivo.
           </DialogDescription>
         </DialogHeader>
 
         <Tabs
           value={tab}
-          onValueChange={(v) => setTab(v as 'galeria' | 'biblioteca')}
+          onValueChange={(v) => !anyBusy && setTab(v as typeof tab)}
           className="flex min-h-0 flex-1 flex-col gap-0"
         >
           <TabsList className="mx-6 mb-3 w-fit">
-            <TabsTrigger value="galeria">Imagens geradas</TabsTrigger>
-            <TabsTrigger value="biblioteca">Arquivos do projeto</TabsTrigger>
+            <TabsTrigger value="galeria" disabled={anyBusy}>Imagens geradas</TabsTrigger>
+            <TabsTrigger value="biblioteca" disabled={anyBusy}>Arquivos do projeto</TabsTrigger>
+            <TabsTrigger value="envio" disabled={anyBusy}>Enviar arquivo</TabsTrigger>
           </TabsList>
 
+          {/* ── Galeria ── */}
           <TabsContent value="galeria" className="mt-0 min-h-0 flex-1 overflow-auto px-6 pb-6">
             {loadingGaleria ? (
               <div className="flex justify-center py-10">
@@ -311,7 +405,7 @@ export function MediaPickerDialog({
                     img={img}
                     isDupe={isDuplicateImage(img.id)}
                     isAssigning={assigningId === img.id}
-                    disabled={!!assigningId}
+                    disabled={anyBusy}
                     onSelect={() => associate({ imageId: img.id }, img.id)}
                   />
                 ))}
@@ -319,6 +413,7 @@ export function MediaPickerDialog({
             )}
           </TabsContent>
 
+          {/* ── Biblioteca ── */}
           <TabsContent value="biblioteca" className="mt-0 min-h-0 flex-1 overflow-auto px-6 pb-6">
             {loadingBiblioteca ? (
               <div className="flex justify-center py-10">
@@ -338,12 +433,125 @@ export function MediaPickerDialog({
                     file={file}
                     isDupe={isDuplicateFile(file.id)}
                     isAssigning={assigningId === file.id}
-                    disabled={!!assigningId}
+                    disabled={anyBusy}
                     onSelect={() => associate({ libraryFileId: file.id }, file.id)}
                   />
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Enviar arquivo ── */}
+          <TabsContent value="envio" className="mt-0 min-h-0 flex-1 overflow-auto px-6 pb-6">
+            <div className="space-y-4">
+              {/* Drop zone */}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Selecionar arquivo para envio"
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsDragging(false)
+                  const f = e.dataTransfer.files?.[0]
+                  if (f) handleFileSelect(f)
+                }}
+                onClick={() => !isUploading && fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if ((e.key === 'Enter' || e.key === ' ') && !isUploading) {
+                    fileInputRef.current?.click()
+                  }
+                }}
+                className={[
+                  'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  isDragging
+                    ? 'border-primary bg-accent/30'
+                    : isUploading
+                      ? 'cursor-not-allowed border-border/30 opacity-60'
+                      : 'border-border/50 hover:border-primary/50 hover:bg-muted/30',
+                ].join(' ')}
+              >
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Clique ou arraste um arquivo aqui</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    JPEG, PNG, WebP, GIF, MP4, WebM, MOV — máx {MAX_UPLOAD_MB} MB
+                  </p>
+                </div>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_MIME}
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) handleFileSelect(f)
+                  e.target.value = ''
+                }}
+                disabled={isUploading}
+              />
+
+              {/* Selected file preview */}
+              {selectedFile && (
+                <div className="flex items-center gap-3 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border/50 bg-background">
+                    {selectedFile.type.startsWith('video/') ? (
+                      <Video className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(selectedFile.size)} · {selectedFile.type}
+                    </p>
+                  </div>
+                  {!isUploading && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-1.5 text-muted-foreground"
+                      onClick={() => { setSelectedFile(null); setUploadError(null) }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span className="sr-only">Remover seleção</span>
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Error message */}
+              {uploadError && (
+                <p className="text-sm text-destructive">{uploadError}</p>
+              )}
+
+              {/* Upload button */}
+              {selectedFile && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={isUploading}
+                  onClick={handleUpload}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enviando…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Enviar e adicionar
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </DialogContent>
