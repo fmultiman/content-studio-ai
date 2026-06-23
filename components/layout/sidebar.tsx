@@ -41,7 +41,7 @@ const navItems = [
     icon: Video,
   },
   {
-    label: 'Publicações',
+    label: 'Conteúdos',
     href: '/publicacoes',
     icon: FileText,
   },

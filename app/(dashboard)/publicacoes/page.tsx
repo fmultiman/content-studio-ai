@@ -153,12 +153,12 @@ function PublicacoesPageContent() {
 
   return (
     <>
-      <Header title="Publicações" />
+      <Header title="Conteúdos" />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
-              Gerencie Conteúdos Editoriais por canal e formato.
+              Crie conteúdos editoriais e adapte-os para diferentes canais e formatos.
             </p>
             <div className="flex gap-2">
               <Button
@@ -167,14 +167,14 @@ function PublicacoesPageContent() {
                 onClick={() => setShowQuickFlowDialog(true)}
               >
                 <Zap className="h-4 w-4" />
-                Publicação rápida
+                Criação rápida
               </Button>
               <Button
                 className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
                 onClick={openCreateDialog}
               >
                 <Plus className="h-4 w-4" />
-                Novo Conteúdo
+                Novo conteúdo
               </Button>
             </div>
           </div>
@@ -227,6 +227,9 @@ function PublicacoesPageContent() {
           </div>
 
           {/* EC List */}
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Conteúdos editoriais
+          </h2>
           {isLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
@@ -260,7 +263,7 @@ function PublicacoesPageContent() {
                 {editorialContents.length === 0 && (
                   <Button className="mt-4" onClick={openCreateDialog}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Criar Conteúdo
+                    Novo conteúdo
                   </Button>
                 )}
               </CardContent>
@@ -288,8 +291,11 @@ function PublicacoesPageContent() {
                           </p>
                         )}
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {projects.find((p) => p.id === ec.project_id)?.name || 'Projeto'} ·{' '}
-                          {new Date(ec.updated_at).toLocaleDateString('pt-BR')}
+                          {projects.find((p) => p.id === ec.project_id)?.name || 'Projeto'}
+                          {ec.production_id && (
+                            <> · {productions.find((p) => p.id === ec.production_id)?.title || 'Produção'}</>
+                          )}
+                          {' · '}{new Date(ec.updated_at).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                       <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
