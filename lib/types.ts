@@ -309,6 +309,46 @@ export interface ChannelPiece {
 }
 
 // ---------------------------------------------------------------------------
+// ChannelPieceMedia types (M1 — CHANNEL_PIECE_MEDIA_DECISIONS.md Rev.2)
+// ---------------------------------------------------------------------------
+
+export type ChannelPieceMediaRole =
+  | 'primary'
+  | 'thumbnail'
+  | 'carousel_item'
+  | 'background'
+  | 'attachment'
+
+// Registro persistido — campos do banco exatamente como armazenados.
+// Invariante: exatamente um de image_id / library_file_id é não-nulo
+// (garantido por cpm_exactly_one_source no banco).
+export interface ChannelPieceMedia {
+  id: string
+  user_id: string
+  channel_piece_id: string
+  image_id: string | null
+  library_file_id: string | null
+  position: number
+  role: ChannelPieceMediaRole
+  alt_text: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Resposta enriquecida da API — inclui campos resolvidos via JOIN nas
+// entidades de origem (images ou library_files). Calculados no handler,
+// nunca persistidos em channel_piece_media.
+export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
+  media_kind: LibraryFileKind | 'image'
+  image_url: string | null
+  thumbnail_url: string | null
+  file_size: number | null
+  mime_type: string | null
+  name: string | null
+  source_deleted: boolean  // true se library_files.deleted_at IS NOT NULL
+}
+
+// ---------------------------------------------------------------------------
 // API Response types
 // ---------------------------------------------------------------------------
 
