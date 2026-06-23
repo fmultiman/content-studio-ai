@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 4 — M2 implementado e auditado 2026-06-23)  
-**Status:** M1 APLICADO E AUDITADO ✓. M2 IMPLEMENTADO E AUDITADO ✓. M3 aguarda autorização explícita.
+**Data:** 2026-06-22 (rev. 5 — M3 implementado e auditado 2026-06-23)  
+**Status:** M1 ✓. M2 ✓. M3 IMPLEMENTADO E AUDITADO ✓. M4 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -139,16 +139,47 @@ access_token formatado como cookie `sb-<ref>-auth-token` para `@supabase/ssr` 0.
 
 **Objetivo:** Exibir mídias de uma ChannelPiece na tela de detalhe do EditorialContent.
 
-**Pré-condição:** M2 aprovado.
+**Branch:** `feat/channel-piece-media-m3-display` — HEAD `3b2b2af`
 
-**Componente:** `components/publication/channel-piece-media-section.tsx`
+**Componente criado:** `components/publication/channel-piece-media-section.tsx`
 
-**UX:**
-- Grid de thumbnails em ordem `position`
-- Badge de `role`
-- Estado "mídia indisponível" quando `deleted_at IS NOT NULL` em `library_files`
-- Botão "Remover da Versão" (DELETE channel_piece_media — não apaga arquivo)
-- Botão "Adicionar mídia" (shell — funcionalidade em M4/M5)
+**Estratégia de carregamento:** paralelo por versão — cada `ChannelPieceMediaSection` faz seu próprio fetch independente quando renderizado. Loading local, erro local com retry, sem bloquear a página. Adequado para o volume atual (≤10 CPs, cada uma com ≤10 mídias).
+
+**UX implementada:**
+- Seção compacta "Mídia (N)" abaixo do conteúdo de cada CP card
+- Linha por item: thumbnail/ícone 40×40 + role badge + origem (Galeria/Biblioteca) + alt text
+- Thumbnail via `thumbnail_url || image_url` com fallback para ícone (ImageIcon/Video/Music/FileText)
+- Badge "Mídia indisponível" quando `source_deleted = true`
+- Estado vazio: "Nenhuma mídia associada. Upload na próxima etapa."
+- Estado de erro: mensagem + botão Tentar novamente
+- Botão "Remover da versão" por item (ícone Trash2)
+- Confirmação explícita: AlertDialog explica que o arquivo original não será excluído
+- Guard de duplo clique: `isDeleteInFlight` ref síncrono
+- Toast de sucesso e de erro após remoção
+
+**Role labels (PT-BR):**
+- primary → Principal
+- thumbnail → Thumbnail
+- carousel_item → Item de carrossel
+- background → Fundo
+- attachment → Anexo
+
+**Fix incluído:** `resolveMediaSource` agora usa `presigned ?? public_url` — `createPresignedReadUrl` retorna `null` (não lança) quando S3 não está configurado; o `.catch()` anterior não capturava esse caso e deixava `image_url = null`. Afetava tanto `image_id` quanto `library_file_id`.
+
+**Auditoria (23 casos) — 2026-06-23:**
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Carregamento via API | 1–10 | ✅ 10/10 |
+| Remoção via API | 11–16 | ✅ 6/6 |
+| Regressão — features existentes | 17–22 | ✅ 6/6 |
+| **TOTAL** | **1–22** | **✅ 22/22** |
+
+(23 verificações totais — caso 13 executado em dois sub-checks)
+
+**Cleanup:** 4 fixtures criadas e removidas. `channel_piece_media` = 0 após testes.
+
+**Typecheck + build:** sem erros novos (apenas TS7006 pré-existente).
 
 ---
 

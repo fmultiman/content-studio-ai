@@ -120,6 +120,27 @@ Descoberta, modelagem, implementação e auditoria de M1 concluídas. Ver:
 - `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev. 3 — 22 decisões de domínio (CPM-D1 a CPM-D22)
 - `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` Rev. 3 — 10 incrementos (M1 a M10)
 
+### M3 — Exibição de mídia no workspace — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m3-display` — HEAD `3b2b2af`
+
+**Componente:** `components/publication/channel-piece-media-section.tsx`  
+**Integrado em:** `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx`
+
+**Estratégia de carregamento:** paralelo por versão — cada CP card carrega suas próprias mídias de forma independente, sem bloquear o workspace.
+
+**Funcionalidades:**
+- Seção "Mídia (N)" em cada CP card com thumbnail/ícone, role label PT-BR, origem, alt text
+- Estado vazio, loading, erro com retry, fonte indisponível (source_deleted)
+- Remoção com confirmação (AlertDialog), guard duplo-clique, toast, fonte preservada
+- Fix de bug: URL pública usada como fallback quando S3 não está configurado localmente
+
+**Auditoria:** 22/22 casos passados (carregamento, remoção, regressão). Cleanup completo.
+
+**Pendente:** autorização explícita para M4 (picker Galeria + Biblioteca).
+
+---
+
 ### M2 — APIs CRUD — IMPLEMENTADO E AUDITADO (2026-06-23)
 
 **Branch:** `feat/channel-piece-media-m2-api` — creado a partir de `feat/channel-piece-media-m1-schema`
