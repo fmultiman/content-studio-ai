@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 2 — schema corrigido após decisões humanas)  
-**Status:** M1 autorizado. M2+ aguarda conclusão de M1.
+**Data:** 2026-06-22 (rev. 3 — M1 aplicado em produção 2026-06-23)  
+**Status:** M1 APLICADO E AUDITADO ✓. M2 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -12,7 +12,7 @@
 - [x] Todas as decisões CPM-D1 a CPM-D21 aprovadas
 - [x] Migration 021 aplicada em produção (`editorial_contents` e `channel_pieces` existem)
 - [x] Questões bloqueantes para M1–M4 respondidas
-- [ ] Branch `feat/channel-piece-media-m1-schema` criado a partir de `main` (`6e5fefe`)
+- [x] Branch `feat/channel-piece-media-m1-schema` criado a partir de `main` (`6e5fefe`)
 
 ---
 
@@ -22,241 +22,75 @@
 
 **Decisões que fundamentam:** CPM-D1, CPM-D2, CPM-D3, CPM-D4, CPM-D9, CPM-D10, CPM-D11, CPM-D16, CPM-D19, CPM-D20
 
-**Arquivo:** `scripts/022_create_channel_piece_media.sql`
+**Arquivo:** `scripts/022_create_channel_piece_media.sql` (289 linhas — ver arquivo para SQL completo)
 
-```sql
--- 022_create_channel_piece_media.sql
--- Cria a tabela channel_piece_media do domínio de Mídia de ChannelPiece.
---
--- Decisões de FK (CHANNEL_PIECE_MEDIA_DECISIONS.md Rev.2):
---
---   channel_piece_id   → NOT NULL, ON DELETE CASCADE
---     Uma mídia não existe sem sua ChannelPiece.
---     Deletar CP remove todos os vínculos de mídia (não os arquivos físicos).
---
---   image_id           → nullable, ON DELETE RESTRICT
---   library_file_id    → nullable, ON DELETE RESTRICT
---     Exatamente uma dessas deve ser não-nula (cpm_exactly_one_source).
---     RESTRICT impede exclusão de Image ou LibraryFile enquanto referenciada.
---     A UI deve orientar: "Remova das Versões antes de excluir este arquivo."
---
--- Campos não persistidos (derivados em runtime):
---   image_url, thumbnail_url, file_size, mime_type, media_kind
---   São resolvidos via JOIN nas entidades de origem e retornados pela API.
---
--- A função update_updated_at_column() já existe (criada em 001_create_tables.sql).
--- Idempotente: IF NOT EXISTS, DROP POLICY IF EXISTS, DROP TRIGGER IF EXISTS.
+**Tipos TypeScript:** `lib/types.ts` — `ChannelPieceMediaRole`, `ChannelPieceMedia`, `ChannelPieceMediaResolved`
 
-CREATE TABLE IF NOT EXISTS channel_piece_media (
-  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id            UUID        NOT NULL REFERENCES auth.users(id)         ON DELETE CASCADE,
-  channel_piece_id   UUID        NOT NULL REFERENCES channel_pieces(id)     ON DELETE CASCADE,
-  image_id           UUID                 REFERENCES images(id)             ON DELETE RESTRICT,
-  library_file_id    UUID                 REFERENCES library_files(id)      ON DELETE RESTRICT,
-  position           SMALLINT    NOT NULL DEFAULT 0
-                       CHECK (position >= 0),
-  role               TEXT        NOT NULL DEFAULT 'primary'
-                       CHECK (role IN (
-                         'primary',
-                         'thumbnail',
-                         'carousel_item',
-                         'background',
-                         'attachment'
-                       )),
-  alt_text           TEXT
-                       CHECK (alt_text IS NULL OR char_length(alt_text) <= 1000),
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+**Validação de M1 — Auditoria em banco (2026-06-23) — Ambiente: Produção `nuhdhnasuohizxtmyiju`:**
 
-  -- Exatamente uma fonte: image_id XOR library_file_id
-  CONSTRAINT cpm_exactly_one_source CHECK (
-    ((image_id IS NOT NULL)::integer +
-     (library_file_id IS NOT NULL)::integer) = 1
-  )
-);
+### Schema e objetos — verificados diretamente no banco
 
-ALTER TABLE channel_piece_media ENABLE ROW LEVEL SECURITY;
+| Objeto | Status |
+|--------|--------|
+| Tabela `channel_piece_media` | ✅ criada |
+| RLS ativa | ✅ `relrowsecurity = true` |
+| Policy `cpm_select_own` (SELECT) | ✅ instalada |
+| Policy `cpm_insert_own` (INSERT, com JOIN 2 níveis project consistency) | ✅ instalada |
+| Policy `cpm_update_own` (UPDATE, USING + WITH CHECK) | ✅ instalada |
+| Policy `cpm_delete_own` (DELETE) | ✅ instalada |
+| Trigger `cpm_updated_at` BEFORE UPDATE | ✅ instalado |
+| Constraint `cpm_exactly_one_source` (CHECK XOR) | ✅ ativa |
+| Constraint `cpm_unique_position` (UNIQUE DEFERRABLE) | ✅ ativa |
+| CHECK `position >= 0` | ✅ ativa |
+| CHECK `role IN (...)` | ✅ ativa |
+| CHECK `alt_text IS NULL OR char_length <= 1000` | ✅ ativa |
+| FK `channel_piece_id → channel_pieces ON DELETE CASCADE` | ✅ |
+| FK `image_id → images ON DELETE RESTRICT` | ✅ |
+| FK `library_file_id → library_files ON DELETE RESTRICT` | ✅ |
+| FK `user_id → auth.users ON DELETE CASCADE` | ✅ |
+| Índice `idx_cpm_user_cp` | ✅ |
+| Índice parcial `idx_cpm_image_id` (WHERE NOT NULL) | ✅ |
+| Índice parcial `idx_cpm_library_file_id` (WHERE NOT NULL) | ✅ |
+| Índice único parcial `uq_cpm_cp_primary` (WHERE role = 'primary') | ✅ |
 
--- ──────────────────────────────────────────────────────────────────────────────
--- RLS
--- ──────────────────────────────────────────────────────────────────────────────
+### Matriz de testes — executada via REST API (service_role) + inspeção de policies
 
--- SELECT: o usuário vê apenas suas próprias mídias.
-DROP POLICY IF EXISTS "cpm_select_own" ON channel_piece_media;
-CREATE POLICY "cpm_select_own" ON channel_piece_media
-  FOR SELECT
-  USING (auth.uid() = user_id);
+| # | Caso | Mecanismo | Resultado |
+|---|------|-----------|-----------|
+| 1 | CP-A1 + Image-A mesmo projeto, primary, pos=0 | — | ✅ PASS |
+| 2 | CP-A1 + LF-A mesmo projeto, thumbnail, pos=1 | — | ✅ PASS |
+| 3 | Várias mídias posições diferentes | — | ✅ PASS |
+| 4 | roles não-primary repetidas (carousel_item×2) | — | ✅ PASS |
+| 5 | alt_text exatamente 1000 chars | CHECK | ✅ PASS |
+| 6 | UPDATE alt_text → updated_at alterado | trigger | ✅ PASS |
+| 7 | DELETE associação → fonte intacta | FK RESTRICT | ✅ PASS |
+| 8 | image_id e library_file_id ambos preenchidos | `cpm_exactly_one_source` | ✅ REJEITADO (23514) |
+| 9 | Ambos nulos | `cpm_exactly_one_source` | ✅ REJEITADO (23514) |
+| 10 | CP-A1 + Image de Projeto B (mesmo usuário) | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 11 | CP-A1 + LibraryFile de Projeto B | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 12 | Fonte com project_id = NULL | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 13 | Posição duplicada na mesma CP | `cpm_unique_position` | ✅ REJEITADO (23505) |
+| 14 | Mesma posição em CPs diferentes | — | ✅ PASS |
+| 15 | Posição negativa (-1) | CHECK `position >= 0` | ✅ REJEITADO (23514) |
+| 16 | Primeiro `primary` em CP | `uq_cpm_cp_primary` | ✅ PASS |
+| 17 | Segundo `primary` na mesma CP | `uq_cpm_cp_primary` | ✅ REJEITADO (23505) |
+| 18 | `primary` em CP diferente | — | ✅ PASS |
+| 19 | Múltiplos `thumbnail` na mesma CP | — | ✅ PASS (conforme CPM-D22) |
+| 20–23 | Cenários cross-user | RLS | ⚠ não testável com 1 conta (ver nota) |
+| FK-A | DELETE Image referenciada | ON DELETE RESTRICT | ✅ REJEITADO (23503) |
+| FK-B | DELETE LibraryFile referenciada | ON DELETE RESTRICT | ✅ REJEITADO (23503) |
+| FK-C | DELETE ChannelPiece → CPM cascade | ON DELETE CASCADE | ✅ CPM deletada, fonte intacta |
+| ALT | alt_text 1001 chars | CHECK | ✅ REJEITADO (23514) |
+| ROLE | role inválida | CHECK | ✅ REJEITADO (23514) |
 
--- INSERT: verifica
---   (1) ownership do usuário (user_id)
---   (2) ChannelPiece pertence ao usuário
---   (3) Image pertence ao usuário (quando image_id presente)
---   (4) LibraryFile pertence ao usuário (quando library_file_id presente)
---
--- Consistência de project_id (image/library_file pertence ao mesmo Projeto da CP)
--- é responsabilidade da API (não expressável de forma segura e simples em RLS
--- sem JOIN de 3 níveis — mesmo padrão de channel_pieces INSERT policy).
-DROP POLICY IF EXISTS "cpm_insert_own" ON channel_piece_media;
-CREATE POLICY "cpm_insert_own" ON channel_piece_media
-  FOR INSERT
-  WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM channel_pieces
-      WHERE channel_pieces.id  = channel_piece_id
-        AND channel_pieces.user_id = auth.uid()
-    )
-    AND (
-      image_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM images
-        WHERE images.id      = image_id
-          AND images.user_id = auth.uid()
-      )
-    )
-    AND (
-      library_file_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM library_files
-        WHERE library_files.id      = library_file_id
-          AND library_files.user_id = auth.uid()
-      )
-    )
-  );
+**Nota sobre testes ⚠ (RLS cross-project e cross-user):**
+O MCP Supabase estava configurado em modo somente leitura (`read-only`). Os testes de RLS não puderam ser executados com token de usuário autenticado — apenas via inspeção das policies instaladas no banco, confirmadas idênticas ao SQL da migration versionada. Testes obrigatórios em M2 com autenticação real (ver CPM-D12 Rev. 3).
 
--- UPDATE:
---   USING:      somente os próprios registros podem ser alvo.
---   WITH CHECK: o estado resultante deve manter:
---     (1) user_id correto
---     (2) channel_piece_id ainda pertence ao usuário
---     (3) image_id (se presente) ainda pertence ao usuário
---     (4) library_file_id (se presente) ainda pertence ao usuário
---   Isso impede re-apontar para CP, Image ou LibraryFile de outro usuário.
---   image_id e library_file_id são imutáveis via API (não editáveis após criação),
---   mas a constraint aqui é defensiva contra bypass direto do banco.
-DROP POLICY IF EXISTS "cpm_update_own" ON channel_piece_media;
-CREATE POLICY "cpm_update_own" ON channel_piece_media
-  FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM channel_pieces
-      WHERE channel_pieces.id      = channel_piece_id
-        AND channel_pieces.user_id = auth.uid()
-    )
-    AND (
-      image_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM images
-        WHERE images.id      = image_id
-          AND images.user_id = auth.uid()
-      )
-    )
-    AND (
-      library_file_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM library_files
-        WHERE library_files.id      = library_file_id
-          AND library_files.user_id = auth.uid()
-      )
-    )
-  );
+### Idempotência
+Verificada analiticamente: `CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS`, `DROP TRIGGER IF EXISTS`, `CREATE INDEX IF NOT EXISTS`. Segunda execução no banco existente não causa erro. Limitação documentada: constraints inline não adicionadas retroativamente.
 
--- DELETE: o usuário remove apenas seus próprios vínculos de mídia.
-DROP POLICY IF EXISTS "cpm_delete_own" ON channel_piece_media;
-CREATE POLICY "cpm_delete_own" ON channel_piece_media
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Trigger updated_at
--- ──────────────────────────────────────────────────────────────────────────────
-DROP TRIGGER IF EXISTS cpm_updated_at ON channel_piece_media;
-CREATE TRIGGER cpm_updated_at
-  BEFORE UPDATE ON channel_piece_media
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Índices
--- ──────────────────────────────────────────────────────────────────────────────
-
--- (channel_piece_id, position ASC):
---   Query principal: "listar mídias de uma ChannelPiece em ordem".
---   Cobre filtros por channel_piece_id sem position.
-CREATE INDEX IF NOT EXISTS idx_cpm_cp_position
-  ON channel_piece_media(channel_piece_id, position ASC);
-
--- (user_id, channel_piece_id):
---   Cobre listagem por usuário + filtro por CP.
---   O prefixo user_id protege queries com RLS que filtram por usuário primeiro.
-CREATE INDEX IF NOT EXISTS idx_cpm_user_cp
-  ON channel_piece_media(user_id, channel_piece_id);
-
--- (image_id): rastreabilidade — "quais CPs usam esta imagem?"
---   Partial index (WHERE NOT NULL) reduz tamanho.
---   Usado para verificar dependências antes de tentar excluir uma Image.
-CREATE INDEX IF NOT EXISTS idx_cpm_image_id
-  ON channel_piece_media(image_id)
-  WHERE image_id IS NOT NULL;
-
--- (library_file_id): rastreabilidade — "quais CPs usam este arquivo?"
---   Partial index (WHERE NOT NULL).
---   Usado para verificar dependências antes de tentar excluir um LibraryFile.
-CREATE INDEX IF NOT EXISTS idx_cpm_library_file_id
-  ON channel_piece_media(library_file_id)
-  WHERE library_file_id IS NOT NULL;
-```
-
-**Tipo TypeScript a adicionar em `lib/types.ts`:**
-
-```typescript
-export type ChannelPieceMediaRole =
-  | 'primary'
-  | 'thumbnail'
-  | 'carousel_item'
-  | 'background'
-  | 'attachment'
-
-// Registro persistido — campos do banco
-export interface ChannelPieceMedia {
-  id: string
-  user_id: string
-  channel_piece_id: string
-  image_id: string | null         // exatamente um destes é não-nulo
-  library_file_id: string | null  // exatamente um destes é não-nulo
-  position: number
-  role: ChannelPieceMediaRole
-  alt_text: string | null
-  created_at: string
-  updated_at: string
-}
-
-// Resposta da API — inclui campos resolvidos via JOIN nas entidades de origem
-export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
-  // Derivados da entidade de origem — calculados no handler, não persistidos
-  media_kind: LibraryFileKind | 'image'
-  image_url: string | null
-  thumbnail_url: string | null
-  file_size: number | null
-  mime_type: string | null
-  name: string | null  // library_files.name; null para imagens AI
-}
-```
-
-**Validação de M1 (auditoria 2026-06-23):**
-- [x] `pnpm build` sem erros
-- [x] `pnpm typecheck` sem novos erros (TS7006 pré-existente documentado)
-- [x] SQL auditado manualmente (constraints, RLS, índices)
-- [x] `cpm_exactly_one_source` rejeita: ambos nulos, ambos não-nulos
-- [x] `position >= 0` rejeita posição negativa
-- [x] `cpm_unique_position DEFERRABLE` garante posição única por CP
-- [x] `uq_cpm_cp_primary` garante no máximo uma mídia `primary` por CP
-- [x] RLS INSERT/UPDATE verifica consistência de Projeto via JOIN (CPM-D11 Rev. 3)
-- [x] Fontes com `project_id = NULL` rejeitadas pelo banco
-- [ ] Testes cross-project (obrigatórios em M2): imagem de Projeto B em CP de Projeto A → rejeitar
-- [ ] `alt_text` aceita null; rejeita string > 1000 chars (testar após aplicar migration)
+### Cleanup
+6 linhas CPM + 2 library_files + 2 editorial_contents temporários deletados. Fontes reais intactas. `cpm_total = 0`.
 
 ---
 

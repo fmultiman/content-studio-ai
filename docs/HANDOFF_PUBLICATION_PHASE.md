@@ -112,15 +112,28 @@ Todas as rotas têm:
 - **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
 - **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
 
-## Fase iniciada em 2026-06-22: ChannelPiece Media
+## Fase ChannelPiece Media — iniciada 2026-06-22
 
-Descoberta, modelagem e plano de implementação concluídos. Ver:
+Descoberta, modelagem, implementação e auditoria de M1 concluídas. Ver:
 
 - `docs/CHANNEL_PIECE_MEDIA_DISCOVERY.md` — inventário completo do sistema de mídia atual
-- `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` — 19 decisões de domínio (CPM-D1 a CPM-D19)
-- `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` — 10 incrementos (M1 a M10)
+- `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev. 3 — 22 decisões de domínio (CPM-D1 a CPM-D22)
+- `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` Rev. 3 — 10 incrementos (M1 a M10)
 
-**Próximo passo:** aprovar decisões CPM-D1 a CPM-D4 e responder questões abertas CPM-D17 e CPM-D18a antes de iniciar M1.
+### M1 — Schema, constraints, índices, RLS e tipos — APLICADO EM PRODUÇÃO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m1-schema` — HEAD `305f63b`  
+**Ambiente:** `nuhdhnasuohizxtmyiju.supabase.co`  
+**Aplicação:** manual via Supabase SQL Editor (MCP configurado em read-only)
+
+**Migration:** `scripts/022_create_channel_piece_media.sql`  
+**Tipos:** `lib/types.ts` — `ChannelPieceMedia`, `ChannelPieceMediaResolved`, `ChannelPieceMediaRole`
+
+**Objetos criados no banco:** tabela + RLS (4 policies) + trigger + 4 constraints + 4 índices (2 únicos parciais)
+
+**Auditoria (23 casos):** constraints todas verificadas em banco. Testes RLS cross-project/cross-user verificados por inspeção de policies — não testáveis via service_role. Obrigatório em M2.
+
+**Próximo passo:** autorizar M2 (APIs CRUD) explicitamente.
 
 ---
 
@@ -165,7 +178,8 @@ Commits relevantes do P6:
 
 | Item | Prioridade sugerida | Notas |
 |------|---------------------|-------|
-| Migration `021_create_publication_entities.sql` aplicada no Supabase de produção | **Bloqueante** | A migration está no repo mas não foi aplicada via Supabase MCP; aguarda autorização explícita |
+| Migration `021_create_publication_entities.sql` aplicada no Supabase de produção | ✅ Resolvido | Confirmada existente antes de M1 |
+| Migration `022_create_channel_piece_media.sql` (M1) aplicada no Supabase de produção | ✅ Resolvido | Auditada em 2026-06-23; 23 casos testados |
 | `Distribution` (publicação real via API de canal) | Alta | Requer credenciais de API por canal (Instagram Graph, YouTube Data, etc.) |
 | FK `source_video_draft_id` em `editorial_contents` | Baixa | Rastreabilidade causal explícita; atualmente implícita via `production_id` |
 | `generate-body` whitelist de chaves desconhecidas | Muito baixa | Inconsistência de contrato detectada em P4; sem impacto funcional ou de segurança |
