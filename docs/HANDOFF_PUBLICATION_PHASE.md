@@ -112,13 +112,54 @@ Todas as rotas têm:
 - **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
 - **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
 
-## Fase ChannelPiece Media — iniciada 2026-06-22
+## Fase ChannelPiece Media — M1–M4 entregues (2026-06-22 a 2026-06-23)
 
-Descoberta, modelagem, implementação e auditoria de M1 concluídas. Ver:
+Descoberta, modelagem, implementação e auditoria de M1–M4 concluídas. Ver:
 
 - `docs/CHANNEL_PIECE_MEDIA_DISCOVERY.md` — inventário completo do sistema de mídia atual
 - `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev. 3 — 22 decisões de domínio (CPM-D1 a CPM-D22)
 - `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` Rev. 3 — 10 incrementos (M1 a M10)
+
+### M4 — Picker de mídia — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m4-picker`
+
+**Arquivos:**
+- `components/publication/media-picker-dialog.tsx` (criado)
+- `components/publication/channel-piece-media-section.tsx` (modificado)
+- `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` (modificado)
+
+**Funcionalidades entregues:**
+
+_Picker `MediaPickerDialog`:_
+- Título "Adicionar mídia" / descrição orientada ao usuário (sem jargão técnico)
+- Aba **"Imagens geradas"** — consulta `images` por `project_id` via Supabase client
+- Aba **"Arquivos do projeto"** — consulta `GET /api/library-files?projectId=X`
+- Itens já associados desabilitados com badge "Adicionada"/"Adicionado"
+- Role auto-computado: primeiro item → `primary`; demais → `carousel_item`
+- Position: `max(current) + 1` ou `0` se lista vazia
+- Guard de double-submit via `isAssigningRef` (useRef síncrono)
+
+_`ChannelPieceMediaSection` — dois modos:_
+- **Card externo** (`editable=false`, default): somente leitura — sem lixeira, resumo informativo
+- **Editor** (`editable=true, projectId`): lista com remoção + botão "Adicionar mídia" + picker
+
+_Labels de origem UX (sem alteração nos tipos internos):_
+
+| Fonte | Card/editor | Picker |
+|-------|-------------|--------|
+| `image_id` | Imagem gerada | — (aba "Imagens geradas") |
+| `library_file_id` | Arquivo do projeto | — (aba "Arquivos do projeto") |
+
+_Integração no Dialog de edição:_ seção "Mídia da versão" inserida após Hashtags; visível apenas ao editar CP existente.
+
+**Auditoria:** 35/35 casos passados. Cleanup completo. Fontes originais verificadas intactas.
+
+**Smoke visual aprovado:** card externo sem lixeira, editor com remoção, picker funcional, sem regressão de UX.
+
+**Pendente:** autorização explícita para M5 (upload de nova mídia).
+
+---
 
 ### M3 — Exibição de mídia no workspace — IMPLEMENTADO E AUDITADO (2026-06-23)
 
@@ -132,12 +173,9 @@ Descoberta, modelagem, implementação e auditoria de M1 concluídas. Ver:
 **Funcionalidades:**
 - Seção "Mídia (N)" em cada CP card com thumbnail/ícone, role label PT-BR, origem, alt text
 - Estado vazio, loading, erro com retry, fonte indisponível (source_deleted)
-- Remoção com confirmação (AlertDialog), guard duplo-clique, toast, fonte preservada
 - Fix de bug: URL pública usada como fallback quando S3 não está configurado localmente
 
 **Auditoria:** 22/22 casos passados (carregamento, remoção, regressão). Cleanup completo.
-
-**Pendente:** autorização explícita para M4 (picker Galeria + Biblioteca).
 
 ---
 

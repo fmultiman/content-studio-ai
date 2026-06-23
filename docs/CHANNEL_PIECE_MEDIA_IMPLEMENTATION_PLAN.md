@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 5 — M3 implementado e auditado 2026-06-23)  
-**Status:** M1 ✓. M2 ✓. M3 IMPLEMENTADO E AUDITADO ✓. M4 aguarda autorização explícita.
+**Data:** 2026-06-22 (rev. 6 — M4 implementado, auditado e aprovado 2026-06-23)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 IMPLEMENTADO E AUDITADO ✓. M5 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -185,28 +185,135 @@ access_token formatado como cookie `sb-<ref>-auth-token` para `@supabase/ssr` 0.
 
 ## M4 — Picker Galeria e Biblioteca
 
-**Objetivo:** Associar imagem existente (`images` aprovadas ou `library_files`) a uma ChannelPiece.
+**Objetivo:** Associar imagem existente (`images`) ou arquivo (`library_files`) a uma ChannelPiece via picker integrado no editor.
+
+**Branch:** `feat/channel-piece-media-m4-picker` — criado a partir de `feat/channel-piece-media-m3-display`
 
 **Pré-condição:** M3 aprovado.
 
 **Decisões:** CPM-D5, CPM-D6, CPM-D12
 
-**UX planejada:**
-- "Selecionar da Galeria" → imagens aprovadas do mesmo Projeto
-- "Selecionar da Biblioteca" → library_files do mesmo Projeto, filtráveis por kind
-- Múltipla seleção para carrossel
+### Arquivos criados/modificados
 
-**Achado de UX — smoke visual M3 (registrado para M4):**
+| Arquivo | Ação |
+|---------|------|
+| `components/publication/media-picker-dialog.tsx` | Criado — Dialog picker com duas abas |
+| `components/publication/channel-piece-media-section.tsx` | Modificado — props `editable`, `projectId`, `showRemove` por item |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Modificado — seção de mídia dentro do Dialog de edição |
 
-A seção "Mídia" é exibida no card da ChannelPiece no workspace, mas **não aparece dentro do modal "Editar versão para canal"** (Dialog de criação/edição de CP). Como a mídia pertence à própria versão e o editor é o principal ponto de trabalho sobre um CP, M4 deve integrar:
-1. Uma seção compacta de mídias existentes dentro do Dialog de edição (somente leitura + botão remover)
-2. O botão "Adicionar mídia" (abre picker Galeria/Biblioteca) dentro desse mesmo Dialog
+### Arquitetura implementada
 
-Dessa forma, o fluxo de edição de uma CP — conteúdo + mídia — fica contido em um único contexto, sem exigir que o usuário feche o modal para ver o que já foi adicionado.
+**`MediaPickerDialog`** — componente standalone com duas abas:
+- **"Imagens geradas"** — consulta `images` por `project_id` via Supabase client (mesmo padrão da página Galeria). Dados carregados lazily, cacheados durante a sessão do picker.
+- **"Arquivos do projeto"** — consulta `GET /api/library-files?projectId=X` (endpoint existente, soft-delete respeitado).
+- Seleção de um item executa `POST /api/channel-piece-media` com role/position auto-computados.
+- Guarda double-submit: `isAssigningRef` (useRef síncrono).
+- Itens já associados: badge "Adicionada"/"Adicionado" + disabled.
 
-**Thumbnail no ambiente local (achado técnico, sem ação necessária):**
+**`ChannelPieceMediaSection`** — props adicionadas:
+- `editable?: boolean` (default `false`) — controla visibilidade do botão "Adicionar mídia" e do ícone de lixeira em cada item.
+- `projectId?: string` — repassado ao `MediaPickerDialog`.
+- Modo **card externo** (`editable=false`): somente leitura, sem lixeira — resumo informativo.
+- Modo **editor** (`editable=true`): lista com lixeira, botão "Adicionar mídia", picker embutido.
 
-No smoke visual M3, a thumbnail apareceu como placeholder (ícone ImageIcon) em vez da imagem real. Causa: o S3 (`s3.multihuman.com.br`) é um bucket privado — as URLs armazenadas retornam 403 sem presigned URL. Em produção, onde o S3 está configurado, `createPresignedReadUrl` gera a URL assinada com TTL de 1h e a imagem carrega normalmente. O fallback de placeholder (onError → ImageIcon) é o comportamento correto para dev local sem S3.
+**Integração no Dialog** — dentro de "Editar versão para canal", após o campo Hashtags:
+```tsx
+{editingCp && (
+  <ChannelPieceMediaSection
+    channelPieceId={editingCp.id}
+    editable
+    projectId={projectId}
+  />
+)}
+```
+
+### Lógica de role e position
+
+| Situação | Role atribuído |
+|----------|---------------|
+| Nenhuma mídia com `role=primary` | `primary` |
+| Já existe `role=primary` | `carousel_item` |
+
+`position = max(current positions) + 1`, ou `0` se lista vazia.
+
+### Labels de origem (UX)
+
+| Fonte técnica | Label exibido |
+|---------------|---------------|
+| `image_id IS NOT NULL` | Imagem gerada |
+| `library_file_id IS NOT NULL` | Arquivo do projeto |
+
+Aba "Imagens geradas" no picker → `images`  
+Aba "Arquivos do projeto" no picker → `library_files`
+
+### Prevenção de duplicatas
+
+- **Frontend:** `isDuplicateImage(imageId)` / `isDuplicateFile(fileId)` — item desabilitado com badge.
+- **Backend:** não existe constraint `UNIQUE(channel_piece_id, image_id)` — API permite múltiplas associações do mesmo source (decisão intencional, frontend controla). Constraint `uq_cpm_cp_primary` bloqueia segundo `role=primary`.
+
+### Auditoria (35 casos) — 2026-06-23
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Autenticação → 401 | 1–3 | ✅ 3/3 |
+| Dados Galeria/Biblioteca | 4–6 | ✅ 3/3 |
+| Role e position (imagem) | 7–13 | ✅ 7/7 |
+| Position explícita e ordenação | 14–16 | ✅ 3/3 |
+| Duplicata source (API vs frontend) | 17–18 | ✅ 2/2 |
+| Cross-project | 19–21 | ✅ 3/3 |
+| Validação de input | 22–25 | ✅ 4/4 |
+| Library file (source Biblioteca) | 26–29 | ✅ 4/4 |
+| DELETE e integridade pós-delete | 30–32 | ✅ 3/3 |
+| PATCH e campos imutáveis | 33–35 | ✅ 3/3 |
+| **TOTAL** | **1–35** | **✅ 35/35** |
+
+**Fixture M4:** 1 `library_file` de teste criada em PROJECT_A para casos 26–29; removida no cleanup.
+
+### Smoke visual — 2026-06-23 — APROVADO
+
+Validado com 2 fixtures: 1 imagem (Principal/Imagem gerada) + 1 arquivo (carousel_item/Arquivo do projeto) em CP_A1.
+
+Checklist confirmado:
+
+**Card externo:**
+- [x] 2 mídias exibidas
+- [x] Labels "Principal · Imagem gerada" e "Item de carrossel · Arquivo do projeto"
+- [x] Sem lixeira (modo somente leitura)
+- [x] Layout compacto mantido
+
+**Editor ("Editar versão para canal"):**
+- [x] Seção "Mídia da versão" após Hashtags
+- [x] 2 mídias com ícone de lixeira e confirmação de remoção
+- [x] Botão "Adicionar mídia" funcional
+- [x] Footer sticky mantido; scroll do Dialog não quebrado
+- [x] Conteúdo textual preservado ao abrir/fechar picker
+
+**Picker ("Adicionar mídia"):**
+- [x] Título "Adicionar mídia"
+- [x] Descrição "Escolha uma imagem gerada ou um arquivo existente deste projeto."
+- [x] Aba "Imagens geradas" carrega imagens do projeto
+- [x] Aba "Arquivos do projeto" carrega arquivo de teste
+- [x] Itens já associados desabilitados com badge
+- [x] Seleção funciona; double-submit bloqueado
+
+### Cleanup — 2026-06-23
+
+- 3 CPMs de smoke removidos de CP_A1 e CP_A2
+- `library_file` de teste `13813102` removido
+- IMG_A, PROJECT_A, CP_A1, CP_A2 e library_files do projeto B verificados — intactos
+- `channel_piece_media` = 0 em CP_A1 e CP_A2 após cleanup
+
+### Limitações M4
+
+- **Sem constraint DB para source único:** o mesmo `image_id` pode ser associado ao mesmo CP múltiplas vezes via API direta. Frontend bloqueia via `isDuplicateImage`. Constraint de banco requer migration dedicada (não autorizada ainda).
+- **Sem presigned URLs no picker:** imagens aparecem como placeholder em dev local (S3 não configurado). Comportamento idêntico ao M3 — correto para ambiente sem S3.
+- **Sem reordenação:** posição é auto-incrementada; reordenação é M6.
+- **Sem upload direto:** upload de novos arquivos é M5.
+
+### Typecheck + build
+
+`pnpm tsc --noEmit` — apenas TS7006 pré-existente (`rascunhos/page.tsx`).  
+`pnpm build` — sucesso.
 
 ---
 
