@@ -507,7 +507,7 @@ export default function EditorialContentDetailPage() {
               Tentar novamente
             </Button>
             <Button variant="outline" onClick={() => router.push('/conteudos')}>
-              Voltar para Publicações
+              Voltar para Conteúdos
             </Button>
           </div>
         </div>
@@ -533,7 +533,7 @@ export default function EditorialContentDetailPage() {
               className="h-auto px-0 py-0 hover:text-foreground"
               onClick={() => router.push('/conteudos')}
             >
-              Publicações
+              Conteúdos
             </Button>
             <span>/</span>
             <span className="truncate font-medium text-foreground">{ec.title}</span>
