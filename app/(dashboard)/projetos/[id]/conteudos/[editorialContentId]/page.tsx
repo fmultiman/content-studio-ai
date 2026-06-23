@@ -652,7 +652,7 @@ export default function EditorialContentDetailPage() {
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">
-                Peças de Canal
+                Versões para canais
                 {!isLoadingCps && !cpLoadError && (
                   <span className="ml-1 text-muted-foreground">({channelPieces.length})</span>
                 )}
@@ -664,7 +664,7 @@ export default function EditorialContentDetailPage() {
                 onClick={openCreateCpDialog}
               >
                 <Plus className="h-4 w-4" />
-                Nova peça
+                Nova versão
               </Button>
             </CardHeader>
             <CardContent>
@@ -674,7 +674,7 @@ export default function EditorialContentDetailPage() {
                 </div>
               ) : cpLoadError ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-center">
-                  <p className="text-sm text-muted-foreground">Erro ao carregar peças de canal.</p>
+                  <p className="text-sm text-muted-foreground">Erro ao carregar versões para canais.</p>
                   <Button
                     variant="outline"
                     size="sm"
@@ -687,13 +687,13 @@ export default function EditorialContentDetailPage() {
                 </div>
               ) : channelPieces.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-8 text-center">
-                  <p className="text-sm font-medium">Nenhuma peça de canal</p>
+                  <p className="text-sm font-medium">Nenhuma versão para canais</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Crie adaptações do conteúdo editorial para cada canal e formato.
                   </p>
                   <Button className="mt-4" size="sm" onClick={openCreateCpDialog}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Nova peça de canal
+                    Nova versão
                   </Button>
                 </div>
               ) : (
@@ -775,7 +775,7 @@ export default function EditorialContentDetailPage() {
             <AlertDialogTitle>Excluir conteúdo editorial?</AlertDialogTitle>
             <AlertDialogDescription>
               O conteúdo <strong>&quot;{ec.title}&quot;</strong> será removido
-              permanentemente, incluindo todas as suas peças de canal.
+              permanentemente, incluindo todas as suas versões para canais.
               Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -803,10 +803,10 @@ export default function EditorialContentDetailPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {editingCp ? 'Editar peça de canal' : 'Nova peça de canal'}
+              {editingCp ? 'Editar versão para canal' : 'Nova versão para canal'}
             </DialogTitle>
             <DialogDescription>
-              Configure canal, formato e conteúdo adaptado para esta peça.
+              Configure canal, formato e conteúdo adaptado para esta versão.
               Aprovada significa revisada e pronta para uso — não publicada.
             </DialogDescription>
           </DialogHeader>
@@ -947,7 +947,7 @@ export default function EditorialContentDetailPage() {
             </Button>
             <Button onClick={handleSaveCp} disabled={isSavingCp}>
               {isSavingCp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingCp ? 'Salvar alterações' : 'Criar peça'}
+              {editingCp ? 'Salvar alterações' : 'Criar versão'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -965,9 +965,9 @@ export default function EditorialContentDetailPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir peça de canal?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir versão para canal?</AlertDialogTitle>
             <AlertDialogDescription>
-              A peça{' '}
+              A versão{' '}
               <strong>
                 {deletingCp
                   ? `${CHANNEL_LABELS[deletingCp.channel]} / ${FORMAT_LABELS[deletingCp.format]}`
