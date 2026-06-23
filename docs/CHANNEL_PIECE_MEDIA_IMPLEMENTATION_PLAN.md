@@ -408,20 +408,29 @@ WHERE library_file_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
 
 **Pré-condição:** M4 aprovado.
 
-**Decisão:** CPM-D17 (upload → LibraryFile → channel_piece_media)
+**Decisões:** CPM-D17, CPM-D24.
 
-**Fluxo:**
+**Entregável:** `POST /api/channel-piece-media/upload` (multipart/form-data). Fluxo server-side:
 ```
-1. Usuário seleciona arquivo
-2. POST /api/storage/presign-image-upload {folder: 'library', mimeType, filename, prefix: '/conteudos/'}
-3. PUT S3 (cliente direto)
-4. POST /api/library-files {storagePath, publicUrl, projectId, name, kind}
-   → INSERT library_files com project_id do EC
-5. POST /api/channel-piece-media {libraryFileId: <id>, channelPieceId, position, role}
-   → INSERT channel_piece_media com library_file_id FK
+1. Auth + validação (file, mimeType, channelPieceId)
+2. Verify CP ownership → derivar projectId via CP → EC chain
+3. Upload buffer → S3 (uploadLibraryFile)     [Caso A: falha aqui → sem resíduo]
+4. INSERT library_files                        [Caso B: falha → delete S3]
+5. INSERT channel_piece_media                  [Caso C: falha → delete LF + S3]
+6. Return 201 { channelPieceMedium, libraryFile }
 ```
 
-**Pasta padrão:** `/conteudos/` (ou subfolder do projeto). Decisão final de pasta em M5.
+**Formatos:** JPEG, PNG, WebP, GIF, MP4, WebM, MOV. Limite: 50 MB.
+**Pasta da LF:** `/` (raiz). Usuário pode reorganizar via Arquivos.
+**UI:** Terceira aba "Enviar arquivo" no `MediaPickerDialog`; drag-and-drop; anyBusy bloqueia fechar.
+
+**Auditoria M5 — 2026-06-23**
+
+| # | Caso | Resultado |
+|---|------|-----------|
+| 44/44 | Suite `cpm_m5_tests.mjs` (Groups 1–7) | ✅ PASSOU |
+
+Branch: `feat/channel-piece-media-m5-upload`. Status: **PRONTO PARA REVISÃO**.
 
 ---
 

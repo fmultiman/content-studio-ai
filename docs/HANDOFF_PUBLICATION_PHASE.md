@@ -161,6 +161,26 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 
 ---
 
+### M5 — Upload direto de arquivo na Versão para canal — IMPLEMENTADO E TESTADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m5-upload`
+
+**Arquivos criados/modificados:**
+- `app/api/channel-piece-media/upload/route.ts` (criado) — orquestrador multipart
+- `lib/storage/s3.ts` (modificado) — adicionado `uploadLibraryFile` + tipo `UploadedLibraryFile`
+- `components/publication/media-picker-dialog.tsx` (reescrito) — aba "Enviar arquivo" com drag-and-drop
+
+**O que foi feito:**
+- Endpoint server-side: auth → validate → CP ownership → upload S3 → insert library_file → insert CPM → 201
+- Atomicidade por compensação (Casos A–D): sem orphan em qualquer cenário de falha
+- Role/position resolvidos server-side (mesmo algoritmo do M4)
+- UI: terceira aba no `MediaPickerDialog`; `anyBusy` bloqueia fechar o dialog durante upload
+- Formatos: JPEG, PNG, WebP, GIF, MP4, WebM, MOV; limite 50 MB
+
+**Auditoria:** 44/44 casos passados (Groups 1–7: auth, imagens, vídeo, atomicidade, concorrência, deleção, regressão). TypeScript limpo. Build OK.
+
+---
+
 ### fix/source-uniqueness — Unicidade de fonte por ChannelPiece — IMPLEMENTADO E AUDITADO (2026-06-23)
 
 **Branch:** `fix/channel-piece-media-source-uniqueness`

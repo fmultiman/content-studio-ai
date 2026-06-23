@@ -1,6 +1,6 @@
 # ChannelPiece Media — Decisões de Domínio
-**Data:** 2026-06-23 (rev. 4 — fix/source-uniqueness)  
-**Status:** M1–M4 aprovados e em produção. fix/source-uniqueness auditado e aprovado.
+**Data:** 2026-06-23 (rev. 5 — M5)  
+**Status:** M1–M4 aprovados e em produção. fix/source-uniqueness auditado e aprovado. M5 implementado e testado (44/44).
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
@@ -451,13 +451,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
 
 ---
 
+## CPM-D24 — Upload direto de arquivo cria LibraryFile atomicamente **[NOVA]**
+
+**Decisão:** `POST /api/channel-piece-media/upload` aceita `multipart/form-data` com `file` + `channelPieceId`. O servidor orquestra: (1) upload S3, (2) criação de `library_file`, (3) criação de `channel_piece_media`. Retorna 201 com `{ channelPieceMedium, libraryFile }`.
+
+**Motivação:** O fluxo de presigned URL (M3/M4) exige que o browser faça o upload diretamente ao S3 e depois notifique o servidor — dois round trips com janela de falha entre eles. O upload server-side elimina essa janela: o servidor controla todo o ciclo, podendo compensar em caso de falha.
+
+**Atomicidade por compensação:**
+- **Caso A** (S3 falha): nenhum recurso criado, retorna 5xx.
+- **Caso B** (library_file falha): S3 object deletado, retorna 5xx.
+- **Caso C** (CPM falha): library_file + S3 object deletados, retorna 4xx/5xx.
+- **Caso D** (erro inesperado no handler): best-effort cleanup de S3 + library_file via `Promise.allSettled`.
+
+**Pasta da LibraryFile:** `/` (raiz do projeto). O usuário pode reorganizar pela página de Arquivos depois.
+
+**Formatos aceitos:** JPEG, PNG, WebP, GIF (imagem); MP4, WebM, MOV (vídeo). Limite: 50 MB.
+
+**Role/position:** Mesmas regras do M4 (server-side): primeiro CPM → `primary`; demais → `carousel_item`. Posição = max(existing) + 1 ou 0.
+
+**Unicidade:** `uq_cpm_cp_library_file` (CPM-D23) previne duplicata se arquivo já foi associado ao mesmo CP por outra rota.
+
+**UI:** Terceira aba "Enviar arquivo" no `MediaPickerDialog`, com drag-and-drop, preview de nome/tamanho, e botão "Enviar e adicionar". `anyBusy` bloqueia fechar o dialog durante upload.
+
+---
+
 ## Questões ainda abertas
 
-Todas as questões bloqueantes para M1–M4 foram respondidas.
+Todas as questões bloqueantes para M1–M5 foram respondidas.
 
 | Questão | Status | Milestone relevante |
 |---------|--------|---------------------|
-| Pasta padrão de uploads de Conteúdos | Não bloqueante para M1–M4; definir em M5 | M5 |
 | Schema de migração de `post_images` legados (Posts com image_url sem FK) | Apresentar antes de M8 | M8 |
 | Limite de mídias por canal/formato (ex: Instagram carousel = 10) | Documentar em `lib/publication-channels.ts` em M2 | M2 |
 
@@ -491,3 +514,4 @@ Todas as questões bloqueantes para M1–M4 foram respondidas.
 | CPM-D21 | Aposentadoria de Posts em etapas M8→M10 | 2 | Aprovada |
 | CPM-D22 | `primary` único por CP (banco); `thumbnail` sem restrição no banco | 3 | Aprovada |
 | CPM-D23 | Unicidade de fonte por CP: `uq_cpm_cp_image` + `uq_cpm_cp_library_file` (partial unique indexes) | 4 | Aprovada |
+| CPM-D24 | Upload server-side via `POST /api/channel-piece-media/upload`; atomicidade por compensação (Casos A–D) | 5 | Aprovada |
