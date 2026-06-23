@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 3 — M1 aplicado em produção 2026-06-23)  
-**Status:** M1 APLICADO E AUDITADO ✓. M2 aguarda autorização explícita.
+**Data:** 2026-06-22 (rev. 4 — M2 implementado e auditado 2026-06-23)  
+**Status:** M1 APLICADO E AUDITADO ✓. M2 IMPLEMENTADO E AUDITADO ✓. M3 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -98,16 +98,40 @@ Verificada analiticamente: `CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS`
 
 **Objetivo:** Rotas `GET/POST /api/channel-piece-media` e `GET/PATCH/DELETE /api/channel-piece-media/[id]`.
 
-**Pré-condição:** M1 aprovado e migration aplicada em staging/dev.
+**Branch:** `feat/channel-piece-media-m2-api` — HEAD `e459de5` (+ commit de docs)  
+**Ambiente:** `nuhdhnasuohizxtmyiju.supabase.co` + dev server local `localhost:3000`
 
 **Decisões:** CPM-D7, CPM-D12, CPM-D20
 
-**Detalhes:**
-- GET: retorna `ChannelPieceMediaResolved[]` — JOIN em `images` e `library_files` para resolver `image_url`, `thumbnail_url`, `media_kind`, `file_size`, `mime_type`, `name`
-- POST: validação de `project_id` na cadeia CP → EC → project_id = image.project_id ou library_file.project_id
-- PATCH: somente `position`, `role`, `alt_text` editáveis; `image_id`, `library_file_id`, `channel_piece_id` imutáveis
-- DELETE: remove vínculo apenas — nunca deleta `images` ou `library_files`
-- Documentar limites por canal em `lib/publication-channels.ts`
+**Arquivos criados:**
+- `app/api/channel-piece-media/_helpers.ts` — `resolveMediaSource`, `UUID_RE`, `VALID_ROLES`, `mapPgError`
+- `app/api/channel-piece-media/route.ts` — GET (lista com source resolvida) + POST (validação XOR + cross-project)
+- `app/api/channel-piece-media/[id]/route.ts` — GET + PATCH (imutabilidade) + DELETE (somente vínculo)
+
+**Auditoria (33 casos) — executada via Node.js HTTP contra dev server local (2026-06-23):**
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Sem autenticação → 401 | 1–4 | ✅ 4/4 |
+| Criação e leitura válidas | 5–13 | ✅ 9/9 |
+| Validação payload POST | 14–22 | ✅ 9/9 |
+| Validação payload PATCH | 23–25 | ✅ 3/3 |
+| ID inválido / não encontrado | 26–28 | ✅ 3/3 |
+| Cross-project (CRÍTICO) | 29–31 | ✅ 3/3 |
+| Conflitos de constraints | 32–33 | ✅ 2/2 |
+| **TOTAL** | **1–33** | **✅ 33/33** |
+
+**Casos críticos cross-project (29–31) — confirmados via API autenticada:**
+- Case 29: CP proj-A + Image proj-B → 400 "Imagem pertence a um Projeto diferente"
+- Case 30: CP proj-A + LF proj-B → 400 "LibraryFile pertence a um Projeto diferente"
+- Case 31: CP proj-A + Image project_id=NULL → 400 "Imagem sem Projeto atribuido"
+
+**Autenticação de testes:** sessão obtida via Supabase Admin API `generate_link` + magic link redirect →
+access_token formatado como cookie `sb-<ref>-auth-token` para `@supabase/ssr` 0.10.x.
+
+**Cleanup:** 2 fixtures criadas e removidas. `channel_piece_media` total = 0 após testes.
+
+**Typecheck + build:** `pnpm tsc --noEmit` sem erros novos; `pnpm build` com sucesso (apenas TS7006 pré-existente).
 
 ---
 

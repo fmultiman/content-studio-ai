@@ -120,6 +120,23 @@ Descoberta, modelagem, implementação e auditoria de M1 concluídas. Ver:
 - `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev. 3 — 22 decisões de domínio (CPM-D1 a CPM-D22)
 - `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` Rev. 3 — 10 incrementos (M1 a M10)
 
+### M2 — APIs CRUD — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m2-api` — creado a partir de `feat/channel-piece-media-m1-schema`
+
+**Arquivos criados:**
+- `app/api/channel-piece-media/_helpers.ts` — resolução de fonte (URL assinada), mapeamento de erros PG
+- `app/api/channel-piece-media/route.ts` — GET lista + POST com validação cross-project
+- `app/api/channel-piece-media/[id]/route.ts` — GET + PATCH (campos imutáveis) + DELETE (vínculo apenas)
+
+**Auditoria:** 33/33 casos passados via testes HTTP autenticados (Node.js + dev server local).
+Incluindo casos críticos cross-project (29–31): CP proj-A + source proj-B → 400 em todos os cenários.
+Sessão autenticada via Supabase Admin API `generate_link`. Cleanup completo.
+
+**Pendente:** autorização explícita para M3 (UI de leitura).
+
+---
+
 ### M1 — Schema, constraints, índices, RLS e tipos — APLICADO EM PRODUÇÃO (2026-06-23)
 
 **Branch:** `feat/channel-piece-media-m1-schema` — HEAD `305f63b`  
