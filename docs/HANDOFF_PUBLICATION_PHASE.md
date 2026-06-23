@@ -1,7 +1,7 @@
 # Handoff — Fase de Publicações (P1–P6)
 **Data:** 2026-06-22  
 **Branch final:** `feat/publication-p6-post-video-flow`  
-**Não fazer merge em main sem aprovação explícita.**
+**Release publicado em main em 2026-06-22. Smoke test autenticado concluído. Fluxo funcional.**
 
 ---
 
@@ -99,6 +99,18 @@ Todas as rotas têm:
 - Abandonment (Opção A): fechar com EC criado → toast "Conteúdo editorial salvo" + link "Abrir"
 - Guards de duplo clique: `isHandlingNextRef` e `isHandlingCreateRef` (useRef, síncronos)
 - Reset completo ao reabrir: usa os `initial*` props como valores base
+
+---
+
+## Estado do release (atualizado em 2026-06-22)
+
+- **main / origin/main**: `9a06d59` (pós-hardening de rotas)
+- **Tag de rollback**: `pre-publication-release-2026-06-22` → `6c3f856`
+- **Deploy Production**: Ready — `content.multihuman.com.br`
+- **Smoke autenticado**: concluído — login, dashboard, projetos, production, imagens, vídeos, publicações, QuickFlow, fluxo pós-vídeo, posts, arquivos
+- **Registros de teste**: presentes (aguardam autorização de cleanup)
+- **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
+- **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
 
 ---
 
