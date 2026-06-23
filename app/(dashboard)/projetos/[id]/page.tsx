@@ -45,7 +45,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Image as ImageType, Video as VideoType, Production } from '@/lib/types'
+import type { Project, ImageDraft, VideoDraft, Production } from '@/lib/types'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -62,8 +62,8 @@ export default function ProjectDetailPage() {
 
   // Project + content state
   const [project, setProject] = useState<Project | null>(null)
-  const [images, setImages] = useState<ImageType[]>([])
-  const [videos, setVideos] = useState<VideoType[]>([])
+  const [images, setImages] = useState<ImageDraft[]>([])
+  const [videos, setVideos] = useState<VideoDraft[]>([])
   const [productions, setProductions] = useState<Production[]>([])
   const [productionsError, setProductionsError] = useState(false)
 
@@ -107,12 +107,12 @@ export default function ProjectDetailPage() {
         // Fetch images, videos, productions in parallel
         const [imagesResult, videosResult, productionsRes] = await Promise.all([
           supabase
-            .from('images')
+            .from('image_drafts')
             .select('*')
             .eq('project_id', projectId)
             .order('created_at', { ascending: false }),
           supabase
-            .from('videos')
+            .from('video_drafts')
             .select('*')
             .eq('project_id', projectId)
             .order('created_at', { ascending: false }),
@@ -467,10 +467,10 @@ export default function ProjectDetailPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {images.map((image) => (
                     <Card key={image.id} className="overflow-hidden">
-                      {(image.thumbnail_url || image.image_url) && (
+                      {image.image_url && (
                         <div className="aspect-square">
                           <img
-                            src={image.thumbnail_url || image.image_url || ''}
+                            src={image.image_url}
                             alt={image.user_input}
                             className="h-full w-full object-cover"
                           />
@@ -481,7 +481,7 @@ export default function ProjectDetailPage() {
                           {image.user_input}
                         </p>
                         <Badge variant="outline" className="mt-2">
-                          {image.status}
+                          {image.image_status ?? 'draft'}
                         </Badge>
                       </CardContent>
                     </Card>
@@ -513,19 +513,14 @@ export default function ProjectDetailPage() {
                   {videos.map((video) => (
                     <Card key={video.id}>
                       <CardContent className="p-4">
-                        <h3 className="font-semibold">{video.name}</h3>
-                        {video.description && (
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                            {video.description}
-                          </p>
-                        )}
+                        <h3 className="font-semibold">{video.name || 'Rascunho sem título'}</h3>
                         <div className="mt-2 flex items-center gap-2">
-                          <Badge variant="outline">{video.status}</Badge>
-                          {video.duration_seconds && (
-                            <span className="text-sm text-muted-foreground">
-                              {video.duration_seconds}s
-                            </span>
-                          )}
+                          <Badge variant="outline">
+                            {(video.scenes?.length ?? 0)} cena{(video.scenes?.length ?? 0) !== 1 ? 's' : ''}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(video.updated_at).toLocaleDateString('pt-BR')}
+                          </span>
                         </div>
                       </CardContent>
                     </Card>
