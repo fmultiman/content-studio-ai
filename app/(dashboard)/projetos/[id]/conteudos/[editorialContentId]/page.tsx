@@ -296,7 +296,7 @@ export default function EditorialContentDetailPage() {
         return
       }
       toast({ title: 'Excluído', description: 'Conteúdo editorial removido.' })
-      router.push('/publicacoes')
+      router.push('/conteudos')
     } catch {
       toast({ title: 'Erro', description: 'Erro de conexão.', variant: 'destructive' })
     } finally {
@@ -506,7 +506,7 @@ export default function EditorialContentDetailPage() {
               <RefreshCw className="h-4 w-4" />
               Tentar novamente
             </Button>
-            <Button variant="outline" onClick={() => router.push('/publicacoes')}>
+            <Button variant="outline" onClick={() => router.push('/conteudos')}>
               Voltar para Publicações
             </Button>
           </div>
@@ -531,7 +531,7 @@ export default function EditorialContentDetailPage() {
               variant="ghost"
               size="sm"
               className="h-auto px-0 py-0 hover:text-foreground"
-              onClick={() => router.push('/publicacoes')}
+              onClick={() => router.push('/conteudos')}
             >
               Publicações
             </Button>
