@@ -245,14 +245,18 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 }
 ```
 
-**Validação de M1:**
-- [ ] `pnpm build` sem erros
-- [ ] `pnpm typecheck` sem erros
-- [ ] SQL revisado manualmente (constraints, RLS, índices)
-- [ ] `cpm_exactly_one_source` rejeita: ambos nulos, ambos não-nulos
-- [ ] `position >= 0` rejeita posição negativa
-- [ ] `alt_text` aceita null; rejeita string > 1000 chars
-- [ ] RLS verificado: INSERT com CP de outro usuário é rejeitado
+**Validação de M1 (auditoria 2026-06-23):**
+- [x] `pnpm build` sem erros
+- [x] `pnpm typecheck` sem novos erros (TS7006 pré-existente documentado)
+- [x] SQL auditado manualmente (constraints, RLS, índices)
+- [x] `cpm_exactly_one_source` rejeita: ambos nulos, ambos não-nulos
+- [x] `position >= 0` rejeita posição negativa
+- [x] `cpm_unique_position DEFERRABLE` garante posição única por CP
+- [x] `uq_cpm_cp_primary` garante no máximo uma mídia `primary` por CP
+- [x] RLS INSERT/UPDATE verifica consistência de Projeto via JOIN (CPM-D11 Rev. 3)
+- [x] Fontes com `project_id = NULL` rejeitadas pelo banco
+- [ ] Testes cross-project (obrigatórios em M2): imagem de Projeto B em CP de Projeto A → rejeitar
+- [ ] `alt_text` aceita null; rejeita string > 1000 chars (testar após aplicar migration)
 
 ---
 
@@ -335,6 +339,18 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 **Pré-condição:** M5 aprovado.
 
 **API:** endpoint batch `PATCH /api/channel-piece-media/reorder` recebendo `[{id, position}]`.
+
+**Estratégia de reordenação com `cpm_unique_position DEFERRABLE`:**
+
+A constraint `cpm_unique_position` é `DEFERRABLE INITIALLY IMMEDIATE`. O endpoint de reorder deve:
+1. Iniciar transação
+2. `SET CONSTRAINTS cpm_unique_position DEFERRED`
+3. Executar os UPDATEs de posição em qualquer ordem
+4. COMMIT — verificação ocorre no final, sem colisões intermediárias
+
+Não usar abordagem de "offset temporário" (+1000) — mais frágil e sujeita a overflow do `SMALLINT` (máx 32767).
+
+**Compactação de posições:** O endpoint de reorder pode normalizar as posições para sequência contínua (0, 1, 2, ...) ou manter os valores fornecidos pelo cliente. Recomendado: aceitar posições arbitrárias do cliente (drag-and-drop pode usar steps de 10 para reduzir reordenações completas).
 
 ---
 

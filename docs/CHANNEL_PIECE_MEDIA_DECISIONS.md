@@ -1,17 +1,21 @@
 # ChannelPiece Media — Decisões de Domínio
-**Data:** 2026-06-22 (rev. 2 — decisões humanas incorporadas)  
-**Status:** Aprovado para implementação de M1.
+**Data:** 2026-06-23 (rev. 3 — auditoria M1)  
+**Status:** M1 aprovado para aplicação após auditoria.
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
 > URLs resolvidas em runtime, upload cria LibraryFile, migração sem Posts sem Projeto.
+>
+> Revisão 3 incorpora resultados da auditoria de M1 (2026-06-23):
+> consistência de Projeto reforçada em RLS (não apenas na API), posição única
+> por ChannelPiece (DEFERRABLE), no máximo uma mídia primary por ChannelPiece.
 
 ---
 
 ## Como ler
 
-Decisões marcadas com **[REVISADA]** foram alteradas em relação à descoberta inicial.  
-Decisões marcadas com **[NOVA]** não existiam na revisão 1.  
+Decisões marcadas com **[REVISADA]** foram alteradas em relação à revisão anterior.  
+Decisões marcadas com **[NOVA]** não existiam na revisão anterior.  
 Decisões sem marcação permanecem inalteradas.
 
 ---
@@ -28,9 +32,9 @@ Decisões sem marcação permanecem inalteradas.
 
 ## CPM-D2 — Schema da tabela `channel_piece_media` **[REVISADA]**
 
-**Contexto:** Revisão 1 incluía `storage_path`, `image_url`, `thumbnail_url`, `file_size`, `mime_type` e `media_kind` como campos persistidos. As correções obrigatórias removem campos deriváveis ou temporários.
+**Contexto:** Revisão 1 incluía `storage_path`, `image_url`, `thumbnail_url`, `file_size`, `mime_type` e `media_kind` como campos persistidos. Rev. 2 removeu campos deriváveis. Rev. 3 adiciona `cpm_unique_position`.
 
-**Schema final aprovado:**
+**Schema final aprovado (Rev. 3):**
 
 ```sql
 channel_piece_media (
@@ -52,7 +56,11 @@ channel_piece_media (
   CONSTRAINT cpm_exactly_one_source CHECK (
     ((image_id IS NOT NULL)::integer +
      (library_file_id IS NOT NULL)::integer) = 1
-  )
+  ),
+
+  CONSTRAINT cpm_unique_position
+    UNIQUE (channel_piece_id, position)
+    DEFERRABLE INITIALLY IMMEDIATE
 )
 ```
 
@@ -65,13 +73,14 @@ channel_piece_media (
 | `file_size`, `mime_type` | Duplicação de metadados da entidade de origem |
 | `media_kind` | Derivável: `image_id` sempre implica `image`; `library_file_id` fornece `kind` via JOIN (CPM-D19) |
 
-**O que foi adicionado:**
+**O que foi adicionado ao longo das revisões:**
 
-| Campo / Constraint | Razão |
-|-------------------|-------|
-| `CHECK (position >= 0)` | Posição não pode ser negativa |
-| `CHECK (char_length(alt_text) <= 1000)` | Limite razoável para acessibilidade |
-| `CONSTRAINT cpm_exactly_one_source` | Exatamente uma fonte por registro (CPM-D10) |
+| Campo / Constraint | Revisão | Razão |
+|-------------------|---------|-------|
+| `CHECK (position >= 0)` | 2 | Posição não pode ser negativa |
+| `CHECK (char_length(alt_text) <= 1000)` | 2 | Limite razoável para acessibilidade |
+| `CONSTRAINT cpm_exactly_one_source` | 2 | Exatamente uma fonte por registro (CPM-D10) |
+| `CONSTRAINT cpm_unique_position DEFERRABLE` | 3 | Ordenação determinística; defer para reordenação (M6) |
 
 ---
 
@@ -123,12 +132,26 @@ channel_piece_media (
 
 ---
 
-## CPM-D8 — Ordenação e capa
+## CPM-D8 — Ordenação e capa **[REVISADA]**
 
 **Decisão:**
-- `position` define a ordem (0 = primeira)
-- `role = 'primary'` identifica a capa/mídia principal
+- `position` define a ordem (0 = primeira); único por `(channel_piece_id, position)` — constraint `cpm_unique_position DEFERRABLE INITIALLY IMMEDIATE`
+- `role = 'primary'` identifica a capa/mídia principal; único por `channel_piece_id` — índice `uq_cpm_cp_primary` (partial WHERE role = 'primary')
 - Para carrossel: itens com `role = 'carousel_item'` + um item opcional `role = 'primary'` como capa
+- Leitura ordena por `position ASC, created_at ASC` (desempate por criação)
+
+**Comportamento ao excluir item intermediário:**
+Lacuna de posição é esperada (ex: `[0, _, 2]` após deletar position 1). Não é necessário compactar imediatamente. Compactação delegada a M6 quando a UI de reordenação estiver implementada.
+
+**Reordenação em M6 com DEFERRABLE:**
+```sql
+BEGIN;
+  SET CONSTRAINTS cpm_unique_position DEFERRED;
+  UPDATE channel_piece_media SET position = 0 WHERE id = 'a';
+  UPDATE channel_piece_media SET position = 1 WHERE id = 'b';
+  UPDATE channel_piece_media SET position = 2 WHERE id = 'c';
+COMMIT; -- cpm_unique_position verificada aqui
+```
 
 ---
 
@@ -166,95 +189,102 @@ CONSTRAINT cpm_exactly_one_source CHECK (
 
 ## CPM-D11 — RLS **[REVISADA]**
 
-**Decisão:** Políticas com ownership duplo em INSERT e UPDATE.
+**Decisão (Rev. 3):** Políticas de INSERT e UPDATE verificam ownership do usuário **e** consistência de Projeto. O JOIN de 2 níveis (`channel_pieces → editorial_contents`) é tecnicamente seguro e eficiente (lookups em PKs; tabelas têm RLS aplicada recursivamente).
 
 ```sql
 -- SELECT
 USING (auth.uid() = user_id)
 
--- INSERT: ownership do usuário + ChannelPiece pertence ao usuário
--- + fonte (image ou library_file) pertence ao usuário
+-- INSERT: ownership + Projeto consistente
 WITH CHECK (
   auth.uid() = user_id
   AND EXISTS (
     SELECT 1 FROM channel_pieces
-    WHERE channel_pieces.id = channel_piece_id
+    WHERE channel_pieces.id      = channel_piece_id
       AND channel_pieces.user_id = auth.uid()
   )
   AND (
     image_id IS NULL
     OR EXISTS (
-      SELECT 1 FROM images
-      WHERE images.id = image_id
-        AND images.user_id = auth.uid()
+      SELECT 1
+      FROM images             i
+      JOIN channel_pieces     cp ON cp.id = channel_piece_id
+      JOIN editorial_contents ec ON ec.id = cp.editorial_content_id
+      WHERE i.id         = image_id
+        AND i.user_id    = auth.uid()
+        AND i.project_id IS NOT NULL
+        AND i.project_id = ec.project_id
     )
   )
   AND (
     library_file_id IS NULL
     OR EXISTS (
-      SELECT 1 FROM library_files
-      WHERE library_files.id = library_file_id
-        AND library_files.user_id = auth.uid()
+      SELECT 1
+      FROM library_files      lf
+      JOIN channel_pieces     cp ON cp.id = channel_piece_id
+      JOIN editorial_contents ec ON ec.id = cp.editorial_content_id
+      WHERE lf.id         = library_file_id
+        AND lf.user_id    = auth.uid()
+        AND lf.project_id IS NOT NULL
+        AND lf.project_id = ec.project_id
     )
   )
 )
 
 -- UPDATE: USING verifica a linha atual; WITH CHECK verifica o estado resultante
 USING (auth.uid() = user_id)
-WITH CHECK (
-  auth.uid() = user_id
-  AND EXISTS (
-    SELECT 1 FROM channel_pieces
-    WHERE channel_pieces.id = channel_piece_id
-      AND channel_pieces.user_id = auth.uid()
-  )
-  AND (
-    image_id IS NULL
-    OR EXISTS (
-      SELECT 1 FROM images
-      WHERE images.id = image_id
-        AND images.user_id = auth.uid()
-    )
-  )
-  AND (
-    library_file_id IS NULL
-    OR EXISTS (
-      SELECT 1 FROM library_files
-      WHERE library_files.id = library_file_id
-        AND library_files.user_id = auth.uid()
-    )
-  )
-)
+WITH CHECK (  -- mesma estrutura do INSERT  )
 
 -- DELETE
 USING (auth.uid() = user_id)
 ```
 
-**Nota sobre consistência de Projeto em RLS:** A verificação de que `image.project_id = editorial_content.project_id` requereria um JOIN de três níveis na policy (image → channel_piece → editorial_content). Isso não é expressável de forma segura e simples em RLS. A consistência de Projeto é responsabilidade da camada de API (CPM-D12), seguindo o mesmo padrão do domínio de Publicações (donde `production_id ↔ project_id` é validado na API, não na policy).
+**Por que o JOIN é seguro aqui:**
+- `channel_pieces` e `editorial_contents` têm RLS ativa; o JOIN filtra automaticamente para linhas do usuário autenticado.
+- `channel_piece_id` referencia a chave primária de `channel_pieces` (lookup O(1)).
+- `cp.editorial_content_id` referencia a chave primária de `editorial_contents` (lookup O(1)).
+- `image_id` / `library_file_id` referenciam PKs (lookup O(1)).
+- Total: 3 lookups em PK por subquery; custo fixo e mínimo.
+
+**Fontes com `project_id = NULL`:**
+Rejeitadas pelo banco — `IS NOT NULL AND project_id = ec.project_id` falha quando `project_id IS NULL`. O usuário deve atribuir a imagem/arquivo a um Projeto antes de associar a uma ChannelPiece.
+
+**O que a RLS não verifica (responsabilidade da API M2):**
+- combinação `channel + format` válida para o canal
+- limites de quantidade de mídias por canal/formato
+- unicidade de thumbnail (se necessário — ver CPM-D22)
 
 ---
 
-## CPM-D12 — Validação de Projeto na API **[REVISADA]**
+## CPM-D12 — Validação de Projeto na API e no banco **[REVISADA]**
 
-**Decisão:** Validação na camada de API. RLS verifica ownership; API verifica consistência de Projeto.
+**Decisão (Rev. 3):** Defesa em profundidade — RLS verifica consistência de Projeto no INSERT e UPDATE; API (M2) também valida antes de inserir.
 
-**Cadeia de validação na API de INSERT:**
+**Camadas de proteção:**
+
+| Camada | O que verifica |
+|--------|---------------|
+| Banco (RLS, Rev. 3) | `images.project_id = ec.project_id`; fontes com `project_id NULL` rejeitadas |
+| API (M2) | mesma cadeia + erro amigável + limites por canal/formato |
+
+**Cadeia de projeto verificada:**
 ```
 channel_piece_id
   → channel_pieces.editorial_content_id
     → editorial_contents.project_id  ← projeto alvo
 
-image_id → images.project_id  deve ser = projeto alvo
-                               ou IS NULL (ver nota abaixo)
-
-library_file_id → library_files.project_id  deve ser = projeto alvo
-                                             ou IS NULL (ver nota abaixo)
+image_id → images.project_id  deve ser = projeto alvo (não NULL)
+library_file_id → library_files.project_id  deve ser = projeto alvo (não NULL)
 ```
 
-**Imagens/arquivos com `project_id = NULL`:**
-Imagens sem projeto não podem ser selecionadas normalmente para uma ChannelPiece de Projeto. A API deve rejeitar a associação e orientar o usuário.
+**Testes obrigatórios em M2 (cross-project):**
+1. Associar imagem de Projeto B à CP de Projeto A (mesmo usuário) → deve ser rejeitado pelo banco (RLS) antes de chegar à API
+2. Associar library_file com `project_id = NULL` → deve ser rejeitado pelo banco
+3. Associar imagem de Projeto correto → deve ser aceito
+4. Bypass via API com `project_id` errado → banco deve rejeitar independente da API
 
-Dados legados com `project_id = NULL` podem ser tratados como exceção futura mediante decisão humana explícita.
+**Imagens/arquivos com `project_id = NULL`:**
+O banco rejeita automaticamente. A API deve retornar mensagem orientando o usuário a atribuir o arquivo a um Projeto primeiro. Dados legados com `project_id = NULL` são exceção futura mediante decisão humana explícita.
 
 ---
 
@@ -367,6 +397,34 @@ name?: string  // nome do arquivo (library_files.name)
 
 ---
 
+## CPM-D22 — Unicidade de `role = 'primary'` e comportamento de `thumbnail` **[NOVA]**
+
+**Decisão:** No máximo uma mídia com `role = 'primary'` por ChannelPiece. Enforced no banco por índice único parcial `uq_cpm_cp_primary`.
+
+```sql
+CREATE UNIQUE INDEX uq_cpm_cp_primary
+  ON channel_piece_media(channel_piece_id)
+  WHERE role = 'primary';
+```
+
+**Comportamento ao inserir second `primary`:** banco retorna erro de unique violation; API deve detectar e retornar mensagem amigável ("esta versão já possui uma mídia principal").
+
+**Roles que podem repetir:**
+- `carousel_item` — múltiplos itens de carrossel
+- `attachment` — múltiplos anexos
+- `background` — múltiplos backgrounds (ex: opções a/b)
+- `thumbnail` — não restringido no banco (ver abaixo)
+
+**Decisão sobre `thumbnail`:**
+Unicidade de `thumbnail` **não imposta no banco**. Razão: alguns formatos podem ter variações de thumbnail (ex: miniatura 1:1 e 16:9 para o mesmo vídeo). A API (M2) pode restringir `thumbnail` a um por ChannelPiece se o produto exigir — sem necessidade de nova migration.
+
+**Testes obrigatórios em M2:**
+1. INSERT de second `primary` na mesma CP → deve retornar unique violation
+2. INSERT de second `thumbnail` na mesma CP → deve ser aceito
+3. DELETE do único `primary` seguido de INSERT de novo `primary` → deve ser aceito
+
+---
+
 ## Questões ainda abertas
 
 Todas as questões bloqueantes para M1–M4 foram respondidas.
@@ -384,17 +442,17 @@ Todas as questões bloqueantes para M1–M4 foram respondidas.
 | Código | Decisão | Rev | Status |
 |--------|---------|-----|--------|
 | CPM-D1 | Tabela `channel_piece_media` com FKs (não JSONB) | 1 | Aprovada |
-| CPM-D2 | Schema sem campos deriváveis; exatamente uma fonte | 2 | Aprovada |
+| CPM-D2 | Schema sem campos deriváveis; exatamente uma fonte; posição única DEFERRABLE | 3 | Aprovada |
 | CPM-D3 | ON DELETE RESTRICT para `image_id` e `library_file_id` | 2 | Aprovada |
 | CPM-D4 | ON DELETE CASCADE de `channel_piece_id` | 1 | Aprovada |
 | CPM-D5 | Referência sem cópia de arquivo | 1 | Aprovada |
 | CPM-D6 | Imagens AI referenciadas via `image_id`; `project_id` deve coincidir | 1/2 | Aprovada |
 | CPM-D7 | Limites por canal validados na API | 1 | Aprovada |
-| CPM-D8 | `position` para ordem, `role` para finalidade | 1 | Aprovada |
+| CPM-D8 | `position` único por CP (DEFERRABLE); `primary` único; ordenação ASC + created_at | 3 | Aprovada |
 | CPM-D9 | `thumbnail_url` resolvida em runtime, não persistida | 2 | Aprovada |
 | CPM-D10 | Exatamente uma fonte — `cpm_exactly_one_source` | 2 | Aprovada |
-| CPM-D11 | RLS com ownership duplo em INSERT e UPDATE | 2 | Aprovada |
-| CPM-D12 | Consistência de Projeto validada na API | 2 | Aprovada |
+| CPM-D11 | RLS verifica ownership + consistência de Projeto via JOIN | 3 | Aprovada |
+| CPM-D12 | Consistência de Projeto: banco (RLS) + API (M2); testes cross-project obrigatórios | 3 | Aprovada |
 | CPM-D13 | Vídeos via `library_file_id` (kind = 'video') | 1 | Aprovada |
 | CPM-D14 | URLs externas fora do escopo inicial | 2 | Aprovada |
 | CPM-D15 | Crop/aspect ratio em fase futura | 1 | Aprovada |
@@ -405,3 +463,4 @@ Todas as questões bloqueantes para M1–M4 foram respondidas.
 | CPM-D19 | `media_kind` não persistido — derivado via JOIN | 2 | Aprovada |
 | CPM-D20 | URLs resolvidas em runtime, não persistidas | 2 | Aprovada |
 | CPM-D21 | Aposentadoria de Posts em etapas M8→M10 | 2 | Aprovada |
+| CPM-D22 | `primary` único por CP (banco); `thumbnail` sem restrição no banco | 3 | Aprovada |
