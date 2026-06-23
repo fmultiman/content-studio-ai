@@ -104,13 +104,23 @@ Todas as rotas têm:
 
 ## Estado do release (atualizado em 2026-06-22)
 
-- **main / origin/main**: `9a06d59` (pós-hardening de rotas)
+- **main / origin/main**: `28756d3` (inclui redirect /publicacoes → /conteudos)
 - **Tag de rollback**: `pre-publication-release-2026-06-22` → `6c3f856`
 - **Deploy Production**: Ready — `content.multihuman.com.br`
 - **Smoke autenticado**: concluído — login, dashboard, projetos, production, imagens, vídeos, publicações, QuickFlow, fluxo pós-vídeo, posts, arquivos
 - **Registros de teste**: presentes (aguardam autorização de cleanup)
 - **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
 - **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
+
+## Fase iniciada em 2026-06-22: ChannelPiece Media
+
+Descoberta, modelagem e plano de implementação concluídos. Ver:
+
+- `docs/CHANNEL_PIECE_MEDIA_DISCOVERY.md` — inventário completo do sistema de mídia atual
+- `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` — 19 decisões de domínio (CPM-D1 a CPM-D19)
+- `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` — 10 incrementos (M1 a M10)
+
+**Próximo passo:** aprovar decisões CPM-D1 a CPM-D4 e responder questões abertas CPM-D17 e CPM-D18a antes de iniciar M1.
 
 ---
 
@@ -163,6 +173,16 @@ Commits relevantes do P6:
 | Pre-seleção `youtube/video_description` no Quick Flow de vídeo | Baixa | Agiliza fluxo de criação de descrição de vídeo no YouTube |
 | `source_video_draft_id` opcional em `editorial_contents` | Baixa | Rastrear qual vídeo originou o EC |
 | Teste cross-user (isolamento RLS com 2 contas) | Média | Validado em inspeção de código + tripla camada; não executado por ter apenas 1 conta disponível |
+
+### Observação de produto — reorganização da página do Projeto
+
+A página do Projeto (`/projetos/[id]`) ainda dá peso semelhante a Imagens, Vídeos e Produções. A direção desejada é tornar **Production a unidade operacional principal**. As seções de Imagens, Vídeos e Conteúdos no Projeto devem futuramente funcionar como resumo agregado ou materiais avulsos, evitando duplicidade com os atalhos globais do sidebar.
+
+**Pré-requisitos antes de implementar:**
+1. Upgrade de mídia de `ChannelPiece` (adicionar `image_url`/assets) — fecha a lacuna com Posts
+2. Aposentadoria de Posts (remoção da aba "Posts legados" da Production e do menu global)
+
+Essa reorganização está registrada mas **não autorizada** — será tratada após os dois pré-requisitos acima.
 
 ### Bug pré-existente (não relacionado a publicações)
 
