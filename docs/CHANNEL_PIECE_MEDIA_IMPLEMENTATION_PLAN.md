@@ -191,10 +191,22 @@ access_token formatado como cookie `sb-<ref>-auth-token` para `@supabase/ssr` 0.
 
 **Decisões:** CPM-D5, CPM-D6, CPM-D12
 
-**UX:**
+**UX planejada:**
 - "Selecionar da Galeria" → imagens aprovadas do mesmo Projeto
 - "Selecionar da Biblioteca" → library_files do mesmo Projeto, filtráveis por kind
 - Múltipla seleção para carrossel
+
+**Achado de UX — smoke visual M3 (registrado para M4):**
+
+A seção "Mídia" é exibida no card da ChannelPiece no workspace, mas **não aparece dentro do modal "Editar versão para canal"** (Dialog de criação/edição de CP). Como a mídia pertence à própria versão e o editor é o principal ponto de trabalho sobre um CP, M4 deve integrar:
+1. Uma seção compacta de mídias existentes dentro do Dialog de edição (somente leitura + botão remover)
+2. O botão "Adicionar mídia" (abre picker Galeria/Biblioteca) dentro desse mesmo Dialog
+
+Dessa forma, o fluxo de edição de uma CP — conteúdo + mídia — fica contido em um único contexto, sem exigir que o usuário feche o modal para ver o que já foi adicionado.
+
+**Thumbnail no ambiente local (achado técnico, sem ação necessária):**
+
+No smoke visual M3, a thumbnail apareceu como placeholder (ícone ImageIcon) em vez da imagem real. Causa: o S3 (`s3.multihuman.com.br`) é um bucket privado — as URLs armazenadas retornam 403 sem presigned URL. Em produção, onde o S3 está configurado, `createPresignedReadUrl` gera a URL assinada com TTL de 1h e a imagem carrega normalmente. O fallback de placeholder (onError → ImageIcon) é o comportamento correto para dev local sem S3.
 
 ---
 
