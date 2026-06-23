@@ -82,6 +82,9 @@ export const VALID_ROLES = ['primary', 'thumbnail', 'carousel_item', 'background
 
 export function mapPgError(code: string, message: string): { status: number; error: string } | null {
   if (code === '23505') {
+    if (message.includes('uq_cpm_cp_image') || message.includes('uq_cpm_cp_library_file')) {
+      return { status: 409, error: 'Esta midia ja esta associada a esta versao.' }
+    }
     if (message.includes('cpm_unique_position')) {
       return { status: 409, error: 'Posicao ja ocupada nesta ChannelPiece. Use uma posicao diferente.' }
     }
