@@ -112,7 +112,7 @@ Todas as rotas têm:
 - **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
 - **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
 
-## Fase ChannelPiece Media — M1–M4 entregues (2026-06-22 a 2026-06-23)
+## Fase ChannelPiece Media — M1–M4 + fix/source-uniqueness entregues (2026-06-22 a 2026-06-23)
 
 Descoberta, modelagem, implementação e auditoria de M1–M4 concluídas. Ver:
 
@@ -158,6 +158,24 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 **Smoke visual aprovado:** card externo sem lixeira, editor com remoção, picker funcional, sem regressão de UX.
 
 **Pendente:** autorização explícita para M5 (upload de nova mídia).
+
+---
+
+### fix/source-uniqueness — Unicidade de fonte por ChannelPiece — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `fix/channel-piece-media-source-uniqueness`
+
+**Arquivos:**
+- `scripts/023_enforce_channel_piece_media_source_uniqueness.sql` (criado)
+- `app/api/channel-piece-media/_helpers.ts` (modificado — `mapPgError`)
+
+**O que foi feito:**
+- Auditoria pré-migration: zero duplicatas encontradas em produção
+- Migration 023 aplicada em produção: dois índices únicos parciais `uq_cpm_cp_image` e `uq_cpm_cp_library_file`
+- `mapPgError` atualizado: violação 23505 de qualquer um dos dois novos índices → HTTP 409 com mensagem amigável "Esta midia ja esta associada a esta versao." (nome do índice não exposto)
+- Race condition (dois requests concorrentes com mesmo source+CP) gerenciado pelo índice DB — segundo INSERT bloqueado com 23505 → 409
+
+**Auditoria:** 13 casos, 16 assertions, 16/16 passadas. Cleanup completo.
 
 ---
 

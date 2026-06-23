@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 6 — M4 implementado, auditado e aprovado 2026-06-23)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 IMPLEMENTADO E AUDITADO ✓. M5 aguarda autorização explícita.
+**Data:** 2026-06-22 (rev. 7 — fix/source-uniqueness implementado, auditado e aprovado 2026-06-23)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -313,6 +313,91 @@ Checklist confirmado:
 ### Typecheck + build
 
 `pnpm tsc --noEmit` — apenas TS7006 pré-existente (`rascunhos/page.tsx`).  
+`pnpm build` — sucesso.
+
+---
+
+## fix/source-uniqueness — Unicidade de fonte por ChannelPiece
+
+**Branch:** `fix/channel-piece-media-source-uniqueness`  
+**Base:** `feat/channel-piece-media-m4-picker` HEAD (`4ce3241`)  
+**Data:** 2026-06-23  
+**Objetivo:** Garantir que cada `image_id` ou `library_file_id` apareça no máximo uma vez por `channel_piece_id`, tanto a nível de DB quanto de API.
+
+### Motivação
+
+O M4 introduziu prevenção de duplicatas apenas no frontend (advisory check antes do POST). Um race condition entre dois requests concorrentes poderia inserir duas linhas com o mesmo source na mesma CP. A solução definitiva exige constraints a nível de DB.
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `scripts/023_enforce_channel_piece_media_source_uniqueness.sql` | Novo — dois índices únicos parciais |
+| `app/api/channel-piece-media/_helpers.ts` | `mapPgError` — mapeia 23505 de novos índices para 409 amigável |
+
+### Migration 023 — índices únicos parciais
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_image
+  ON channel_piece_media (channel_piece_id, image_id)
+  WHERE image_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
+  ON channel_piece_media (channel_piece_id, library_file_id)
+  WHERE library_file_id IS NOT NULL;
+```
+
+Idempotente. Não altera linhas existentes, constraints ou RLS. Aplicada em produção `nuhdhnasuohizxtmyiju` em 2026-06-23.
+
+### Mapeamento de erro API
+
+`mapPgError` em `_helpers.ts` trata 23505 dos dois novos índices **antes** do fallback genérico:
+
+```typescript
+if (message.includes('uq_cpm_cp_image') || message.includes('uq_cpm_cp_library_file')) {
+  return { status: 409, error: 'Esta midia ja esta associada a esta versao.' }
+}
+```
+
+Nome do índice não é exposto ao cliente.
+
+### Auditoria pré-migration
+
+Zero duplicatas encontradas antes da migration:
+
+```sql
+-- image_id
+SELECT channel_piece_id, image_id, COUNT(*) FROM channel_piece_media
+WHERE image_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
+-- 0 rows
+
+-- library_file_id
+SELECT channel_piece_id, library_file_id, COUNT(*) FROM channel_piece_media
+WHERE library_file_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
+-- 0 rows
+```
+
+### Matriz de testes — 13 casos (16 assertions) — 2026-06-23 — todos passaram
+
+| # | Caso | Resultado |
+|---|------|-----------|
+| 1 | Primeira associação de Image à CP → 201 | ✅ PASS |
+| 2 | Mesma Image na mesma CP → 409, mensagem amigável | ✅ PASS (3 assertions) |
+| 3 | Mesma Image em CP diferente → 201 | ✅ PASS |
+| 4 | Dois requests concorrentes: Image + CP → exatamente 1×201 e 1×409 | ✅ PASS |
+| 5 | Primeira associação de LibraryFile à CP → 201 | ✅ PASS |
+| 6 | Mesmo LibraryFile na mesma CP → 409, mensagem amigável | ✅ PASS (2 assertions) |
+| 7 | Mesmo LibraryFile em CP diferente → 201 | ✅ PASS |
+| 8 | Dois requests concorrentes: LibraryFile + CP → exatamente 1×201 e 1×409 | ✅ PASS |
+| 9 | Image + LibraryFile (fontes distintas) na mesma CP → ambos 201 | ✅ PASS |
+| 10 | Posição diferente não contorna unicidade de Image → 409 | ✅ PASS |
+| 11 | Role diferente não contorna unicidade de LibraryFile → 409 | ✅ PASS |
+| 12 | DELETE + re-associação da mesma Image → 201 | ✅ PASS |
+| 13 | IMG_A intacto após todos os testes | ✅ PASS |
+
+### TypeScript + Build
+
+`pnpm exec tsc --noEmit` — erro pré-existente em `app/(dashboard)/imagens/rascunhos/page.tsx:43` (não relacionado a este fix, arquivo não modificado).  
 `pnpm build` — sucesso.
 
 ---

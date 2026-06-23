@@ -1,6 +1,6 @@
 # ChannelPiece Media — Decisões de Domínio
-**Data:** 2026-06-23 (rev. 3 — auditoria M1)  
-**Status:** M1 aprovado para aplicação após auditoria.
+**Data:** 2026-06-23 (rev. 4 — fix/source-uniqueness)  
+**Status:** M1–M4 aprovados e em produção. fix/source-uniqueness auditado e aprovado.
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
@@ -425,6 +425,32 @@ Unicidade de `thumbnail` **não imposta no banco**. Razão: alguns formatos pode
 
 ---
 
+## CPM-D23 — Unicidade de fonte por ChannelPiece **[NOVA]**
+
+**Decisão:** Cada `image_id` ou `library_file_id` pode aparecer no máximo uma vez por `channel_piece_id`. Enforced no banco por dois índices únicos parciais (migration 023):
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_image
+  ON channel_piece_media (channel_piece_id, image_id)
+  WHERE image_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
+  ON channel_piece_media (channel_piece_id, library_file_id)
+  WHERE library_file_id IS NOT NULL;
+```
+
+**Motivação:** O frontend (M4) já impedia duplicatas com um check advisory, mas um race condition entre dois requests concorrentes poderia contornar esse check. A solução definitiva exige constraint a nível de banco.
+
+**Escopo dos índices:** Parciais — a constraint `cpm_exactly_one_source` garante exatamente uma coluna de fonte não-nula por linha, portanto os dois índices cobrem todas as linhas sem overlap.
+
+**Comportamento ao inserir source duplicado:** banco retorna 23505 com referência ao nome do índice (`uq_cpm_cp_image` ou `uq_cpm_cp_library_file`); API retorna HTTP 409 com mensagem amigável "Esta midia ja esta associada a esta versao." (nome do índice não exposto ao cliente).
+
+**Race condition:** Dois requests concorrentes com mesmo source+CP → ambos passam pelo check advisory do M4 → primeiro INSERT commit → segundo INSERT bloqueado com 23505 → segundo retorna 409. Zero linhas duplicadas.
+
+**Aplicado em produção:** 2026-06-23. Zero duplicatas pré-existentes confirmadas antes da migration.
+
+---
+
 ## Questões ainda abertas
 
 Todas as questões bloqueantes para M1–M4 foram respondidas.
@@ -464,3 +490,4 @@ Todas as questões bloqueantes para M1–M4 foram respondidas.
 | CPM-D20 | URLs resolvidas em runtime, não persistidas | 2 | Aprovada |
 | CPM-D21 | Aposentadoria de Posts em etapas M8→M10 | 2 | Aprovada |
 | CPM-D22 | `primary` único por CP (banco); `thumbnail` sem restrição no banco | 3 | Aprovada |
+| CPM-D23 | Unicidade de fonte por CP: `uq_cpm_cp_image` + `uq_cpm_cp_library_file` (partial unique indexes) | 4 | Aprovada |
