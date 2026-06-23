@@ -1,6 +1,6 @@
 # ChannelPiece Media — Descoberta de Domínio
-**Data:** 2026-06-22  
-**Status:** Descoberta concluída. Não implementar até aprovação de `CHANNEL_PIECE_MEDIA_DECISIONS.md`.
+**Data:** 2026-06-22 (rev. 2 — alternativas e lacunas atualizadas após decisões humanas)  
+**Status:** Descoberta concluída. Decisões aprovadas em `CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev.2.
 
 ---
 
@@ -330,48 +330,43 @@ Acrescentar um campo `media jsonb DEFAULT '[]'` à tabela `channel_pieces`.
 
 ---
 
-### Alternativa B — Tabela `channel_piece_media` com FKs separados
+### Alternativa B — Tabela `channel_piece_media` com FKs separados ✓ Adotada
 
-Nova tabela de associação com FKs tipadas:
+Nova tabela de associação com FKs tipadas. **Schema final aprovado em CPM-D2 Rev.2:**
 
 ```
 channel_piece_media
 ├── id                  uuid PK
 ├── user_id             uuid NOT NULL FK → auth.users CASCADE
 ├── channel_piece_id    uuid NOT NULL FK → channel_pieces CASCADE
-├── image_id            uuid nullable FK → images ON DELETE SET NULL
-├── library_file_id     uuid nullable FK → library_files ON DELETE SET NULL
-├── storage_path        text nullable   (para migração de post_images legados)
-├── storage_provider    text nullable
-├── image_url           text nullable   (cache de URL pública)
-├── thumbnail_url       text nullable
-├── file_size           integer nullable
-├── mime_type           text nullable
-├── media_kind          text NOT NULL CHECK ('image','video','document','other')
-├── position            smallint NOT NULL DEFAULT 0
+├── image_id            uuid nullable FK → images ON DELETE RESTRICT
+├── library_file_id     uuid nullable FK → library_files ON DELETE RESTRICT
+├── position            smallint NOT NULL DEFAULT 0 CHECK (>= 0)
 ├── role                text NOT NULL DEFAULT 'primary'
 │                         CHECK ('primary','thumbnail','carousel_item',
 │                                'background','attachment')
-├── alt_text            text nullable
+├── alt_text            text nullable CHECK (char_length <= 1000)
 ├── created_at          timestamptz NOT NULL
 └── updated_at          timestamptz NOT NULL
-CHECK (image_id IS NOT NULL OR library_file_id IS NOT NULL OR storage_path IS NOT NULL)
+CONSTRAINT cpm_exactly_one_source:
+  ((image_id IS NOT NULL)::int + (library_file_id IS NOT NULL)::int) = 1
 ```
 
-**Cardinalidade:** N `channel_piece_media` por `ChannelPiece`; cada mídia tem exatamente um source  
-**Integridade:** FK para `images` e `library_files` com ON DELETE SET NULL — preserva o registro mesmo se o arquivo sumisse, marcando como órfão (`image_id = null AND library_file_id = null`)  
-**Reutilização:** a mesma imagem pode ser referenciada por múltiplas `ChannelPiece`s sem duplicação de storage  
-**Ordenação:** `position` garante ordem explícita sem reescrever o array  
-**Capa:** `role = 'primary'` define a mídia principal; ou `position = 0`  
-**Carrossel:** múltiplos registros com `role = 'carousel_item'` ordenados por `position`  
-**Imagem e vídeo:** via `media_kind` + `library_file_id` (kind = 'video')  
-**Exclusão de `ChannelPiece`:** CASCADE — todos os registros de mídia removidos  
-**Exclusão de `Image`:** ON DELETE SET NULL — registro de mídia sobrevive com `image_id = null`, `storage_path` ainda acessível  
-**Exclusão de `LibraryFile`:** ON DELETE SET NULL — mesmo comportamento  
-**RLS:** `user_id = auth.uid()` + EXISTS em `channel_pieces` para INSERT  
-**Queries:** índices em `(channel_piece_id, position)` para listagem ordenada; índices em `(image_id)` e `(library_file_id)` para rastreabilidade  
-**Compatibilidade com Posts:** `storage_path` + `image_url` + `thumbnail_url` permite migrar `post_images` sem reupload  
-**Diagnóstico:** modelo correto para o sistema. Cobre todos os casos presentes e futuros com estrutura evolutiva.
+**Campos removidos da exploração inicial:** `storage_path`, `storage_provider`, `image_url`, `thumbnail_url`, `file_size`, `mime_type`, `media_kind` — deriváveis via JOIN; URLs resolvidas em runtime (CPM-D19, CPM-D20).
+
+**Mudança de ON DELETE:** RESTRICT (não SET NULL) — compatível com `cpm_exactly_one_source`; impede exclusão de arquivo em uso (CPM-D3).
+
+**Cardinalidade:** exatamente uma fonte por registro; N registros por ChannelPiece  
+**Integridade:** FK real para ambas as fontes; RESTRICT previne exclusão não intencional  
+**Reutilização:** mesma imagem referenciada por múltiplas CPs sem cópia de storage  
+**Ordenação:** `position` explícito; reordenação atualiza inteiros, não reescreve array  
+**Capa:** `role = 'primary'`  
+**Carrossel:** múltiplos `role = 'carousel_item'` por `position`  
+**Vídeo:** `library_file_id` onde `library_files.kind = 'video'`  
+**Exclusão de ChannelPiece:** CASCADE remove vínculos, não os arquivos  
+**Exclusão de Image/LibraryFile:** RESTRICT — bloqueia se referenciada  
+**RLS:** ownership duplo em INSERT e UPDATE (CPM-D11)  
+**Diagnóstico:** modelo correto e aprovado.
 
 ---
 
