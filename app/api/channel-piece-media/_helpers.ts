@@ -24,12 +24,16 @@ export async function resolveMediaSource(
       return { media_kind: 'image', image_url: null, thumbnail_url: null, file_size: null, mime_type: null, name: null, source_deleted: false }
     }
 
-    const imageUrl = img.storage_path
-      ? await createPresignedReadUrl(img.storage_path).catch(() => img.image_url as string | null)
-      : (img.image_url as string | null)
-    const thumbUrl = img.thumbnail_path
-      ? await createPresignedReadUrl(img.thumbnail_path).catch(() => img.thumbnail_url as string | null)
-      : (img.thumbnail_url as string | null)
+    // createPresignedReadUrl returns null (not throws) when S3 is unconfigured,
+    // so ?? is needed to fall back to the stored public URL.
+    const presignedImage = img.storage_path
+      ? await createPresignedReadUrl(img.storage_path).catch(() => null)
+      : null
+    const imageUrl = presignedImage ?? (img.image_url as string | null)
+    const presignedThumb = img.thumbnail_path
+      ? await createPresignedReadUrl(img.thumbnail_path).catch(() => null)
+      : null
+    const thumbUrl = presignedThumb ?? (img.thumbnail_url as string | null)
 
     return {
       media_kind: 'image',
@@ -53,9 +57,10 @@ export async function resolveMediaSource(
       return { media_kind: 'other', image_url: null, thumbnail_url: null, file_size: null, mime_type: null, name: null, source_deleted: false }
     }
 
-    const resolvedUrl = lf.storage_path
-      ? await createPresignedReadUrl(lf.storage_path as string).catch(() => lf.public_url as string | null)
-      : (lf.public_url as string | null)
+    const presignedLf = lf.storage_path
+      ? await createPresignedReadUrl(lf.storage_path as string).catch(() => null)
+      : null
+    const resolvedUrl = presignedLf ?? (lf.public_url as string | null)
 
     return {
       media_kind: lf.kind as LibraryFileKind,
