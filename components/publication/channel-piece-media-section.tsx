@@ -15,7 +15,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import type { ChannelPieceMediaResolved, ChannelPieceMediaRole } from '@/lib/types'
-import { FileText, ImageIcon, Loader2, Music, RefreshCw, Trash2, Video } from 'lucide-react'
+import { FileText, ImageIcon, Loader2, Music, Plus, RefreshCw, Trash2, Video } from 'lucide-react'
+import { MediaPickerDialog } from './media-picker-dialog'
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
@@ -72,10 +73,11 @@ interface MediaItemProps {
   item: ChannelPieceMediaResolved
   onRemove: (id: string) => void
   isRemoving: boolean
+  showRemove: boolean
 }
 
-function MediaItem({ item, onRemove, isRemoving }: MediaItemProps) {
-  const origin = item.image_id ? 'Galeria' : 'Biblioteca'
+function MediaItem({ item, onRemove, isRemoving, showRemove }: MediaItemProps) {
+  const origin = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
   const displayName = item.name || item.mime_type || null
 
   return (
@@ -104,19 +106,21 @@ function MediaItem({ item, onRemove, isRemoving }: MediaItemProps) {
         )}
       </div>
 
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 shrink-0 gap-1 px-1.5 text-xs text-muted-foreground hover:text-destructive"
-        disabled={isRemoving}
-        onClick={() => onRemove(item.id)}
-        title="Remover da versão"
-      >
-        {isRemoving
-          ? <Loader2 className="h-3 w-3 animate-spin" />
-          : <Trash2 className="h-3 w-3" />}
-        <span className="sr-only">Remover da versão</span>
-      </Button>
+      {showRemove && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 shrink-0 gap-1 px-1.5 text-xs text-muted-foreground hover:text-destructive"
+          disabled={isRemoving}
+          onClick={() => onRemove(item.id)}
+          title="Remover da versão"
+        >
+          {isRemoving
+            ? <Loader2 className="h-3 w-3 animate-spin" />
+            : <Trash2 className="h-3 w-3" />}
+          <span className="sr-only">Remover da versão</span>
+        </Button>
+      )}
     </div>
   )
 }
@@ -125,9 +129,11 @@ function MediaItem({ item, onRemove, isRemoving }: MediaItemProps) {
 
 interface Props {
   channelPieceId: string
+  editable?: boolean
+  projectId?: string
 }
 
-export function ChannelPieceMediaSection({ channelPieceId }: Props) {
+export function ChannelPieceMediaSection({ channelPieceId, editable = false, projectId }: Props) {
   const { toast } = useToast()
 
   const [items, setItems] = useState<ChannelPieceMediaResolved[]>([])
@@ -139,6 +145,9 @@ export function ChannelPieceMediaSection({ channelPieceId }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const isDeleteInFlight = useRef(false)
+
+  // Picker state
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -215,9 +224,11 @@ export function ChannelPieceMediaSection({ channelPieceId }: Props) {
         ) : items.length === 0 ? (
           <div className="py-1">
             <p className="text-xs text-muted-foreground">Nenhuma mídia associada a esta versão.</p>
-            <p className="mt-0.5 text-xs text-muted-foreground/60">
-              A seleção e o upload de mídia serão adicionados na próxima etapa.
-            </p>
+            {!editable && (
+              <p className="mt-0.5 text-xs text-muted-foreground/60">
+                A seleção e o upload de mídia serão adicionados na próxima etapa.
+              </p>
+            )}
           </div>
         ) : (
           <div>
@@ -231,12 +242,41 @@ export function ChannelPieceMediaSection({ channelPieceId }: Props) {
                   item={item}
                   onRemove={setConfirmingId}
                   isRemoving={deletingId === item.id}
+                  showRemove={editable}
                 />
               ))}
             </div>
           </div>
         )}
+
+        {editable && projectId && (
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs"
+              onClick={() => setPickerOpen(true)}
+              disabled={loading}
+            >
+              <Plus className="h-3 w-3" />
+              Adicionar mídia
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Media picker */}
+      {editable && projectId && (
+        <MediaPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          projectId={projectId}
+          channelPieceId={channelPieceId}
+          currentItems={items}
+          onAssociated={() => setRetryKey((k) => k + 1)}
+        />
+      )}
 
       {/* Remove association confirmation */}
       <AlertDialog

@@ -937,6 +937,18 @@ export default function EditorialContentDetailPage() {
                 placeholder="#hashtag1 #hashtag2 #hashtag3"
               />
             </div>
+
+            {/* Media — only shown when editing an existing CP */}
+            {editingCp && (
+              <div className="space-y-1.5">
+                <Label>Mídia da versão</Label>
+                <ChannelPieceMediaSection
+                  channelPieceId={editingCp.id}
+                  editable
+                  projectId={projectId}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter>
