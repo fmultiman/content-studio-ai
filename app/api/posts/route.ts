@@ -191,45 +191,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
-    const { supabase, user } = await getAuthenticatedClient()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
-    }
-
-    const body = (await request.json()) as PostBody
-
-    if (body.productionId) {
-      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
-      if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 400 })
-      }
-    }
-
-    const payload = {
-      user_id: user.id,
-      ...buildPostPayload(body),
-    }
-
-    const { data, error } = await supabase
-      .from('posts')
-      .insert(payload)
-      .select()
-      .single()
-
-    if (error) {
-      return NextResponse.json({ error: error.message, details: error }, { status: 400 })
-    }
-
-    return NextResponse.json({ post: data })
-  } catch (error) {
-    console.error('[Posts] POST error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro interno' },
-      { status: 500 },
-    )
+  const { user } = await getAuthenticatedClient()
+  if (!user) {
+    return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
   }
+  return NextResponse.json(
+    {
+      code: 'LEGACY_POST_CREATION_DISABLED',
+      error: 'A criação de Posts legados foi encerrada. Use Conteúdos.',
+    },
+    { status: 410 },
+  )
 }
 
 export async function PATCH(request: Request) {

@@ -6,7 +6,7 @@
 **Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
 **Branch auditoria M8.5A:** `feat/posts-migration-m8-5a-audit`  
 **Branch legacy marking M8.5B:** `feat/posts-migration-m8-5b-legacy-marking`  
-**Status:** M8.5B CONCLUÍDO — 4/4 posts marcados (migrated_at=2026-06-24T20:59:57.181+00:00). Testes: 15/15 PASS.  
+**Status:** M8.5B PRONTO PARA RELEASE — 4/4 posts marcados. POST legado bloqueado (410). Testes autenticados 10/10 PASS. validate OK.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -118,7 +118,28 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 - GET: permitido; resposta enriquecida com campos de navegação para posts migrados
 - PATCH: HTTP 409 `POST_MIGRATED` se `migrated_at IS NOT NULL`
 - DELETE: HTTP 409 `POST_MIGRATED` se algum ID estiver migrado
-- POST (criação): API aberta; "Novo Post" desabilitado na UI
+- POST (criação): HTTP 401 sem sessão; HTTP 410 `LEGACY_POST_CREATION_DISABLED` com sessão — criação legada encerrada em API e UI
+
+**Contrato HTTP de criação (M8.5B fix):**
+```
+POST /api/posts — sem sessão   → 401
+POST /api/posts — autenticado  → 410 { code: "LEGACY_POST_CREATION_DISABLED", error: "A criação de Posts legados foi encerrada. Use Conteúdos." }
+```
+
+**Testes autenticados (sessão real via admin generateLink):**
+
+| Teste | Resultado |
+|-------|-----------|
+| T08a GET sem sessão → 401 | ✅ PASS |
+| T08b PATCH sem sessão → 401 | ✅ PASS |
+| T08c DELETE sem sessão → 401 | ✅ PASS |
+| T08d POST sem sessão → 401 | ✅ PASS |
+| T05 GET autenticado P1 migrado → 200 + migrated_ec_id | ✅ PASS |
+| T06 PATCH autenticado P1 migrado → 409 POST_MIGRATED | ✅ PASS |
+| T07 DELETE autenticado P1 migrado → 409 POST_MIGRATED | ✅ PASS |
+| POST autenticado → 410 LEGACY_POST_CREATION_DISABLED | ✅ PASS |
+| Contagem posts pós-testes = 4 | ✅ PASS |
+| P1–P4 status=saved, migrated_at intacto | ✅ PASS |
 
 **UI (modo legado):**
 - Badge âmbar "Migrado" no item da lista
@@ -134,12 +155,17 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 | Posts marcados | 4/4 |
 | migrated_at | 2026-06-24T20:59:57.181+00:00 |
 | Idempotência (2ª run) | ALREADY_MARKED 4/4 ✅ |
-| Testes | 15/15 PASS ✅ |
-| API PATCH/DELETE | Bloqueados com HTTP 409 POST_MIGRATED ✅ |
-| UI | Badge Migrado + link EC + read-only ✅ |
+| Testes (suite base) | 15/15 PASS ✅ |
+| Testes autenticados | 10/10 PASS ✅ |
+| API GET | 200 + migrated_ec_id enriquecido ✅ |
+| API PATCH/DELETE migrado | HTTP 409 POST_MIGRATED ✅ |
+| API POST criação (sem sessão) | HTTP 401 ✅ |
+| API POST criação (autenticado) | HTTP 410 LEGACY_POST_CREATION_DISABLED ✅ |
+| UI | Badge Migrado + link EC + read-only + "Novo Post" desabilitado ✅ |
 | typecheck | 0 erros ✅ |
-| lint | 0 erros ✅ |
+| lint | 0 erros, 51 warnings ✅ |
 | build | exit 0 ✅ |
+| validate | exit 0 ✅ |
 
 **Rollback M8.5B (se necessário):**
 ```bash

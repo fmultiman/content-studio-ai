@@ -10,8 +10,8 @@
 **Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
 **Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
-**Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — CONCLUÍDO (2026-06-24). 4/4 posts marcados. Testes 15/15.  
-**Estado:** M1–M7 em produção. M8.1–M8.5B concluídos. Posts em modo legado/read-only. Próximo: M9 (retire posts legados).
+**Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — PRONTO PARA RELEASE (2026-06-24). 4/4 marcados. POST criação bloqueado 401/410. Testes autenticados 10/10 PASS. validate OK.  
+**Estado:** M1–M7 em produção. M8.1–M8.5B concluídos. Posts em modo legado/read-only. Criação legada bloqueada em UI e API. Próximo: release M8.5B → M9.
 
 ---
 
@@ -63,7 +63,7 @@ Nenhum post de conteúdo real identificado na base de produção.
 | M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
 | M8.4 Migrar P1 com mídia | ✅ EXECUTADO 2026-06-24 — EC+CP+LF+CPM, branch `feat/posts-migration-m8-4-p1-media` |
 | M8.5A Post-migration audit | ✅ PASS 2026-06-24 — 139/139, determinístico, branch `feat/posts-migration-m8-5a-audit` |
-| M8.5B Legacy Marking | ✅ CONCLUÍDO 2026-06-24 — 4/4 marcados, testes 15/15, branch `feat/posts-migration-m8-5b-legacy-marking` |
+| M8.5B Legacy Marking | ✅ PRONTO PARA RELEASE 2026-06-24 — 4/4 marcados, POST 410, testes auth 10/10, branch `feat/posts-migration-m8-5b-legacy-marking` |
 | M8.6 Cleanup Posts | ⏳ |
 
 ### M8.3A — Resultados da execução — 2026-06-24
@@ -182,9 +182,26 @@ node scripts/posts_migration_m84_rollback.mjs --execute
 **Idempotência:** 2ª execução → ALREADY_MARKED 4/4 ✅
 
 **API protegida:**
+- `GET /api/posts` → 200; resposta inclui `migrated_ec_id` + `migrated_ec_project_id` para posts migrados
 - `PATCH /api/posts` com post migrado → HTTP 409 `POST_MIGRATED`
 - `DELETE /api/posts` com post migrado → HTTP 409 `POST_MIGRATED`
-- `GET /api/posts` → continua funcionando; resposta inclui `migrated_ec_id` + `migrated_ec_project_id`
+- `POST /api/posts` sem sessão → HTTP 401
+- `POST /api/posts` autenticado → HTTP 410 `{ code: "LEGACY_POST_CREATION_DISABLED", error: "A criação de Posts legados foi encerrada. Use Conteúdos." }`
+
+**Testes autenticados (10/10 PASS — sessão real via admin generateLink):**
+
+| Teste | Resultado |
+|-------|-----------|
+| GET sem sessão → 401 | ✅ |
+| PATCH sem sessão → 401 | ✅ |
+| DELETE sem sessão → 401 | ✅ |
+| POST sem sessão → 401 | ✅ |
+| GET autenticado P1 → 200 + migrated_ec_id | ✅ |
+| PATCH autenticado P1 migrado → 409 POST_MIGRATED | ✅ |
+| DELETE autenticado P1 migrado → 409 POST_MIGRATED | ✅ |
+| POST autenticado → 410 LEGACY_POST_CREATION_DISABLED | ✅ |
+| Contagem posts pós-testes = 4 | ✅ |
+| P1–P4 status=saved, migrated_at intacto | ✅ |
 
 **UI:**
 - Badge âmbar "Migrado" em cada item da lista
@@ -192,6 +209,10 @@ node scripts/posts_migration_m84_rollback.mjs --execute
 - Editor somente leitura para posts marcados (readOnly/disabled em todos os campos)
 - Auto-save desabilitado para posts marcados
 - Botão "Novo Post" desabilitado (área em modo legado)
+
+**Validação técnica:** typecheck ✅ lint ✅ (51 warnings, 0 erros) build ✅ validate ✅
+
+**Lacuna encontrada e corrigida:** `POST /api/posts` aceitava criação com sessão autenticada. Corrigido — agora retorna 410 antes de qualquer lógica de inserção. Nenhum dado criado durante o teste (registro de teste deletado via service role imediatamente).
 
 **Rollback disponível:**
 ```bash
@@ -202,7 +223,8 @@ Zera `migrated_at` nos 4 posts. Não toca EC/CP/LF/CPM/S3.
 
 ### Próximo passo (M8)
 
-M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
+Release M8.5B: tag + merge `feat/posts-migration-m8-5b-legacy-marking` → main → deploy.  
+Depois: M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
 
 ---
 
