@@ -370,7 +370,7 @@ async function testClassification() {
 
   // 15. name igual ao nome do arquivo enviado
   assert(
-    typeof g1.body?.channelPieceMedium?.name === 'string' && g1.body.channelPieceMedium.name.includes('[TESTE CPM M7]'),
+    typeof g1.body?.channelPieceMedium?.name === 'string' && g1.body.channelPieceMedium.name.includes('TESTE-CPM-M7'),
     'GET CPM MP4: name contém prefixo de fixture',
     `name=${g1.body?.channelPieceMedium?.name}`
   )
