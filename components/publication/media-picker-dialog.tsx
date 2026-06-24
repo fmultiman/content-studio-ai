@@ -135,10 +135,20 @@ function LibraryCard({ file, isDupe, isAssigning, disabled, onSelect }: LibraryC
             Adicionado
           </Badge>
         )}
+        {file.kind === 'video' && !isDupe && (
+          <Badge variant="secondary" className="absolute left-1 bottom-1 px-1 py-0 text-[9px]">
+            Vídeo
+          </Badge>
+        )}
       </div>
-      <p className="line-clamp-2 px-1.5 py-1 text-[11px] text-muted-foreground">
+      <p className="line-clamp-2 px-1.5 pt-1 text-[11px] text-muted-foreground">
         {file.name}
       </p>
+      {file.file_size != null && (
+        <p className="px-1.5 pb-1 text-[10px] text-muted-foreground/60">
+          {formatFileSize(file.file_size)}
+        </p>
+      )}
     </button>
   )
 }
@@ -186,6 +196,7 @@ export function MediaPickerDialog({
   const [files, setFiles] = useState<LibraryFile[]>([])
   const [loadingBiblioteca, setLoadingBiblioteca] = useState(false)
   const [bibliotecaError, setBibliotecaError] = useState<string | null>(null)
+  const [kindFilter, setKindFilter] = useState<'all' | 'image' | 'video'>('all')
 
   // Association spinner (galeria + biblioteca tabs)
   const [assigningId, setAssigningId] = useState<string | null>(null)
@@ -250,6 +261,7 @@ export function MediaPickerDialog({
     setAssigningId(null)
     isAssigningRef.current = false
     setTab('galeria')
+    setKindFilter('all')
     // Upload state
     setSelectedFile(null)
     setUploadError(null)
@@ -426,18 +438,46 @@ export function MediaPickerDialog({
                 Nenhum arquivo enviado para este projeto.
               </p>
             ) : (
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                {files.map((file) => (
-                  <LibraryCard
-                    key={file.id}
-                    file={file}
-                    isDupe={isDuplicateFile(file.id)}
-                    isAssigning={assigningId === file.id}
-                    disabled={anyBusy}
-                    onSelect={() => associate({ libraryFileId: file.id }, file.id)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="mb-3 flex gap-1.5">
+                  {(['all', 'image', 'video'] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setKindFilter(k)}
+                      className={[
+                        'rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        kindFilter === k
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border/50 text-muted-foreground hover:border-primary/50',
+                      ].join(' ')}
+                    >
+                      {k === 'all' ? 'Todos' : k === 'image' ? 'Imagens' : 'Vídeos'}
+                    </button>
+                  ))}
+                </div>
+                {(() => {
+                  const filtered = files.filter((f) => kindFilter === 'all' || f.kind === kindFilter)
+                  return filtered.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">
+                      Nenhum arquivo encontrado para este filtro.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                      {filtered.map((file) => (
+                        <LibraryCard
+                          key={file.id}
+                          file={file}
+                          isDupe={isDuplicateFile(file.id)}
+                          isAssigning={assigningId === file.id}
+                          disabled={anyBusy}
+                          onSelect={() => associate({ libraryFileId: file.id }, file.id)}
+                        />
+                      ))}
+                    </div>
+                  )
+                })()}
+              </>
             )}
           </TabsContent>
 

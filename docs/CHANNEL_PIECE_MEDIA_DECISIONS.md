@@ -1,6 +1,6 @@
 # ChannelPiece Media — Decisões de Domínio
-**Data:** 2026-06-24 (rev. 6 — M6)  
-**Status:** M1–M6 aprovados e em produção. Release M6 deployado em 2026-06-24 (commit `e4da6b8`).
+**Data:** 2026-06-24 (rev. 7 — M7)  
+**Status:** M1–M6 aprovados e em produção. M7 implementado em branch `feat/channel-piece-media-m7-video` (não deployado). Release M6 deployado em 2026-06-24 (commit `e4da6b8`).
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
@@ -513,6 +513,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
 
 ---
 
+## CPM-D28 — VideoDraft ≠ LibraryFile de vídeo **[NOVA — M7]**
+
+**Decisão:** `video_drafts` (roteiro/cenas/storyboard) e `library_files` com `kind='video'` são entidades independentes e sem relação nesta fase. Não existe campo `output_library_file_id` em `video_drafts`.
+
+**Comportamento:** Arquivos de vídeo como mídia de ChannelPiece são sempre `library_files` com `kind='video'` (upload manual ou via integração futura). VideoDrafts não se tornam LibraryFiles automaticamente em M7.
+
+**Razão:** Transformação de VideoDraft em arquivo final requer renderização (FFmpeg/Remotion), pipeline assíncrono, e validação humana — complexidade incompatível com M7. A separação mantém as entidades coesas e o escopo controlado.
+
+**Alternativa rejeitada:** Adicionar `output_library_file_id` a `video_drafts` — prematuro; requer design de pipeline de renderização.
+
+---
+
+## CPM-D29 — Classificação MIME-first para vídeos **[NOVA — M7]**
+
+**Decisão:** A classificação de um arquivo enviado como `'video'` é determinada pelo MIME type do upload, via `mimeToKind()` no servidor (`video/*` → `'video'`). Não há leitura de conteúdo, extensão de arquivo, ou metadados de stream.
+
+**MIME types aceitos como vídeo:** `video/mp4`, `video/webm`, `video/quicktime` (MOV).
+
+**Persistência:** `library_files.kind = 'video'` e `library_files.mime_type` preservados na DB, verificáveis via `GET /api/library-files?kind=video`.
+
+**Razão:** O MIME type declarado pelo browser/cliente é suficiente para classificação inicial. Validação de stream (FFprobe, codec check) é escopo de M8+. A classificação server-side impede que o cliente declare um MIME falso e cause inconsistência.
+
+**Alternativa rejeitada:** Leitura do magic number (bytes iniciais) — adiciona dependência de biblioteca e latência sem benefício imediato.
+
+---
+
+## CPM-D30 — Preview e download de vídeo **[NOVA — M7]**
+
+**Decisão:**
+- **Preview:** Modal `<video controls preload="metadata">` usando a `image_url` já resolvida no item (URL assinada gerada no GET, TTL 1h). Se a URL expirou (> 1h desde o carregamento da lista), o `<video>` falhará — aceitável em M7.
+- **Download:** Endpoint dedicado `GET /api/channel-piece-media/[id]/download` que gera nova URL assinada com `Content-Disposition: attachment` e redireciona 302. O botão de download chama `window.open(url, '_blank')`.
+- **Segurança:** O endpoint de download verifica `user_id` (via RLS implícito + `.eq('user_id', user.id)`) antes de gerar a URL assinada. Nenhuma URL é retornada para CPMs de outros usuários.
+
+**Razão:** URLs assinadas com TTL curto (1h) evitam exposição pública permanente de arquivos privados. O endpoint de download regenera a URL, garantindo que o download sempre usa uma URL fresca mesmo que o cliente esteja na página há mais de 1h.
+
+**Alternativa rejeitada:** `<a href={image_url} download>` direto — S3 com `Content-Disposition: inline` não força download; o browser reproduz o vídeo inline em vez de baixar.
+
+---
+
+## CPM-D31 — Metadados de vídeo em ChannelPieceMediaResolved **[NOVA — M7]**
+
+**Decisão:** O tipo `ChannelPieceMediaResolved` já contém todos os campos necessários para vídeo: `media_kind: LibraryFileKind | 'image'`, `mime_type`, `file_size`, `name`, `image_url`, `thumbnail_url`. Não há campos novos no tipo.
+
+**`thumbnail_url` para vídeos:** `null` para vídeos sem thumbnail (caso atual). A UI trata `thumbnail_url = null` com vídeo corretamente — exibe ícone `<Video>` em vez de tentar renderizar `<img>`.
+
+**Razão:** O schema `ChannelPieceMediaResolved` foi projetado para ser agnóstico ao tipo de mídia desde M2. Nenhuma alteração de tipo é necessária em M7.
+
+---
+
 ## Questões ainda abertas
 
 Todas as questões bloqueantes para M1–M5 foram respondidas.
@@ -556,3 +605,7 @@ Todas as questões bloqueantes para M1–M5 foram respondidas.
 | CPM-D25 | Reordenação atômica via RPC `organize_channel_piece_media`; DELETE atômico via `remove_channel_piece_media` | 6 | Aprovada |
 | CPM-D26 | Promoção automática de primary ao deletar único primary remanescente; demote automático do primary anterior ao promover novo | 6 | Aprovada |
 | CPM-D27 | Compactação de posições após DELETE via CTE + `ROW_NUMBER()`; `FOR UPDATE NOWAIT` → 409 em conflito de lock | 6 | Aprovada |
+| CPM-D28 | VideoDraft ≠ LibraryFile de vídeo — entidades independentes sem link em M7 | 7 | Aprovada |
+| CPM-D29 | Classificação MIME-first: `video/*` → `kind='video'` no servidor via `mimeToKind()` | 7 | Aprovada |
+| CPM-D30 | Preview via `<video>` no modal usando `image_url`; download via endpoint dedicado `/download` com URL assinada `attachment` | 7 | Aprovada |
+| CPM-D31 | `ChannelPieceMediaResolved` já cobre vídeo sem novos campos; `thumbnail_url=null` para vídeos sem thumbnail | 7 | Aprovada |

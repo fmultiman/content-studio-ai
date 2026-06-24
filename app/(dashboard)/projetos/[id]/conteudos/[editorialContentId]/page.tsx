@@ -124,6 +124,9 @@ export default function EditorialContentDetailPage() {
   const [isLoadingCps, setIsLoadingCps] = useState(false)
   const [cpLoadError, setCpLoadError] = useState(false)
   const [cpRetryKey, setCpRetryKey] = useState(0)
+  // Tracks how many times each CP has been saved; used to remount read-only
+  // ChannelPieceMediaSection so it re-fetches after the edit dialog closes.
+  const [cpSaveCount, setCpSaveCount] = useState<Record<string, number>>({})
 
   // CP create/edit dialog
   const [showCpDialog, setShowCpDialog] = useState(false)
@@ -381,6 +384,7 @@ export default function EditorialContentDetailPage() {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Erro ao salvar')
         setChannelPieces((prev) => prev.map((cp) => (cp.id === editingCp.id ? data.channelPiece : cp)))
+        setCpSaveCount((prev) => ({ ...prev, [editingCp.id]: (prev[editingCp.id] ?? 0) + 1 }))
         toast({ title: 'Peça atualizada!' })
         setShowCpDialog(false)
       } else {
@@ -752,12 +756,20 @@ export default function EditorialContentDetailPage() {
                           {cp.body}
                         </p>
                       )}
+                      {cp.cta && (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          CTA: {cp.cta}
+                        </p>
+                      )}
                       {cp.hashtags && (
                         <p className="mt-1 truncate text-xs text-muted-foreground/70">
                           {cp.hashtags}
                         </p>
                       )}
-                      <ChannelPieceMediaSection channelPieceId={cp.id} />
+                      <ChannelPieceMediaSection
+                        key={`cpm-ro-${cp.id}-${cpSaveCount[cp.id] ?? 0}`}
+                        channelPieceId={cp.id}
+                      />
                       <p className="mt-2 text-xs text-muted-foreground">
                         Atualizado em {new Date(cp.updated_at).toLocaleDateString('pt-BR')}
                       </p>

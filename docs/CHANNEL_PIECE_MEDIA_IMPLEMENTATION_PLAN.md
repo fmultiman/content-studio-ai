@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-24 (rev. 9 — M6 completo)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. **RELEASE M1–M6 EM PRODUÇÃO.**
+**Data:** 2026-06-24 (rev. 10 — M7 implementado)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. M7 ✓ (branch — aguarda revisão). **RELEASE M1–M6 EM PRODUÇÃO.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -662,13 +662,127 @@ Fixture: 3 LFs `SMOKE-RELEASE-CPM-M6-media-{1,2,3}.jpg` em CP_A1 (`65f49c21`).
 
 ---
 
-## M7 — Suporte a vídeo
+## M7 — Suporte completo a vídeo como mídia da Versão para canal
 
-**Objetivo:** Associar `library_files` com `kind = 'video'` a ChannelPieces de formatos de vídeo.
+**Objetivo:** Arquivo final de vídeo → library_file com `kind='video'` → channel_piece_media → preview e download → filtro no picker → metadata e badge.
 
 **Pré-condição:** M6 aprovado.
 
-**Decisão:** CPM-D13 — vídeos via `library_file_id`.
+**Branch:** `feat/channel-piece-media-m7-video`  
+**Status:** ✅ IMPLEMENTADO — aguarda revisão, smoke visual e autorização de merge/deploy.
+
+**Decisões:** CPM-D13, CPM-D28, CPM-D29, CPM-D30, CPM-D31
+
+**Sem migration:** o schema já suporta vídeo via `library_files.kind = 'video'` e `mime_type`. Nenhuma migration nova.
+
+### Descoberta (auditoria M7 — 2026-06-24)
+
+| Questão | Resultado |
+|---------|-----------|
+| `library_files.kind = 'video'` existe? | ✅ Sim — `LibraryFileKind = 'image' \| 'video' \| 'audio' \| 'document' \| 'other'` |
+| Classificação MIME-based? | ✅ `mimeToKind()` no servidor: `video/*` → `'video'` |
+| Upload M5 persiste vídeos? | ✅ `ALLOWED_MIME_TYPES` já inclui `video/mp4`, `video/webm`, `video/quicktime` |
+| Picker lista vídeos? | ✅ Sem filtro de tipo — lista tudo |
+| `MediaThumb` trata vídeos? | ✅ Exibe ícone `<Video>` quando `media_kind === 'video'` e sem thumbnail |
+| Preview de vídeo? | ✗ Não havia `<video>` element — implementado em M7 |
+| Botão de download? | ✗ Não havia — implementado em M7 |
+| Badge "Vídeo"? | ✗ Não havia — implementado em M7 |
+| Filtro no picker? | ✗ Todos/Imagens/Vídeos — implementado em M7 |
+| Migration necessária? | ✅ NÃO — zero mudanças de schema |
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `app/api/channel-piece-media/[id]/download/route.ts` | Novo — `GET /api/channel-piece-media/[id]/download` → 302 S3 signed URL `attachment` |
+| `components/publication/channel-piece-media-section.tsx` | Badge "Vídeo", botão Play (preview modal `<video>`), botão Download em `MediaItemEditable`; Badge "Vídeo" em `MediaItemReadOnly` |
+| `components/publication/media-picker-dialog.tsx` | Filtros Todos/Imagens/Vídeos na aba Biblioteca; badge Vídeo no `LibraryCard`; file_size no card |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Correção de regressão — card da ChannelPiece não atualizava após salvar (ver seção abaixo) |
+| `scripts/cpm_m7_tests.mjs` | Correção de asserção #15 — `sanitizeFilename()` converte `[TESTE CPM M7]` em `TESTE-CPM-M7` |
+
+### Endpoint de download
+
+`GET /api/channel-piece-media/[id]/download`
+```
+200 (se S3 não configurado): { error }
+302: Location → URL assinada com Content-Disposition: attachment
+400: ID não-UUID
+401: sem sessão
+404: CPM não encontrado ou de outro usuário
+503: S3 não configurado
+```
+Segurança: verifica `user_id` + `.eq('user_id', user.id)` antes de gerar URL. CPMs de outros usuários retornam 404.
+
+### UI: channel-piece-media-section.tsx
+
+`MediaItemReadOnly`:
+- Badge "Vídeo" (Badge variant="secondary") após badge de role quando `media_kind === 'video'`
+
+`MediaItemEditable`:
+- Badge "Vídeo" após badge de role quando `media_kind === 'video'`
+- Botão Play (ícone `<Play>`) → abre Dialog com `<video controls preload="metadata" src={item.image_url}>`
+- Botão Download (ícone `<Download>`) → `window.open('/api/channel-piece-media/[id]/download', '_blank')`
+
+### UI: media-picker-dialog.tsx
+
+Aba Biblioteca:
+- Filtros pill (Todos / Imagens / Vídeos) — state `kindFilter: 'all' | 'image' | 'video'`
+- Reset do filtro ao fechar o dialog
+- `LibraryCard`: badge "Vídeo" (posição absolute bottom-left da imagem)
+- `LibraryCard`: exibe `file_size` formatado abaixo do nome
+
+### Suite de testes
+
+`scripts/cpm_m7_tests.mjs` — 53 casos:
+
+| Grupo | Casos | Cobertura |
+|-------|-------|-----------|
+| Upload de vídeos | 10 | MP4, WebM, sem auth, tipo inválido, CP inválido |
+| Classificação e resolução | 7 | media_kind, image_url, thumbnail_url, source_deleted, name, file_size, mime_type |
+| Listagem e filtro | 8 | sem filtro, kind=video, kind=image, sem auth, URL, file_size |
+| Download endpoint | 8 | 302 autenticado, location S3, sem auth, ID inválido, 404, WebM, imagem gerada |
+| Associação e organização | 7 | lista com vídeo, role, position, duplicate, organize, alterar role |
+| Deleção | 5 | DELETE CPM, lista atualizada, LF preservado, delete repetido |
+| Segurança | 5 | sem auth em GET/POST/CPM/DELETE/organize |
+| Metadados | 3 | kind via service role, mime_type via service role, thumbnail_url |
+
+### Correção de regressão — card não atualiza após salvar ChannelPiece
+
+**Problema:** após editar e salvar uma ChannelPiece, o card na lista não refletia as mudanças imediatamente — necessário F5.
+
+**Causa:** duas dimensões independentes:
+
+1. **Campos de texto** (title, body, CTA, hashtags, status): o `setChannelPieces((prev) => prev.map(...))` com `data.channelPiece` do PATCH já estava presente mas a atualização local é confirmada como caminho canônico.
+
+2. **Seção de mídia** (`ChannelPieceMediaSection` read-only no card): esta instância é montada uma vez no carregamento da página e não é desmontada enquanto o dialog de edição está aberto. Após fechar o dialog, continuava exibindo as mídias antigas (antes de qualquer adição/remoção feita no dialog editável).
+
+**Solução:**
+- Adicionado estado `cpSaveCount: Record<string, number>` na página.
+- Após cada save bem-sucedido, incrementa `cpSaveCount[editingCp.id]`.
+- O `key` da `ChannelPieceMediaSection` read-only usa `cpm-ro-${cp.id}-${cpSaveCount[cp.id] ?? 0}`, forçando remount e re-fetch quando o CP é salvo.
+- CTA exibido no card (campo antes ausente).
+
+**Sem API nova, sem migration, sem breaking change.** Apenas estado local + key de remount.
+
+### Correção de asserção #15 em cpm_m7_tests.mjs
+
+`sanitizeFilename('[TESTE CPM M7] video.mp4')` → `'TESTE-CPM-M7-video.mp4'` (colchetes e espaços vira `-`).  
+Asserção corrigida: `.includes('[TESTE CPM M7]')` → `.includes('TESTE-CPM-M7')`.  
+Implementação está correta — era bug da asserção do teste.
+
+### Typecheck + build
+
+`pnpm typecheck` — ✅ exit 0  
+`pnpm lint`      — ✅ exit 0 (51 warnings pré-existentes, 0 erros, nenhum warning novo)  
+`pnpm build`     — ✅ exit 0  
+`pnpm validate`  — ✅ (typecheck + lint + build individualmente — chain combinada excedeu timeout de 2min da ferramenta)
+
+### Limitações documentadas
+
+- **Preview TTL:** `image_url` expira em 1h. Se o usuário abre o modal mais de 1h após o carregamento da lista, o `<video>` não carrega. O download sempre regenera a URL (endpoint `/download`).
+- **Sem transcodificação:** MP4/WebM/MOV são servidos como-is. Compatibilidade de codec depende do browser.
+- **Sem thumbnail automática:** vídeos sem thumbnail exibem ícone `<Video>`. Geração de thumbnail assíncrona é M8+.
+- **Sem link VideoDraft → LibraryFile:** conforme CPM-D28.
 
 ---
 

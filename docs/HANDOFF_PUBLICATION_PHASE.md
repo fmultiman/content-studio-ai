@@ -1,9 +1,55 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M6)
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7)
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
-**Estado:** Release M1–M6 deployado em produção. Próximo passo: ESLint hardening + M7 (suporte a vídeo).
+**Branch M7:** `feat/channel-piece-media-m7-video` — implementado, aguarda revisão e merge  
+**Estado:** Release M1–M6 deployado em produção. M7 implementado em branch — aguarda smoke visual, revisão e autorização de merge/deploy.
+
+---
+
+## M7 — Suporte completo a vídeo — 2026-06-24 (branch — não deployado)
+
+**Branch:** `feat/channel-piece-media-m7-video` — criado de `main` (`fb8fb65`)  
+**Estado:** Implementado. Aguarda smoke visual, revisão humana e autorização de merge/deploy.  
+**Sem migration:** schema já suporta `library_files.kind = 'video'`.
+
+### Entregas
+
+| Arquivo | Mudança |
+|---------|---------|
+| `app/api/channel-piece-media/[id]/download/route.ts` | Novo — endpoint de download seguro (302 → S3 signed URL `attachment`) |
+| `components/publication/channel-piece-media-section.tsx` | Badge "Vídeo", Play (preview modal `<video>`), Download em `MediaItemEditable` e `MediaItemReadOnly` |
+| `components/publication/media-picker-dialog.tsx` | Filtros Todos/Imagens/Vídeos, badge Vídeo, file_size no `LibraryCard` |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Fix regressão: card ChannelPiece não atualizava após salvar — `cpSaveCount` remonta seção de mídia; CTA exibido no card |
+| `scripts/cpm_m7_tests.mjs` | Suite 53 casos + fix asserção #15 (`sanitizeFilename` converte `[TESTE CPM M7]` → `TESTE-CPM-M7`) |
+| `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` | CPM-D28 a CPM-D31 documentadas |
+| `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` | Seção M7 completa, fix regressão documentado |
+
+### Smoke visual M7 — 2026-06-24 — APROVADO
+
+Fixtures criadas em CP_A1 (`65f49c21`) com prefixo `[SMOKE CPM M7]`:
+
+| Item | Verificação | Resultado |
+|------|------------|-----------|
+| 1 imagem `[SMOKE CPM M7] imagem.jpg` (IMAGE_A `3a49939e`) | badge, ordem, sem badge "Vídeo" | ✅ |
+| 1 MP4 `SMOKE-CPM-M7-video.mp4` via LF `video/mp4` | badge "Vídeo", botão Play, botão Download, preview `<video>` | ✅ |
+| 1 WebM `SMOKE-CPM-M7-video.webm` via LF `video/webm` | badge "Vídeo", botão Play, botão Download | ✅ |
+| Filtro picker Todos/Imagens/Vídeos | separa corretamente | ✅ |
+
+Cleanup smoke: 3 CPMs + 2 LFs vídeo + 4 S3 objects deletados — zero resíduos confirmados.
+
+### Range Requests — auditoria MinIO
+
+`GET` com `Range: bytes=0-15` → `206 Partial Content`, `Accept-Ranges: bytes`, `Content-Range: bytes 0-15/536`.  
+`<video>` streaming funciona sem download completo.  
+`HEAD` → 403 esperado (presigned URL assinada apenas para GET).
+
+### Próximos passos para M7
+
+1. Revisão humana dos arquivos modificados
+2. Merge em `main` (não fazer sem autorização)
+3. Deploy (não fazer sem autorização)
 
 ---
 
