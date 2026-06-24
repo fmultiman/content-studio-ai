@@ -40,7 +40,7 @@ export default function ImageDraftsPage() {
         setDrafts(draftsData)
         
         // Fetch related projects
-        const projectIds = [...new Set(draftsData.map(d => d.project_id).filter(Boolean))]
+        const projectIds = [...new Set((draftsData as ImageDraft[]).map(d => d.project_id).filter(Boolean))]
         if (projectIds.length > 0) {
           const { data: projectsData } = await supabase
             .from('projects')
