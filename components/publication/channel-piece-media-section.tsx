@@ -14,6 +14,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -25,11 +31,13 @@ import type { ChannelPieceMediaResolved, ChannelPieceMediaRole } from '@/lib/typ
 import {
   ChevronDown,
   ChevronUp,
+  Download,
   FileText,
   ImageIcon,
   Loader2,
   MoreHorizontal,
   Music,
+  Play,
   Plus,
   RefreshCw,
   Trash2,
@@ -103,6 +111,9 @@ function MediaItemReadOnly({ item }: MediaItemReadOnlyProps) {
           <Badge variant="outline" className="h-4 px-1 text-[10px]">
             {ROLE_LABELS[item.role]}
           </Badge>
+          {item.media_kind === 'video' && (
+            <Badge variant="secondary" className="h-4 px-1 text-[10px]">Vídeo</Badge>
+          )}
           <span className="text-xs text-muted-foreground">{origin}</span>
           {item.source_deleted && (
             <Badge variant="secondary" className="h-4 px-1 text-[10px] text-muted-foreground">
@@ -131,6 +142,7 @@ interface MediaItemEditableProps {
   onMoveDown:    (id: string) => void
   onRoleChange:  (id: string, role: ChannelPieceMediaRole) => void
   onRemove:      (id: string) => void
+  onPreview:     (item: ChannelPieceMediaResolved) => void
 }
 
 function MediaItemEditable({
@@ -144,6 +156,7 @@ function MediaItemEditable({
   onMoveDown,
   onRoleChange,
   onRemove,
+  onPreview,
 }: MediaItemEditableProps) {
   const origin      = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
   const displayName = item.name || item.mime_type || null
@@ -192,6 +205,9 @@ function MediaItemEditable({
           <Badge variant="outline" className="h-4 px-1 text-[10px]">
             {ROLE_LABELS[item.role]}
           </Badge>
+          {item.media_kind === 'video' && (
+            <Badge variant="secondary" className="h-4 px-1 text-[10px]">Vídeo</Badge>
+          )}
           <span className="text-xs text-muted-foreground">{origin}</span>
           {item.source_deleted && (
             <Badge variant="secondary" className="h-4 px-1 text-[10px] text-muted-foreground">
@@ -203,6 +219,34 @@ function MediaItemEditable({
           <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{displayName}</p>
         )}
       </div>
+
+      {/* Play preview (video only) */}
+      {item.media_kind === 'video' && item.image_url && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 shrink-0 px-1.5"
+          disabled={busy}
+          onClick={() => onPreview(item)}
+          title="Reproduzir"
+        >
+          <Play className="h-3 w-3" />
+          <span className="sr-only">Reproduzir</span>
+        </Button>
+      )}
+
+      {/* Download button */}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 shrink-0 px-1.5"
+        disabled={busy || item.source_deleted || !item.image_url}
+        title="Baixar arquivo"
+        onClick={() => window.open(`/api/channel-piece-media/${item.id}/download`, '_blank')}
+      >
+        <Download className="h-3 w-3" />
+        <span className="sr-only">Baixar</span>
+      </Button>
 
       {/* Role change menu */}
       <DropdownMenu>
@@ -302,6 +346,9 @@ export function ChannelPieceMediaSection({
 
   // Picker state
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Video preview state
+  const [previewItem, setPreviewItem] = useState<ChannelPieceMediaResolved | null>(null)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -490,6 +537,7 @@ export function ChannelPieceMediaSection({
                       onMoveDown={handleMoveDown}
                       onRoleChange={handleRoleChange}
                       onRemove={setConfirmingId}
+                      onPreview={setPreviewItem}
                     />
                   ))
                 : items.map((item) => (
@@ -527,6 +575,23 @@ export function ChannelPieceMediaSection({
           onAssociated={() => setRetryKey((k) => k + 1)}
         />
       )}
+
+      {/* Video preview */}
+      <Dialog open={!!previewItem} onOpenChange={(o) => { if (!o) setPreviewItem(null) }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{previewItem?.name || 'Reprodução'}</DialogTitle>
+          </DialogHeader>
+          {previewItem?.image_url && (
+            <video
+              src={previewItem.image_url}
+              controls
+              preload="metadata"
+              className="w-full rounded-md"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Remove association confirmation */}
       <AlertDialog
