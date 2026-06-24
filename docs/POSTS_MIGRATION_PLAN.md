@@ -4,7 +4,8 @@
 **Branch schema:** `feat/posts-migration-m8-schema` — integrado em main (`1b7be2b`)  
 **Branch executor M8.3A:** `feat/posts-migration-m8-executor`  
 **Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
-**Status:** M8.4 EXECUTADO — P1 migrado com mídia em produção 2026-06-24. Todos os 4 posts migrados.  
+**Branch auditoria M8.5A:** `feat/posts-migration-m8-5a-audit`  
+**Status:** M8.5A AUDITADO — 139/139 PASS, determinístico. READY FOR LEGACY MARKING (pendente revisão visual humana).  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -100,6 +101,37 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ec_legacy_post_id
 DROP INDEX IF EXISTS uq_ec_legacy_post_id;
 ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 ```
+
+---
+
+## 1.5 M8.5A — Post-Migration Audit — 2026-06-24 — PASS
+
+**Branch:** `feat/posts-migration-m8-5a-audit`  
+**Script:** `scripts/posts_migration_post_audit.mjs` (read-only)  
+**Artefatos:** `docs/migrations/posts-m8-post-audit.json`, `docs/migrations/posts-m8-post-audit.md`
+
+**Resultado: 139/139 PASS — DETERMINÍSTICO** (2 execuções idênticas)
+
+| Seção | Checks | Resultado |
+|-------|--------|-----------|
+| B — Global | 9 | ✅ PASS |
+| C — P1 (M8.4) | 29+9 S3+15 media | ✅ PASS |
+| C — P2 (M8.3A) | 22 | ✅ PASS |
+| C — P3/H1 (M8.3A) | 22+3 H1 | ✅ PASS |
+| C — P4 (M8.3A) | 22 | ✅ PASS |
+| D — Manifests | 8 | ✅ PASS |
+| E — Rollback inspection | 12 | ✅ PASS |
+
+**Destaques:**
+- 4 fingerprints: aprovados = observados ✅
+- P3/H1: `post.project_id=NULL` preservado, `EC.project_id=d0d008c3` (H1 APPLIED — classificado como PASS, não divergência)
+- S3 source ETag = S3 dest ETag = `7997848a1fcbfd6193dc2f867d65a4b1` (conteúdo idêntico)
+- Nenhum EC/CP/LF/CPM órfão detectado
+- Nenhuma duplicação detectada
+- Rollback disponível — NOT EXECUTED
+- Inspeção visual: REQUIRED (URLs em `docs/migrations/posts-m8-post-audit.md`)
+
+**Critério de marcação de posts:** ATENDIDO tecnicamente. Pendente apenas revisão visual humana autenticada.
 
 ---
 

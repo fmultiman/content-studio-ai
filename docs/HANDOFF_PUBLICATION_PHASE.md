@@ -9,7 +9,8 @@
 **Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
 **Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
 **Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
-**Estado:** M1–M7 em produção. M8.1–M8.4 concluídos. Todos os 4 posts migrados em produção. Próximo: M8.5 marcar posts migrados.
+**Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
+**Estado:** M1–M7 em produção. M8.1–M8.5A concluídos. Todos os 4 posts migrados e auditados. Próximo: M8.5B — marcar posts migrados (exige autorização explícita).
 
 ---
 
@@ -60,7 +61,8 @@ Nenhum post de conteúdo real identificado na base de produção.
 | M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema`, merge `1b7be2b` |
 | M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
 | M8.4 Migrar P1 com mídia | ✅ EXECUTADO 2026-06-24 — EC+CP+LF+CPM, branch `feat/posts-migration-m8-4-p1-media` |
-| M8.5 Marcar Posts migrados | ⏳ Aguarda autorização |
+| M8.5A Post-migration audit | ✅ PASS 2026-06-24 — 139/139, determinístico, branch `feat/posts-migration-m8-5a-audit` |
+| M8.5B Marcar Posts migrados | ⏳ Aguarda autorização |
 | M8.6 Cleanup Posts | ⏳ |
 
 ### M8.3A — Resultados da execução — 2026-06-24
@@ -124,9 +126,45 @@ POSTS_MIGRATION_M84_ROLLBACK_CONFIRM=M8_4_ROLLBACK_APPROVED \
 node scripts/posts_migration_m84_rollback.mjs --execute
 ```
 
+### M8.5A — Post-Migration Audit — 2026-06-24 — PASS
+
+**Branch:** `feat/posts-migration-m8-5a-audit` (não integrado a main)  
+**Script:** `scripts/posts_migration_post_audit.mjs` (read-only — sem INSERTs, UPDATEs, DELETEs, mutações S3)  
+**Artefatos:** `docs/migrations/posts-m8-post-audit.json`, `docs/migrations/posts-m8-post-audit.md`
+
+| Métrica | Valor |
+|---------|-------|
+| Total de checks | 139 |
+| PASS | 139 |
+| FAIL | 0 |
+| Execuções para determinismo | 2 (idênticas) |
+
+**Checks por seção:**
+
+| Seção | Checks | Resultado |
+|-------|--------|-----------|
+| B — Global (EC/CP/LF/CPM counts, fingerprints) | 9 | ✅ |
+| C — P1: C01-C20 + M01-M15 (media chain) + S01-S09 (S3) | 44 | ✅ |
+| C — P2: C01-C22 | 22 | ✅ |
+| C — P3/H1: C01-C20 + H01-H03 | 23 | ✅ |
+| C — P4: C01-C22 | 22 | ✅ |
+| D — Manifests cross-reference | 8 | ✅ |
+| E — Rollback scripts inspection | 12 | ✅ |
+
+**Destaques:**
+- 4/4 fingerprints: aprovados = observados ✅
+- P3/H1: `post.project_id=NULL` preservado, `EC.project_id=d0d008c3` → PASS H1 APPLIED (deliberate divergence)
+- P1/S3: source ETag = dest ETag = `7997848a1fcbfd6193dc2f867d65a4b1` ✅
+- 0 EC/CP/LF/CPM órfãos | 0 duplicações
+- Rollback M8.3A + M8.4: disponíveis, NOT EXECUTED
+- Posts intactos (status=saved, untouched)
+- Visual review: REQUIRED (URLs em `docs/migrations/posts-m8-post-audit.md`)
+
+**Validação técnica:** typecheck ✅ 0 erros | lint ✅ 0 erros | build ✅ exit 0
+
 ### Próximo passo (M8)
 
-M8.5 — marcar Posts migrados (atualizar `posts.status` ou campo equivalente para indicar migração). Exige autorização explícita.
+M8.5B — marcar Posts migrados (atualizar `posts.status` ou campo equivalente para indicar migração). Exige autorização explícita.
 
 ---
 
