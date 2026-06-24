@@ -755,3 +755,53 @@ Baseline atual: `typecheck 0 erros`, `lint 51 warnings/0 erros`, `build aprovado
 ---
 
 *Documento produzido em discovery M8 — 2026-06-24. Nenhum dado criado. Nenhuma migration executada.*
+
+---
+
+## 12. M9 — Aposentadoria Operacional do Fluxo Legado de Posts — 2026-06-24
+
+**Branch:** `feat/posts-legacy-retirement-m9`  
+**Commit:** `555abc7`  
+**Status:** IMPLEMENTADO — Aguardando aprovação humana para merge.
+
+### Escopo aplicado
+
+| Item | Arquivo | Mudança |
+|------|---------|---------|
+| Link "Publicações legadas" | `app/(dashboard)/conteudos/page.tsx` | Removido bloco `Legacy Posts section` (linhas 309-317) |
+| Tab "Posts legados" | `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` | Removida tab, state, fetch, tipo, handleUnlink e "Criar Publicação" → /posts |
+| Identidade /posts | `app/(dashboard)/posts/page.tsx` | Header → "Arquivo legado de Posts", descrição → somente leitura, banner âmbar |
+
+### Preservado (explicitamente verificado)
+
+- `app/api/posts/route.ts` — intacto (GET/PATCH/DELETE/POST 410)
+- `app/(dashboard)/posts/page.tsx` — rota preservada, somente identidade atualizada
+- `lib/supabase/middleware.ts` — `/posts` permanece em protectedPaths
+- `FORMAT_LABELS post: 'Post'` — label de ChannelPiece, não Post legado
+- `QuickFlowDialog` em vídeos — preservado (cria EC+CP, não Posts)
+- Tabela `posts` — intacta (4 linhas, todas migrated_at set)
+- S3 — zero alterações
+
+### Validações técnicas
+
+| Check | Resultado |
+|-------|-----------|
+| typecheck | ✅ exit 0 |
+| lint | ✅ 0 erros / 51 warnings (baseline) |
+| build | ✅ exit 0 |
+
+### DB integrity (pós-M9, sem alterações)
+
+| Entidade | Count |
+|----------|-------|
+| posts total | 4 |
+| posts migrated_at set | 4/4 |
+| editorial_contents com legacy_post_id | 4 |
+| channel_pieces ligados | 4 |
+| channel_piece_media | 1 (P1) |
+
+### Pendente
+
+- Aprovação humana → merge para `main`
+- Deploy em produção (sem nova migration — somente UI)
+- Smoke visual: /posts, /conteudos, /projetos/*/producoes/*
