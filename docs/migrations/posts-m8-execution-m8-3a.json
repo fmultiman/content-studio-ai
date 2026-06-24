@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "phase": "M8.3A",
+  "executed_at": "2026-06-24T18:52:08.814Z",
+  "migrated": 0,
+  "skipped": 3,
+  "errors": 0,
+  "snapshot_before": {
+    "editorial_contents": 6,
+    "ec_with_legacy": 3,
+    "channel_pieces": 5,
+    "posts": 4,
+    "at": "2026-06-24T18:52:07.673Z"
+  },
+  "snapshot_after": {
+    "editorial_contents": 6,
+    "ec_with_legacy": 3,
+    "channel_pieces": 5,
+    "posts": 4,
+    "at": "2026-06-24T18:52:08.813Z"
+  },
+  "posts": [
+    {
+      "post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+      "result": "ALREADY_MIGRATED",
+      "editorial_content_id": "0d4ee522-db02-4766-98aa-d02b2faf1ea1",
+      "channel_piece_id": "64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc",
+      "post_name": "outro teste de post"
+    },
+    {
+      "post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+      "result": "ALREADY_MIGRATED",
+      "editorial_content_id": "d0138557-ad57-4284-bcdc-322c21c8f599",
+      "channel_piece_id": "ba9d1e7d-38c7-4ca0-8251-a72bdaddce64",
+      "post_name": "teste 04"
+    },
+    {
+      "post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+      "result": "ALREADY_MIGRATED",
+      "editorial_content_id": "bee05422-04e7-4c80-9d82-ba504303e37d",
+      "channel_piece_id": "05772802-06d7-4249-bae8-d8b8e11b7457",
+      "post_name": "outro teste de story"
+    }
+  ],
+  "allowlist": [
+    {
+      "id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+      "label": "P2"
+    },
+    {
+      "id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+      "label": "P3"
+    },
+    {
+      "id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+      "label": "P4"
+    }
+  ],
+  "p1_excluded": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+  "posts_modified": false,
+  "s3_operations": []
+}

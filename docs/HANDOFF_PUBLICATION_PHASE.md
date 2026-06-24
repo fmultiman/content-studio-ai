@@ -7,7 +7,8 @@
 **Branch M8 Discovery:** `discovery/posts-to-editorial-content-m8` — concluído (2026-06-24)  
 **Branch M8.1:** `feat/posts-migration-m8-dry-run` — concluído (2026-06-24), commit `a6bf7e5`  
 **Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
-**Estado:** M1–M7 em produção. M8.1 dry-run 4/4 READY. M8.2 schema aplicado (migration 025). Próximo: M8.3 executor.
+**Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
+**Estado:** M1–M7 em produção. M8.1 dry-run 4/4 READY. M8.2 schema aplicado (migration 025). M8.3A: P2/P4/P3 migrados em produção. P1 aguarda M8.4 (S3 + library_file).
 
 ---
 
@@ -55,15 +56,48 @@ Nenhum post de conteúdo real identificado na base de produção.
 |------|--------|
 | H1–H4 decisões | ✅ APROVADAS 2026-06-24 |
 | M8.1 Dry-run | ✅ READY — 4/4, 0 blockers, script `scripts/posts_migration_dry_run.mjs` |
-| M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema` |
-| M8.3 Migrar AUTO_MIGRÁVEIS | ⏳ |
-| M8.4 Importar mídia P1 | ⏳ |
-| M8.5 Migrar P3 | ⏳ |
-| M8.6 Marcar Posts migrados | ⏳ |
+| M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema`, merge `1b7be2b` |
+| M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
+| M8.4 Importar mídia P1 | ⏳ Aguarda autorização |
+| M8.5 Marcar Posts migrados | ⏳ Aguarda M8.4 |
+| M8.6 Cleanup Posts | ⏳ |
+
+### M8.3A — Resultados da execução — 2026-06-24
+
+**Branch:** `feat/posts-migration-m8-executor` (não integrado a main — aguarda M8.4)  
+**Tag pré-migração:** `pre-posts-migration-m8-2026-06-24` → `1b7be2b`  
+**Scripts:** `scripts/posts_migration_execute.mjs`, `scripts/posts_migration_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-3a.json`
+
+| Post | Nome | EC criado | CP criado | canal/formato |
+|------|------|-----------|-----------|---------------|
+| P2 `7eb9ccf4` | outro teste de post | `0d4ee522-db02-4766-98aa-d02b2faf1ea1` | `64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc` | youtube/post |
+| P4 `7aa6b5a4` | teste 04 | `d0138557-ad57-4284-bcdc-322c21c8f599` | `ba9d1e7d-38c7-4ca0-8251-a72bdaddce64` | youtube/video_description |
+| P3 `083a69d5` | outro teste de story | `bee05422-04e7-4c80-9d82-ba504303e37d` | `05772802-06d7-4249-bae8-d8b8e11b7457` | instagram/story |
+
+**Snapshot antes:** EC=3 (legacy=0), CP=2, posts=4  
+**Snapshot depois:** EC=6 (legacy=3), CP=5, posts=4  
+**posts: INTACTOS** (status=saved, updated_at inalterado). **S3: não tocado.**
+
+**Verificações pós-migração:**  
+✅ EC.legacy_post_id = posts.id: 3/3  
+✅ EC.project_id = d0d008c3 (H1 aplicado a P3): 3/3  
+✅ EC.status = draft: 3/3  
+✅ CP vinculados: 3/3  
+✅ cpm_count = 0: 3/3  
+✅ Idempotência: re-run → ALREADY_MIGRATED 3/3  
+✅ typecheck: 0 erros | lint: 0 erros | build: exit 0
+
+**Rollback disponível (se necessário):**
+```bash
+POSTS_MIGRATION_ROLLBACK_CONFIRM=M8_3A_ROLLBACK_APPROVED \
+node scripts/posts_migration_rollback.mjs --execute
+```
+Remove CP → EC nesta ordem. Nunca toca posts, library_files ou S3.
 
 ### Próximo passo (M8)
 
-Aprovar P1–P4 individualmente (seção de aprovação em `docs/migrations/posts-m8-dry-run.md`) para autorizar M8.2.
+M8.4 — migrar P1 (`d02a9507`): requer cópia do PNG do S3, criação de `library_file`, criação de `ChannelPieceMedia`, e associação ao EC. Exige autorização explícita.
 
 ---
 

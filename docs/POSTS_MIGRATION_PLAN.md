@@ -1,7 +1,9 @@
 # Posts — Plano de Migração (M8)
 **Data:** 2026-06-24  
-**Branch:** `discovery/posts-to-editorial-content-m8`  
-**Status:** Plano — nenhuma migration executada.  
+**Branch discovery:** `discovery/posts-to-editorial-content-m8`  
+**Branch schema:** `feat/posts-migration-m8-schema` — integrado em main (`1b7be2b`)  
+**Branch executor:** `feat/posts-migration-m8-executor`  
+**Status:** M8.3A EXECUTADO — P2/P4/P3 migrados em produção 2026-06-24.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -100,6 +102,55 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 
 ---
 
+## 1.3 M8.3A — Executor: P2, P4, P3 — 2026-06-24 — EXECUTADO
+
+**Branch:** `feat/posts-migration-m8-executor`  
+**Script:** `scripts/posts_migration_execute.mjs`  
+**Rollback script:** `scripts/posts_migration_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-3a.json`, `docs/migrations/posts-m8-execution-m8-3a.md`  
+**Tag pré-migração:** `pre-posts-migration-m8-2026-06-24` → `1b7be2b`
+
+**Allowlist:** P2, P4, P3. P1 reservado para M8.4.
+
+**IDs criados:**
+
+| Post | EC | CP | channel | format |
+|------|----|----|---------|----|
+| P2 `7eb9ccf4` | `0d4ee522-db02-4766-98aa-d02b2faf1ea1` | `64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc` | youtube | post |
+| P3 `083a69d5` | `bee05422-04e7-4c80-9d82-ba504303e37d` | `05772802-06d7-4249-bae8-d8b8e11b7457` | instagram | story |
+| P4 `7aa6b5a4` | `d0138557-ad57-4284-bcdc-322c21c8f599` | `ba9d1e7d-38c7-4ca0-8251-a72bdaddce64` | youtube | video_description |
+
+**Snapshot antes:** EC=3 (legacy=0), CP=2, posts=4  
+**Snapshot depois:** EC=6 (legacy=3), CP=5, posts=4
+
+**Verificações:**
+- Fingerprints pré-execução: 3/3 ✅
+- EC.legacy_post_id = posts.id: 3/3 ✅
+- EC.project_id = d0d008c3: 3/3 ✅ (P3 recebeu H1)
+- EC.status = draft: 3/3 ✅
+- CP.linked_to_ec: 3/3 ✅
+- CP.status = draft: 3/3 ✅
+- cpm_count = 0: 3/3 ✅
+- posts intactos (status=saved, updated_at inalterado): ✅
+- P3.posts.project_id = null (não alterado): ✅
+- S3: zero operações ✅
+- Idempotência: re-execução retornou 3/3 ALREADY_MIGRATED ✅
+
+**Validações técnicas:**
+- typecheck: ✅ 0 erros
+- lint: ✅ 51 warnings / 0 erros (baseline)
+- build: ✅ exit 0
+
+**Rollback (se necessário):**
+```bash
+POSTS_MIGRATION_ROLLBACK_CONFIRM=M8_3A_ROLLBACK_APPROVED \
+node scripts/posts_migration_rollback.mjs --execute
+```
+
+**P1 pendente:** reservado para M8.4 (cópia S3 + library_file + ChannelPieceMedia).
+
+---
+
 ## 2. Pré-condições para Autorizar a Migração
 
 | Condição | Status atual | Ação necessária |
@@ -114,10 +165,10 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 | Idempotência definida | ✅ (seção 5) | — |
 | Dry-run executado e aprovado | ✅ 4/4 READY (M8.1) | — |
 | Schema `legacy_post_id` aplicado | ✅ migration 025 (M8.2) | — |
-| Tag de rollback operacional | ✅ `pre-channel-piece-media-m7-release-2026-06-24` | Criar nova tag pré-M8.3 antes de executar |
+| Tag de rollback operacional | ✅ `pre-posts-migration-m8-2026-06-24` → `1b7be2b` | — |
 | Decisões H1–H4 respondidas | ✅ todas aprovadas 2026-06-24 | — |
 
-**A migração real (M8.3+) pode iniciar. Criar tag de rollback pré-M8.3 antes de executar.**
+**M8.3A executado em produção 2026-06-24.**
 
 ---
 
