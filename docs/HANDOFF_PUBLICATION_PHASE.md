@@ -1,9 +1,9 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
-**Branch M7:** `feat/channel-piece-media-m7-video` — integrado em main em 2026-06-24 (commit `fdee92d`) — **DEPLOYADO**  
+**Branch M7:** `feat/channel-piece-media-m7-video` — integrado em main em 2026-06-24 (commit `fdee92d`)  
 **Branch M8 Discovery:** `discovery/posts-to-editorial-content-m8` — concluído (2026-06-24)  
 **Branch M8.1:** `feat/posts-migration-m8-dry-run` — concluído (2026-06-24), commit `a6bf7e5`  
 **Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
@@ -11,7 +11,8 @@
 **Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
 **Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — DEPLOYADO (2026-06-24). Merge `0e412ed`. Tag `pre-posts-legacy-marking-m8-5b-release-2026-06-24`. Smoke produção 6/6 PASS.  
-**Estado:** M1–M8.5B em produção. Posts em modo legado/read-only. Criação bloqueada em UI (410) e API. Próximo: M9 (retire posts legados).
+**Branch M9:** `feat/posts-legacy-retirement-m9` — DEPLOYADO (2026-06-24). Merge `9b1bed7`. Tag `pre-posts-legacy-retirement-m9-release-2026-06-24`. Smoke visual aprovado.  
+**Estado:** M1–M9 em produção. Posts aposentados operacionalmente — arquivo acessível em `/posts`. Fluxo principal consolidado em Conteúdos Editoriais. Próximo: M10 (remoção definitiva da tabela, API e rota `/posts` — exige autorização explícita e período de observação).
 
 ---
 
@@ -256,9 +257,79 @@ Zera `migrated_at` nos 4 posts. Não toca EC/CP/LF/CPM/S3.
 - S3 destination: `users/35428fd4.../library/posts-migration-m8/d02a9507.../Content-Agent-Studio-Future-Vision-Concept.png` ✅
 - Rollbacks M8.3A e M8.4 disponíveis e não executados
 
-### Próximo passo
+### Release M9 — Aposentadoria Operacional de Posts — 2026-06-24 — APROVADO
 
-M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
+**Branch:** `feat/posts-legacy-retirement-m9`  
+**Merge commit:** `9b1bed7` — `feat: retire legacy Posts from primary experience M9`  
+**Tag de rollback:** `pre-posts-legacy-retirement-m9-release-2026-06-24` → `7ea51d3`  
+**Deploy:** Vercel auto-deploy de `main` — `content.multihuman.com.br`
+
+**Escopo:**
+
+| Item | Mudança |
+|------|---------|
+| `app/(dashboard)/conteudos/page.tsx` | Removido link "Acessar Publicações legadas → /posts" |
+| `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` | Removidos: tab "Posts legados", estado, fetch, tipo, handleUnlink e botão "Criar Publicação" → /posts |
+| `app/(dashboard)/posts/page.tsx` | Header → "Arquivo legado de Posts"; descrição → somente leitura; banner âmbar de arquivo |
+
+**Preservado:**
+- `app/api/posts/route.ts` — intacto (GET/PATCH/DELETE/POST 410)
+- `/posts` — rota preservada, acessível por URL direta com autenticação
+- `lib/supabase/middleware.ts` — `/posts` em protectedPaths
+- `QuickFlowDialog` em vídeos — preservado (cria EC+CP)
+- Tabela `posts` — 4 linhas, todas migradas, intocadas
+- S3 — zero alterações
+
+**Smoke visual aprovado pelo usuário (branch `feat/posts-legacy-retirement-m9`):**
+- Conteúdos: sem link para Posts legados ✅
+- Production: sem tab "Posts legados", sem botão antigo ✅
+- QuickFlow e Publicação rápida: funcionando ✅
+- `/posts`: acessível, título "Arquivo legado de Posts", banner âmbar, 4 posts, badges "Migrado", links "Ver Conteúdo Editorial", sem ações destrutivas ✅
+
+**Smoke público pós-deploy:**
+- `/login` → 200 ✅
+- `/conteudos` sem sessão → redireciona para /login ✅
+- `/posts` sem sessão → redireciona para /login ✅
+- `GET /api/posts` sem sessão → 401 ✅
+- `POST /api/posts` sem sessão → 401 ✅
+- `PATCH /api/posts` sem sessão → 401 ✅
+
+**API autenticada (contratos verificados em M8.5B — código não alterado no M9):**
+- `GET /api/posts` autenticado → 200 + enrichment EC ✅
+- `POST /api/posts` autenticado → 410 `LEGACY_POST_CREATION_DISABLED` ✅
+- `PATCH /api/posts` migrado → 409 `POST_MIGRATED` ✅
+- `DELETE /api/posts` migrado → 409 `POST_MIGRATED` ✅
+
+**Auditoria de dados pós-M9:**
+- posts total: 4 ✅ · migrados: 4 ✅ · novos: 0 ✅
+- ECs com legacy_post_id: 4 ✅ · CPs: 4 ✅ · P1 CPM: 1 ✅
+- status=saved: 4/4 ✅ · migrated_at intacto: 4/4 ✅
+
+**Validação técnica:** typecheck ✅ (0 erros) · lint ✅ (51 warnings, 0 erros) · build ✅ · validate ✅
+
+**Rollback M9 (se necessário):**
+```bash
+git checkout pre-posts-legacy-retirement-m9-release-2026-06-24
+# ou
+git revert 9b1bed7  # reverte o merge commit
+```
+Sem migration associada — rollback é puramente de código.
+
+### Critérios para M10 (remoção definitiva)
+
+M10 deve aguardar período de observação prolongado (mínimo 4–8 semanas) confirmando:
+- Nenhum usuário acessa `/posts` diretamente por hábito residual
+- Nenhum fluxo interno depende da tabela `posts`
+- Auditoria SQL confirmando zero novos posts criados após M9
+
+M10 inclui (exige autorização explícita separada):
+- `DROP TABLE posts` (migration irreversível)
+- Remoção de `app/api/posts/route.ts`
+- Remoção de `app/(dashboard)/posts/page.tsx`
+- Remoção de `/posts` de `middleware.ts`
+- Remoção de tipos `Post`, `PostImage`, `PublicationType`
+- Limpeza de S3 namespace `posts/` (objetos físicos)
+- Remoção dos scripts de migração e rollback M8
 
 ---
 

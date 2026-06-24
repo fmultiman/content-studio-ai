@@ -567,7 +567,6 @@ e responsabilidades claras.**
 
 Entry point principal da sidebar para o domínio de publicações. Exibe:
 - Lista de `EditorialContent`s do usuário (todos os projetos, filtrável)
-- Seção "Posts legados" com link para `/posts` (durante a transição)
 - Botão "+ Novo Conteúdo Editorial" com seleção obrigatória de Projeto
 - Filtros: por Projeto e por Production
 
@@ -597,9 +596,9 @@ O link de cada `EditorialContent` navega para a rota de detalhe editorial.
 ### Sidebar durante a transição
 
 O item da sidebar "Publicações" aponta para `/publicacoes` (novo).
-A rota `/posts` permanece funcional mas não é o item primário da sidebar.
-Os Posts legados são visíveis em `/publicacoes` como seção secundária, claramente
-marcada como legado, até que a migração formal seja executada.
+A rota `/posts` permanece funcional e acessível por URL direta com autenticação.
+Posts legados não são mais promovidos na navegação principal — apenas disponíveis
+como arquivo acessível via URL direta (M9, 2026-06-24).
 
 ---
 
@@ -858,3 +857,40 @@ Estas decisões são explicitamente adiadas:
 *Documento produzido na sessão de modelagem de domínio da Fase 2.*
 *Revisão 2 incorpora refinamentos de canal/formato, status, rotas e campos de ChannelPiece.*
 *Próximo passo: implementar as entidades com base em `PUBLICATION_IMPLEMENTATION_PLAN.md`.*
+
+---
+
+## Atualização M8–M9 — Estado Atual (2026-06-24)
+
+As decisões PUB-D13 e PUB-D14 foram executadas integralmente.
+
+### PUB-D13 aplicada — Migração completa
+
+4/4 Posts convertidos em `EditorialContent + ChannelPiece` (M8.3A + M8.4, 2026-06-24):
+- P1 com `ChannelPieceMedia` (S3 copy)
+- P2, P3, P4 sem mídia
+- `legacy_post_id` preenchido em todos os 4 ECs (rastreabilidade 1:1)
+- `migrated_at` set em todos os 4 Posts
+
+### PUB-D14 revisada — Posts congelados e aposentados operacionalmente
+
+Com M9 (2026-06-24), a decisão PUB-D14 foi evoluída:
+
+| Aspecto | Estado anterior (pré-M9) | Estado atual (pós-M9) |
+|---------|--------------------------|----------------------|
+| Tabela `posts` | congelada, intacta | congelada, intacta — PRESERVADA |
+| API `/api/posts` | congelada | congelada — PRESERVADA. GET=200, POST=410, PATCH/DELETE migrado=409 |
+| Rota `/posts` | funcional, acesso pela sidebar | funcional, acesso somente por URL direta. Sidebar removida. |
+| UI de criação | "Novo Post" desabilitado | "Novo Post" desabilitado — sem mudança |
+| Acesso em Conteúdos | link "Acessar Publicações legadas" | link removido — M9 |
+| Aba na Production | "Posts legados" visível | aba removida — M9 |
+| Identidade /posts | título "Publicações" | título "Arquivo legado de Posts" + banner âmbar — M9 |
+
+**PUB-D21 (nova, M9):** Posts estão operacionalmente aposentados. O fluxo primário é exclusivamente via `EditorialContent + ChannelPiece`. O arquivo legado `/posts` é acessível por URL direta para auditoria, sem promoção na navegação.
+
+### Critérios para PUB-D22 (M10 — remoção definitiva)
+
+M10 é a decisão de remover fisicamente os Posts. Requer autorização explícita separada após:
+- Período de observação de 4–8 semanas sem acessos ao fluxo legado
+- Auditoria SQL confirmando zero novos posts criados após M9
+- Validação de que nenhuma dependência ativa (scripts, integrações, jobs) referencia a tabela `posts`
