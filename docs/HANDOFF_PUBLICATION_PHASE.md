@@ -1,9 +1,38 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M6)
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7)
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
-**Estado:** Release M1–M6 deployado em produção. Próximo passo: ESLint hardening + M7 (suporte a vídeo).
+**Branch M7:** `feat/channel-piece-media-m7-video` — implementado, aguarda revisão e merge  
+**Estado:** Release M1–M6 deployado em produção. M7 implementado em branch — aguarda smoke visual, revisão e autorização de merge/deploy.
+
+---
+
+## M7 — Suporte completo a vídeo — 2026-06-24 (branch — não deployado)
+
+**Branch:** `feat/channel-piece-media-m7-video` — criado de `main` (`fb8fb65`)  
+**Estado:** Implementado. Aguarda smoke visual, revisão humana e autorização de merge/deploy.  
+**Sem migration:** schema já suporta `library_files.kind = 'video'`.
+
+### Entregas
+
+| Arquivo | Mudança |
+|---------|---------|
+| `app/api/channel-piece-media/[id]/download/route.ts` | Novo — endpoint de download seguro (302 → S3 signed URL `attachment`) |
+| `components/publication/channel-piece-media-section.tsx` | Badge "Vídeo", Play (preview modal `<video>`), Download em `MediaItemEditable` e `MediaItemReadOnly` |
+| `components/publication/media-picker-dialog.tsx` | Filtros Todos/Imagens/Vídeos, badge Vídeo, file_size no `LibraryCard` |
+| `scripts/cpm_m7_tests.mjs` | Suite de 53 casos: upload, classificação, listagem, download, organização, deleção, segurança, metadados |
+| `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` | CPM-D28 a CPM-D31 documentadas |
+| `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` | Seção M7 completa |
+
+### Próximos passos para M7
+
+1. Rodar `node scripts/cpm_m7_tests.mjs` (servidor em `localhost:3000`)
+2. Smoke visual: 1 imagem + 1 MP4 + 1 WebM em CP_A1 — verificar badge, play, download, filtro
+3. Cleanup dos fixtures de smoke após aprovação visual
+4. Revisão humana dos três arquivos modificados
+5. Merge em `main` (não fazer sem autorização)
+6. Deploy (não fazer sem autorização)
 
 ---
 
