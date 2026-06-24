@@ -23,4 +23,4 @@ node_modules
 
 # Local tooling / generated
 .mcp.json
-tsconfig.tsbuildinfo
+*.tsbuildinfo
