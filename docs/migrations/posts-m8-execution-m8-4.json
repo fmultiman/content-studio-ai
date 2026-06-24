@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "phase": "M8.4",
+  "executed_at": "2026-06-24T19:22:58.494Z",
+  "branch": "feat/posts-migration-m8-4-p1-media",
+  "base_commit": "6f8af41",
+  "result": "ALREADY_MIGRATED",
+  "post": {
+    "id": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+    "name": "Teste Post Smoke Test 01",
+    "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+    "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+    "fingerprint_approved": "3e8a92a61914904a087d9eecf48bb894c069313d87fd01dd0d37bf3921e43a68",
+    "fingerprint_observed": "3e8a92a61914904a087d9eecf48bb894c069313d87fd01dd0d37bf3921e43a68",
+    "baseline_updated_at": "2026-06-23T01:08:39.376895+00:00"
+  },
+  "s3": {
+    "source": {
+      "bucket": "content-studio",
+      "key": "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+      "expected_size": 1293601,
+      "expected_mime": "image/png",
+      "expected_etag": "7997848a1fcbfd6193dc2f867d65a4b1",
+      "observed_size": null,
+      "observed_etag": null,
+      "intact_after": null
+    },
+    "destination": {
+      "bucket": "content-studio",
+      "key": "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+      "public_url": null,
+      "collision_check": "CLEAR",
+      "copy_verified_size": null
+    },
+    "operations": []
+  },
+  "ids": {
+    "editorial_content_id": "16a0bfea-b558-4f26-91ec-2e163d84f9b0",
+    "channel_piece_id": "2a48076c-3aff-4c53-beaf-cd84e028cffd",
+    "library_file_id": "f190c6ad-8ad1-490c-aeaa-3898b69bb0aa",
+    "channel_piece_media_id": "d71eed1d-068b-47ed-aae1-278ca6922cf8"
+  },
+  "thumbnail": null,
+  "checks": null,
+  "snapshot_before": {
+    "editorial_contents": 7,
+    "ec_with_legacy": 4,
+    "channel_pieces": 6,
+    "library_files": 4,
+    "channel_piece_media": 1,
+    "posts": 4,
+    "at": "2026-06-24T19:22:57.774Z"
+  },
+  "snapshot_after": {
+    "editorial_contents": 7,
+    "ec_with_legacy": 4,
+    "channel_pieces": 6,
+    "library_files": 4,
+    "channel_piece_media": 1,
+    "posts": 4,
+    "at": "2026-06-24T19:22:58.494Z"
+  },
+  "rollback": {
+    "script": "scripts/posts_migration_m84_rollback.mjs",
+    "confirm": "POSTS_MIGRATION_M84_ROLLBACK_CONFIRM=M8_4_ROLLBACK_APPROVED",
+    "order": [
+      "channel_piece_media",
+      "channel_pieces",
+      "library_files",
+      "editorial_contents",
+      "s3_dest"
+    ],
+    "s3_dest_key": "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+    "s3_source_key": "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+    "never_delete": [
+      "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+      "posts.id=d02a9507-d6c3-4203-9939-4667a4e0f027"
+    ]
+  },
+  "posts_modified": false
+}

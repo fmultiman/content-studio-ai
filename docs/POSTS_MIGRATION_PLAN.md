@@ -1,7 +1,12 @@
 # Posts — Plano de Migração (M8)
 **Data:** 2026-06-24  
-**Branch:** `discovery/posts-to-editorial-content-m8`  
-**Status:** Plano — nenhuma migration executada.  
+**Branch discovery:** `discovery/posts-to-editorial-content-m8`  
+**Branch schema:** `feat/posts-migration-m8-schema` — integrado em main (`1b7be2b`)  
+**Branch executor M8.3A:** `feat/posts-migration-m8-executor`  
+**Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
+**Branch auditoria M8.5A:** `feat/posts-migration-m8-5a-audit`  
+**Branch legacy marking M8.5B:** `feat/posts-migration-m8-5b-legacy-marking`  
+**Status:** M8.5B PRONTO PARA RELEASE — 4/4 posts marcados. POST legado bloqueado (410). Testes autenticados 10/10 PASS. validate OK.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -100,6 +105,207 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 
 ---
 
+## 1.6 M8.5B — Legacy Marking — 2026-06-24
+
+**Branch:** `feat/posts-migration-m8-5b-legacy-marking`  
+**Scripts:** `scripts/posts_migration_m85b_mark.mjs`, `scripts/posts_migration_m85b_rollback.mjs`  
+**Testes:** `scripts/posts_m85b_tests.mjs`  
+**Migration:** `scripts/026_add_posts_migrated_at.sql`
+
+**Decisão de schema:** `migrated_at TIMESTAMPTZ NULL` adicionado a `posts`. Campo `migrated_editorial_content_id` descartado — EC lookup via `editorial_contents.legacy_post_id` (já indexado) é suficiente. API enriquece GET com `migrated_ec_id` + `migrated_ec_project_id` via join no servidor.
+
+**Proteção API:**
+- GET: permitido; resposta enriquecida com campos de navegação para posts migrados
+- PATCH: HTTP 409 `POST_MIGRATED` se `migrated_at IS NOT NULL`
+- DELETE: HTTP 409 `POST_MIGRATED` se algum ID estiver migrado
+- POST (criação): HTTP 401 sem sessão; HTTP 410 `LEGACY_POST_CREATION_DISABLED` com sessão — criação legada encerrada em API e UI
+
+**Contrato HTTP de criação (M8.5B fix):**
+```
+POST /api/posts — sem sessão   → 401
+POST /api/posts — autenticado  → 410 { code: "LEGACY_POST_CREATION_DISABLED", error: "A criação de Posts legados foi encerrada. Use Conteúdos." }
+```
+
+**Testes autenticados (sessão real via admin generateLink):**
+
+| Teste | Resultado |
+|-------|-----------|
+| T08a GET sem sessão → 401 | ✅ PASS |
+| T08b PATCH sem sessão → 401 | ✅ PASS |
+| T08c DELETE sem sessão → 401 | ✅ PASS |
+| T08d POST sem sessão → 401 | ✅ PASS |
+| T05 GET autenticado P1 migrado → 200 + migrated_ec_id | ✅ PASS |
+| T06 PATCH autenticado P1 migrado → 409 POST_MIGRATED | ✅ PASS |
+| T07 DELETE autenticado P1 migrado → 409 POST_MIGRATED | ✅ PASS |
+| POST autenticado → 410 LEGACY_POST_CREATION_DISABLED | ✅ PASS |
+| Contagem posts pós-testes = 4 | ✅ PASS |
+| P1–P4 status=saved, migrated_at intacto | ✅ PASS |
+
+**UI (modo legado):**
+- Badge âmbar "Migrado" no item da lista
+- Link "Ver Conteúdo Editorial" no item e no editor
+- Editor somente leitura (readOnly + disabled) quando `migrated_at IS NOT NULL`
+- Auto-save desativado para posts migrados
+- Botões Salvar/Excluir ocultos no editor de post migrado
+
+**Resultado:**
+
+| Métrica | Valor |
+|---------|-------|
+| Posts marcados | 4/4 |
+| migrated_at | 2026-06-24T20:59:57.181+00:00 |
+| Idempotência (2ª run) | ALREADY_MARKED 4/4 ✅ |
+| Testes (suite base) | 15/15 PASS ✅ |
+| Testes autenticados | 10/10 PASS ✅ |
+| API GET | 200 + migrated_ec_id enriquecido ✅ |
+| API PATCH/DELETE migrado | HTTP 409 POST_MIGRATED ✅ |
+| API POST criação (sem sessão) | HTTP 401 ✅ |
+| API POST criação (autenticado) | HTTP 410 LEGACY_POST_CREATION_DISABLED ✅ |
+| UI | Badge Migrado + link EC + read-only + "Novo Post" desabilitado ✅ |
+| typecheck | 0 erros ✅ |
+| lint | 0 erros, 51 warnings ✅ |
+| build | exit 0 ✅ |
+| validate | exit 0 ✅ |
+
+**Rollback M8.5B (se necessário):**
+```bash
+POSTS_MIGRATION_M85B_ROLLBACK_CONFIRM=M8_5B_ROLLBACK_APPROVED \
+node scripts/posts_migration_m85b_rollback.mjs --execute
+```
+
+---
+
+## 1.5 M8.5A — Post-Migration Audit — 2026-06-24 — PASS
+
+**Branch:** `feat/posts-migration-m8-5a-audit`  
+**Script:** `scripts/posts_migration_post_audit.mjs` (read-only)  
+**Artefatos:** `docs/migrations/posts-m8-post-audit.json`, `docs/migrations/posts-m8-post-audit.md`
+
+**Resultado: 139/139 PASS — DETERMINÍSTICO** (2 execuções idênticas)
+
+| Seção | Checks | Resultado |
+|-------|--------|-----------|
+| B — Global | 9 | ✅ PASS |
+| C — P1 (M8.4) | 29+9 S3+15 media | ✅ PASS |
+| C — P2 (M8.3A) | 22 | ✅ PASS |
+| C — P3/H1 (M8.3A) | 22+3 H1 | ✅ PASS |
+| C — P4 (M8.3A) | 22 | ✅ PASS |
+| D — Manifests | 8 | ✅ PASS |
+| E — Rollback inspection | 12 | ✅ PASS |
+
+**Destaques:**
+- 4 fingerprints: aprovados = observados ✅
+- P3/H1: `post.project_id=NULL` preservado, `EC.project_id=d0d008c3` (H1 APPLIED — classificado como PASS, não divergência)
+- S3 source ETag = S3 dest ETag = `7997848a1fcbfd6193dc2f867d65a4b1` (conteúdo idêntico)
+- Nenhum EC/CP/LF/CPM órfão detectado
+- Nenhuma duplicação detectada
+- Rollback disponível — NOT EXECUTED
+- Inspeção visual: REQUIRED (URLs em `docs/migrations/posts-m8-post-audit.md`)
+
+**Critério de marcação de posts:** ATENDIDO tecnicamente. Pendente apenas revisão visual humana autenticada.
+
+---
+
+## 1.4 M8.4 — Executor: P1 com mídia — 2026-06-24 — EXECUTADO
+
+**Branch:** `feat/posts-migration-m8-4-p1-media`  
+**Script:** `scripts/posts_migration_m84_execute.mjs`  
+**Rollback script:** `scripts/posts_migration_m84_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-4.json`, `docs/migrations/posts-m8-execution-m8-4.md`  
+**Tag pré-migração:** `pre-posts-migration-m8-2026-06-24` → `1b7be2b` (herdada do M8.3A)
+
+**IDs criados:**
+
+| Entidade | ID |
+|----------|----|
+| EC | `16a0bfea-b558-4f26-91ec-2e163d84f9b0` |
+| CP | `2a48076c-3aff-4c53-beaf-cd84e028cffd` |
+| LF | `f190c6ad-8ad1-490c-aeaa-3898b69bb0aa` |
+| CPM | `d71eed1d-068b-47ed-aae1-278ca6922cf8` |
+
+**Detalhes do canal:** EC `legacy_post_id=d02a9507` | CP `instagram/feed` | status `draft`
+
+**S3:**
+
+| | Valor |
+|-|-------|
+| bucket | `content-studio` |
+| source key | `users/35428fd4.../posts/3f142fc2.../Content-Agent-Studio-Future-Vision-Concept.png` |
+| dest key | `users/35428fd4.../library/posts-migration-m8/d02a9507.../Content-Agent-Studio-Future-Vision-Concept.png` |
+| operação | COPY (source preservado) |
+| tamanho dest | 1.293.601 bytes ✅ |
+| ETag source | `7997848a1fcbfd6193dc2f867d65a4b1` |
+| colisão | CLEAR (nenhuma) |
+
+**Decisão thumbnail:** `thumbnail_url = null`. O `library_files.thumbnail_url` é nullable. Thumbnail original (`posts/{image_uuid}/...`) preservada intacta no namespace `posts/`. Nenhum objeto novo gerado para thumbnail.
+
+**Snapshot antes:** EC=6 (legacy=3), CP=5, LF=3, CPM=0, posts=4  
+**Snapshot depois:** EC=7 (legacy=4), CP=6, LF=4, CPM=1, posts=4
+
+**Verificações (18/18 ✅):** fingerprint, updated_at baseline, ec_exists, ec_legacy_post_id_ok, ec_project_id_ok, ec_status_draft, cp_exists, cp_linked_to_ec, cp_channel_ok, cp_format_ok, cp_status_draft, lf_exists, lf_storage_path_ok, lf_kind_image, lf_file_size_ok, cpm_exists, cpm_linked_to_cp, cpm_linked_to_lf, cpm_role_primary, cpm_position_zero, post P1 intacto, S3 source intacto.
+
+**Idempotência:** re-execução → `ALREADY_MIGRATED` ✅. Zero escrita. Zero S3. CPM detectado por `(channel_piece_id, library_file_id)`.
+
+**Rollback (se necessário):**
+```bash
+POSTS_MIGRATION_M84_ROLLBACK_CONFIRM=M8_4_ROLLBACK_APPROVED \
+node scripts/posts_migration_m84_rollback.mjs --execute
+```
+Remove em ordem: CPM → CP → LF → EC → S3 dest. Nunca toca posts, S3 source ou P2/P3/P4.
+
+**Resultado:** Todos os 4 Posts migrados. P1 com mídia. M8.3A (P2/P4/P3) e M8.4 (P1) concluídos.
+
+---
+
+## 1.3 M8.3A — Executor: P2, P4, P3 — 2026-06-24 — EXECUTADO
+
+**Branch:** `feat/posts-migration-m8-executor`  
+**Script:** `scripts/posts_migration_execute.mjs`  
+**Rollback script:** `scripts/posts_migration_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-3a.json`, `docs/migrations/posts-m8-execution-m8-3a.md`  
+**Tag pré-migração:** `pre-posts-migration-m8-2026-06-24` → `1b7be2b`
+
+**Allowlist:** P2, P4, P3. P1 reservado para M8.4.
+
+**IDs criados:**
+
+| Post | EC | CP | channel | format |
+|------|----|----|---------|----|
+| P2 `7eb9ccf4` | `0d4ee522-db02-4766-98aa-d02b2faf1ea1` | `64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc` | youtube | post |
+| P3 `083a69d5` | `bee05422-04e7-4c80-9d82-ba504303e37d` | `05772802-06d7-4249-bae8-d8b8e11b7457` | instagram | story |
+| P4 `7aa6b5a4` | `d0138557-ad57-4284-bcdc-322c21c8f599` | `ba9d1e7d-38c7-4ca0-8251-a72bdaddce64` | youtube | video_description |
+
+**Snapshot antes:** EC=3 (legacy=0), CP=2, posts=4  
+**Snapshot depois:** EC=6 (legacy=3), CP=5, posts=4
+
+**Verificações:**
+- Fingerprints pré-execução: 3/3 ✅
+- EC.legacy_post_id = posts.id: 3/3 ✅
+- EC.project_id = d0d008c3: 3/3 ✅ (P3 recebeu H1)
+- EC.status = draft: 3/3 ✅
+- CP.linked_to_ec: 3/3 ✅
+- CP.status = draft: 3/3 ✅
+- cpm_count = 0: 3/3 ✅
+- posts intactos (status=saved, updated_at inalterado): ✅
+- P3.posts.project_id = null (não alterado): ✅
+- S3: zero operações ✅
+- Idempotência: re-execução retornou 3/3 ALREADY_MIGRATED ✅
+
+**Validações técnicas:**
+- typecheck: ✅ 0 erros
+- lint: ✅ 51 warnings / 0 erros (baseline)
+- build: ✅ exit 0
+
+**Rollback (se necessário):**
+```bash
+POSTS_MIGRATION_ROLLBACK_CONFIRM=M8_3A_ROLLBACK_APPROVED \
+node scripts/posts_migration_rollback.mjs --execute
+```
+
+**P1 pendente:** reservado para M8.4 (cópia S3 + library_file + ChannelPieceMedia).
+
+---
+
 ## 2. Pré-condições para Autorizar a Migração
 
 | Condição | Status atual | Ação necessária |
@@ -114,10 +320,10 @@ ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 | Idempotência definida | ✅ (seção 5) | — |
 | Dry-run executado e aprovado | ✅ 4/4 READY (M8.1) | — |
 | Schema `legacy_post_id` aplicado | ✅ migration 025 (M8.2) | — |
-| Tag de rollback operacional | ✅ `pre-channel-piece-media-m7-release-2026-06-24` | Criar nova tag pré-M8.3 antes de executar |
+| Tag de rollback operacional | ✅ `pre-posts-migration-m8-2026-06-24` → `1b7be2b` | — |
 | Decisões H1–H4 respondidas | ✅ todas aprovadas 2026-06-24 | — |
 
-**A migração real (M8.3+) pode iniciar. Criar tag de rollback pré-M8.3 antes de executar.**
+**M8.3A executado em produção 2026-06-24.**
 
 ---
 

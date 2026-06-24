@@ -1,0 +1,744 @@
+{
+  "timestamp": "2026-06-24T19:42:09.932Z",
+  "overall": "PASS",
+  "total_checks": 139,
+  "passed": 139,
+  "warned": 0,
+  "failed": 0,
+  "posts": [
+    {
+      "label": "P1",
+      "status": "PASS",
+      "checks": 44,
+      "failures": [],
+      "warnings": []
+    },
+    {
+      "label": "P2",
+      "status": "PASS",
+      "checks": 21,
+      "failures": [],
+      "warnings": []
+    },
+    {
+      "label": "P3",
+      "status": "PASS",
+      "checks": 24,
+      "failures": [],
+      "warnings": []
+    },
+    {
+      "label": "P4",
+      "status": "PASS",
+      "checks": 21,
+      "failures": [],
+      "warnings": []
+    }
+  ],
+  "checks": [
+    {
+      "id": "B01",
+      "status": "PASS",
+      "msg": "posts count = 4 (expected 4)"
+    },
+    {
+      "id": "B02",
+      "status": "PASS",
+      "msg": "editorial_contents com legacy_post_id = 4 (expected 4)"
+    },
+    {
+      "id": "B03",
+      "status": "PASS",
+      "msg": "legacy_post_id únicos = 4 (expected 4, no duplicates)"
+    },
+    {
+      "id": "B04",
+      "status": "PASS",
+      "msg": "todos os 4 post IDs esperados presentes"
+    },
+    {
+      "id": "B05",
+      "status": "PASS",
+      "msg": "todos os 4 EC IDs esperados presentes"
+    },
+    {
+      "id": "B06",
+      "status": "PASS",
+      "msg": "ECs inesperados com legacy_post_id = 0"
+    },
+    {
+      "id": "B07",
+      "status": "PASS",
+      "msg": "CPs órfãos (vinculados a EC fora do set) = 0"
+    },
+    {
+      "id": "B08",
+      "status": "PASS",
+      "msg": "CPMs vinculados aos CPs da migração = 1 (expected 1 — só P1)"
+    },
+    {
+      "id": "B09",
+      "status": "PASS",
+      "msg": "library_files com path posts-migration-m8 = 1 (expected 1 — só P1)"
+    },
+    {
+      "id": "P1-C01",
+      "status": "PASS",
+      "msg": "post exists"
+    },
+    {
+      "id": "P1-C02",
+      "status": "PASS",
+      "msg": "post.name \"Teste Post Smoke Test 01\" == expected \"Teste Post Smoke Test 01\""
+    },
+    {
+      "id": "P1-C03",
+      "status": "PASS",
+      "msg": "post.channel \"instagram_post\" == expected \"instagram_post\""
+    },
+    {
+      "id": "P1-C04",
+      "status": "PASS",
+      "msg": "post.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P1-C05",
+      "status": "PASS",
+      "msg": "post.updated_at matches baseline (not written)"
+    },
+    {
+      "id": "P1-C06",
+      "status": "PASS",
+      "msg": "fingerprint 3e8a92a61914… == approved 3e8a92a61914…"
+    },
+    {
+      "id": "P1-C07",
+      "status": "PASS",
+      "msg": "EC 16a0bfea-b558-4f26-91ec-2e163d84f9b0 exists"
+    },
+    {
+      "id": "P1-C08",
+      "status": "PASS",
+      "msg": "EC.legacy_post_id \"d02a9507-d6c3-4203-9939-4667a4e0f027\" == post.id"
+    },
+    {
+      "id": "P1-C09",
+      "status": "PASS",
+      "msg": "EC.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P1-C10",
+      "status": "PASS",
+      "msg": "EC.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P1-C11",
+      "status": "PASS",
+      "msg": "EC.title = post.name \"Teste Post Smoke Test 01…\" [DIRECT MAP]"
+    },
+    {
+      "id": "P1-C12",
+      "status": "PASS",
+      "msg": "EC.body vs post.description: match [DIRECT MAP]"
+    },
+    {
+      "id": "P1-C13",
+      "status": "PASS",
+      "msg": "EC.ai_context matches post.ai_context [DIRECT MAP]"
+    },
+    {
+      "id": "P1-C14",
+      "status": "PASS",
+      "msg": "CP 2a48076c-3aff-4c53-beaf-cd84e028cffd exists"
+    },
+    {
+      "id": "P1-C15",
+      "status": "PASS",
+      "msg": "CP.editorial_content_id == EC.id"
+    },
+    {
+      "id": "P1-C16",
+      "status": "PASS",
+      "msg": "CP.channel = \"instagram\" (expected: \"instagram\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P1-C17",
+      "status": "PASS",
+      "msg": "CP.format = \"feed\" (expected: \"feed\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P1-C18",
+      "status": "PASS",
+      "msg": "CP.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P1-C19",
+      "status": "PASS",
+      "msg": "CP.body vs post.feed_text: match [DIRECT MAP] (length: 867)"
+    },
+    {
+      "id": "P1-C20",
+      "status": "PASS",
+      "msg": "no duplicate EC for post: 0 extra ECs found"
+    },
+    {
+      "id": "P1-M01",
+      "status": "PASS",
+      "msg": "LF f190c6ad-8ad1-490c-aeaa-3898b69bb0aa exists"
+    },
+    {
+      "id": "P1-M02",
+      "status": "PASS",
+      "msg": "LF.storage_path == expected dest key"
+    },
+    {
+      "id": "P1-M03",
+      "status": "PASS",
+      "msg": "LF.user_id correct"
+    },
+    {
+      "id": "P1-M04",
+      "status": "PASS",
+      "msg": "LF.kind = \"image\" (expected: image)"
+    },
+    {
+      "id": "P1-M05",
+      "status": "PASS",
+      "msg": "LF.mime_type = \"image/png\" (expected: image/png)"
+    },
+    {
+      "id": "P1-M06",
+      "status": "PASS",
+      "msg": "LF.file_size = 1293601 (expected: 1293601)"
+    },
+    {
+      "id": "P1-M07",
+      "status": "PASS",
+      "msg": "LF.thumbnail_url = null ✓ (decision: thumbnail null)"
+    },
+    {
+      "id": "P1-M08",
+      "status": "PASS",
+      "msg": "CPM d71eed1d-068b-47ed-aae1-278ca6922cf8 exists"
+    },
+    {
+      "id": "P1-M09",
+      "status": "PASS",
+      "msg": "CPM.channel_piece_id == CP.id"
+    },
+    {
+      "id": "P1-M10",
+      "status": "PASS",
+      "msg": "CPM.library_file_id == LF.id"
+    },
+    {
+      "id": "P1-M11",
+      "status": "PASS",
+      "msg": "CPM.role = \"primary\" (expected: primary)"
+    },
+    {
+      "id": "P1-M12",
+      "status": "PASS",
+      "msg": "CPM.position = 0 (expected: 0)"
+    },
+    {
+      "id": "P1-M13",
+      "status": "PASS",
+      "msg": "CPM.image_id = null (only library_file_id set — correct)"
+    },
+    {
+      "id": "P1-M14",
+      "status": "PASS",
+      "msg": "exactly 1 LF in migration namespace for P1"
+    },
+    {
+      "id": "P1-M15",
+      "status": "PASS",
+      "msg": "exactly 1 CPM for P1 CP"
+    },
+    {
+      "id": "P1-S01",
+      "status": "PASS",
+      "msg": "S3 source exists: Content-Agent-Studio-Future-Vision-Concept.png"
+    },
+    {
+      "id": "P1-S02",
+      "status": "PASS",
+      "msg": "S3 source size = 1293601 (expected: 1293601)"
+    },
+    {
+      "id": "P1-S03",
+      "status": "PASS",
+      "msg": "S3 source MIME = \"image/png\" (expected: image/png)"
+    },
+    {
+      "id": "P1-S04",
+      "status": "PASS",
+      "msg": "S3 source ETag = \"7997848a1fcbfd6193dc2f867d65a4b1\" (expected: 7997848a1fcbfd6193dc2f867d65a4b1)"
+    },
+    {
+      "id": "P1-S05",
+      "status": "PASS",
+      "msg": "S3 dest exists: posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png"
+    },
+    {
+      "id": "P1-S06",
+      "status": "PASS",
+      "msg": "S3 dest size = 1293601 (expected: 1293601)"
+    },
+    {
+      "id": "P1-S07",
+      "status": "PASS",
+      "msg": "S3 dest MIME = \"image/png\" (expected: image/png)"
+    },
+    {
+      "id": "P1-S08",
+      "status": "PASS",
+      "msg": "S3 dest ETag = \"7997848a1fcbfd6193dc2f867d65a4b1\" (matches source ETag — content equivalent)"
+    },
+    {
+      "id": "P1-S09",
+      "status": "PASS",
+      "msg": "source key != dest key (source not overwritten)"
+    },
+    {
+      "id": "P2-C01",
+      "status": "PASS",
+      "msg": "post exists"
+    },
+    {
+      "id": "P2-C02",
+      "status": "PASS",
+      "msg": "post.name \"outro teste de post\" == expected \"outro teste de post\""
+    },
+    {
+      "id": "P2-C03",
+      "status": "PASS",
+      "msg": "post.channel \"youtube_post\" == expected \"youtube_post\""
+    },
+    {
+      "id": "P2-C04",
+      "status": "PASS",
+      "msg": "post.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P2-C05",
+      "status": "PASS",
+      "msg": "post.updated_at matches baseline (not written)"
+    },
+    {
+      "id": "P2-C06",
+      "status": "PASS",
+      "msg": "fingerprint 6d3cbc65c625… == approved 6d3cbc65c625…"
+    },
+    {
+      "id": "P2-C07",
+      "status": "PASS",
+      "msg": "EC 0d4ee522-db02-4766-98aa-d02b2faf1ea1 exists"
+    },
+    {
+      "id": "P2-C08",
+      "status": "PASS",
+      "msg": "EC.legacy_post_id \"7eb9ccf4-7989-4f4b-93ba-c10df0345428\" == post.id"
+    },
+    {
+      "id": "P2-C09",
+      "status": "PASS",
+      "msg": "EC.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P2-C10",
+      "status": "PASS",
+      "msg": "EC.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P2-C11",
+      "status": "PASS",
+      "msg": "EC.title = post.name \"outro teste de post…\" [DIRECT MAP]"
+    },
+    {
+      "id": "P2-C12",
+      "status": "PASS",
+      "msg": "EC.body vs post.description: match [DIRECT MAP]"
+    },
+    {
+      "id": "P2-C13",
+      "status": "PASS",
+      "msg": "EC.ai_context matches post.ai_context [DIRECT MAP]"
+    },
+    {
+      "id": "P2-C14",
+      "status": "PASS",
+      "msg": "CP 64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc exists"
+    },
+    {
+      "id": "P2-C15",
+      "status": "PASS",
+      "msg": "CP.editorial_content_id == EC.id"
+    },
+    {
+      "id": "P2-C16",
+      "status": "PASS",
+      "msg": "CP.channel = \"youtube\" (expected: \"youtube\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P2-C17",
+      "status": "PASS",
+      "msg": "CP.format = \"post\" (expected: \"post\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P2-C18",
+      "status": "PASS",
+      "msg": "CP.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P2-C19",
+      "status": "PASS",
+      "msg": "CP.body vs post.feed_text: match [DIRECT MAP] (length: 0)"
+    },
+    {
+      "id": "P2-C20",
+      "status": "PASS",
+      "msg": "no duplicate EC for post: 0 extra ECs found"
+    },
+    {
+      "id": "P2-M00",
+      "status": "PASS",
+      "msg": "no media expected (P2 phase: M8.3A) — CPMs for EC: 0 ✓"
+    },
+    {
+      "id": "P3-C01",
+      "status": "PASS",
+      "msg": "post exists"
+    },
+    {
+      "id": "P3-C02",
+      "status": "PASS",
+      "msg": "post.name \"outro teste de story\" == expected \"outro teste de story\""
+    },
+    {
+      "id": "P3-C03",
+      "status": "PASS",
+      "msg": "post.channel \"instagram_story\" == expected \"instagram_story\""
+    },
+    {
+      "id": "P3-C04",
+      "status": "PASS",
+      "msg": "P3/H1: post.project_id = NULL (preserved, NOT written) — OK"
+    },
+    {
+      "id": "P3-C05",
+      "status": "PASS",
+      "msg": "post.updated_at matches baseline (not written)"
+    },
+    {
+      "id": "P3-C06",
+      "status": "PASS",
+      "msg": "fingerprint 0a0b81fa695d… == approved 0a0b81fa695d…"
+    },
+    {
+      "id": "P3-C07",
+      "status": "PASS",
+      "msg": "EC bee05422-04e7-4c80-9d82-ba504303e37d exists"
+    },
+    {
+      "id": "P3-C08",
+      "status": "PASS",
+      "msg": "EC.legacy_post_id \"083a69d5-de8f-4525-b1a1-f495b6404e80\" == post.id"
+    },
+    {
+      "id": "P3-C09",
+      "status": "PASS",
+      "msg": "EC.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P3-C10",
+      "status": "PASS",
+      "msg": "EC.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P3-C11",
+      "status": "PASS",
+      "msg": "EC.title = post.name \"outro teste de story…\" [DIRECT MAP]"
+    },
+    {
+      "id": "P3-C12",
+      "status": "PASS",
+      "msg": "EC.body vs post.description: match [DIRECT MAP]"
+    },
+    {
+      "id": "P3-C13",
+      "status": "PASS",
+      "msg": "EC.ai_context matches post.ai_context [DIRECT MAP]"
+    },
+    {
+      "id": "P3-C14",
+      "status": "PASS",
+      "msg": "CP 05772802-06d7-4249-bae8-d8b8e11b7457 exists"
+    },
+    {
+      "id": "P3-C15",
+      "status": "PASS",
+      "msg": "CP.editorial_content_id == EC.id"
+    },
+    {
+      "id": "P3-C16",
+      "status": "PASS",
+      "msg": "CP.channel = \"instagram\" (expected: \"instagram\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P3-C17",
+      "status": "PASS",
+      "msg": "CP.format = \"story\" (expected: \"story\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P3-C18",
+      "status": "PASS",
+      "msg": "CP.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P3-C19",
+      "status": "PASS",
+      "msg": "CP.body vs post.feed_text: match [DIRECT MAP] (length: 0)"
+    },
+    {
+      "id": "P3-C20",
+      "status": "PASS",
+      "msg": "no duplicate EC for post: 0 extra ECs found"
+    },
+    {
+      "id": "P3-M00",
+      "status": "PASS",
+      "msg": "no media expected (P3 phase: M8.3A) — CPMs for EC: 0 ✓"
+    },
+    {
+      "id": "P3-H01",
+      "status": "PASS",
+      "msg": "H1: post.project_id = NULL (legado preservado — PASS, NOT a divergence)"
+    },
+    {
+      "id": "P3-H02",
+      "status": "PASS",
+      "msg": "H1: EC.project_id = d0d008c3 (decisão H1 aplicada corretamente)"
+    },
+    {
+      "id": "P3-H03",
+      "status": "PASS",
+      "msg": "H1: post.project_id != EC.project_id (expected divergence — PASS H1 APPLIED)"
+    },
+    {
+      "id": "P4-C01",
+      "status": "PASS",
+      "msg": "post exists"
+    },
+    {
+      "id": "P4-C02",
+      "status": "PASS",
+      "msg": "post.name \"teste 04\" == expected \"teste 04\""
+    },
+    {
+      "id": "P4-C03",
+      "status": "PASS",
+      "msg": "post.channel \"youtube_video\" == expected \"youtube_video\""
+    },
+    {
+      "id": "P4-C04",
+      "status": "PASS",
+      "msg": "post.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P4-C05",
+      "status": "PASS",
+      "msg": "post.updated_at matches baseline (not written)"
+    },
+    {
+      "id": "P4-C06",
+      "status": "PASS",
+      "msg": "fingerprint 8edbcebf2a97… == approved 8edbcebf2a97…"
+    },
+    {
+      "id": "P4-C07",
+      "status": "PASS",
+      "msg": "EC d0138557-ad57-4284-bcdc-322c21c8f599 exists"
+    },
+    {
+      "id": "P4-C08",
+      "status": "PASS",
+      "msg": "EC.legacy_post_id \"7aa6b5a4-8fb2-4e22-937e-82a228f87e8b\" == post.id"
+    },
+    {
+      "id": "P4-C09",
+      "status": "PASS",
+      "msg": "EC.project_id \"d0d008c3-321b-46fe-8225-2f1a68e833ec\" == expected \"d0d008c3-321b-46fe-8225-2f1a68e833ec\""
+    },
+    {
+      "id": "P4-C10",
+      "status": "PASS",
+      "msg": "EC.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P4-C11",
+      "status": "PASS",
+      "msg": "EC.title = post.name \"teste 04…\" [DIRECT MAP]"
+    },
+    {
+      "id": "P4-C12",
+      "status": "PASS",
+      "msg": "EC.body vs post.description: match [DIRECT MAP]"
+    },
+    {
+      "id": "P4-C13",
+      "status": "PASS",
+      "msg": "EC.ai_context matches post.ai_context [DIRECT MAP]"
+    },
+    {
+      "id": "P4-C14",
+      "status": "PASS",
+      "msg": "CP ba9d1e7d-38c7-4ca0-8251-a72bdaddce64 exists"
+    },
+    {
+      "id": "P4-C15",
+      "status": "PASS",
+      "msg": "CP.editorial_content_id == EC.id"
+    },
+    {
+      "id": "P4-C16",
+      "status": "PASS",
+      "msg": "CP.channel = \"youtube\" (expected: \"youtube\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P4-C17",
+      "status": "PASS",
+      "msg": "CP.format = \"video_description\" (expected: \"video_description\") [CHANNEL_MAP]"
+    },
+    {
+      "id": "P4-C18",
+      "status": "PASS",
+      "msg": "CP.status = \"draft\" (expected: draft)"
+    },
+    {
+      "id": "P4-C19",
+      "status": "PASS",
+      "msg": "CP.body vs post.feed_text: match [DIRECT MAP] (length: 0)"
+    },
+    {
+      "id": "P4-C20",
+      "status": "PASS",
+      "msg": "no duplicate EC for post: 0 extra ECs found"
+    },
+    {
+      "id": "P4-M00",
+      "status": "PASS",
+      "msg": "no media expected (P4 phase: M8.3A) — CPMs for EC: 0 ✓"
+    },
+    {
+      "id": "D01",
+      "status": "PASS",
+      "msg": "manifesto M8.3A carregado: posts-m8-execution-m8-3a.json"
+    },
+    {
+      "id": "D02",
+      "status": "PASS",
+      "msg": "manifesto M8.4 carregado: posts-m8-execution-m8-4.json"
+    },
+    {
+      "id": "D-P1-EC-M84",
+      "status": "PASS",
+      "msg": "M8.4 manifest EC == expected EC ID"
+    },
+    {
+      "id": "D-P1-CP-M84",
+      "status": "PASS",
+      "msg": "M8.4 manifest CP == expected CP ID"
+    },
+    {
+      "id": "D-P1-LF-M84",
+      "status": "PASS",
+      "msg": "M8.4 manifest LF == expected LF ID"
+    },
+    {
+      "id": "D-P1-CPM-M84",
+      "status": "PASS",
+      "msg": "M8.4 manifest CPM == expected CPM ID"
+    },
+    {
+      "id": "D-P1-DEST",
+      "status": "PASS",
+      "msg": "M8.4 manifest S3 dest key == expected"
+    },
+    {
+      "id": "D-P1-FP",
+      "status": "PASS",
+      "msg": "M8.4 manifest fingerprint matches approved"
+    },
+    {
+      "id": "E01",
+      "status": "PASS",
+      "msg": "M8.3A rollback script exists"
+    },
+    {
+      "id": "E02",
+      "status": "PASS",
+      "msg": "M8.4 rollback script exists"
+    },
+    {
+      "id": "E03",
+      "status": "PASS",
+      "msg": "M8.3A rollback: requires explicit confirmation"
+    },
+    {
+      "id": "E04",
+      "status": "PASS",
+      "msg": "M8.3A rollback: validates EC.legacy_post_id before delete"
+    },
+    {
+      "id": "E05",
+      "status": "PASS",
+      "msg": "M8.3A rollback: does not delete posts"
+    },
+    {
+      "id": "E06",
+      "status": "PASS",
+      "msg": "M8.4 rollback: requires explicit confirmation"
+    },
+    {
+      "id": "E07",
+      "status": "PASS",
+      "msg": "M8.4 rollback: guards against deleting source S3 object"
+    },
+    {
+      "id": "E08",
+      "status": "PASS",
+      "msg": "M8.4 rollback: validates EC.legacy_post_id == P1 before delete"
+    },
+    {
+      "id": "E09",
+      "status": "PASS",
+      "msg": "M8.4 rollback: validates LF.storage_path before delete"
+    },
+    {
+      "id": "E10",
+      "status": "PASS",
+      "msg": "M8.4 rollback: correct FK-safe deletion order"
+    },
+    {
+      "id": "E11",
+      "status": "PASS",
+      "msg": "M8.4 rollback: source never-delete protection"
+    },
+    {
+      "id": "E12",
+      "status": "PASS",
+      "msg": "M8.4 rollback: does not delete posts (no posts DELETE call)"
+    }
+  ],
+  "visual_review": "REQUIRED",
+  "rollback": "AVAILABLE — NOT EXECUTED",
+  "run2": {
+    "overall": "PASS",
+    "passed": 139,
+    "failed": 0,
+    "warned": 0
+  },
+  "deterministic": true
+}

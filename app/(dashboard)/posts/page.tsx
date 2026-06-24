@@ -33,6 +33,7 @@ import { useToast } from '@/hooks/use-toast'
 import type { Post, PostImage, PublicationType, PostStatus, Project } from '@/lib/types'
 import {
   CheckCircle2,
+  ExternalLink,
   FileText,
   FolderKanban,
   Instagram,
@@ -194,6 +195,7 @@ function PostsPageContent() {
 
   useEffect(() => {
     if (!isDataReady || !currentPostId) return
+    if (currentPost?.migrated_at) return // migrated posts are read-only
 
     const timeoutId = window.setTimeout(() => {
       savePost(currentPost?.status || 'draft', false).catch((error) => {
@@ -512,6 +514,7 @@ function PostsPageContent() {
       selectedPostIds.map((id) => {
         const post = posts.find((item) => item.id === id)
         if (!post) return null
+        if (post.migrated_at) return null // skip migrated posts silently
 
         return fetch('/api/posts', {
           method: 'PATCH',
@@ -545,6 +548,16 @@ function PostsPageContent() {
   }
 
   const deletePosts = async (ids: string[]) => {
+    const migratedIds = ids.filter((id) => posts.find((p) => p.id === id)?.migrated_at)
+    if (migratedIds.length > 0) {
+      toast({
+        title: 'Posts migrados',
+        description: 'Posts migrados para o novo domínio editorial não podem ser excluídos por esta área.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     const response = await fetch('/api/posts', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -605,7 +618,12 @@ function PostsPageContent() {
             <p className="text-muted-foreground">
               Crie posts, stories, shorts e vídeos para Instagram e YouTube com rascunho automático.
             </p>
-            <Button className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white" onClick={resetForm}>
+            <Button
+              className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+              onClick={resetForm}
+              disabled
+              title="Área de Posts Legados — criação desativada. Use Conteúdos Editoriais."
+            >
               <Plus className="h-4 w-4" />
               Novo Post
             </Button>
@@ -726,16 +744,29 @@ function PostsPageContent() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                deletePosts([post.id])
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Excluir
-                            </DropdownMenuItem>
+                            {!post.migrated_at && (
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  deletePosts([post.id])
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Excluir
+                              </DropdownMenuItem>
+                            )}
+                            {post.migrated_at && post.migrated_ec_id && post.migrated_ec_project_id && (
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  router.push(`/projetos/${post.migrated_ec_project_id}/conteudos/${post.migrated_ec_id}`)
+                                }}
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                Ver Conteúdo Editorial
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <div className="flex gap-3">
@@ -745,11 +776,17 @@ function PostsPageContent() {
                             aria-label={`Selecionar ${post.name}`}
                           />
                           <button className="flex-1 text-left" onClick={() => applyPostToForm(post)}>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="line-clamp-1 text-sm font-medium">{post.name}</span>
-                              <Badge variant={post.status === 'saved' ? 'default' : 'secondary'}>
-                                {statusLabel(post.status)}
-                              </Badge>
+                              {post.migrated_at ? (
+                                <Badge variant="outline" className="border-amber-500/70 text-amber-600">
+                                  Migrado
+                                </Badge>
+                              ) : (
+                                <Badge variant={post.status === 'saved' ? 'default' : 'secondary'}>
+                                  {statusLabel(post.status)}
+                                </Badge>
+                              )}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Badge variant="outline">{channelLabel(post.channel)}</Badge>
@@ -778,33 +815,60 @@ function PostsPageContent() {
 
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
               <CardContent className="space-y-5 p-5">
+                {currentPost?.migrated_at && (
+                  <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div className="flex-1">
+                        <span className="font-medium">Post Legado — Somente leitura.</span>
+                        {' '}Este post foi migrado para o novo domínio editorial.{' '}
+                        {currentPost.migrated_ec_id && currentPost.migrated_ec_project_id && (
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/projetos/${currentPost.migrated_ec_project_id}/conteudos/${currentPost.migrated_ec_id}`)}
+                            className="inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline"
+                          >
+                            Ver Conteúdo Editorial
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-lg font-semibold">Criar seu post</h2>
+                    <h2 className="text-lg font-semibold">
+                      {currentPost?.migrated_at ? 'Visualizar post (somente leitura)' : 'Criar seu post'}
+                    </h2>
                     <p className="text-sm text-muted-foreground">
-                      Escreva a ideia, gere o texto do feed e salve quando estiver pronto.
+                      {currentPost?.migrated_at
+                        ? 'Post migrado — edição e exclusão desativadas.'
+                        : 'Escreva a ideia, gere o texto do feed e salve quando estiver pronto.'}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    {currentPostId && (
-                      <Button
-                        variant="destructive"
-                        onClick={() => deletePosts([currentPostId])}
-                        className="gap-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Excluir Publicação
+                  {!currentPost?.migrated_at && (
+                    <div className="flex gap-2">
+                      {currentPostId && (
+                        <Button
+                          variant="destructive"
+                          onClick={() => deletePosts([currentPostId])}
+                          className="gap-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Excluir Publicação
+                        </Button>
+                      )}
+                      <Button variant="outline" onClick={() => savePost('draft')} disabled={isSaving} className="gap-2">
+                        <Save className="h-4 w-4" />
+                        Salvar Rascunho
                       </Button>
-                    )}
-                    <Button variant="outline" onClick={() => savePost('draft')} disabled={isSaving} className="gap-2">
-                      <Save className="h-4 w-4" />
-                      Salvar Rascunho
-                    </Button>
-                    <Button onClick={() => savePost('saved')} disabled={isSaving} className="gap-2">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Salvar Post
-                    </Button>
-                  </div>
+                      <Button onClick={() => savePost('saved')} disabled={isSaving} className="gap-2">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Salvar Post
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -815,6 +879,7 @@ function PostsPageContent() {
                       value={form.name}
                       onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                       placeholder="Nome interno do post"
+                      readOnly={!!currentPost?.migrated_at}
                     />
                   </div>
                   <div className="space-y-2">
@@ -822,6 +887,7 @@ function PostsPageContent() {
                     <Select
                       value={form.projectId}
                       onValueChange={(value) => setForm((prev) => ({ ...prev, projectId: value }))}
+                      disabled={!!currentPost?.migrated_at}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -843,8 +909,9 @@ function PostsPageContent() {
                   <ToggleGroup
                     type="single"
                     value={form.channel}
-                    onValueChange={(value: PublicationType) => value && setForm((prev) => ({ ...prev, channel: value }))}
+                    onValueChange={(value: PublicationType) => !currentPost?.migrated_at && value && setForm((prev) => ({ ...prev, channel: value }))}
                     className="flex-wrap justify-start rounded-lg border border-border/50 p-1"
+                    disabled={!!currentPost?.migrated_at}
                   >
                     {publicationOptions.map((option) => (
                       <ToggleGroupItem key={option.value} value={option.value} className="gap-2">
@@ -864,6 +931,7 @@ function PostsPageContent() {
                       onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
                       placeholder="Descreva o que esse post precisa comunicar."
                       rows={7}
+                      readOnly={!!currentPost?.migrated_at}
                     />
                   </div>
                   <div className="space-y-2">
@@ -918,16 +986,19 @@ function PostsPageContent() {
                     onChange={(event) => setForm((prev) => ({ ...prev, aiContext: event.target.value }))}
                     placeholder="Contexto, tom de voz, publico e qualquer detalhe importante."
                     rows={5}
+                    readOnly={!!currentPost?.migrated_at}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="editor-feed-text">Texto do feed</Label>
-                    <Button variant="outline" size="sm" onClick={generateFeedText} disabled={isGenerating} className="gap-2">
-                      {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      Gerar texto do feed
-                    </Button>
+                    {!currentPost?.migrated_at && (
+                      <Button variant="outline" size="sm" onClick={generateFeedText} disabled={isGenerating} className="gap-2">
+                        {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        Gerar texto do feed
+                      </Button>
+                    )}
                   </div>
                   <Textarea
                     id="editor-feed-text"
@@ -935,6 +1006,7 @@ function PostsPageContent() {
                     onChange={(event) => setForm((prev) => ({ ...prev, feedText: event.target.value }))}
                     placeholder="O texto gerado pela IA aparece aqui e pode ser editado."
                     rows={12}
+                    readOnly={!!currentPost?.migrated_at}
                   />
                 </div>
               </CardContent>

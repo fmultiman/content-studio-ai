@@ -46,6 +46,32 @@ async function validateProductionOwnership(
   return null
 }
 
+type PostRow = Record<string, unknown> & { id: string; migrated_at?: string | null }
+
+async function enrichWithEcLink(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  posts: PostRow[],
+): Promise<PostRow[]> {
+  const migratedIds = posts.filter((p) => p.migrated_at).map((p) => p.id)
+  if (migratedIds.length === 0) return posts
+  const { data: ecs } = await supabase
+    .from('editorial_contents')
+    .select('id, project_id, legacy_post_id')
+    .in('legacy_post_id', migratedIds)
+  if (!ecs) return posts
+  const ecByPostId = Object.fromEntries(ecs.map((ec) => [ec.legacy_post_id, ec]))
+  return posts.map((p) => {
+    const ec = ecByPostId[p.id]
+    if (!ec) return p
+    return { ...p, migrated_ec_id: ec.id, migrated_ec_project_id: ec.project_id }
+  })
+}
+
+const MIGRATED_ERROR = {
+  error: 'Este post foi migrado para o novo domínio editorial e não pode mais ser editado aqui. Acesse o Conteúdo Editorial correspondente.',
+  code: 'POST_MIGRATED',
+}
+
 async function getAuthenticatedClient() {
   const supabase = await createClient()
   const {
@@ -126,7 +152,8 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: error.message, details: error }, { status: 400 })
       }
 
-      return NextResponse.json({ post: data })
+      const post = await enrichWithEcLink(supabase, [data])
+      return NextResponse.json({ post: post[0] })
     }
 
     // Validate UUID format when productionId filter is used
@@ -152,7 +179,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message, details: error }, { status: 400 })
     }
 
-    return NextResponse.json({ posts: data || [] })
+    const posts = await enrichWithEcLink(supabase, data || [])
+    return NextResponse.json({ posts })
   } catch (error) {
     console.error('[Posts] GET error:', error)
     return NextResponse.json(
@@ -163,45 +191,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
-    const { supabase, user } = await getAuthenticatedClient()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
-    }
-
-    const body = (await request.json()) as PostBody
-
-    if (body.productionId) {
-      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
-      if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 400 })
-      }
-    }
-
-    const payload = {
-      user_id: user.id,
-      ...buildPostPayload(body),
-    }
-
-    const { data, error } = await supabase
-      .from('posts')
-      .insert(payload)
-      .select()
-      .single()
-
-    if (error) {
-      return NextResponse.json({ error: error.message, details: error }, { status: 400 })
-    }
-
-    return NextResponse.json({ post: data })
-  } catch (error) {
-    console.error('[Posts] POST error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro interno' },
-      { status: 500 },
-    )
+  const { user } = await getAuthenticatedClient()
+  if (!user) {
+    return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
   }
+  return NextResponse.json(
+    {
+      code: 'LEGACY_POST_CREATION_DISABLED',
+      error: 'A criação de Posts legados foi encerrada. Use Conteúdos.',
+    },
+    { status: 410 },
+  )
 }
 
 export async function PATCH(request: Request) {
@@ -216,6 +216,17 @@ export async function PATCH(request: Request) {
 
     if (!body.id) {
       return NextResponse.json({ error: 'ID obrigatorio' }, { status: 400 })
+    }
+
+    // Block edits on migrated posts
+    const { data: existingPost } = await supabase
+      .from('posts')
+      .select('migrated_at')
+      .eq('id', body.id)
+      .eq('user_id', user.id)
+      .single()
+    if (existingPost?.migrated_at) {
+      return NextResponse.json(MIGRATED_ERROR, { status: 409 })
     }
 
     // Mode: only update production_id (link/unlink)
@@ -295,6 +306,20 @@ export async function DELETE(request: Request) {
 
     if (ids.length === 0) {
       return NextResponse.json({ error: 'Nenhum post selecionado' }, { status: 400 })
+    }
+
+    // Block deletion of migrated posts
+    const { data: migratedPosts } = await supabase
+      .from('posts')
+      .select('id, migrated_at')
+      .in('id', ids)
+      .eq('user_id', user.id)
+      .not('migrated_at', 'is', null)
+    if (migratedPosts && migratedPosts.length > 0) {
+      return NextResponse.json({
+        error: `${migratedPosts.length} post(s) foram migrados para o novo domínio editorial e não podem ser excluídos por esta rota.`,
+        code: 'POST_MIGRATED',
+      }, { status: 409 })
     }
 
     const { error } = await supabase
