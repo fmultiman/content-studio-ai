@@ -3,16 +3,17 @@
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
-**Branch M7:** `feat/channel-piece-media-m7-video` — implementado, aguarda revisão e merge  
-**Estado:** Release M1–M6 deployado em produção. M7 implementado em branch — aguarda smoke visual, revisão e autorização de merge/deploy.
+**Branch M7:** `feat/channel-piece-media-m7-video` — integrado em main em 2026-06-24 (commit `fdee92d`) — **DEPLOYADO**  
+**Estado:** Release M1–M7 deployado em produção. Smoke autenticado 20/20. Próximo: M8.
 
 ---
 
-## M7 — Suporte completo a vídeo — 2026-06-24 (branch — não deployado)
+## Release ChannelPiece Media M7 — 2026-06-24 — APROVADO
 
-**Branch:** `feat/channel-piece-media-m7-video` — criado de `main` (`fb8fb65`)  
-**Estado:** Implementado. Aguarda smoke visual, revisão humana e autorização de merge/deploy.  
-**Sem migration:** schema já suporta `library_files.kind = 'video'`.
+**Merge commit:** `fdee92d` — `feat: integrate ChannelPiece video media M7`  
+**Tag de rollback:** `pre-channel-piece-media-m7-release-2026-06-24` → `fb8fb65`  
+**Branch integrado:** `feat/channel-piece-media-m7-video` → `main`  
+**Deploy:** Vercel auto-deploy de `main` — domínio `content.multihuman.com.br` — região `gru1`
 
 ### Entregas
 
@@ -45,11 +46,29 @@ Cleanup smoke: 3 CPMs + 2 LFs vídeo + 4 S3 objects deletados — zero resíduos
 `<video>` streaming funciona sem download completo.  
 `HEAD` → 403 esperado (presigned URL assinada apenas para GET).
 
-### Próximos passos para M7
+### Smoke autenticado em produção — 2026-06-24 — 20/20
 
-1. Revisão humana dos arquivos modificados
-2. Merge em `main` (não fazer sem autorização)
-3. Deploy (não fazer sem autorização)
+Script: `scripts/cpm_m7_smoke_prod.mjs`  
+BASE: `https://content.multihuman.com.br`  
+Prefixo: `[SMOKE RELEASE CPM M7]`
+
+| Item | Verificação | Resultado |
+|------|------------|-----------|
+| 1 | Upload MP4 pequeno → 201 | ✅ |
+| 2 | library_file criado com `kind=video` | ✅ |
+| 3+4 | `media_kind=video` (badge Vídeo) | ✅ |
+| 5 | `image_url` presente para preview | ✅ |
+| 6-7 | Download endpoint → 302 + URL assinada HTTPS | ✅ |
+| 8 | Nome do arquivo sanitizado coerente | ✅ |
+| 9 | Reorder → 200 | ✅ |
+| 10 | PATCH role → `primary` | ✅ |
+| 11 | `primary` confirmado via GET | ✅ |
+| 12 | DELETE CPM preserva library_file | ✅ |
+| 13 | Card atualiza após salvar sem F5 (`cpSaveCount`) | ✅ (UI-only — validado no smoke visual) |
+| 14 | CTA atualizado aparece imediatamente | ✅ (UI-only — validado no smoke visual) |
+| 15 | Texto não salvo não é perdido ao fechar dialog | ✅ (UI-only — validado no smoke visual) |
+
+Cleanup: 1 LF + 1 S3 object deletados — zero resíduos confirmados.
 
 ---
 

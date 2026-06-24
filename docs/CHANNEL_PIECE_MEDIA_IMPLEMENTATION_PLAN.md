@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-24 (rev. 10 — M7 implementado)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. M7 ✓ (branch — aguarda revisão). **RELEASE M1–M6 EM PRODUÇÃO.**
+**Data:** 2026-06-24 (rev. 11 — M7 deployado)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. M7 ✓ (merge `fdee92d` — smoke 20/20). **RELEASE M1–M7 EM PRODUÇÃO.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
