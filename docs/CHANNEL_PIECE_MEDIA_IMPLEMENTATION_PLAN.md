@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 7 — fix/source-uniqueness implementado, auditado e aprovado 2026-06-23)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 aguarda autorização explícita.
+**Data:** 2026-06-22 (rev. 8 — M1–M5 integrados em `main` e deployados em produção 2026-06-24)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. **RELEASE M1–M5 EM PRODUÇÃO.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -430,7 +430,62 @@ WHERE library_file_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
 |---|------|-----------|
 | 44/44 | Suite `cpm_m5_tests.mjs` (Groups 1–7) | ✅ PASSOU |
 
-Branch: `feat/channel-piece-media-m5-upload`. Status: **PRONTO PARA REVISÃO**.
+Branch: `feat/channel-piece-media-m5-upload`. Status: **INTEGRADO EM MAIN E DEPLOYADO.**
+
+---
+
+## Release M1–M5 — 2026-06-24
+
+**Merge commit:** `f446cd0` — `feat: integrate ChannelPiece media lifecycle M1-M5`  
+**Tag de rollback:** `pre-channel-piece-media-release-2026-06-24` → `c799d10`  
+**Branch integrado:** `feat/channel-piece-media-m5-upload` → `main`  
+**Deploy:** `content.multihuman.com.br` — status Ready  
+**Migrations em produção:** 022 (aplicada 2026-06-23) + 023 (aplicada 2026-06-23)
+
+### Auditoria consolidada pré-merge
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Schema: tabela, RLS, 4 policies, constraints, índices, trigger | ✅ Confirmado no banco |
+| APIs: auth, autorização, cross-project, 409, compensação | ✅ Auditado |
+| Storage: uploadLibraryFile, sanitização, compensação Casos A–D | ✅ Auditado |
+| Frontend: card read-only, editor editable, picker 3 abas, anyBusy | ✅ Auditado |
+| TypeScript: `pnpm tsc --noEmit` | ✅ exit 0 |
+| Build: `pnpm build` | ✅ exit 0 |
+| Lint: `pnpm lint` | ⚠ ESLint não instalado como dep (pré-existente) |
+| Suite M5: `cpm_m5_tests.mjs` | ✅ 44/44 |
+| Banco: zero CPMs/LFs de teste, dados preservados | ✅ Confirmado |
+
+### Smoke de release em produção — 2026-06-24
+
+Fixture: `[SMOKE RELEASE CPM M1-M5].jpg` — ChannelPiece `65f49c21` (instagram/reel)
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Página login 200 (público) | ✅ |
+| API sem auth → 401 | ✅ |
+| Upload sem auth → 401 | ✅ |
+| Sessão via magiclink | ✅ |
+| Projeto "Content Agent" preservado | ✅ |
+| Production "Teste publicação 01" preservada | ✅ |
+| Imagem conceitual `3a49939e` preservada | ✅ |
+| GET /api/channel-piece-media → 200 | ✅ |
+| Upload → 201 + CPM criado + LF criado | ✅ |
+| CPM role = primary / position = 0 | ✅ |
+| LF storage_path presente | ✅ |
+| LF project_id correto | ✅ |
+| CPM aparece no GET com media_kind | ✅ |
+| DELETE CPM → 200 | ✅ |
+| CPM removido do GET | ✅ |
+| library_file preservado após remoção CPM | ✅ |
+| LF deletado + S3 object deletado | ✅ |
+| Zero resíduos de smoke | ✅ |
+
+### Riscos remanescentes
+
+- **ESLint não instalado:** `pnpm lint` falha por `eslint` ausente nas deps (pré-existente; não introduzido pelo M1–M5).
+- **`typescript.ignoreBuildErrors: true` no `next.config.mjs`:** build do Vercel não falha em erros TS. Mitigado: tsc local passou em exit 0.
+- **Teste cross-user:** isolamento RLS validado por inspeção de policies e tripla camada (RLS + API + check explícito), não por execução com 2 contas reais. Risco baixo.
 
 ---
 

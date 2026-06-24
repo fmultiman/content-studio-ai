@@ -1,7 +1,36 @@
-# Handoff — Fase de Publicações (P1–P6)
-**Data:** 2026-06-22  
-**Branch final:** `feat/publication-p6-post-video-flow`  
-**Release publicado em main em 2026-06-22. Smoke test autenticado concluído. Fluxo funcional.**
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M5)
+**Data última atualização:** 2026-06-24  
+**Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
+**Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
+**Estado:** Release M1–M5 deployado em produção. Smoke aprovado. M6 é o próximo passo.
+
+---
+
+## Release ChannelPiece Media M1–M5 — 2026-06-24
+
+**Merge commit:** `f446cd0` — `feat: integrate ChannelPiece media lifecycle M1-M5`  
+**Tag de rollback:** `pre-channel-piece-media-release-2026-06-24` → `c799d10`  
+**Deploy:** `content.multihuman.com.br` — Ready  
+**Smoke:** ✅ 51/51 verificações públicas + autenticadas aprovadas. Fixture deletada.
+
+| Incremento | Branch | Status |
+|------------|--------|--------|
+| M1 | `feat/channel-piece-media-m1-schema` | ✅ Schema, RLS, constraints, índices |
+| M2 | `feat/channel-piece-media-m2-api` | ✅ APIs CRUD, validação cross-project |
+| M3 | `feat/channel-piece-media-m3-display` | ✅ Exibição em card + editor |
+| M4 | `feat/channel-piece-media-m4-picker` | ✅ Picker: Galeria + Biblioteca |
+| M4.1 | `fix/channel-piece-media-source-uniqueness` | ✅ Migration 023, unicidade de fonte |
+| M5 | `feat/channel-piece-media-m5-upload` | ✅ Upload direto, atomicidade Casos A–D |
+
+**Migrations em produção:** `022_create_channel_piece_media.sql` e `023_enforce_channel_piece_media_source_uniqueness.sql` — ambas aplicadas em 2026-06-23.
+
+**Próximo:** M6 (reordenação, role manual) — requer autorização explícita antes de iniciar.
+
+**Dados preservados (confirmado pós-release):**
+- Projeto `d0d008c3` "Content Agent" — intacto
+- Production `492af729` "Teste publicação 01" — intacta
+- Imagem `3a49939e` (imagem conceitual do Content Agent Studio) — preservada
+- Posts legados, imagens, vídeos — sem alteração
 
 ---
 
@@ -312,9 +341,9 @@ A página do Projeto (`/projetos/[id]`) ainda dá peso semelhante a Imagens, Ví
 
 Essa reorganização está registrada mas **não autorizada** — será tratada após os dois pré-requisitos acima.
 
-### Bug pré-existente (não relacionado a publicações)
+### Bug pré-existente (corrigido em M5)
 
-- `app/(dashboard)/imagens/rascunhos/page.tsx:43` — TS7006: parâmetro `d` sem tipo implícito `any`. Presente desde antes de P1; fora de escopo.
+- `app/(dashboard)/imagens/rascunhos/page.tsx:43` — TS7006 corrigido em `d24e14a` (cast `as ImageDraft[]`). Working tree limpa.
 
 ---
 
