@@ -2,8 +2,9 @@
 **Data:** 2026-06-24  
 **Branch discovery:** `discovery/posts-to-editorial-content-m8`  
 **Branch schema:** `feat/posts-migration-m8-schema` — integrado em main (`1b7be2b`)  
-**Branch executor:** `feat/posts-migration-m8-executor`  
-**Status:** M8.3A EXECUTADO — P2/P4/P3 migrados em produção 2026-06-24.  
+**Branch executor M8.3A:** `feat/posts-migration-m8-executor`  
+**Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
+**Status:** M8.4 EXECUTADO — P1 migrado com mídia em produção 2026-06-24. Todos os 4 posts migrados.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -99,6 +100,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ec_legacy_post_id
 DROP INDEX IF EXISTS uq_ec_legacy_post_id;
 ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
 ```
+
+---
+
+## 1.4 M8.4 — Executor: P1 com mídia — 2026-06-24 — EXECUTADO
+
+**Branch:** `feat/posts-migration-m8-4-p1-media`  
+**Script:** `scripts/posts_migration_m84_execute.mjs`  
+**Rollback script:** `scripts/posts_migration_m84_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-4.json`, `docs/migrations/posts-m8-execution-m8-4.md`  
+**Tag pré-migração:** `pre-posts-migration-m8-2026-06-24` → `1b7be2b` (herdada do M8.3A)
+
+**IDs criados:**
+
+| Entidade | ID |
+|----------|----|
+| EC | `16a0bfea-b558-4f26-91ec-2e163d84f9b0` |
+| CP | `2a48076c-3aff-4c53-beaf-cd84e028cffd` |
+| LF | `f190c6ad-8ad1-490c-aeaa-3898b69bb0aa` |
+| CPM | `d71eed1d-068b-47ed-aae1-278ca6922cf8` |
+
+**Detalhes do canal:** EC `legacy_post_id=d02a9507` | CP `instagram/feed` | status `draft`
+
+**S3:**
+
+| | Valor |
+|-|-------|
+| bucket | `content-studio` |
+| source key | `users/35428fd4.../posts/3f142fc2.../Content-Agent-Studio-Future-Vision-Concept.png` |
+| dest key | `users/35428fd4.../library/posts-migration-m8/d02a9507.../Content-Agent-Studio-Future-Vision-Concept.png` |
+| operação | COPY (source preservado) |
+| tamanho dest | 1.293.601 bytes ✅ |
+| ETag source | `7997848a1fcbfd6193dc2f867d65a4b1` |
+| colisão | CLEAR (nenhuma) |
+
+**Decisão thumbnail:** `thumbnail_url = null`. O `library_files.thumbnail_url` é nullable. Thumbnail original (`posts/{image_uuid}/...`) preservada intacta no namespace `posts/`. Nenhum objeto novo gerado para thumbnail.
+
+**Snapshot antes:** EC=6 (legacy=3), CP=5, LF=3, CPM=0, posts=4  
+**Snapshot depois:** EC=7 (legacy=4), CP=6, LF=4, CPM=1, posts=4
+
+**Verificações (18/18 ✅):** fingerprint, updated_at baseline, ec_exists, ec_legacy_post_id_ok, ec_project_id_ok, ec_status_draft, cp_exists, cp_linked_to_ec, cp_channel_ok, cp_format_ok, cp_status_draft, lf_exists, lf_storage_path_ok, lf_kind_image, lf_file_size_ok, cpm_exists, cpm_linked_to_cp, cpm_linked_to_lf, cpm_role_primary, cpm_position_zero, post P1 intacto, S3 source intacto.
+
+**Idempotência:** re-execução → `ALREADY_MIGRATED` ✅. Zero escrita. Zero S3. CPM detectado por `(channel_piece_id, library_file_id)`.
+
+**Rollback (se necessário):**
+```bash
+POSTS_MIGRATION_M84_ROLLBACK_CONFIRM=M8_4_ROLLBACK_APPROVED \
+node scripts/posts_migration_m84_rollback.mjs --execute
+```
+Remove em ordem: CPM → CP → LF → EC → S3 dest. Nunca toca posts, S3 source ou P2/P3/P4.
+
+**Resultado:** Todos os 4 Posts migrados. P1 com mídia. M8.3A (P2/P4/P3) e M8.4 (P1) concluídos.
 
 ---
 

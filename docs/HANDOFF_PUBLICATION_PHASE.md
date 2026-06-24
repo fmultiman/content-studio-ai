@@ -8,7 +8,8 @@
 **Branch M8.1:** `feat/posts-migration-m8-dry-run` — concluído (2026-06-24), commit `a6bf7e5`  
 **Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
 **Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
-**Estado:** M1–M7 em produção. M8.1 dry-run 4/4 READY. M8.2 schema aplicado (migration 025). M8.3A: P2/P4/P3 migrados em produção. P1 aguarda M8.4 (S3 + library_file).
+**Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
+**Estado:** M1–M7 em produção. M8.1–M8.4 concluídos. Todos os 4 posts migrados em produção. Próximo: M8.5 marcar posts migrados.
 
 ---
 
@@ -58,8 +59,8 @@ Nenhum post de conteúdo real identificado na base de produção.
 | M8.1 Dry-run | ✅ READY — 4/4, 0 blockers, script `scripts/posts_migration_dry_run.mjs` |
 | M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema`, merge `1b7be2b` |
 | M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
-| M8.4 Importar mídia P1 | ⏳ Aguarda autorização |
-| M8.5 Marcar Posts migrados | ⏳ Aguarda M8.4 |
+| M8.4 Migrar P1 com mídia | ✅ EXECUTADO 2026-06-24 — EC+CP+LF+CPM, branch `feat/posts-migration-m8-4-p1-media` |
+| M8.5 Marcar Posts migrados | ⏳ Aguarda autorização |
 | M8.6 Cleanup Posts | ⏳ |
 
 ### M8.3A — Resultados da execução — 2026-06-24
@@ -95,9 +96,37 @@ node scripts/posts_migration_rollback.mjs --execute
 ```
 Remove CP → EC nesta ordem. Nunca toca posts, library_files ou S3.
 
+### M8.4 — P1 com mídia — 2026-06-24 — EXECUTADO
+
+**Branch:** `feat/posts-migration-m8-4-p1-media` (não integrado a main)  
+**Scripts:** `scripts/posts_migration_m84_execute.mjs`, `scripts/posts_migration_m84_rollback.mjs`  
+**Manifesto:** `docs/migrations/posts-m8-execution-m8-4.json`
+
+| Entidade | ID |
+|----------|----|
+| EC | `16a0bfea-b558-4f26-91ec-2e163d84f9b0` |
+| CP (instagram/feed) | `2a48076c-3aff-4c53-beaf-cd84e028cffd` |
+| LF | `f190c6ad-8ad1-490c-aeaa-3898b69bb0aa` |
+| CPM (primary, pos 0) | `d71eed1d-068b-47ed-aae1-278ca6922cf8` |
+
+**S3:** `content-studio/users/.../library/posts-migration-m8/d02a9507.../Content-Agent-Studio-Future-Vision-Concept.png` (1.293.601 bytes, COPY da origem)  
+**Origem S3:** preservada intacta (`posts/{3f142fc2}/...`)  
+**thumbnail_url:** null (nullable; thumbnail original preservada no namespace posts/)  
+
+**Snapshot antes:** EC=6 (legacy=3), CP=5, LF=3, CPM=0, posts=4  
+**Snapshot depois:** EC=7 (legacy=4), CP=6, LF=4, CPM=1, posts=4  
+
+✅ 18/18 verificações | ✅ idempotência (ALREADY_MIGRATED) | ✅ posts intactos | ✅ S3 source intacto
+
+**Rollback disponível:**
+```bash
+POSTS_MIGRATION_M84_ROLLBACK_CONFIRM=M8_4_ROLLBACK_APPROVED \
+node scripts/posts_migration_m84_rollback.mjs --execute
+```
+
 ### Próximo passo (M8)
 
-M8.4 — migrar P1 (`d02a9507`): requer cópia do PNG do S3, criação de `library_file`, criação de `ChannelPieceMedia`, e associação ao EC. Exige autorização explícita.
+M8.5 — marcar Posts migrados (atualizar `posts.status` ou campo equivalente para indicar migração). Exige autorização explícita.
 
 ---
 
