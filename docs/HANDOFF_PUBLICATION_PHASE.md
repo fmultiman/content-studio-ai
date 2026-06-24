@@ -21,18 +21,35 @@
 | `app/api/channel-piece-media/[id]/download/route.ts` | Novo — endpoint de download seguro (302 → S3 signed URL `attachment`) |
 | `components/publication/channel-piece-media-section.tsx` | Badge "Vídeo", Play (preview modal `<video>`), Download em `MediaItemEditable` e `MediaItemReadOnly` |
 | `components/publication/media-picker-dialog.tsx` | Filtros Todos/Imagens/Vídeos, badge Vídeo, file_size no `LibraryCard` |
-| `scripts/cpm_m7_tests.mjs` | Suite de 53 casos: upload, classificação, listagem, download, organização, deleção, segurança, metadados |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Fix regressão: card ChannelPiece não atualizava após salvar — `cpSaveCount` remonta seção de mídia; CTA exibido no card |
+| `scripts/cpm_m7_tests.mjs` | Suite 53 casos + fix asserção #15 (`sanitizeFilename` converte `[TESTE CPM M7]` → `TESTE-CPM-M7`) |
 | `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` | CPM-D28 a CPM-D31 documentadas |
-| `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` | Seção M7 completa |
+| `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` | Seção M7 completa, fix regressão documentado |
+
+### Smoke visual M7 — 2026-06-24 — APROVADO
+
+Fixtures criadas em CP_A1 (`65f49c21`) com prefixo `[SMOKE CPM M7]`:
+
+| Item | Verificação | Resultado |
+|------|------------|-----------|
+| 1 imagem `[SMOKE CPM M7] imagem.jpg` (IMAGE_A `3a49939e`) | badge, ordem, sem badge "Vídeo" | ✅ |
+| 1 MP4 `SMOKE-CPM-M7-video.mp4` via LF `video/mp4` | badge "Vídeo", botão Play, botão Download, preview `<video>` | ✅ |
+| 1 WebM `SMOKE-CPM-M7-video.webm` via LF `video/webm` | badge "Vídeo", botão Play, botão Download | ✅ |
+| Filtro picker Todos/Imagens/Vídeos | separa corretamente | ✅ |
+
+Cleanup smoke: 3 CPMs + 2 LFs vídeo + 4 S3 objects deletados — zero resíduos confirmados.
+
+### Range Requests — auditoria MinIO
+
+`GET` com `Range: bytes=0-15` → `206 Partial Content`, `Accept-Ranges: bytes`, `Content-Range: bytes 0-15/536`.  
+`<video>` streaming funciona sem download completo.  
+`HEAD` → 403 esperado (presigned URL assinada apenas para GET).
 
 ### Próximos passos para M7
 
-1. Rodar `node scripts/cpm_m7_tests.mjs` (servidor em `localhost:3000`)
-2. Smoke visual: 1 imagem + 1 MP4 + 1 WebM em CP_A1 — verificar badge, play, download, filtro
-3. Cleanup dos fixtures de smoke após aprovação visual
-4. Revisão humana dos três arquivos modificados
-5. Merge em `main` (não fazer sem autorização)
-6. Deploy (não fazer sem autorização)
+1. Revisão humana dos arquivos modificados
+2. Merge em `main` (não fazer sem autorização)
+3. Deploy (não fazer sem autorização)
 
 ---
 

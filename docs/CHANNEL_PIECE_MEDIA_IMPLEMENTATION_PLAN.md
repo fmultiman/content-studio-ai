@@ -697,6 +697,8 @@ Fixture: 3 LFs `SMOKE-RELEASE-CPM-M6-media-{1,2,3}.jpg` em CP_A1 (`65f49c21`).
 | `app/api/channel-piece-media/[id]/download/route.ts` | Novo — `GET /api/channel-piece-media/[id]/download` → 302 S3 signed URL `attachment` |
 | `components/publication/channel-piece-media-section.tsx` | Badge "Vídeo", botão Play (preview modal `<video>`), botão Download em `MediaItemEditable`; Badge "Vídeo" em `MediaItemReadOnly` |
 | `components/publication/media-picker-dialog.tsx` | Filtros Todos/Imagens/Vídeos na aba Biblioteca; badge Vídeo no `LibraryCard`; file_size no card |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Correção de regressão — card da ChannelPiece não atualizava após salvar (ver seção abaixo) |
+| `scripts/cpm_m7_tests.mjs` | Correção de asserção #15 — `sanitizeFilename()` converte `[TESTE CPM M7]` em `TESTE-CPM-M7` |
 
 ### Endpoint de download
 
@@ -744,12 +746,36 @@ Aba Biblioteca:
 | Segurança | 5 | sem auth em GET/POST/CPM/DELETE/organize |
 | Metadados | 3 | kind via service role, mime_type via service role, thumbnail_url |
 
+### Correção de regressão — card não atualiza após salvar ChannelPiece
+
+**Problema:** após editar e salvar uma ChannelPiece, o card na lista não refletia as mudanças imediatamente — necessário F5.
+
+**Causa:** duas dimensões independentes:
+
+1. **Campos de texto** (title, body, CTA, hashtags, status): o `setChannelPieces((prev) => prev.map(...))` com `data.channelPiece` do PATCH já estava presente mas a atualização local é confirmada como caminho canônico.
+
+2. **Seção de mídia** (`ChannelPieceMediaSection` read-only no card): esta instância é montada uma vez no carregamento da página e não é desmontada enquanto o dialog de edição está aberto. Após fechar o dialog, continuava exibindo as mídias antigas (antes de qualquer adição/remoção feita no dialog editável).
+
+**Solução:**
+- Adicionado estado `cpSaveCount: Record<string, number>` na página.
+- Após cada save bem-sucedido, incrementa `cpSaveCount[editingCp.id]`.
+- O `key` da `ChannelPieceMediaSection` read-only usa `cpm-ro-${cp.id}-${cpSaveCount[cp.id] ?? 0}`, forçando remount e re-fetch quando o CP é salvo.
+- CTA exibido no card (campo antes ausente).
+
+**Sem API nova, sem migration, sem breaking change.** Apenas estado local + key de remount.
+
+### Correção de asserção #15 em cpm_m7_tests.mjs
+
+`sanitizeFilename('[TESTE CPM M7] video.mp4')` → `'TESTE-CPM-M7-video.mp4'` (colchetes e espaços vira `-`).  
+Asserção corrigida: `.includes('[TESTE CPM M7]')` → `.includes('TESTE-CPM-M7')`.  
+Implementação está correta — era bug da asserção do teste.
+
 ### Typecheck + build
 
 `pnpm typecheck` — ✅ exit 0  
-`pnpm lint`      — ✅ exit 0 (51 warnings pré-existentes, 0 erros)  
+`pnpm lint`      — ✅ exit 0 (51 warnings pré-existentes, 0 erros, nenhum warning novo)  
 `pnpm build`     — ✅ exit 0  
-`pnpm validate`  — ✅ exit 0
+`pnpm validate`  — ✅ (typecheck + lint + build individualmente — chain combinada excedeu timeout de 2min da ferramenta)
 
 ### Limitações documentadas
 
