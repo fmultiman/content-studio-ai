@@ -47,15 +47,21 @@ Nenhum post de conteúdo real identificado na base de produção.
 - [`docs/POSTS_MIGRATION_MAPPING.md`](./POSTS_MIGRATION_MAPPING.md) — matriz campo a campo, destino por Post, candidatos a agrupamento
 - [`docs/POSTS_MIGRATION_PLAN.md`](./POSTS_MIGRATION_PLAN.md) — fases, dry-run, idempotência, rollback, critérios go/no-go
 
-### Próximos passos (M8)
+### Estado das fases M8
 
-1. Responder H1–H4 (decisão humana)
-2. Executar dry-run (M8.1)
-3. Criar coluna `legacy_post_id` (M8.2)
-4. Migrar AUTO_MIGRÁVEIS P2 e P4 (M8.3)
-5. Importar mídia e migrar P1 (M8.4)
-6. Migrar P3 após H1 (M8.5)
-7. Marcar Posts como migrados (M8.6)
+| Fase | Status |
+|------|--------|
+| H1–H4 decisões | ✅ APROVADAS 2026-06-24 |
+| M8.1 Dry-run | ✅ READY — 4/4, 0 blockers, script `scripts/posts_migration_dry_run.mjs` |
+| M8.2 Schema `legacy_post_id` | ⏳ aguarda aprovação P1–P4 |
+| M8.3 Migrar AUTO_MIGRÁVEIS | ⏳ |
+| M8.4 Importar mídia P1 | ⏳ |
+| M8.5 Migrar P3 | ⏳ |
+| M8.6 Marcar Posts migrados | ⏳ |
+
+### Próximo passo (M8)
+
+Aprovar P1–P4 individualmente (seção de aprovação em `docs/migrations/posts-m8-dry-run.md`) para autorizar M8.2.
 
 ---
 

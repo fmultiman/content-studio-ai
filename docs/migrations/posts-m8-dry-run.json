@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "generated_at": "2026-06-24T17:39:27.423Z",
+  "source": {
+    "table": "posts",
+    "count": 4
+  },
+  "decisions": {
+    "p3_project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+    "import_p1_media": true,
+    "migrate_all": true,
+    "default_status": "draft"
+  },
+  "schema_state": {
+    "legacy_post_id_column_exists": false,
+    "note": "M8.2 pendente — coluna ausente, already_migrated=false para todos"
+  },
+  "rastreabilidade": {
+    "recommended_column": "editorial_contents.legacy_post_id UUID NULL",
+    "type": "UUID (não TEXT) — posts.id é UUID, sem cast necessário",
+    "index": "UNIQUE WHERE legacy_post_id IS NOT NULL",
+    "legacy_source_column": "Desnecessário — única fonte legada. Generalização prematura."
+  },
+  "summary": {
+    "total_posts": 4,
+    "auto_migravel": 2,
+    "migravelComImportacaoMidia": 1,
+    "exigeAtribuicaoProjeto": 1,
+    "already_migrated": 0,
+    "total_warnings": 0,
+    "total_blockers": 0,
+    "overall_status": "READY"
+  },
+  "posts": [
+    {
+      "post_id": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+      "post_name": "Teste Post Smoke Test 01",
+      "source_fingerprint": "3e8a92a61914904a087d9eecf48bb894c069313d87fd01dd0d37bf3921e43a68",
+      "source_updated_at": "2026-06-23T01:08:39.376895+00:00",
+      "source_changed": false,
+      "already_migrated": false,
+      "classification": [
+        "MIGRÁVEL COM IMPORTAÇÃO DE MÍDIA",
+        "SMOKE/TESTE"
+      ],
+      "proposed_editorial_content": {
+        "symbolic_id": "ec:d02a9507-d6c3-4203-9939-4667a4e0f027",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+          "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+          "title": "Teste Post Smoke Test 01",
+          "body": "POst para apresentar o novo frontend",
+          "ai_context": "contexto",
+          "status": "draft",
+          "legacy_post_id": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+          "created_at": "2026-06-23T00:39:43.997647+00:00",
+          "updated_at": "2026-06-23T01:08:39.376895+00:00"
+        }
+      },
+      "proposed_channel_piece": {
+        "symbolic_id": "cp:d02a9507-d6c3-4203-9939-4667a4e0f027",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "editorial_content_id": "ec:d02a9507-d6c3-4203-9939-4667a4e0f027",
+          "channel": "instagram",
+          "format": "feed",
+          "title": null,
+          "body": "🖥️✨ **Apresentamos o Futuro do Content Agent!** ✨🖥️\n\nEstamos empolgados em compartilhar um vislumbre do nosso novo frontend, projetado para transformar a sua experiência de criação de conteúdo. Com uma estética cinematográfica e uma iluminação dramática, cada detalhe foi pensado para trazer simetria e fluidez à sua jornada criativa.\n\n👉 **O que esperar?**\n- Interface intuitiva e moderna\n- Navegação simplificada para facilitar seu trabalho\n- Recursos inovadores que elevam o nível do seu conteúdo\n\n🌟 Este é apenas o começo! Fique ligado para mais atualizações e venha explorar o que preparamos para você.\n\n🔗 **Quer ser um dos primeiros a experimentar?** Clique no link da bio e faça parte dessa revolução!\n\n#ContentAgent #Frontend #InovaçãoDigital #DesignCinematográfico #ExperiênciaDoUsuário #CriaçãoDeConteúdo #Tecnologia #Novidades #UXUI #DesenvolvimentoWeb",
+          "cta": null,
+          "hashtags": null,
+          "status": "draft"
+        },
+        "status_note": "CP status = draft: registros de teste (H4). Equivalência: posts.status=\"saved\" → \"approved\" para conteúdo real; \"draft\" para teste."
+      },
+      "proposed_media": [
+        {
+          "index": 0,
+          "action": "IMPORT_LIBRARY_FILE_VIA_S3_COPY",
+          "symbolic_id": "lf:d02a9507-d6c3-4203-9939-4667a4e0f027:0",
+          "source": {
+            "bucket": "content-studio",
+            "key": "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+            "public_url": "https://s3.multihuman.com.br/content-studio/users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+            "exists": true,
+            "content_type": "image/png",
+            "content_length": 1293601,
+            "etag": "7997848a1fcbfd6193dc2f867d65a4b1",
+            "s3_error": null
+          },
+          "destination": {
+            "bucket": "content-studio",
+            "key": "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+            "public_url": "https://s3.multihuman.com.br/content-studio/users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+            "destination_collision": false
+          },
+          "proposed_library_file": {
+            "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+            "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+            "folder": "/",
+            "name": "Content-Agent-Studio-Future-Vision-Concept.png",
+            "kind": "image",
+            "mime_type": "image/png",
+            "file_size": 1293601,
+            "storage_provider": "s3",
+            "storage_path": "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+            "public_url": "https://s3.multihuman.com.br/content-studio/users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png",
+            "thumbnail_url": "https://s3.multihuman.com.br/content-studio/users/35428fd4-4784-4934-9af9-82a606aad77e/posts/b8de9c78-e8b3-48c7-8ec7-2efd1a0409f4/Content-Agent-Studio-Future-Vision-Concept-thumb.webp",
+            "note": "Importado de posts/ pela migration M8 — arquivo original preservado em source.key"
+          },
+          "proposed_channel_piece_media": {
+            "symbolic_id": "cpm:d02a9507-d6c3-4203-9939-4667a4e0f027:0",
+            "library_file_id": "lf:d02a9507-d6c3-4203-9939-4667a4e0f027:0",
+            "image_id": null,
+            "role": "primary",
+            "position": 0,
+            "alt_text": null
+          },
+          "copy_policies": {
+            "if_destination_already_exists": "FAIL — exige resolução manual antes de prosseguir",
+            "if_copy_ok_but_lf_insert_fails": "ROLLBACK cópia (DELETE dstKey) — nunca criar LF sem objeto",
+            "if_lf_insert_ok_but_cpm_fails": "ROLLBACK LF (DELETE library_file) e cópia S3 — manter atomicidade"
+          },
+          "rollback": {
+            "order": [
+              "channel_piece_media",
+              "library_files",
+              "s3_dest_object"
+            ],
+            "s3_delete": [
+              "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png"
+            ],
+            "never_delete": [
+              "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png"
+            ]
+          }
+        }
+      ],
+      "rollback_scope": {
+        "order": [
+          "channel_piece_media",
+          "channel_pieces",
+          "editorial_contents",
+          "library_files",
+          "s3_objects"
+        ],
+        "symbolic_ids": {
+          "editorial_content": "ec:d02a9507-d6c3-4203-9939-4667a4e0f027",
+          "channel_piece": "cp:d02a9507-d6c3-4203-9939-4667a4e0f027",
+          "channel_piece_media": [
+            "cpm:d02a9507-d6c3-4203-9939-4667a4e0f027:0"
+          ],
+          "library_files": [
+            "lf:d02a9507-d6c3-4203-9939-4667a4e0f027:0"
+          ],
+          "s3_objects_to_copy_then_delete": [
+            "users/35428fd4-4784-4934-9af9-82a606aad77e/library/posts-migration-m8/d02a9507-d6c3-4203-9939-4667a4e0f027/Content-Agent-Studio-Future-Vision-Concept.png"
+          ]
+        },
+        "never_delete": [
+          "posts.id = d02a9507-d6c3-4203-9939-4667a4e0f027",
+          "s3://content-studio/users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png"
+        ]
+      },
+      "warnings": [],
+      "blockers": [],
+      "dry_run_status": "READY"
+    },
+    {
+      "post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+      "post_name": "outro teste de post",
+      "source_fingerprint": "6d3cbc65c625aa64d4eb8621c09f91492433cc2f33c09cdb88586254833f7a58",
+      "source_updated_at": "2026-06-23T01:09:29.849458+00:00",
+      "source_changed": false,
+      "already_migrated": false,
+      "classification": [
+        "AUTO_MIGRÁVEL",
+        "SMOKE/TESTE"
+      ],
+      "proposed_editorial_content": {
+        "symbolic_id": "ec:7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+          "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+          "title": "outro teste de post",
+          "body": "Teste de post de Youtube",
+          "ai_context": "COntexto correto",
+          "status": "draft",
+          "legacy_post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+          "created_at": "2026-06-23T01:09:28.566422+00:00",
+          "updated_at": "2026-06-23T01:09:29.849458+00:00"
+        }
+      },
+      "proposed_channel_piece": {
+        "symbolic_id": "cp:7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "editorial_content_id": "ec:7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+          "channel": "youtube",
+          "format": "post",
+          "title": null,
+          "body": null,
+          "cta": null,
+          "hashtags": null,
+          "status": "draft"
+        },
+        "status_note": "CP status = draft: registros de teste (H4). Equivalência: posts.status=\"saved\" → \"approved\" para conteúdo real; \"draft\" para teste."
+      },
+      "proposed_media": [],
+      "rollback_scope": {
+        "order": [
+          "channel_piece_media",
+          "channel_pieces",
+          "editorial_contents"
+        ],
+        "symbolic_ids": {
+          "editorial_content": "ec:7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+          "channel_piece": "cp:7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+          "channel_piece_media": [],
+          "library_files": [],
+          "s3_objects_to_copy_then_delete": []
+        },
+        "never_delete": [
+          "posts.id = 7eb9ccf4-7989-4f4b-93ba-c10df0345428"
+        ]
+      },
+      "warnings": [],
+      "blockers": [],
+      "dry_run_status": "READY"
+    },
+    {
+      "post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+      "post_name": "outro teste de story",
+      "source_fingerprint": "0a0b81fa695db6b841c750a8ace982b42d5281b299fbd4f31fdd8eba3b2080d1",
+      "source_updated_at": "2026-06-23T01:11:35.379153+00:00",
+      "source_changed": false,
+      "already_migrated": false,
+      "classification": [
+        "EXIGE ATRIBUIÇÃO DE PROJETO",
+        "SMOKE/TESTE"
+      ],
+      "project_assignment": {
+        "original_project_id": null,
+        "assigned_project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+        "project_assignment_source": "human_approved",
+        "project_assignment_confidence": "confirmed",
+        "decision_ref": "H1"
+      },
+      "proposed_editorial_content": {
+        "symbolic_id": "ec:083a69d5-de8f-4525-b1a1-f495b6404e80",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+          "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+          "title": "outro teste de story",
+          "body": "teste de story",
+          "ai_context": "contexto do teste de story",
+          "status": "draft",
+          "legacy_post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+          "created_at": "2026-06-23T01:11:34.114578+00:00",
+          "updated_at": "2026-06-23T01:11:35.379153+00:00"
+        }
+      },
+      "proposed_channel_piece": {
+        "symbolic_id": "cp:083a69d5-de8f-4525-b1a1-f495b6404e80",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "editorial_content_id": "ec:083a69d5-de8f-4525-b1a1-f495b6404e80",
+          "channel": "instagram",
+          "format": "story",
+          "title": null,
+          "body": null,
+          "cta": null,
+          "hashtags": null,
+          "status": "draft"
+        },
+        "status_note": "CP status = draft: registros de teste (H4). Equivalência: posts.status=\"saved\" → \"approved\" para conteúdo real; \"draft\" para teste."
+      },
+      "proposed_media": [],
+      "rollback_scope": {
+        "order": [
+          "channel_piece_media",
+          "channel_pieces",
+          "editorial_contents"
+        ],
+        "symbolic_ids": {
+          "editorial_content": "ec:083a69d5-de8f-4525-b1a1-f495b6404e80",
+          "channel_piece": "cp:083a69d5-de8f-4525-b1a1-f495b6404e80",
+          "channel_piece_media": [],
+          "library_files": [],
+          "s3_objects_to_copy_then_delete": []
+        },
+        "never_delete": [
+          "posts.id = 083a69d5-de8f-4525-b1a1-f495b6404e80"
+        ]
+      },
+      "warnings": [],
+      "blockers": [],
+      "dry_run_status": "READY"
+    },
+    {
+      "post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+      "post_name": "teste 04",
+      "source_fingerprint": "8edbcebf2a97381d07b8e662450de1a4415152ac66b1c8fc1e512be42895dd31",
+      "source_updated_at": "2026-06-23T01:14:17.513889+00:00",
+      "source_changed": false,
+      "already_migrated": false,
+      "classification": [
+        "AUTO_MIGRÁVEL",
+        "SMOKE/TESTE"
+      ],
+      "proposed_editorial_content": {
+        "symbolic_id": "ec:7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+          "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+          "title": "teste 04",
+          "body": "teste  04",
+          "ai_context": null,
+          "status": "draft",
+          "legacy_post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+          "created_at": "2026-06-23T01:14:16.164935+00:00",
+          "updated_at": "2026-06-23T01:14:17.513889+00:00"
+        }
+      },
+      "proposed_channel_piece": {
+        "symbolic_id": "cp:7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+        "fields": {
+          "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+          "editorial_content_id": "ec:7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+          "channel": "youtube",
+          "format": "video_description",
+          "title": null,
+          "body": null,
+          "cta": null,
+          "hashtags": null,
+          "status": "draft"
+        },
+        "status_note": "CP status = draft: registros de teste (H4). Equivalência: posts.status=\"saved\" → \"approved\" para conteúdo real; \"draft\" para teste."
+      },
+      "proposed_media": [],
+      "rollback_scope": {
+        "order": [
+          "channel_piece_media",
+          "channel_pieces",
+          "editorial_contents"
+        ],
+        "symbolic_ids": {
+          "editorial_content": "ec:7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+          "channel_piece": "cp:7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+          "channel_piece_media": [],
+          "library_files": [],
+          "s3_objects_to_copy_then_delete": []
+        },
+        "never_delete": [
+          "posts.id = 7aa6b5a4-8fb2-4e22-937e-82a228f87e8b"
+        ]
+      },
+      "warnings": [],
+      "blockers": [],
+      "dry_run_status": "READY"
+    }
+  ]
+}

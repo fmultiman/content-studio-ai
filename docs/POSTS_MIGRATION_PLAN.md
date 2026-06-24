@@ -21,6 +21,39 @@ Post (legado)
 
 ---
 
+## 1.1 M8.1 — Dry-Run — 2026-06-24 — APROVADO
+
+**Script:** `scripts/posts_migration_dry_run.mjs`  
+**Output:** `docs/migrations/posts-m8-dry-run.json`, `docs/migrations/posts-m8-dry-run.md`  
+**Resultado:** 4/4 READY — 0 blockers — 0 warnings
+
+| Post | Fingerprint | S3 origem | Destino colisão | Status |
+|------|-------------|-----------|-----------------|--------|
+| P1 (`d02a9507`) | `3e8a92a619...` | ✅ exists, 1.293.601 bytes, image/png, ETag `7997848a1f` | ✅ sem colisão | **READY** |
+| P2 (`7eb9ccf4`) | (no JSON) | — sem mídia — | — | **READY** |
+| P3 (`083a69d5`) | (no JSON) | — sem mídia — | — | **READY** |
+| P4 (`7aa6b5a4`) | (no JSON) | — sem mídia — | — | **READY** |
+
+**H1–H4 aplicadas no dry-run:**
+- H1: P3 `project_id = d0d008c3` (human_approved, confidence: confirmed)
+- H2: importação PNG de P1 aprovada — destino `users/.../library/posts-migration-m8/<post_id>/...`
+- H3: migrar todos os 4 Posts
+- H4: `EditorialContent.status = draft`, `ChannelPiece.status = draft`
+
+**Rastreabilidade confirmada:** `legacy_post_id UUID NULL` + `UNIQUE WHERE legacy_post_id IS NOT NULL`  
+**`legacy_source` coluna:** desnecessária — apenas uma fonte legada.
+
+**Aprovação individual (a preencher pelo responsável):**
+
+| Post | Name | Status dry-run | Decisão |
+|------|------|---------------|---------|
+| P1 | Teste Post Smoke Test 01 | ✅ READY | APPROVE / REJECT |
+| P2 | outro teste de post | ✅ READY | APPROVE / REJECT |
+| P3 | outro teste de story | ✅ READY | APPROVE / REJECT |
+| P4 | teste 04 | ✅ READY | APPROVE / REJECT |
+
+---
+
 ## 2. Pré-condições para Autorizar a Migração
 
 | Condição | Status atual | Ação necessária |
