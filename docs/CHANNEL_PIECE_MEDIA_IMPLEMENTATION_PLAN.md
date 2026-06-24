@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-24 (rev. 9 — M6 implementado, aguardando migration 024 + testes)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. **RELEASE M1–M5 EM PRODUÇÃO.** M6 ⏳ (código pronto, migration pendente).
+**Data:** 2026-06-24 (rev. 9 — M6 completo)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. **RELEASE M1–M5 EM PRODUÇÃO. M6 implementado, testado (66/66), smoke aprovado. Aguardando merge.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -496,7 +496,7 @@ Fixture: `[SMOKE RELEASE CPM M1-M5].jpg` — ChannelPiece `65f49c21` (instagram/
 **Pré-condição:** M5 aprovado.
 
 **Branch:** `feat/channel-piece-media-m6-organization`  
-**Status:** Código implementado e commitado (`ce984e4`, `31a0e3b`). Aguardando migration 024 aplicada manualmente + suite de testes.
+**Status:** ✅ IMPLEMENTADO, TESTADO E AUDITADO. Migration 024 aplicada em produção. 66 assertions passadas. Smoke visual aprovado. Cleanup completo.
 
 **Decisões:** CPM-D25, CPM-D26, CPM-D27
 
@@ -566,33 +566,60 @@ Retorna lista remanescente atualizada (positions compactadas, primary promovido 
 
 Sem biblioteca DnD pesada. Botões Up/Down para reordenação.
 
-### Auditoria (54 casos) — pendente execução
+### Auditoria (66 assertions) — 2026-06-24
 
-| Grupo | Casos | Status |
-|-------|-------|--------|
-| Reorder (1–11) | 11 | ⏳ Aguardando migration 024 |
-| Primary (12–18) | 7 | ⏳ Aguardando migration 024 |
-| Roles (19–25) | 7 | ⏳ Aguardando migration 024 |
-| DELETE (26–31) | 6 | ⏳ Aguardando migration 024 |
-| Concorrência (32–38) | 7 | ⏳ Aguardando migration 024 |
-| Segurança (39–44) | 6 | ⏳ Aguardando migration 024 |
-| Regressão (45–54) | 10 | ⏳ Aguardando migration 024 |
-| **TOTAL** | **54** | ⏳ |
+| Grupo | Assertions | Status |
+|-------|-----------|--------|
+| Reorder (1–11) | 11 | ✅ 11/11 |
+| Primary (12–20) | 9 | ✅ 9/9 |
+| Roles (21–29) | 9 | ✅ 9/9 |
+| DELETE (30–40) | 11 | ✅ 11/11 |
+| Concorrência (41–50) | 10 | ✅ 10/10 |
+| Segurança (51–56) | 6 | ✅ 6/6 |
+| Regressão (57–66) | 10 | ✅ 10/10 |
+| **TOTAL** | **66 assertions** | ✅ **66/66** |
 
-Suite: `scripts/cpm_m6_tests.mjs` — requer `pnpm dev` + migration 024 aplicada.
+> Nota: o plano previa 54 casos de domínio. A implementação decompôs vários casos em múltiplas assertions independentes (ex: case 17 = status 200 + count primary + position), totalizando 66 assertions. Todos passaram.
+
+Suite: `scripts/cpm_m6_tests.mjs` — executada em 2026-06-24.
+
+### Smoke visual — 2026-06-24 — APROVADO
+
+ChannelPiece: `65f49c21` (CP_A1)
+
+| CPM ID | pos | role | fonte |
+|--------|-----|------|-------|
+| `9040c423` | 0 | primary | image `3a49939e` (IMAGE_A) |
+| `ffbf586e` | 1 | carousel_item | LF `SMOKE-arquivo-projeto.jpg` |
+| `a067dc81` | 2 | thumbnail | LF `SMOKE-upload-direto.jpg` |
+
+Checklist visual confirmado:
+- [x] 3 mídias exibidas com botões ↑↓ e dropdown de role
+- [x] "Definir como principal" funcional; unicidade mantida
+- [x] Item de carrossel e Miniatura com roles corretas
+- [x] Card externo sem controles de edição
+- [x] Remoção disponível somente no editor
+- [x] Ordem refletida corretamente após reorganização
+- [x] Editor, scroll e formulário funcionando sem regressão
+
+### Cleanup — 2026-06-24
+
+- 3 CPMs smoke removidos de CP_A1
+- 11 library_files `[TESTE CPM M6]` removidos do banco
+- 11 objetos S3 removidos (bucket `content-studio`)
+- CP_A1: 0 CPMs. Zero resíduos.
 
 ### Typecheck + build
 
-`pnpm typecheck` — ✅ exit 0 (tsconfig.typecheck.json exclui .next)  
-`pnpm build` — validar após migration aplicada
+`pnpm typecheck` — ✅ exit 0  
+`pnpm build`     — ✅ exit 0  
+`pnpm validate`  — ✅ exit 0
 
-### Pendências
+### Limitações
 
-1. Aplicar `scripts/024_channel_piece_media_organization.sql` via Supabase SQL Editor (MCP em read-only mode)
-2. Executar `node scripts/cpm_m6_tests.mjs` — smoke visual após 54/54
-3. Cleanup de fixtures
-4. Atualizar HANDOFF com M6
-5. Push + aguardar aprovação humana para merge
+- **ESLint não instalado:** `pnpm lint` não disponível (pré-existente; não introduzido pelo M6). Próximo hardening técnico: instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão no `pnpm validate`.
+- **Teste cross-user:** isolamento RLS validado por inspeção de policies e suite de segurança, não por execução com 2 contas reais. Risco baixo (tripla camada: RLS + API + RPC).
+- **Sem DnD avançado:** reordenação via botões Up/Down. Drag-and-drop pode ser adicionado como melhoria sem breaking change na API.
 
 ---
 

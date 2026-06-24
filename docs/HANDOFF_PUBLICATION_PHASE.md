@@ -2,8 +2,8 @@
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
-**Branch M6:** `feat/channel-piece-media-m6-organization` — implementado, aguardando migration 024 + testes  
-**Estado:** Release M1–M5 deployado em produção. M6 código pronto. Próximo: aplicar migration 024, executar 54 testes, smoke visual, merge.
+**Branch M6:** `feat/channel-piece-media-m6-organization` — implementado, testado (66/66), smoke aprovado  
+**Estado:** Release M1–M5 deployado em produção. M6 completo — aguardando merge. Próximo passo: M7 (suporte a vídeo).
 
 ---
 
@@ -25,7 +25,7 @@
 
 **Migrations em produção:** `022_create_channel_piece_media.sql` e `023_enforce_channel_piece_media_source_uniqueness.sql` — ambas aplicadas em 2026-06-23.
 
-**M6:** `feat/channel-piece-media-m6-organization` — código commitado (`ce984e4`, `31a0e3b`). Migration 024 não aplicada ainda (MCP em read-only). Ver seção M6 abaixo.
+**M6:** `feat/channel-piece-media-m6-organization` — implementado, testado, smoke aprovado, cleanup concluído. Ver seção M6 abaixo.
 
 **Dados preservados (confirmado pós-release):**
 - Projeto `d0d008c3` "Content Agent" — intacto
@@ -211,10 +211,10 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 
 ---
 
-### M6 — Organização das mídias da Versão para canal — CÓDIGO PRONTO, AGUARDANDO MIGRATION (2026-06-24)
+### M6 — Organização das mídias da Versão para canal — IMPLEMENTADO E AUDITADO (2026-06-24)
 
 **Branch:** `feat/channel-piece-media-m6-organization`  
-**HEAD:** `31a0e3b` — test: add CPM M6 organization test suite (54 cases)  
+**HEAD:** (ver seção Git — commit de docs)  
 **Decisões:** CPM-D25, CPM-D26, CPM-D27
 
 **Arquivos entregues:**
@@ -234,30 +234,19 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 - Delete atômico: compacta posições + promove primary se necessário
 - Proteção contra stale payload, lock conflict e payload malformado
 
-**Bloqueio atual:** Migration 024 deve ser aplicada manualmente via Supabase SQL Editor:
+**Migration 024:** aplicada em produção (`nuhdhnasuohizxtmyiju`) em 2026-06-24. RPCs `organize_channel_piece_media` e `remove_channel_piece_media` confirmadas via `pg_proc` (SECURITY INVOKER).
 
-```
-URL: https://supabase.com/dashboard/project/nuhdhnasuohizxtmyiju/sql
-Arquivo: scripts/024_channel_piece_media_organization.sql
-```
+**Auditoria:** `node scripts/cpm_m6_tests.mjs` — **66/66 assertions** passadas (Reorder 11, Primary 9, Roles 9, DELETE 11, Concorrência 10, Segurança 6, Regressão 10).
 
-Verificação pós-aplicação:
-```sql
-SELECT routine_name FROM information_schema.routines
-WHERE routine_name IN ('organize_channel_piece_media','remove_channel_piece_media')
-  AND routine_schema = 'public';
--- Deve retornar 2 linhas
-```
+**Smoke visual:** CP_A1 com 3 mídias (IMAGE_A primary / LF carousel_item / LF thumbnail) — aprovado em 2026-06-24. Validados: Up/Down, role dropdown, "Definir como principal", unicidade de primary, card externo read-only, editor funcional.
 
-**Após migration aplicada:**
-1. `pnpm dev` (porta 3000)
-2. `node scripts/cpm_m6_tests.mjs` — deve passar 54/54
-3. Smoke visual: CP_A1 com 3 mídias em http://localhost:3000 — aprovar human
-4. Cleanup: deletar CPMs/LFs com prefixo `[TESTE CPM M6]`
-5. `pnpm typecheck && pnpm build` — ambos exit 0
-6. Commit docs + push
+**Cleanup:** 3 CPMs + 11 library_files + 11 S3 objects removidos. CP_A1 = 0 CPMs. Zero resíduos.
 
-**TypeScript:** `pnpm typecheck` ✅ exit 0 (validado em `31a0e3b`).
+**Validação técnica:** `pnpm typecheck` ✅ `pnpm build` ✅ `pnpm validate` ✅
+
+**Próximo passo:** M7 (suporte a vídeo via `library_files.kind = 'video'`). Requer autorização explícita.
+
+**Hardening técnico pendente (não bloqueante):** instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão em `pnpm validate`.
 
 ---
 
