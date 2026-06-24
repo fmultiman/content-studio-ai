@@ -5,8 +5,8 @@
 **Branch executor M8.3A:** `feat/posts-migration-m8-executor`  
 **Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
 **Branch auditoria M8.5A:** `feat/posts-migration-m8-5a-audit`  
-**Branch legacy marking M8.5B:** `feat/posts-migration-m8-5b-legacy-marking`  
-**Status:** M8.5B PRONTO PARA RELEASE — 4/4 posts marcados. POST legado bloqueado (410). Testes autenticados 10/10 PASS. validate OK.  
+**Branch legacy marking M8.5B:** `feat/posts-migration-m8-5b-legacy-marking` — integrado em main (`0e412ed`)  
+**Status:** M8.5B RELEASE APROVADO — 4/4 marcados. POST legado bloqueado (410). Testes autenticados 10/10 PASS. Smoke produção 6/6 PASS. READY FOR M9.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---

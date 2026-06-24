@@ -10,8 +10,8 @@
 **Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
 **Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
-**Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — PRONTO PARA RELEASE (2026-06-24). 4/4 marcados. POST criação bloqueado 401/410. Testes autenticados 10/10 PASS. validate OK.  
-**Estado:** M1–M7 em produção. M8.1–M8.5B concluídos. Posts em modo legado/read-only. Criação legada bloqueada em UI e API. Próximo: release M8.5B → M9.
+**Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — DEPLOYADO (2026-06-24). Merge `0e412ed`. Tag `pre-posts-legacy-marking-m8-5b-release-2026-06-24`. Smoke produção 6/6 PASS.  
+**Estado:** M1–M8.5B em produção. Posts em modo legado/read-only. Criação bloqueada em UI (410) e API. Próximo: M9 (retire posts legados).
 
 ---
 
@@ -63,7 +63,7 @@ Nenhum post de conteúdo real identificado na base de produção.
 | M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
 | M8.4 Migrar P1 com mídia | ✅ EXECUTADO 2026-06-24 — EC+CP+LF+CPM, branch `feat/posts-migration-m8-4-p1-media` |
 | M8.5A Post-migration audit | ✅ PASS 2026-06-24 — 139/139, determinístico, branch `feat/posts-migration-m8-5a-audit` |
-| M8.5B Legacy Marking | ✅ PRONTO PARA RELEASE 2026-06-24 — 4/4 marcados, POST 410, testes auth 10/10, branch `feat/posts-migration-m8-5b-legacy-marking` |
+| M8.5B Legacy Marking | ✅ DEPLOYADO 2026-06-24 — merge `0e412ed`, smoke produção 6/6, tag rollback criada |
 | M8.6 Cleanup Posts | ⏳ |
 
 ### M8.3A — Resultados da execução — 2026-06-24
@@ -221,10 +221,44 @@ node scripts/posts_migration_m85b_rollback.mjs --execute
 ```
 Zera `migrated_at` nos 4 posts. Não toca EC/CP/LF/CPM/S3.
 
-### Próximo passo (M8)
+### Release M8.5B — 2026-06-24 — APROVADO
 
-Release M8.5B: tag + merge `feat/posts-migration-m8-5b-legacy-marking` → main → deploy.  
-Depois: M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
+**Merge commit:** `0e412ed` — `feat: integrate legacy Posts marking M8.5B`  
+**Tag de rollback:** `pre-posts-legacy-marking-m8-5b-release-2026-06-24` → `1b7be2b`  
+**Deploy:** Vercel auto-deploy de `main` — `content.multihuman.com.br`
+
+**Smoke público (pós-deploy):**
+
+| Check | Resultado |
+|-------|-----------|
+| `/login` → 200 | ✅ |
+| `/posts` sem auth → 307 /login | ✅ |
+| GET /api/posts sem auth → 401 | ✅ |
+| PATCH /api/posts sem auth → 401 | ✅ |
+| POST /api/posts sem auth → 401 | ✅ |
+| DELETE /api/posts sem auth → 401 | ✅ |
+
+**Smoke autenticado em produção (6/6 PASS):**
+
+| Check | Resultado |
+|-------|-----------|
+| GET P1 migrado → 200 + migrated_ec_id | ✅ |
+| PATCH P1 migrado → 409 POST_MIGRATED | ✅ |
+| DELETE P1 migrado → 409 POST_MIGRATED | ✅ |
+| POST /api/posts → 410 LEGACY_POST_CREATION_DISABLED | ✅ |
+| Total posts = 4, todos migrados | ✅ |
+| DB: status=saved, migrated_at intacto (4/4) | ✅ |
+
+**Auditoria final:**
+- Posts total: 4 ✅ · Posts migrados: 4 ✅ · Unmigrated: 0 ✅
+- ECs com legacy_post_id: 4 ✅ · 1:1 confirmado ✅
+- P1 CPM: 1 ✅ · LF: 1.293.601 bytes, kind=image ✅
+- S3 destination: `users/35428fd4.../library/posts-migration-m8/d02a9507.../Content-Agent-Studio-Future-Vision-Concept.png` ✅
+- Rollbacks M8.3A e M8.4 disponíveis e não executados
+
+### Próximo passo
+
+M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
 
 ---
 
