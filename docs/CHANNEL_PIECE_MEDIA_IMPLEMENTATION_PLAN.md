@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 8 — M1–M5 integrados em `main` e deployados em produção 2026-06-24)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. **RELEASE M1–M5 EM PRODUÇÃO.**
+**Data:** 2026-06-24 (rev. 9 — M6 completo)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. **RELEASE M1–M5 EM PRODUÇÃO. M6 implementado, testado (66/66), smoke aprovado. Aguardando merge.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -489,25 +489,137 @@ Fixture: `[SMOKE RELEASE CPM M1-M5].jpg` — ChannelPiece `65f49c21` (instagram/
 
 ---
 
-## M6 — Reordenação e capa
+## M6 — Organização das mídias da Versão para canal
 
-**Objetivo:** Drag-and-drop para reordenar mídias; definir capa (`role = 'primary'`).
+**Objetivo:** Reordenar mídias (botões up/down), alterar role (dropdown), definir primary ("Definir como principal"), e DELETE atômico com compactação de posições.
 
 **Pré-condição:** M5 aprovado.
 
-**API:** endpoint batch `PATCH /api/channel-piece-media/reorder` recebendo `[{id, position}]`.
+**Branch:** `feat/channel-piece-media-m6-organization`  
+**Status:** ✅ IMPLEMENTADO, TESTADO E AUDITADO. Migration 024 aplicada em produção. 66 assertions passadas. Smoke visual aprovado. Cleanup completo.
 
-**Estratégia de reordenação com `cpm_unique_position DEFERRABLE`:**
+**Decisões:** CPM-D25, CPM-D26, CPM-D27
 
-A constraint `cpm_unique_position` é `DEFERRABLE INITIALLY IMMEDIATE`. O endpoint de reorder deve:
-1. Iniciar transação
-2. `SET CONSTRAINTS cpm_unique_position DEFERRED`
-3. Executar os UPDATEs de posição em qualquer ordem
-4. COMMIT — verificação ocorre no final, sem colisões intermediárias
+### Arquitetura
 
-Não usar abordagem de "offset temporário" (+1000) — mais frágil e sujeita a overflow do `SMALLINT` (máx 32767).
+RPC-based atomicity: duas funções PL/pgSQL em `scripts/024_channel_piece_media_organization.sql`:
 
-**Compactação de posições:** O endpoint de reorder pode normalizar as posições para sequência contínua (0, 1, 2, ...) ou manter os valores fornecidos pelo cliente. Recomendado: aceitar posições arbitrárias do cliente (drag-and-drop pode usar steps de 10 para reduzir reordenações completas).
+- **`organize_channel_piece_media(p_channel_piece_id UUID, p_items JSONB) RETURNS JSONB`**
+  - Valida auth.uid(), estrutura dos itens, ownership da CP
+  - `FOR UPDATE NOWAIT` em todas as linhas → `55P03` → 409
+  - Detecção de stale payload (ID set mismatch) → CPM_CONFLICT → 409
+  - Dois fases de primary: demote (WHERE role='primary' AND id NOT IN new_primary), depois promote
+  - `SET CONSTRAINTS cpm_unique_position DEFERRED` + loop UPDATE
+  - Retorna JSONB array ordenado por position
+
+- **`remove_channel_piece_media(p_id UUID) RETURNS JSONB`**
+  - Valida auth.uid(), `FOR UPDATE NOWAIT`
+  - DELETE + se era primary e há remanescentes → promove o de menor position
+  - `SET CONSTRAINTS cpm_unique_position DEFERRED` + CTE compactação (`ROW_NUMBER() - 1`)
+  - Retorna JSONB array remanescente ordenado
+
+Ambas: `LANGUAGE plpgsql SECURITY INVOKER SET search_path = public, auth`  
+`REVOKE ALL ON FUNCTION ... FROM PUBLIC; GRANT EXECUTE TO authenticated`
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `scripts/024_channel_piece_media_organization.sql` | Novo — RPCs + grants |
+| `app/api/channel-piece-media/_helpers.ts` | `mapRpcError` adicionado |
+| `app/api/channel-piece-media/organize/route.ts` | Novo — `PATCH /api/channel-piece-media/organize` |
+| `app/api/channel-piece-media/[id]/route.ts` | DELETE reescrito para usar RPC |
+| `components/publication/channel-piece-media-section.tsx` | UI de organização: up/down, role dropdown, primary |
+
+### API
+
+**`PATCH /api/channel-piece-media/organize`**
+```
+Body: { channelPieceId: string, items: [{ id, position, role }] }
+200: { channelPieceMedia: ChannelPieceMediaResolved[] }
+400: campos inválidos / duplicatas / zero primaries / role inválida
+401: sem sessão
+404: CP não encontrada
+409: stale payload ou lock conflict
+```
+Chaves extras no body ou nos items → 400 (projeção segura).
+
+**`DELETE /api/channel-piece-media/[id]`** (atualizado)
+```
+200: { ok: true, channelPieceMedia: ChannelPieceMediaResolved[] }
+401: sem sessão
+404: CPM não encontrado
+409: lock conflict
+```
+Retorna lista remanescente atualizada (positions compactadas, primary promovido se necessário).
+
+### Frontend
+
+`channel-piece-media-section.tsx` (modo `editable=true`):
+
+- `MediaItemEditable`: chevron Up/Down (disabled em boundary ou anyBusy), spinner quando `isOrganizing`, DropdownMenu de role (Definir como principal / thumbnail / carousel_item / background / attachment), botão Trash2 com confirmação
+- `callOrganize(newArrangement, triggerItemId)` — PATCH /organize com lista completa renumerada, atualiza items do response
+- `handleMoveUp/Down` — troca adjacente + renumera posições
+- `handleRoleChange` — se newRole=primary, demove current primary para carousel_item
+- `anyBusy = isOrganizeInFlight.current || !!deletingId`
+- `handleConfirmDelete` usa `channelPieceMedia` do response DELETE (fallback: filter local)
+
+Sem biblioteca DnD pesada. Botões Up/Down para reordenação.
+
+### Auditoria (66 assertions) — 2026-06-24
+
+| Grupo | Assertions | Status |
+|-------|-----------|--------|
+| Reorder (1–11) | 11 | ✅ 11/11 |
+| Primary (12–20) | 9 | ✅ 9/9 |
+| Roles (21–29) | 9 | ✅ 9/9 |
+| DELETE (30–40) | 11 | ✅ 11/11 |
+| Concorrência (41–50) | 10 | ✅ 10/10 |
+| Segurança (51–56) | 6 | ✅ 6/6 |
+| Regressão (57–66) | 10 | ✅ 10/10 |
+| **TOTAL** | **66 assertions** | ✅ **66/66** |
+
+> Nota: o plano previa 54 casos de domínio. A implementação decompôs vários casos em múltiplas assertions independentes (ex: case 17 = status 200 + count primary + position), totalizando 66 assertions. Todos passaram.
+
+Suite: `scripts/cpm_m6_tests.mjs` — executada em 2026-06-24.
+
+### Smoke visual — 2026-06-24 — APROVADO
+
+ChannelPiece: `65f49c21` (CP_A1)
+
+| CPM ID | pos | role | fonte |
+|--------|-----|------|-------|
+| `9040c423` | 0 | primary | image `3a49939e` (IMAGE_A) |
+| `ffbf586e` | 1 | carousel_item | LF `SMOKE-arquivo-projeto.jpg` |
+| `a067dc81` | 2 | thumbnail | LF `SMOKE-upload-direto.jpg` |
+
+Checklist visual confirmado:
+- [x] 3 mídias exibidas com botões ↑↓ e dropdown de role
+- [x] "Definir como principal" funcional; unicidade mantida
+- [x] Item de carrossel e Miniatura com roles corretas
+- [x] Card externo sem controles de edição
+- [x] Remoção disponível somente no editor
+- [x] Ordem refletida corretamente após reorganização
+- [x] Editor, scroll e formulário funcionando sem regressão
+
+### Cleanup — 2026-06-24
+
+- 3 CPMs smoke removidos de CP_A1
+- 11 library_files `[TESTE CPM M6]` removidos do banco
+- 11 objetos S3 removidos (bucket `content-studio`)
+- CP_A1: 0 CPMs. Zero resíduos.
+
+### Typecheck + build
+
+`pnpm typecheck` — ✅ exit 0  
+`pnpm build`     — ✅ exit 0  
+`pnpm validate`  — ✅ exit 0
+
+### Limitações
+
+- **ESLint não instalado:** `pnpm lint` não disponível (pré-existente; não introduzido pelo M6). Próximo hardening técnico: instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão no `pnpm validate`.
+- **Teste cross-user:** isolamento RLS validado por inspeção de policies e suite de segurança, não por execução com 2 contas reais. Risco baixo (tripla camada: RLS + API + RPC).
+- **Sem DnD avançado:** reordenação via botões Up/Down. Drag-and-drop pode ser adicionado como melhoria sem breaking change na API.
 
 ---
 

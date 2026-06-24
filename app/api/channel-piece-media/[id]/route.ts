@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { ChannelPieceMediaRole } from '@/lib/types'
-import { UUID_RE, VALID_ROLES, mapPgError, resolveMediaSource } from '../_helpers'
+import { UUID_RE, VALID_ROLES, mapPgError, mapRpcError, resolveMediaSource } from '../_helpers'
 
 const ALLOWED_PATCH_KEYS = new Set(['position', 'role', 'altText'])
 
@@ -162,7 +162,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 // DELETE /api/channel-piece-media/[id]
-// Removes the association only. Never deletes images, library_files, or storage objects.
+// Removes a media association atomically via remove_channel_piece_media RPC.
+// After removal: positions are compacted (0..N-1) and primary is promoted if needed.
+// Never deletes images, library_files, or storage objects — association only.
+// Returns: { ok: true, channelPieceMedia: ChannelPieceMediaResolved[] }
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const { id } = await context.params
@@ -173,23 +176,28 @@ export async function DELETE(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'ID invalido' }, { status: 400 })
     }
 
-    const { data: deleted, error } = await supabase
-      .from('channel_piece_media')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .select('id')
+    const { data, error } = await supabase.rpc('remove_channel_piece_media', { p_id: id })
 
     if (error) {
-      console.error('[CPM] DELETE error:', error)
+      console.error('[CPM] DELETE RPC error:', error)
+      const mapped = mapRpcError(error.message)
+      if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status })
       return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
     }
 
-    if (!deleted || deleted.length === 0) {
-      return NextResponse.json({ error: 'Associacao de midia nao encontrada' }, { status: 404 })
-    }
+    // Enrich remaining items with resolved source data
+    const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : []
+    const resolved = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        ...(await resolveMediaSource(
+          supabase,
+          row as Parameters<typeof resolveMediaSource>[1],
+        )),
+      })),
+    )
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, channelPieceMedia: resolved })
   } catch (error) {
     console.error('[CPM] DELETE error:', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

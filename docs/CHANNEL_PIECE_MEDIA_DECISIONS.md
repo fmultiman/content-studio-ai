@@ -1,6 +1,6 @@
 # ChannelPiece Media — Decisões de Domínio
-**Data:** 2026-06-23 (rev. 5 — M5)  
-**Status:** M1–M4 aprovados e em produção. fix/source-uniqueness auditado e aprovado. M5 implementado e testado (44/44).
+**Data:** 2026-06-24 (rev. 6 — M6)  
+**Status:** M1–M5 aprovados e em produção. M6 implementado, testado (66/66), smoke aprovado.
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
@@ -475,6 +475,44 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
 
 ---
 
+## CPM-D25 — Reordenação e remoção atômica via RPC **[NOVA]**
+
+**Decisão:** As operações de organizar (reordenar + alterar role) e remover mídias de uma ChannelPiece são delegadas a duas funções PL/pgSQL (`organize_channel_piece_media`, `remove_channel_piece_media`), chamadas via PostgREST RPC. Nenhuma dessas operações é feita via REST direto na tabela.
+
+**Motivação:** A constraint `cpm_unique_position` é `DEFERRABLE INITIALLY IMMEDIATE`. Para reordenar N itens sem violar a constraint em posições intermediárias, é obrigatório `SET CONSTRAINTS cpm_unique_position DEFERRED` dentro da mesma transação. O PostgREST REST API não suporta `SET CONSTRAINTS`, portanto a única abordagem correta é uma função PL/pgSQL que controla toda a transação.
+
+**Segurança:** Ambas as funções são `SECURITY INVOKER` — `auth.uid()` e RLS aplicam normalmente via JWT. `SECURITY DEFINER` foi rejeitado por não ser necessário aqui.
+
+**Código de erro:** `CPM_*` prefix nos `RAISE EXCEPTION` (CPM_UNAUTHORIZED, CPM_NOT_FOUND, CPM_CONFLICT, CPM_LOCK_CONFLICT, CPM_INVALID_INPUT). API parseia o prefix e retorna mensagem amigável. Prefix nunca exposto ao cliente.
+
+**Arquivo:** `scripts/024_channel_piece_media_organization.sql`
+
+---
+
+## CPM-D26 — Primário: promoção e demote automáticos **[NOVA]**
+
+**Decisão:**
+- Ao promover um item para `primary`, o item anterior com `role = 'primary'` é automaticamente demovido para `carousel_item` dentro da mesma transação RPC.
+- Ao deletar o único item `primary` quando ainda há outros itens, o item com menor `position` é automaticamente promovido para `primary` (dentro da mesma transação RPC).
+- Se todos os itens são removidos, zero primaries é o estado correto.
+
+**Motivação:** A constraint `uq_cpm_cp_primary` é `NOT DEFERRABLE` (índice único parcial). Dentro de uma transação, não é possível ter dois primaries coexistindo mesmo que transitoriamente. A solução é a atualização em duas fases: (1) demote do primary atual, (2) promote do novo primary após `SET CONSTRAINTS DEFERRED` para a constraint de posição.
+
+**Invariante:** Em qualquer estado persistido, ou existe exatamente um `primary`, ou zero (lista vazia).
+
+---
+
+## CPM-D27 — Compactação de posições e lock otimista **[NOVA]**
+
+**Decisão:**
+- Após qualquer DELETE de CPM, as posições dos itens remanescentes são compactadas para `0..N-1` via CTE + `ROW_NUMBER() OVER (ORDER BY position ASC, created_at ASC) - 1`.
+- `FOR UPDATE NOWAIT` é usado em todas as operações RPC que tocam linhas de CPM. Se outra transação tem lock, retorna imediatamente com `SQLSTATE 55P03` → API mapeia para HTTP 409.
+- Detecção de payload stale: o RPC compara o conjunto de IDs do payload com os IDs no banco. Se divergirem (item adicionado ou removido entre o GET e o PATCH), retorna `CPM_CONFLICT` → 409.
+
+**Motivação:** Compactação garante que a lista de mídias nunca tem gaps de posição, simplificando a lógica de frontend (positions = 0, 1, 2, ...). `NOWAIT` evita deadlocks e garante resposta rápida ao usuário em caso de contenção. Detecção de stale payload evita reordenação silenciosa sobre um estado desatualizado.
+
+---
+
 ## Questões ainda abertas
 
 Todas as questões bloqueantes para M1–M5 foram respondidas.
@@ -515,3 +553,6 @@ Todas as questões bloqueantes para M1–M5 foram respondidas.
 | CPM-D22 | `primary` único por CP (banco); `thumbnail` sem restrição no banco | 3 | Aprovada |
 | CPM-D23 | Unicidade de fonte por CP: `uq_cpm_cp_image` + `uq_cpm_cp_library_file` (partial unique indexes) | 4 | Aprovada |
 | CPM-D24 | Upload server-side via `POST /api/channel-piece-media/upload`; atomicidade por compensação (Casos A–D) | 5 | Aprovada |
+| CPM-D25 | Reordenação atômica via RPC `organize_channel_piece_media`; DELETE atômico via `remove_channel_piece_media` | 6 | Aprovada |
+| CPM-D26 | Promoção automática de primary ao deletar único primary remanescente; demote automático do primary anterior ao promover novo | 6 | Aprovada |
+| CPM-D27 | Compactação de posições após DELETE via CTE + `ROW_NUMBER()`; `FOR UPDATE NOWAIT` → 409 em conflito de lock | 6 | Aprovada |

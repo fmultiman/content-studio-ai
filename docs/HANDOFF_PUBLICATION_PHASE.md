@@ -1,8 +1,9 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M5)
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M6)
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
-**Estado:** Release M1–M5 deployado em produção. Smoke aprovado. M6 é o próximo passo.
+**Branch M6:** `feat/channel-piece-media-m6-organization` — implementado, testado (66/66), smoke aprovado  
+**Estado:** Release M1–M5 deployado em produção. M6 completo — aguardando merge. Próximo passo: M7 (suporte a vídeo).
 
 ---
 
@@ -24,7 +25,7 @@
 
 **Migrations em produção:** `022_create_channel_piece_media.sql` e `023_enforce_channel_piece_media_source_uniqueness.sql` — ambas aplicadas em 2026-06-23.
 
-**Próximo:** M6 (reordenação, role manual) — requer autorização explícita antes de iniciar.
+**M6:** `feat/channel-piece-media-m6-organization` — implementado, testado, smoke aprovado, cleanup concluído. Ver seção M6 abaixo.
 
 **Dados preservados (confirmado pós-release):**
 - Projeto `d0d008c3` "Content Agent" — intacto
@@ -207,6 +208,45 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 - Formatos: JPEG, PNG, WebP, GIF, MP4, WebM, MOV; limite 50 MB
 
 **Auditoria:** 44/44 casos passados (Groups 1–7: auth, imagens, vídeo, atomicidade, concorrência, deleção, regressão). TypeScript limpo. Build OK.
+
+---
+
+### M6 — Organização das mídias da Versão para canal — IMPLEMENTADO E AUDITADO (2026-06-24)
+
+**Branch:** `feat/channel-piece-media-m6-organization`  
+**HEAD:** (ver seção Git — commit de docs)  
+**Decisões:** CPM-D25, CPM-D26, CPM-D27
+
+**Arquivos entregues:**
+
+| Arquivo | Status |
+|---------|--------|
+| `scripts/024_channel_piece_media_organization.sql` | ✅ Escrito. **Não aplicado ao banco.** |
+| `app/api/channel-piece-media/_helpers.ts` | ✅ `mapRpcError` adicionado |
+| `app/api/channel-piece-media/organize/route.ts` | ✅ `PATCH /api/channel-piece-media/organize` |
+| `app/api/channel-piece-media/[id]/route.ts` | ✅ DELETE reescrito para RPC |
+| `components/publication/channel-piece-media-section.tsx` | ✅ Up/Down, role dropdown, primary |
+| `scripts/cpm_m6_tests.mjs` | ✅ 54 casos (Groups 1–7) |
+
+**Funcionalidade entregue:**
+- Botões Up/Down para reordenar itens (sem DnD pesado)
+- Dropdown de role por item: "Definir como principal", thumbnail, carousel_item, background, attachment
+- Delete atômico: compacta posições + promove primary se necessário
+- Proteção contra stale payload, lock conflict e payload malformado
+
+**Migration 024:** aplicada em produção (`nuhdhnasuohizxtmyiju`) em 2026-06-24. RPCs `organize_channel_piece_media` e `remove_channel_piece_media` confirmadas via `pg_proc` (SECURITY INVOKER).
+
+**Auditoria:** `node scripts/cpm_m6_tests.mjs` — **66/66 assertions** passadas (Reorder 11, Primary 9, Roles 9, DELETE 11, Concorrência 10, Segurança 6, Regressão 10).
+
+**Smoke visual:** CP_A1 com 3 mídias (IMAGE_A primary / LF carousel_item / LF thumbnail) — aprovado em 2026-06-24. Validados: Up/Down, role dropdown, "Definir como principal", unicidade de primary, card externo read-only, editor funcional.
+
+**Cleanup:** 3 CPMs + 11 library_files + 11 S3 objects removidos. CP_A1 = 0 CPMs. Zero resíduos.
+
+**Validação técnica:** `pnpm typecheck` ✅ `pnpm build` ✅ `pnpm validate` ✅
+
+**Próximo passo:** M7 (suporte a vídeo via `library_files.kind = 'video'`). Requer autorização explícita.
+
+**Hardening técnico pendente (não bloqueante):** instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão em `pnpm validate`.
 
 ---
 

@@ -80,6 +80,46 @@ export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 export const VALID_ROLES = ['primary', 'thumbnail', 'carousel_item', 'background', 'attachment'] as const
 
+// Maps RPC error messages (CPM_* prefix) to HTTP responses.
+// The message is the raw RAISE EXCEPTION text from the PL/pgSQL function.
+// We never expose the internal prefix to the client.
+export function mapRpcError(message: string): { status: number; error: string } | null {
+  if (message.includes('CPM_UNAUTHORIZED')) {
+    return { status: 401, error: 'Nao autorizado' }
+  }
+  if (message.includes('CPM_NOT_FOUND')) {
+    return { status: 404, error: 'Associacao de midia nao encontrada' }
+  }
+  if (message.includes('CPM_LOCK_CONFLICT')) {
+    return { status: 409, error: 'Operacao concorrente em andamento. Tente novamente em instantes.' }
+  }
+  if (message.includes('CPM_CONFLICT')) {
+    return { status: 409, error: 'Lista de midias foi alterada. Recarregue e tente novamente.' }
+  }
+  if (message.includes('CPM_INVALID_INPUT')) {
+    if (message.includes('exactly one primary')) {
+      return { status: 400, error: 'Exatamente uma midia principal e obrigatoria.' }
+    }
+    if (message.includes('duplicate IDs')) {
+      return { status: 400, error: 'IDs duplicados na lista de itens.' }
+    }
+    if (message.includes('duplicate positions')) {
+      return { status: 400, error: 'Posicoes duplicadas na lista de itens.' }
+    }
+    if (message.includes('positions must be 0..N-1')) {
+      return { status: 400, error: 'Posicoes devem ser sequenciais de 0 a N-1.' }
+    }
+    if (message.includes('invalid role')) {
+      return { status: 400, error: 'Role invalida nos itens.' }
+    }
+    if (message.includes('items cannot be empty')) {
+      return { status: 400, error: 'Lista de itens nao pode ser vazia.' }
+    }
+    return { status: 400, error: 'Dados invalidos.' }
+  }
+  return null
+}
+
 export function mapPgError(code: string, message: string): { status: number; error: string } | null {
   if (code === '23505') {
     if (message.includes('uq_cpm_cp_image') || message.includes('uq_cpm_cp_library_file')) {

@@ -13,26 +13,44 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useToast } from '@/hooks/use-toast'
 import type { ChannelPieceMediaResolved, ChannelPieceMediaRole } from '@/lib/types'
-import { FileText, ImageIcon, Loader2, Music, Plus, RefreshCw, Trash2, Video } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  ImageIcon,
+  Loader2,
+  MoreHorizontal,
+  Music,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Video,
+} from 'lucide-react'
 import { MediaPickerDialog } from './media-picker-dialog'
 
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
 const ROLE_LABELS: Record<ChannelPieceMediaRole, string> = {
-  primary: 'Principal',
-  thumbnail: 'Thumbnail',
+  primary:       'Principal',
+  thumbnail:     'Thumbnail',
   carousel_item: 'Item de carrossel',
-  background: 'Fundo',
-  attachment: 'Anexo',
+  background:    'Fundo',
+  attachment:    'Anexo',
 }
 
 // ─── Thumbnail / icon ─────────────────────────────────────────────────────────
 
 function MediaThumb({ item }: { item: ChannelPieceMediaResolved }) {
   const [imgError, setImgError] = useState(false)
-
   const src = item.thumbnail_url || item.image_url
 
   if (item.source_deleted) {
@@ -55,8 +73,8 @@ function MediaThumb({ item }: { item: ChannelPieceMediaResolved }) {
   }
 
   const Icon =
-    item.media_kind === 'video' ? Video
-    : item.media_kind === 'audio' ? Music
+    item.media_kind === 'video'    ? Video
+    : item.media_kind === 'audio'  ? Music
     : item.media_kind === 'document' ? FileText
     : ImageIcon
 
@@ -67,21 +85,106 @@ function MediaThumb({ item }: { item: ChannelPieceMediaResolved }) {
   )
 }
 
-// ─── Single media row ─────────────────────────────────────────────────────────
+// ─── Single media row (read-only, used in card mode) ─────────────────────────
 
-interface MediaItemProps {
+interface MediaItemReadOnlyProps {
   item: ChannelPieceMediaResolved
-  onRemove: (id: string) => void
-  isRemoving: boolean
-  showRemove: boolean
 }
 
-function MediaItem({ item, onRemove, isRemoving, showRemove }: MediaItemProps) {
-  const origin = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
+function MediaItemReadOnly({ item }: MediaItemReadOnlyProps) {
+  const origin      = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
   const displayName = item.name || item.mime_type || null
 
   return (
-    <div className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/40">
+    <div className="flex items-center gap-2 rounded-md px-1 py-1">
+      <MediaThumb item={item} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline" className="h-4 px-1 text-[10px]">
+            {ROLE_LABELS[item.role]}
+          </Badge>
+          <span className="text-xs text-muted-foreground">{origin}</span>
+          {item.source_deleted && (
+            <Badge variant="secondary" className="h-4 px-1 text-[10px] text-muted-foreground">
+              Mídia indisponível
+            </Badge>
+          )}
+        </div>
+        {displayName && (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{displayName}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Single media row (editable) ─────────────────────────────────────────────
+
+interface MediaItemEditableProps {
+  item:          ChannelPieceMediaResolved
+  isFirst:       boolean
+  isLast:        boolean
+  anyBusy:       boolean
+  isOrganizing:  boolean  // this specific item is being moved/role-changed
+  isRemoving:    boolean  // this specific item is being removed
+  onMoveUp:      (id: string) => void
+  onMoveDown:    (id: string) => void
+  onRoleChange:  (id: string, role: ChannelPieceMediaRole) => void
+  onRemove:      (id: string) => void
+}
+
+function MediaItemEditable({
+  item,
+  isFirst,
+  isLast,
+  anyBusy,
+  isOrganizing,
+  isRemoving,
+  onMoveUp,
+  onMoveDown,
+  onRoleChange,
+  onRemove,
+}: MediaItemEditableProps) {
+  const origin      = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
+  const displayName = item.name || item.mime_type || null
+
+  const busy = anyBusy || isOrganizing || isRemoving
+
+  return (
+    <div className="flex items-center gap-1 rounded-md px-1 py-1 hover:bg-muted/40">
+      {/* Order controls */}
+      <div className="flex shrink-0 flex-col">
+        <button
+          type="button"
+          disabled={isFirst || busy}
+          onClick={() => onMoveUp(item.id)}
+          className="flex h-4 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
+          title="Mover para cima"
+          aria-label="Mover para cima"
+        >
+          {isOrganizing
+            ? null
+            : <ChevronUp className="h-3 w-3" />}
+        </button>
+        <button
+          type="button"
+          disabled={isLast || busy}
+          onClick={() => onMoveDown(item.id)}
+          className="flex h-4 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default"
+          title="Mover para baixo"
+          aria-label="Mover para baixo"
+        >
+          {isOrganizing
+            ? null
+            : <ChevronDown className="h-3 w-3" />}
+        </button>
+      </div>
+
+      {/* Spinner replaces arrows while this item is being reorganized */}
+      {isOrganizing && (
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+      )}
+
       <MediaThumb item={item} />
 
       <div className="min-w-0 flex-1">
@@ -99,28 +202,71 @@ function MediaItem({ item, onRemove, isRemoving, showRemove }: MediaItemProps) {
         {displayName && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{displayName}</p>
         )}
-        {item.alt_text && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground/50" title={item.alt_text}>
-            {item.alt_text}
-          </p>
-        )}
       </div>
 
-      {showRemove && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 shrink-0 gap-1 px-1.5 text-xs text-muted-foreground hover:text-destructive"
-          disabled={isRemoving}
-          onClick={() => onRemove(item.id)}
-          title="Remover da versão"
-        >
-          {isRemoving
-            ? <Loader2 className="h-3 w-3 animate-spin" />
-            : <Trash2 className="h-3 w-3" />}
-          <span className="sr-only">Remover da versão</span>
-        </Button>
-      )}
+      {/* Role change menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 px-1.5"
+            disabled={busy}
+            title="Alterar função"
+          >
+            <MoreHorizontal className="h-3 w-3" />
+            <span className="sr-only">Opções da mídia</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            disabled={item.role === 'primary'}
+            onClick={() => onRoleChange(item.id, 'primary')}
+          >
+            Definir como principal
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={item.role === 'thumbnail'}
+            onClick={() => onRoleChange(item.id, 'thumbnail')}
+          >
+            Usar como thumbnail
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={item.role === 'carousel_item'}
+            onClick={() => onRoleChange(item.id, 'carousel_item')}
+          >
+            Usar como item de carrossel
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={item.role === 'background'}
+            onClick={() => onRoleChange(item.id, 'background')}
+          >
+            Usar como fundo
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={item.role === 'attachment'}
+            onClick={() => onRoleChange(item.id, 'attachment')}
+          >
+            Usar como anexo
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Remove button */}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 shrink-0 gap-1 px-1.5 text-xs text-muted-foreground hover:text-destructive"
+        disabled={busy}
+        onClick={() => onRemove(item.id)}
+        title="Remover da versão"
+      >
+        {isRemoving
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : <Trash2 className="h-3 w-3" />}
+        <span className="sr-only">Remover da versão</span>
+      </Button>
     </div>
   )
 }
@@ -129,25 +275,35 @@ function MediaItem({ item, onRemove, isRemoving, showRemove }: MediaItemProps) {
 
 interface Props {
   channelPieceId: string
-  editable?: boolean
-  projectId?: string
+  editable?:      boolean
+  projectId?:     string
 }
 
-export function ChannelPieceMediaSection({ channelPieceId, editable = false, projectId }: Props) {
+export function ChannelPieceMediaSection({
+  channelPieceId,
+  editable = false,
+  projectId,
+}: Props) {
   const { toast } = useToast()
 
-  const [items, setItems] = useState<ChannelPieceMediaResolved[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [items,    setItems]    = useState<ChannelPieceMediaResolved[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
 
-  // Delete state — useRef guards against double-click
+  // Delete state
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingId,   setDeletingId]   = useState<string | null>(null)
   const isDeleteInFlight = useRef(false)
+
+  // Organize state
+  const [organizingId, setOrganizingId] = useState<string | null>(null)
+  const isOrganizeInFlight = useRef(false)
 
   // Picker state
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false
@@ -155,17 +311,92 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
     setError(null)
     fetch(`/api/channel-piece-media?channelPieceId=${channelPieceId}`)
       .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setItems(d.channelPieceMedia ?? [])
-      })
-      .catch(() => {
-        if (!cancelled) setError('Erro ao carregar mídias desta versão.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+      .then((d) => { if (!cancelled) setItems(d.channelPieceMedia ?? []) })
+      .catch(() => { if (!cancelled) setError('Erro ao carregar mídias desta versão.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [channelPieceId, retryKey])
+
+  // ── Organize (reorder + role change) ──────────────────────────────────────
+
+  const callOrganize = useCallback(
+    async (
+      newArrangement: Array<{ id: string; position: number; role: ChannelPieceMediaRole }>,
+      triggerItemId: string,
+    ) => {
+      if (isOrganizeInFlight.current) return
+      isOrganizeInFlight.current = true
+      setOrganizingId(triggerItemId)
+      try {
+        const res = await fetch('/api/channel-piece-media/organize', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelPieceId, items: newArrangement }),
+        })
+        const d = await res.json()
+        if (!res.ok) throw new Error((d as { error?: string }).error || 'Erro ao reorganizar')
+        setItems(d.channelPieceMedia ?? [])
+      } catch (err) {
+        toast({
+          title: 'Erro ao reorganizar',
+          description: err instanceof Error ? err.message : 'Tente novamente.',
+          variant: 'destructive',
+        })
+        setRetryKey((k) => k + 1)
+      } finally {
+        isOrganizeInFlight.current = false
+        setOrganizingId(null)
+      }
+    },
+    [channelPieceId, toast],
+  )
+
+  const handleMoveUp = useCallback(
+    (id: string) => {
+      const idx = items.findIndex((i) => i.id === id)
+      if (idx <= 0 || isOrganizeInFlight.current) return
+      const reordered = [...items]
+      ;[reordered[idx - 1], reordered[idx]] = [reordered[idx], reordered[idx - 1]]
+      callOrganize(
+        reordered.map((item, i) => ({ id: item.id, position: i, role: item.role })),
+        id,
+      )
+    },
+    [items, callOrganize],
+  )
+
+  const handleMoveDown = useCallback(
+    (id: string) => {
+      const idx = items.findIndex((i) => i.id === id)
+      if (idx < 0 || idx >= items.length - 1 || isOrganizeInFlight.current) return
+      const reordered = [...items]
+      ;[reordered[idx], reordered[idx + 1]] = [reordered[idx + 1], reordered[idx]]
+      callOrganize(
+        reordered.map((item, i) => ({ id: item.id, position: i, role: item.role })),
+        id,
+      )
+    },
+    [items, callOrganize],
+  )
+
+  const handleRoleChange = useCallback(
+    (id: string, newRole: ChannelPieceMediaRole) => {
+      if (isOrganizeInFlight.current) return
+      // If promoting to primary, demote current primary to carousel_item
+      const newItems = items.map((item) => ({
+        id:       item.id,
+        position: item.position,
+        role:
+          item.id === id          ? newRole
+          : newRole === 'primary' && item.role === 'primary' ? 'carousel_item' as ChannelPieceMediaRole
+          : item.role,
+      }))
+      callOrganize(newItems, id)
+    },
+    [items, callOrganize],
+  )
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
 
   const handleConfirmDelete = useCallback(async () => {
     if (!confirmingId || isDeleteInFlight.current) return
@@ -179,7 +410,13 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
         const d = await res.json().catch(() => ({}))
         throw new Error((d as { error?: string }).error || 'Erro ao remover')
       }
-      setItems((prev) => prev.filter((i) => i.id !== targetId))
+      const d = await res.json()
+      // Server returns the updated list with compacted positions + promoted primary
+      if (Array.isArray(d.channelPieceMedia)) {
+        setItems(d.channelPieceMedia)
+      } else {
+        setItems((prev) => prev.filter((i) => i.id !== targetId))
+      }
       toast({
         title: 'Mídia removida da versão',
         description: 'O arquivo original foi preservado.',
@@ -197,8 +434,9 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
   }, [confirmingId, toast])
 
   const confirmingItem = confirmingId ? items.find((i) => i.id === confirmingId) : null
+  const anyBusy = isOrganizeInFlight.current || !!deletingId
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -223,7 +461,9 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
           </div>
         ) : items.length === 0 ? (
           <div className="py-1">
-            <p className="text-xs text-muted-foreground">Nenhuma mídia associada a esta versão.</p>
+            <p className="text-xs text-muted-foreground">
+              Nenhuma mídia associada a esta versão.
+            </p>
             {!editable && (
               <p className="mt-0.5 text-xs text-muted-foreground/60">
                 A seleção e o upload de mídia serão adicionados na próxima etapa.
@@ -236,15 +476,25 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
               Mídia ({items.length})
             </p>
             <div className="space-y-0.5">
-              {items.map((item) => (
-                <MediaItem
-                  key={item.id}
-                  item={item}
-                  onRemove={setConfirmingId}
-                  isRemoving={deletingId === item.id}
-                  showRemove={editable}
-                />
-              ))}
+              {editable
+                ? items.map((item, idx) => (
+                    <MediaItemEditable
+                      key={item.id}
+                      item={item}
+                      isFirst={idx === 0}
+                      isLast={idx === items.length - 1}
+                      anyBusy={anyBusy}
+                      isOrganizing={organizingId === item.id}
+                      isRemoving={deletingId === item.id}
+                      onMoveUp={handleMoveUp}
+                      onMoveDown={handleMoveDown}
+                      onRoleChange={handleRoleChange}
+                      onRemove={setConfirmingId}
+                    />
+                  ))
+                : items.map((item) => (
+                    <MediaItemReadOnly key={item.id} item={item} />
+                  ))}
             </div>
           </div>
         )}
@@ -257,7 +507,7 @@ export function ChannelPieceMediaSection({ channelPieceId, editable = false, pro
               size="sm"
               className="h-7 gap-1.5 px-2 text-xs"
               onClick={() => setPickerOpen(true)}
-              disabled={loading}
+              disabled={loading || anyBusy}
             >
               <Plus className="h-3 w-3" />
               Adicionar mídia
