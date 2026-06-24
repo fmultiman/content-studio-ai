@@ -586,7 +586,7 @@ function PostsPageContent() {
 
   return (
     <>
-      <Header title="Publicações" />
+      <Header title="Arquivo legado de Posts" />
       {productionId && (
         <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
           <Button
@@ -614,9 +614,16 @@ function PostsPageContent() {
       )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+            <span className="mt-0.5 shrink-0">⚠</span>
+            <span>
+              <strong>Arquivo legado.</strong> Estes posts foram migrados para o novo domínio Editorial. A criação de novos Posts foi encerrada. Para criar conteúdo, acesse{' '}
+              <a href="/conteudos" className="underline hover:text-amber-300">Conteúdos</a>.
+            </span>
+          </div>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
-              Crie posts, stories, shorts e vídeos para Instagram e YouTube com rascunho automático.
+              Posts legados (Instagram, YouTube) — somente leitura. Criação encerrada. Use Conteúdos Editoriais.
             </p>
             <Button
               className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"

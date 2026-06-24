@@ -46,7 +46,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Production, ImageDraft, VideoDraft, Post, EditorialContent, ChannelPiece } from '@/lib/types'
+import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -102,7 +102,6 @@ export default function ProductionDetailPage() {
   // Workspace data
   const [imageDrafts, setImageDrafts] = useState<ImageDraft[]>([])
   const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
-  const [posts, setPosts] = useState<Post[]>([])
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false)
 
   // Editorial contents state
@@ -119,7 +118,7 @@ export default function ProductionDetailPage() {
   const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
 
   // Unlink state
-  const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video' | 'post'; id: string; name: string } | null>(null)
+  const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video'; id: string; name: string } | null>(null)
   const [isUnlinking, setIsUnlinking] = useState(false)
 
   useEffect(() => {
@@ -172,21 +171,18 @@ export default function ProductionDetailPage() {
     const loadWorkspace = async () => {
       setIsLoadingWorkspace(true)
       try {
-        const [imgRes, vidRes, postRes, ecRes] = await Promise.all([
+        const [imgRes, vidRes, ecRes] = await Promise.all([
           fetch(`/api/image-drafts?productionId=${productionId}`),
           fetch(`/api/video-drafts?productionId=${productionId}`),
-          fetch(`/api/posts?productionId=${productionId}`),
           fetch(`/api/editorial-contents?productionId=${productionId}`),
         ])
-        const [imgData, vidData, postData, ecData] = await Promise.all([
+        const [imgData, vidData, ecData] = await Promise.all([
           imgRes.json(),
           vidRes.json(),
-          postRes.json(),
           ecRes.json(),
         ])
         if (imgRes.ok) setImageDrafts(imgData.drafts || [])
         if (vidRes.ok) setVideoDrafts(vidData.drafts || [])
-        if (postRes.ok) setPosts(postData.posts || [])
         if (ecRes.ok) setEditorialContents(ecData.editorialContents || [])
       } catch {
         // silently fail — workspace items are non-critical
@@ -272,9 +268,7 @@ export default function ProductionDetailPage() {
     setIsUnlinking(true)
     try {
       const endpoint =
-        unlinkTarget.type === 'image' ? '/api/image-drafts' :
-        unlinkTarget.type === 'video' ? '/api/video-drafts' :
-        '/api/posts'
+        unlinkTarget.type === 'image' ? '/api/image-drafts' : '/api/video-drafts'
 
       const res = await fetch(endpoint, {
         method: 'PATCH',
@@ -290,10 +284,8 @@ export default function ProductionDetailPage() {
 
       if (unlinkTarget.type === 'image') {
         setImageDrafts((prev) => prev.filter((d) => d.id !== unlinkTarget.id))
-      } else if (unlinkTarget.type === 'video') {
-        setVideoDrafts((prev) => prev.filter((d) => d.id !== unlinkTarget.id))
       } else {
-        setPosts((prev) => prev.filter((p) => p.id !== unlinkTarget.id))
+        setVideoDrafts((prev) => prev.filter((d) => d.id !== unlinkTarget.id))
       }
 
       toast({ title: 'Desvinculado', description: `"${unlinkTarget.name}" foi desvinculado desta Produção.` })
@@ -441,10 +433,6 @@ export default function ProductionDetailPage() {
                 <FileText className="h-4 w-4" />
                 Conteúdos editoriais {editorialContents.length > 0 && `(${editorialContents.length})`}
               </TabsTrigger>
-              <TabsTrigger value="posts" className="gap-2">
-                <FileText className="h-4 w-4" />
-                Posts legados {posts.length > 0 && `(${posts.length})`}
-              </TabsTrigger>
             </TabsList>
 
             {/* Visão Geral */}
@@ -525,18 +513,6 @@ export default function ProductionDetailPage() {
                         <Plus className="h-4 w-4" />
                         <Video className="h-4 w-4" />
                         Criar Vídeo
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-2"
-                        onClick={() =>
-                          router.push(`/posts?project=${projectId}&production=${productionId}`)
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                        <FileText className="h-4 w-4" />
-                        Criar Publicação
                       </Button>
                       <Button
                         size="sm"
@@ -842,85 +818,6 @@ export default function ProductionDetailPage() {
               </div>
             </TabsContent>
 
-            {/* Publicações (legado) */}
-            <TabsContent value="posts" className="mt-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    {posts.length === 0 ? 'Nenhuma publicação vinculada.' : `${posts.length} publicação${posts.length > 1 ? 'ões' : ''} vinculada${posts.length > 1 ? 's' : ''}.`}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() =>
-                      router.push(`/posts?project=${projectId}&production=${productionId}`)
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    Criar Publicação
-                  </Button>
-                </div>
-
-                {isLoadingWorkspace ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : posts.length === 0 ? (
-                  <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-10">
-                      <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Nenhuma publicação vinculada a esta Produção.</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-2">
-                    {posts.map((post) => (
-                      <Card key={post.id} className="border-border/50 bg-card/30">
-                        <CardContent className="flex items-center justify-between p-4">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">{post.name || 'Post sem título'}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {post.status === 'saved' ? 'Salvo' : 'Rascunho'} ·{' '}
-                              {post.channel.replace('_', ' ')} ·{' '}
-                              {new Date(post.updated_at).toLocaleDateString('pt-BR')}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-2 ml-4">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1 text-xs"
-                              onClick={() =>
-                                router.push(`/posts?project=${projectId}&production=${productionId}`)
-                              }
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Abrir
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1 text-xs text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                setUnlinkTarget({
-                                  type: 'post',
-                                  id: post.id,
-                                  name: post.name || 'Post',
-                                })
-                              }
-                            >
-                              <Link2Off className="h-3.5 w-3.5" />
-                              Desvincular
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </TabsContent>
           </Tabs>
         </div>
       </div>
