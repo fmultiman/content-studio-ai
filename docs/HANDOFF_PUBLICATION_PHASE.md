@@ -2,8 +2,29 @@
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
-**Branch M6:** `feat/channel-piece-media-m6-organization` — implementado, testado (66/66), smoke aprovado  
-**Estado:** Release M1–M5 deployado em produção. M6 completo — aguardando merge. Próximo passo: M7 (suporte a vídeo).
+**Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
+**Estado:** Release M1–M6 deployado em produção. Próximo passo: ESLint hardening + M7 (suporte a vídeo).
+
+---
+
+## Release ChannelPiece Media M6 — 2026-06-24
+
+**Merge commit:** `e4da6b8` — `feat: integrate ChannelPiece media organization M6`  
+**Tag de rollback:** `pre-channel-piece-media-m6-release-2026-06-24` → `acdb51d`  
+**Branch integrado:** `feat/channel-piece-media-m6-organization` → `main`  
+**Deploy:** `content.multihuman.com.br` — Ready  
+**Migration 024 em produção:** `024_channel_piece_media_organization.sql` — aplicada em 2026-06-24. RPCs `organize_channel_piece_media` e `remove_channel_piece_media` confirmadas via `pg_proc` (SECURITY INVOKER, prosecdef=false).
+
+### Smoke de release em produção — 2026-06-24
+
+Fixture: 3 mídias `SMOKE-RELEASE-CPM-M6-media-{1,2,3}.jpg` criadas em CP_A1 (`65f49c21`).
+
+| Fase | Verificações | Resultado |
+|------|-------------|-----------|
+| Smoke público (sem auth) | 27 | ✅ 27/27 |
+| Smoke autenticado (`content.multihuman.com.br`) | 27 | ✅ 27/27 |
+
+Cleanup do smoke: 1 CPM (`e810959e`) + 3 LFs + 3 S3 objects deletados — zero resíduos confirmados.
 
 ---
 
@@ -211,22 +232,22 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 
 ---
 
-### M6 — Organização das mídias da Versão para canal — IMPLEMENTADO E AUDITADO (2026-06-24)
+### M6 — Organização das mídias da Versão para canal — IMPLEMENTADO, TESTADO E DEPLOYADO (2026-06-24)
 
-**Branch:** `feat/channel-piece-media-m6-organization`  
-**HEAD:** (ver seção Git — commit de docs)  
+**Branch:** `feat/channel-piece-media-m6-organization` → integrado em `main` (`e4da6b8`)  
+**Tag de rollback:** `pre-channel-piece-media-m6-release-2026-06-24` → `acdb51d`  
 **Decisões:** CPM-D25, CPM-D26, CPM-D27
 
 **Arquivos entregues:**
 
 | Arquivo | Status |
 |---------|--------|
-| `scripts/024_channel_piece_media_organization.sql` | ✅ Escrito. **Não aplicado ao banco.** |
+| `scripts/024_channel_piece_media_organization.sql` | ✅ Escrito e aplicado em produção (2026-06-24) |
 | `app/api/channel-piece-media/_helpers.ts` | ✅ `mapRpcError` adicionado |
 | `app/api/channel-piece-media/organize/route.ts` | ✅ `PATCH /api/channel-piece-media/organize` |
 | `app/api/channel-piece-media/[id]/route.ts` | ✅ DELETE reescrito para RPC |
 | `components/publication/channel-piece-media-section.tsx` | ✅ Up/Down, role dropdown, primary |
-| `scripts/cpm_m6_tests.mjs` | ✅ 54 casos (Groups 1–7) |
+| `scripts/cpm_m6_tests.mjs` | ✅ 66 assertions (Groups 1–7) |
 
 **Funcionalidade entregue:**
 - Botões Up/Down para reordenar itens (sem DnD pesado)
@@ -238,15 +259,15 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 
 **Auditoria:** `node scripts/cpm_m6_tests.mjs` — **66/66 assertions** passadas (Reorder 11, Primary 9, Roles 9, DELETE 11, Concorrência 10, Segurança 6, Regressão 10).
 
-**Smoke visual:** CP_A1 com 3 mídias (IMAGE_A primary / LF carousel_item / LF thumbnail) — aprovado em 2026-06-24. Validados: Up/Down, role dropdown, "Definir como principal", unicidade de primary, card externo read-only, editor funcional.
+**Smoke visual (pré-merge):** CP_A1 com 3 mídias (IMAGE_A primary / LF carousel_item / LF thumbnail) — aprovado. Validados: Up/Down, role dropdown, "Definir como principal", unicidade de primary, card externo read-only, editor funcional. Cleanup: 3 CPMs + 11 library_files + 11 S3 objects removidos.
 
-**Cleanup:** 3 CPMs + 11 library_files + 11 S3 objects removidos. CP_A1 = 0 CPMs. Zero resíduos.
+**Smoke de release (pós-deploy):** 27/27 verificações públicas + 27/27 autenticadas em `content.multihuman.com.br`. Cleanup: 1 CPM + 3 LFs + 3 S3 objects removidos. Zero resíduos.
 
 **Validação técnica:** `pnpm typecheck` ✅ `pnpm build` ✅ `pnpm validate` ✅
 
-**Próximo passo:** M7 (suporte a vídeo via `library_files.kind = 'video'`). Requer autorização explícita.
+**Próximo passo:** ESLint hardening (`chore/configure-eslint`). Depois: M7 (suporte a vídeo). Ambos requerem autorização explícita.
 
-**Hardening técnico pendente (não bloqueante):** instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão em `pnpm validate`.
+**Hardening técnico pendente:** instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão em `pnpm validate` → branch `chore/configure-eslint`.
 
 ---
 

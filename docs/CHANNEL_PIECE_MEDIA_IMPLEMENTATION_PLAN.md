@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
 **Data:** 2026-06-24 (rev. 9 — M6 completo)  
-**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. **RELEASE M1–M5 EM PRODUÇÃO. M6 implementado, testado (66/66), smoke aprovado. Aguardando merge.**
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 ✓. M6 ✓. **RELEASE M1–M6 EM PRODUÇÃO.**
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -620,6 +620,45 @@ Checklist visual confirmado:
 - **ESLint não instalado:** `pnpm lint` não disponível (pré-existente; não introduzido pelo M6). Próximo hardening técnico: instalar e configurar ESLint, adicionar `pnpm lint`, avaliar inclusão no `pnpm validate`.
 - **Teste cross-user:** isolamento RLS validado por inspeção de policies e suite de segurança, não por execução com 2 contas reais. Risco baixo (tripla camada: RLS + API + RPC).
 - **Sem DnD avançado:** reordenação via botões Up/Down. Drag-and-drop pode ser adicionado como melhoria sem breaking change na API.
+
+---
+
+## Release M6 — 2026-06-24
+
+**Merge commit:** `e4da6b8` — `feat: integrate ChannelPiece media organization M6`  
+**Tag de rollback:** `pre-channel-piece-media-m6-release-2026-06-24` → `acdb51d`  
+**Branch integrado:** `feat/channel-piece-media-m6-organization` → `main`  
+**Deploy:** `content.multihuman.com.br` — Ready  
+**Migration 024 em produção:** `organize_channel_piece_media` + `remove_channel_piece_media` — SECURITY INVOKER, confirmadas via `pg_proc`.
+
+### Auditoria consolidada pré-merge
+
+| Verificação | Resultado |
+|-------------|-----------|
+| RPCs: `organize_channel_piece_media`, `remove_channel_piece_media` | ✅ Confirmadas em `pg_proc` (prosecdef=false) |
+| Suite M6: `scripts/cpm_m6_tests.mjs` — 66 assertions | ✅ 66/66 |
+| Smoke visual pré-merge: Up/Down, role, primary, card externo | ✅ Aprovado |
+| Cleanup pré-merge: 3 CPMs + 11 LFs + 11 S3 objects | ✅ Zero resíduos |
+| `pnpm typecheck` | ✅ exit 0 |
+| `pnpm build` | ✅ exit 0 |
+| `pnpm validate` | ✅ exit 0 |
+
+### Smoke de release em produção — 2026-06-24
+
+Fixture: 3 LFs `SMOKE-RELEASE-CPM-M6-media-{1,2,3}.jpg` em CP_A1 (`65f49c21`).
+
+| Fase | Verificações | Resultado |
+|------|-------------|-----------|
+| Smoke público (sem auth) | 27 | ✅ 27/27 |
+| Smoke autenticado (`content.multihuman.com.br`) | 27 | ✅ 27/27 |
+
+**Cleanup do smoke:** 1 CPM (`e810959e`) + 3 LFs (`ab20417e`, `d9b66fa4`, `f12d1400`) + 3 S3 objects — zero resíduos confirmados.
+
+### Riscos remanescentes
+
+- **ESLint não instalado:** `pnpm lint` falha por `eslint` ausente nas deps (pré-existente; não introduzido pelo M6). Tratado no branch `chore/configure-eslint`.
+- **`typescript.ignoreBuildErrors: true` no `next.config.mjs`:** build do Vercel não falha em erros TS. Mitigado: tsc local passou em exit 0.
+- **Teste cross-user:** isolamento RLS validado por inspeção de policies e tripla camada, não por execução com 2 contas reais. Risco baixo.
 
 ---
 

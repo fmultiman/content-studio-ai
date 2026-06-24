@@ -1,6 +1,6 @@
 # ChannelPiece Media — Decisões de Domínio
 **Data:** 2026-06-24 (rev. 6 — M6)  
-**Status:** M1–M5 aprovados e em produção. M6 implementado, testado (66/66), smoke aprovado.
+**Status:** M1–M6 aprovados e em produção. Release M6 deployado em 2026-06-24 (commit `e4da6b8`).
 
 > Revisão 2 incorpora as decisões humanas de 2026-06-22:
 > correção de política de exclusão (RESTRICT), exatamente uma fonte por registro,
