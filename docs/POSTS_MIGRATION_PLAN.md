@@ -5,7 +5,8 @@
 **Branch executor M8.3A:** `feat/posts-migration-m8-executor`  
 **Branch executor M8.4:** `feat/posts-migration-m8-4-p1-media`  
 **Branch auditoria M8.5A:** `feat/posts-migration-m8-5a-audit`  
-**Status:** M8.5A AUDITADO — 139/139 PASS, determinístico. READY FOR LEGACY MARKING (pendente revisão visual humana).  
+**Branch legacy marking M8.5B:** `feat/posts-migration-m8-5b-legacy-marking`  
+**Status:** M8.5B CONCLUÍDO — 4/4 posts marcados (migrated_at=2026-06-24T20:59:57.181+00:00). Testes: 15/15 PASS.  
 **Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
 
 ---
@@ -100,6 +101,50 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ec_legacy_post_id
 ```sql
 DROP INDEX IF EXISTS uq_ec_legacy_post_id;
 ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
+```
+
+---
+
+## 1.6 M8.5B — Legacy Marking — 2026-06-24
+
+**Branch:** `feat/posts-migration-m8-5b-legacy-marking`  
+**Scripts:** `scripts/posts_migration_m85b_mark.mjs`, `scripts/posts_migration_m85b_rollback.mjs`  
+**Testes:** `scripts/posts_m85b_tests.mjs`  
+**Migration:** `scripts/026_add_posts_migrated_at.sql`
+
+**Decisão de schema:** `migrated_at TIMESTAMPTZ NULL` adicionado a `posts`. Campo `migrated_editorial_content_id` descartado — EC lookup via `editorial_contents.legacy_post_id` (já indexado) é suficiente. API enriquece GET com `migrated_ec_id` + `migrated_ec_project_id` via join no servidor.
+
+**Proteção API:**
+- GET: permitido; resposta enriquecida com campos de navegação para posts migrados
+- PATCH: HTTP 409 `POST_MIGRATED` se `migrated_at IS NOT NULL`
+- DELETE: HTTP 409 `POST_MIGRATED` se algum ID estiver migrado
+- POST (criação): API aberta; "Novo Post" desabilitado na UI
+
+**UI (modo legado):**
+- Badge âmbar "Migrado" no item da lista
+- Link "Ver Conteúdo Editorial" no item e no editor
+- Editor somente leitura (readOnly + disabled) quando `migrated_at IS NOT NULL`
+- Auto-save desativado para posts migrados
+- Botões Salvar/Excluir ocultos no editor de post migrado
+
+**Resultado:**
+
+| Métrica | Valor |
+|---------|-------|
+| Posts marcados | 4/4 |
+| migrated_at | 2026-06-24T20:59:57.181+00:00 |
+| Idempotência (2ª run) | ALREADY_MARKED 4/4 ✅ |
+| Testes | 15/15 PASS ✅ |
+| API PATCH/DELETE | Bloqueados com HTTP 409 POST_MIGRATED ✅ |
+| UI | Badge Migrado + link EC + read-only ✅ |
+| typecheck | 0 erros ✅ |
+| lint | 0 erros ✅ |
+| build | exit 0 ✅ |
+
+**Rollback M8.5B (se necessário):**
+```bash
+POSTS_MIGRATION_M85B_ROLLBACK_CONFIRM=M8_5B_ROLLBACK_APPROVED \
+node scripts/posts_migration_m85b_rollback.mjs --execute
 ```
 
 ---

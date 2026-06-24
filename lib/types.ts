@@ -145,6 +145,10 @@ export interface Post {
   status: PostStatus
   created_at: string
   updated_at: string
+  migrated_at?: string | null
+  // computed by GET /api/posts when migrated_at IS NOT NULL — not stored in posts table
+  migrated_ec_id?: string | null
+  migrated_ec_project_id?: string | null
 }
 
 export interface PostImage {

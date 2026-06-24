@@ -1,0 +1,45 @@
+{
+  "phase": "M8.5B",
+  "timestamp": "2026-06-24T21:01:06.477Z",
+  "dry_run": false,
+  "overall": "ALREADY_MARKED",
+  "marked_at": null,
+  "posts": [
+    {
+      "label": "P1",
+      "post_id": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+      "ec_id": "16a0bfea-b558-4f26-91ec-2e163d84f9b0",
+      "cp_id": "2a48076c-3aff-4c53-beaf-cd84e028cffd",
+      "state": "ALREADY_MARKED",
+      "result": "ALREADY_MARKED",
+      "marked_at": "2026-06-24T20:59:57.181+00:00"
+    },
+    {
+      "label": "P2",
+      "post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+      "ec_id": "0d4ee522-db02-4766-98aa-d02b2faf1ea1",
+      "cp_id": "64e5bbb3-f8cf-46eb-bafa-2d420d03c6bc",
+      "state": "ALREADY_MARKED",
+      "result": "ALREADY_MARKED",
+      "marked_at": "2026-06-24T20:59:57.181+00:00"
+    },
+    {
+      "label": "P3",
+      "post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+      "ec_id": "bee05422-04e7-4c80-9d82-ba504303e37d",
+      "cp_id": "05772802-06d7-4249-bae8-d8b8e11b7457",
+      "state": "ALREADY_MARKED",
+      "result": "ALREADY_MARKED",
+      "marked_at": "2026-06-24T20:59:57.181+00:00"
+    },
+    {
+      "label": "P4",
+      "post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+      "ec_id": "d0138557-ad57-4284-bcdc-322c21c8f599",
+      "cp_id": "ba9d1e7d-38c7-4ca0-8251-a72bdaddce64",
+      "state": "ALREADY_MARKED",
+      "result": "ALREADY_MARKED",
+      "marked_at": "2026-06-24T20:59:57.181+00:00"
+    }
+  ]
+}

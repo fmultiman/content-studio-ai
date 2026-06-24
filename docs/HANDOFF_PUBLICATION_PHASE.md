@@ -10,7 +10,8 @@
 **Branch M8.3A executor:** `feat/posts-migration-m8-executor` — P2/P4/P3 migrados (2026-06-24). Não integrado a main.  
 **Branch M8.4 executor:** `feat/posts-migration-m8-4-p1-media` — P1 migrado com mídia (2026-06-24). Não integrado a main.  
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
-**Estado:** M1–M7 em produção. M8.1–M8.5A concluídos. Todos os 4 posts migrados e auditados. Próximo: M8.5B — marcar posts migrados (exige autorização explícita).
+**Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — CONCLUÍDO (2026-06-24). 4/4 posts marcados. Testes 15/15.  
+**Estado:** M1–M7 em produção. M8.1–M8.5B concluídos. Posts em modo legado/read-only. Próximo: M9 (retire posts legados).
 
 ---
 
@@ -62,7 +63,7 @@ Nenhum post de conteúdo real identificado na base de produção.
 | M8.3A Migrar P2/P4/P3 | ✅ EXECUTADO 2026-06-24 — 3/3 migrados, branch `feat/posts-migration-m8-executor` |
 | M8.4 Migrar P1 com mídia | ✅ EXECUTADO 2026-06-24 — EC+CP+LF+CPM, branch `feat/posts-migration-m8-4-p1-media` |
 | M8.5A Post-migration audit | ✅ PASS 2026-06-24 — 139/139, determinístico, branch `feat/posts-migration-m8-5a-audit` |
-| M8.5B Marcar Posts migrados | ⏳ Aguarda autorização |
+| M8.5B Legacy Marking | ✅ CONCLUÍDO 2026-06-24 — 4/4 marcados, testes 15/15, branch `feat/posts-migration-m8-5b-legacy-marking` |
 | M8.6 Cleanup Posts | ⏳ |
 
 ### M8.3A — Resultados da execução — 2026-06-24
@@ -162,9 +163,46 @@ node scripts/posts_migration_m84_rollback.mjs --execute
 
 **Validação técnica:** typecheck ✅ 0 erros | lint ✅ 0 erros | build ✅ exit 0
 
+### M8.5B — Legacy Marking — 2026-06-24 — CONCLUÍDO
+
+**Branch:** `feat/posts-migration-m8-5b-legacy-marking` (não integrado a main)  
+**Scripts:** `scripts/posts_migration_m85b_mark.mjs`, `scripts/posts_migration_m85b_rollback.mjs`  
+**Testes:** `scripts/posts_m85b_tests.mjs` — 15/15 PASS  
+**Migration:** `scripts/026_add_posts_migrated_at.sql` — aplicada em 2026-06-24
+
+**Schema:** `migrated_at TIMESTAMPTZ NULL` adicionado à tabela `posts`.
+
+| Post | migrated_at | Resultado |
+|------|-------------|-----------|
+| P1 `d02a9507` | 2026-06-24T20:59:57.181+00:00 | ✅ MARKED |
+| P2 `7eb9ccf4` | 2026-06-24T20:59:57.181+00:00 | ✅ MARKED |
+| P3 `083a69d5` | 2026-06-24T20:59:57.181+00:00 | ✅ MARKED |
+| P4 `7aa6b5a4` | 2026-06-24T20:59:57.181+00:00 | ✅ MARKED |
+
+**Idempotência:** 2ª execução → ALREADY_MARKED 4/4 ✅
+
+**API protegida:**
+- `PATCH /api/posts` com post migrado → HTTP 409 `POST_MIGRATED`
+- `DELETE /api/posts` com post migrado → HTTP 409 `POST_MIGRATED`
+- `GET /api/posts` → continua funcionando; resposta inclui `migrated_ec_id` + `migrated_ec_project_id`
+
+**UI:**
+- Badge âmbar "Migrado" em cada item da lista
+- Link "Ver Conteúdo Editorial" no item (dropdown) e no editor
+- Editor somente leitura para posts marcados (readOnly/disabled em todos os campos)
+- Auto-save desabilitado para posts marcados
+- Botão "Novo Post" desabilitado (área em modo legado)
+
+**Rollback disponível:**
+```bash
+POSTS_MIGRATION_M85B_ROLLBACK_CONFIRM=M8_5B_ROLLBACK_APPROVED \
+node scripts/posts_migration_m85b_rollback.mjs --execute
+```
+Zera `migrated_at` nos 4 posts. Não toca EC/CP/LF/CPM/S3.
+
 ### Próximo passo (M8)
 
-M8.5B — marcar Posts migrados (atualizar `posts.status` ou campo equivalente para indicar migração). Exige autorização explícita.
+M9 — Retire completo: remover área legada de Posts, API `/api/posts`, e tabela `posts`. Exige autorização explícita.
 
 ---
 
