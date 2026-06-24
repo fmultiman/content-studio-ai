@@ -524,7 +524,7 @@ function buildMarkdown(output) {
   lines.push('')
   lines.push('**Índice:**')
   lines.push('```sql')
-  lines.push('CREATE UNIQUE INDEX idx_ec_legacy_post_id')
+  lines.push('CREATE UNIQUE INDEX uq_ec_legacy_post_id')
   lines.push('  ON editorial_contents (legacy_post_id)')
   lines.push('  WHERE legacy_post_id IS NOT NULL;')
   lines.push('```')
@@ -666,8 +666,8 @@ async function main() {
   // 4. Check if legacy_post_id column already exists (M8.2 state)
   let legacyColumnExists = false
   try {
-    // Try a query that would fail if the column doesn't exist
-    await sbGet('editorial_contents?legacy_post_id=eq.test-probe&select=id&limit=0')
+    // SELECT the column — PostgREST returns 400 "column not found" if absent
+    await sbGet('editorial_contents?select=legacy_post_id&limit=0')
     legacyColumnExists = true
   } catch {
     // Column doesn't exist yet — expected at M8.1 stage

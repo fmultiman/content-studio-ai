@@ -291,6 +291,7 @@ export interface EditorialContent {
   status: EditorialContentStatus
   created_at: string
   updated_at: string
+  legacy_post_id: string | null
 }
 
 export interface ChannelPiece {

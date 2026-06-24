@@ -43,14 +43,60 @@ Post (legado)
 **Rastreabilidade confirmada:** `legacy_post_id UUID NULL` + `UNIQUE WHERE legacy_post_id IS NOT NULL`  
 **`legacy_source` coluna:** desnecessária — apenas uma fonte legada.
 
-**Aprovação individual (a preencher pelo responsável):**
+**Aprovação individual:**
 
 | Post | Name | Status dry-run | Decisão |
 |------|------|---------------|---------|
-| P1 | Teste Post Smoke Test 01 | ✅ READY | APPROVE / REJECT |
-| P2 | outro teste de post | ✅ READY | APPROVE / REJECT |
-| P3 | outro teste de story | ✅ READY | APPROVE / REJECT |
-| P4 | teste 04 | ✅ READY | APPROVE / REJECT |
+| P1 | Teste Post Smoke Test 01 | ✅ READY | ✅ APROVADO 2026-06-24 |
+| P2 | outro teste de post | ✅ READY | ✅ APROVADO 2026-06-24 |
+| P3 | outro teste de story | ✅ READY | ✅ APROVADO COM H1 2026-06-24 |
+| P4 | teste 04 | ✅ READY | ✅ APROVADO 2026-06-24 |
+
+---
+
+## 1.2 M8.2 — Schema `legacy_post_id` — 2026-06-24 — APLICADO
+
+**Branch:** `feat/posts-migration-m8-schema`  
+**Migration:** `scripts/025_add_editorial_content_legacy_post_id.sql`  
+**Aplicada em produção:** 2026-06-24
+
+**Alterações:**
+
+```sql
+ALTER TABLE editorial_contents
+ADD COLUMN IF NOT EXISTS legacy_post_id UUID NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ec_legacy_post_id
+  ON editorial_contents (legacy_post_id)
+  WHERE legacy_post_id IS NOT NULL;
+```
+
+**Schema antes:** 10 colunas — sem `legacy_post_id`  
+**Schema depois:** 11 colunas — `legacy_post_id UUID NULL DEFAULT NULL`  
+**Índice:** `uq_ec_legacy_post_id` — `UNIQUE BTREE (legacy_post_id) WHERE (legacy_post_id IS NOT NULL)`
+
+**Invariantes garantidas pelo índice:**
+- Múltiplos `legacy_post_id = NULL` permitidos (novos ECs sem origem legada)
+- Um UUID não-nulo pode aparecer em no máximo uma linha
+- UUID duplicado não-nulo é rejeitado com `unique_violation`
+- UUIDs distintos não-nulos são permitidos sem restrição
+- Zero linhas existentes alteradas (3 rows, todas `legacy_post_id = NULL` após migration)
+
+**Tipo TypeScript:** `lib/types.ts` — `EditorialContent.legacy_post_id: string | null` adicionado
+
+**Dry-run pós-schema:** 4/4 READY — coluna detectada (`✓ EXISTE`) — 0 blockers
+
+**Validações:**
+- typecheck: ✅ 0 erros
+- lint: ✅ 51 warnings / 0 erros (baseline)
+- build: ✅ exit 0
+- dry-run: ✅ 4/4 READY
+
+**Rollback (se necessário):**
+```sql
+DROP INDEX IF EXISTS uq_ec_legacy_post_id;
+ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
+```
 
 ---
 
@@ -60,17 +106,18 @@ Post (legado)
 |----------|-------------|----------------|
 | 100% dos Posts inventariados | ✅ 4/4 | — |
 | 100% das mídias classificadas | ✅ 1 mídia, classificada | — |
-| Projeto definido para todos os migráveis | ❌ P3 sem `project_id` | Decisão H1 |
+| Projeto definido para todos os migráveis | ✅ P3 `project_id = d0d008c3` (H1 aprovada) | — |
 | Production definida | ✅ todos têm `production_id` | — |
 | Canal e formato válidos para todos | ✅ todos mapeados | — |
-| Mídia P1 resolvida | ❌ PNG não está em `library_files` | Decisão H2 |
+| Mídia P1 resolvida | ✅ PNG em S3 confirmado, importação aprovada (H2) | Executar em M8.4 |
 | Rollback definido | ✅ (seção 7) | — |
 | Idempotência definida | ✅ (seção 5) | — |
-| Dry-run especificado | ✅ (seção 6) | — |
-| Tag de rollback operacional | ✅ `pre-channel-piece-media-m7-release-2026-06-24` | Criar nova tag pré-M8 antes de executar |
-| Decisões H1–H4 respondidas | ❌ pendentes | Ver `POSTS_MIGRATION_MAPPING.md` Seção 4 |
+| Dry-run executado e aprovado | ✅ 4/4 READY (M8.1) | — |
+| Schema `legacy_post_id` aplicado | ✅ migration 025 (M8.2) | — |
+| Tag de rollback operacional | ✅ `pre-channel-piece-media-m7-release-2026-06-24` | Criar nova tag pré-M8.3 antes de executar |
+| Decisões H1–H4 respondidas | ✅ todas aprovadas 2026-06-24 | — |
 
-**A migração real (M8.3+) não pode iniciar sem todas as condições ✅.**
+**A migração real (M8.3+) pode iniciar. Criar tag de rollback pré-M8.3 antes de executar.**
 
 ---
 

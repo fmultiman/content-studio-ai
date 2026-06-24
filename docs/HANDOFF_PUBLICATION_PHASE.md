@@ -1,11 +1,13 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Discovery
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
 **Branch M7:** `feat/channel-piece-media-m7-video` — integrado em main em 2026-06-24 (commit `fdee92d`) — **DEPLOYADO**  
-**Branch M8 Discovery:** `discovery/posts-to-editorial-content-m8` — em andamento (2026-06-24)  
-**Estado:** M1–M7 em produção. M8 discovery concluído. Aguarda decisões H1–H4 para autorizar migration real.
+**Branch M8 Discovery:** `discovery/posts-to-editorial-content-m8` — concluído (2026-06-24)  
+**Branch M8.1:** `feat/posts-migration-m8-dry-run` — concluído (2026-06-24), commit `a6bf7e5`  
+**Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
+**Estado:** M1–M7 em produção. M8.1 dry-run 4/4 READY. M8.2 schema aplicado (migration 025). Próximo: M8.3 executor.
 
 ---
 
@@ -53,7 +55,7 @@ Nenhum post de conteúdo real identificado na base de produção.
 |------|--------|
 | H1–H4 decisões | ✅ APROVADAS 2026-06-24 |
 | M8.1 Dry-run | ✅ READY — 4/4, 0 blockers, script `scripts/posts_migration_dry_run.mjs` |
-| M8.2 Schema `legacy_post_id` | ⏳ aguarda aprovação P1–P4 |
+| M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema` |
 | M8.3 Migrar AUTO_MIGRÁVEIS | ⏳ |
 | M8.4 Importar mídia P1 | ⏳ |
 | M8.5 Migrar P3 | ⏳ |

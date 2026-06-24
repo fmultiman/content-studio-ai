@@ -1,5 +1,5 @@
 # M8.1 — Dry-Run Report: Posts → EditorialContent
-**Gerado em:** 2026-06-24T17:39:27.423Z  
+**Gerado em:** 2026-06-24T18:18:49.581Z  
 **Status geral:** READY  
 **Posts:** 4 | **Blockers:** 0 | **Warnings:** 0
 
@@ -197,7 +197,7 @@ Políticas de rollback de mídia:
 
 **Índice:**
 ```sql
-CREATE UNIQUE INDEX idx_ec_legacy_post_id
+CREATE UNIQUE INDEX uq_ec_legacy_post_id
   ON editorial_contents (legacy_post_id)
   WHERE legacy_post_id IS NOT NULL;
 ```

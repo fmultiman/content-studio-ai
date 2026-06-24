@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-06-24T17:39:27.423Z",
+  "generated_at": "2026-06-24T18:18:49.581Z",
   "source": {
     "table": "posts",
     "count": 4
@@ -12,8 +12,8 @@
     "default_status": "draft"
   },
   "schema_state": {
-    "legacy_post_id_column_exists": false,
-    "note": "M8.2 pendente — coluna ausente, already_migrated=false para todos"
+    "legacy_post_id_column_exists": true,
+    "note": "M8.2 executado — coluna presente"
   },
   "rastreabilidade": {
     "recommended_column": "editorial_contents.legacy_post_id UUID NULL",
