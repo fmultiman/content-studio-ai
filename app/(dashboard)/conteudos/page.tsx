@@ -306,15 +306,6 @@ function PublicacoesPageContent() {
             </div>
           )}
 
-          {/* Legacy Posts section */}
-          <div className="border-t border-border/50 pt-6">
-            <p className="text-sm text-muted-foreground">
-              Procurando pelos Posts legados (Instagram, YouTube)?{' '}
-              <a href="/posts" className="text-violet-400 hover:underline">
-                Acessar Publicações legadas →
-              </a>
-            </p>
-          </div>
         </div>
       </div>
 
