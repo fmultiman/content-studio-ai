@@ -1,10 +1,71 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7)
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
 **Branch M7:** `feat/channel-piece-media-m7-video` — integrado em main em 2026-06-24 (commit `fdee92d`) — **DEPLOYADO**  
-**Estado:** Release M1–M7 deployado em produção. Smoke autenticado 20/20. Próximo: M8.
+**Branch M8 Discovery:** `discovery/posts-to-editorial-content-m8` — concluído (2026-06-24)  
+**Branch M8.1:** `feat/posts-migration-m8-dry-run` — concluído (2026-06-24), commit `a6bf7e5`  
+**Branch M8.2:** `feat/posts-migration-m8-schema` — concluído (2026-06-24)  
+**Estado:** M1–M7 em produção. M8.1 dry-run 4/4 READY. M8.2 schema aplicado (migration 025). Próximo: M8.3 executor.
+
+---
+
+## M8 Discovery — Migração dos Posts Legados — 2026-06-24
+
+**Branch:** `discovery/posts-to-editorial-content-m8`  
+**Status:** Discovery concluído — somente leitura. Aguarda decisões humanas antes de migration real.
+
+### Inventário
+
+| Posts totais | Usuários | Projetos | Productions | Com mídia |
+|-------------|----------|----------|-------------|-----------|
+| 4 | 1 | 1 | 1 | 1 (P1) |
+
+Todos os 4 posts são registros de smoke/teste criados em 2026-06-23 (mesmo dia do release M1–M6).  
+Nenhum post de conteúdo real identificado na base de produção.
+
+### Classificação
+
+| Post | Name | Classificação |
+|------|------|--------------|
+| P1 (`d02a9507`) | Teste Post Smoke Test 01 | MIGRÁVEL COM IMPORTAÇÃO DE MÍDIA |
+| P2 (`7eb9ccf4`) | outro teste de post | AUTO_MIGRÁVEL |
+| P3 (`083a69d5`) | outro teste de story | EXIGE ATRIBUIÇÃO DE PROJETO |
+| P4 (`7aa6b5a4`) | teste 04 | AUTO_MIGRÁVEL |
+
+### Decisões pendentes
+
+| # | Questão | Impacto |
+|---|---------|---------|
+| H1 | Confirmar `project_id = d0d008c3` para P3 | Desbloqueia P3 |
+| H2 | Importar PNG de P1 para `library_files`? | Desbloqueia P1 |
+| H3 | Migrar os 4 posts de teste ou descartá-los? | Define lote da migration |
+| H4 | Status do EditorialContent pós-migração (`ready` vs outro)? | Define estado inicial |
+
+### Documentos de M8
+
+- [`docs/POSTS_MIGRATION_DISCOVERY.md`](./POSTS_MIGRATION_DISCOVERY.md) — inventário, mídia, dependências, riscos, classificações
+- [`docs/POSTS_MIGRATION_MAPPING.md`](./POSTS_MIGRATION_MAPPING.md) — matriz campo a campo, destino por Post, candidatos a agrupamento
+- [`docs/POSTS_MIGRATION_PLAN.md`](./POSTS_MIGRATION_PLAN.md) — fases, dry-run, idempotência, rollback, critérios go/no-go
+
+### Estado das fases M8
+
+| Fase | Status |
+|------|--------|
+| H1–H4 decisões | ✅ APROVADAS 2026-06-24 |
+| M8.1 Dry-run | ✅ READY — 4/4, 0 blockers, script `scripts/posts_migration_dry_run.mjs` |
+| M8.2 Schema `legacy_post_id` | ✅ APLICADO 2026-06-24 — migration 025, branch `feat/posts-migration-m8-schema` |
+| M8.3 Migrar AUTO_MIGRÁVEIS | ⏳ |
+| M8.4 Importar mídia P1 | ⏳ |
+| M8.5 Migrar P3 | ⏳ |
+| M8.6 Marcar Posts migrados | ⏳ |
+
+### Próximo passo (M8)
+
+Aprovar P1–P4 individualmente (seção de aprovação em `docs/migrations/posts-m8-dry-run.md`) para autorizar M8.2.
+
+---
 
 ---
 

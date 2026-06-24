@@ -1,0 +1,551 @@
+# Posts — Plano de Migração (M8)
+**Data:** 2026-06-24  
+**Branch:** `discovery/posts-to-editorial-content-m8`  
+**Status:** Plano — nenhuma migration executada.  
+**Escopo:** Fases, dry-run, idempotência, rollback, validação, critérios de go/no-go.
+
+---
+
+## 1. Visão Geral
+
+A migration M8 converte os 4 Posts legados em EditorialContents + ChannelPieces no novo domínio.
+
+```
+Post (legado)
+└─► EditorialContent (novo)
+    └─► ChannelPiece (novo)
+        └─► ChannelPieceMedia (novo, somente P1 — após importação de mídia)
+```
+
+**Regra base:** 1 Post → 1 EditorialContent + 1 ChannelPiece (PUB-D13).
+
+---
+
+## 1.1 M8.1 — Dry-Run — 2026-06-24 — APROVADO
+
+**Script:** `scripts/posts_migration_dry_run.mjs`  
+**Output:** `docs/migrations/posts-m8-dry-run.json`, `docs/migrations/posts-m8-dry-run.md`  
+**Resultado:** 4/4 READY — 0 blockers — 0 warnings
+
+| Post | Fingerprint | S3 origem | Destino colisão | Status |
+|------|-------------|-----------|-----------------|--------|
+| P1 (`d02a9507`) | `3e8a92a619...` | ✅ exists, 1.293.601 bytes, image/png, ETag `7997848a1f` | ✅ sem colisão | **READY** |
+| P2 (`7eb9ccf4`) | (no JSON) | — sem mídia — | — | **READY** |
+| P3 (`083a69d5`) | (no JSON) | — sem mídia — | — | **READY** |
+| P4 (`7aa6b5a4`) | (no JSON) | — sem mídia — | — | **READY** |
+
+**H1–H4 aplicadas no dry-run:**
+- H1: P3 `project_id = d0d008c3` (human_approved, confidence: confirmed)
+- H2: importação PNG de P1 aprovada — destino `users/.../library/posts-migration-m8/<post_id>/...`
+- H3: migrar todos os 4 Posts
+- H4: `EditorialContent.status = draft`, `ChannelPiece.status = draft`
+
+**Rastreabilidade confirmada:** `legacy_post_id UUID NULL` + `UNIQUE WHERE legacy_post_id IS NOT NULL`  
+**`legacy_source` coluna:** desnecessária — apenas uma fonte legada.
+
+**Aprovação individual:**
+
+| Post | Name | Status dry-run | Decisão |
+|------|------|---------------|---------|
+| P1 | Teste Post Smoke Test 01 | ✅ READY | ✅ APROVADO 2026-06-24 |
+| P2 | outro teste de post | ✅ READY | ✅ APROVADO 2026-06-24 |
+| P3 | outro teste de story | ✅ READY | ✅ APROVADO COM H1 2026-06-24 |
+| P4 | teste 04 | ✅ READY | ✅ APROVADO 2026-06-24 |
+
+---
+
+## 1.2 M8.2 — Schema `legacy_post_id` — 2026-06-24 — APLICADO
+
+**Branch:** `feat/posts-migration-m8-schema`  
+**Migration:** `scripts/025_add_editorial_content_legacy_post_id.sql`  
+**Aplicada em produção:** 2026-06-24
+
+**Alterações:**
+
+```sql
+ALTER TABLE editorial_contents
+ADD COLUMN IF NOT EXISTS legacy_post_id UUID NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ec_legacy_post_id
+  ON editorial_contents (legacy_post_id)
+  WHERE legacy_post_id IS NOT NULL;
+```
+
+**Schema antes:** 10 colunas — sem `legacy_post_id`  
+**Schema depois:** 11 colunas — `legacy_post_id UUID NULL DEFAULT NULL`  
+**Índice:** `uq_ec_legacy_post_id` — `UNIQUE BTREE (legacy_post_id) WHERE (legacy_post_id IS NOT NULL)`
+
+**Invariantes garantidas pelo índice:**
+- Múltiplos `legacy_post_id = NULL` permitidos (novos ECs sem origem legada)
+- Um UUID não-nulo pode aparecer em no máximo uma linha
+- UUID duplicado não-nulo é rejeitado com `unique_violation`
+- UUIDs distintos não-nulos são permitidos sem restrição
+- Zero linhas existentes alteradas (3 rows, todas `legacy_post_id = NULL` após migration)
+
+**Tipo TypeScript:** `lib/types.ts` — `EditorialContent.legacy_post_id: string | null` adicionado
+
+**Dry-run pós-schema:** 4/4 READY — coluna detectada (`✓ EXISTE`) — 0 blockers
+
+**Validações:**
+- typecheck: ✅ 0 erros
+- lint: ✅ 51 warnings / 0 erros (baseline)
+- build: ✅ exit 0
+- dry-run: ✅ 4/4 READY
+
+**Rollback (se necessário):**
+```sql
+DROP INDEX IF EXISTS uq_ec_legacy_post_id;
+ALTER TABLE editorial_contents DROP COLUMN IF EXISTS legacy_post_id;
+```
+
+---
+
+## 2. Pré-condições para Autorizar a Migração
+
+| Condição | Status atual | Ação necessária |
+|----------|-------------|----------------|
+| 100% dos Posts inventariados | ✅ 4/4 | — |
+| 100% das mídias classificadas | ✅ 1 mídia, classificada | — |
+| Projeto definido para todos os migráveis | ✅ P3 `project_id = d0d008c3` (H1 aprovada) | — |
+| Production definida | ✅ todos têm `production_id` | — |
+| Canal e formato válidos para todos | ✅ todos mapeados | — |
+| Mídia P1 resolvida | ✅ PNG em S3 confirmado, importação aprovada (H2) | Executar em M8.4 |
+| Rollback definido | ✅ (seção 7) | — |
+| Idempotência definida | ✅ (seção 5) | — |
+| Dry-run executado e aprovado | ✅ 4/4 READY (M8.1) | — |
+| Schema `legacy_post_id` aplicado | ✅ migration 025 (M8.2) | — |
+| Tag de rollback operacional | ✅ `pre-channel-piece-media-m7-release-2026-06-24` | Criar nova tag pré-M8.3 antes de executar |
+| Decisões H1–H4 respondidas | ✅ todas aprovadas 2026-06-24 | — |
+
+**A migração real (M8.3+) pode iniciar. Criar tag de rollback pré-M8.3 antes de executar.**
+
+---
+
+## 3. Preservação de Rastreabilidade
+
+### 3.1 Recomendação
+
+**Opção adotada:** coluna `legacy_post_id TEXT` em `editorial_contents`.
+
+Avaliação das opções:
+
+| Opção | Prós | Contras | Decisão |
+|-------|------|---------|---------|
+| `legacy_post_id TEXT` em `editorial_contents` | Simples, consultável com SQL, visível em qualquer SELECT | Requer migration de schema | **ADOTADA** |
+| Campo `metadata JSONB` em `editorial_contents` | Flexível, sem migration nova | `metadata` não existe hoje; JSONB pior para indexação | Alternativa |
+| Tabela `migration_map` separada | Isolamento, suporta múltiplos sistemas legados | Overhead para 4 registros | Desnecessário nesta escala |
+| Somente em script e relatório | Sem alteração de schema | Irrecuperável se script perdido; não idempotente | Rejeitada |
+
+### 3.2 Schema da coluna (M8.2)
+
+```sql
+ALTER TABLE editorial_contents
+  ADD COLUMN IF NOT EXISTS legacy_post_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_ec_legacy_post_id
+  ON editorial_contents(legacy_post_id)
+  WHERE legacy_post_id IS NOT NULL;
+```
+
+A coluna é NULL para EditorialContents criados naturalmente. Preenchida apenas pela migration.
+
+---
+
+## 4. Fases de Execução
+
+### M8.1 — Dry-run e mapa de migração ← **AUTORIZADA (esta etapa)**
+
+- Executar dry-run sem escrita
+- Gerar JSON com proposta por Post
+- Revisar saída com usuário responsável
+- Responder decisões H1–H4
+
+### M8.2 — Schema mínimo de rastreabilidade
+
+- `ALTER TABLE editorial_contents ADD COLUMN IF NOT EXISTS legacy_post_id TEXT`
+- Criar índice
+- `pnpm validate` deve passar
+- Commit + push
+
+### M8.3 — Migrar AUTO_MIGRÁVEIS (P2 e P4)
+
+- Migrar Posts P2 e P4 (sem mídia, com project_id)
+- Verificar idempotência: se `legacy_post_id` já existe, pular
+- Validar registro a registro via SQL
+
+### M8.4 — Importar mídia de P1 e migrar
+
+- Criar `library_file` para PNG de P1 (`users/35428fd4.../posts/3f142fc2.../...png`)
+- Migrar P1 com `ChannelPieceMedia.source = library_file_id`
+- Verificar arquivo físico acessível antes de criar LF
+
+### M8.5 — Resolver P3 (project_id NULL)
+
+- Após confirmação H1: `project_id = d0d008c3`
+- Migrar P3
+- Validar registro
+
+### M8.6 — Marcar Posts como migrados (read-only sinalizado)
+
+- **Não deletar** a tabela `posts` ainda
+- Adicionar campo `migrated_at TIMESTAMPTZ` a `posts` (opcional — para rastreabilidade)
+- UI de "Posts legados" pode mostrar badge "Migrado"
+- Nenhum novo Post deve ser criado após M8.6
+
+### M9 — Aposentadoria operacional
+
+- Remover botão "Novo Post" na UI
+- Remover aba "Posts legados" da Production (substituir por EditorialContents)
+- Remover link de "Posts legados" em `/conteudos`
+- Manter API `/api/posts` em modo somente leitura (GET apenas)
+
+### M10 — Remoção futura (pós-validação prolongada)
+
+- Somente após N semanas/meses confirmando que nenhum fluxo depende da tabela
+- `DROP TABLE posts` (migration de remoção)
+- Remover `app/api/posts/`, `app/(dashboard)/posts/`, tipos `Post`, `PostImage`, `PublicationType`
+- Remover `folder: 'posts'` do storage
+- Remover rota `/posts` do middleware
+
+---
+
+## 5. Idempotência
+
+### 5.1 Chave de idempotência
+
+```
+legacy_source = 'posts'
+legacy_id     = posts.id
+```
+
+Verificação antes de cada INSERT:
+
+```sql
+SELECT id FROM editorial_contents
+WHERE legacy_post_id = '<posts.id>'
+LIMIT 1;
+```
+
+Se retornar registro: **pular** — já migrado. Não alterar.
+
+### 5.2 Propriedades
+
+| Propriedade | Implementação |
+|-------------|--------------|
+| Dry-run sem escrita | `DRY_RUN=true` no script — somente SELECT |
+| Executar uma vez | Chave `legacy_post_id` garante unicidade |
+| Reexecutar sem duplicar | Verificação prévia por `legacy_post_id` |
+| Interromper e retomar | Cada Post é uma transação independente |
+| Validar registro por registro | Consulta pós-INSERT verifica IDs criados |
+
+---
+
+## 6. Especificação do Dry-Run (M8.1)
+
+O script de dry-run deve:
+1. Ler todos os registros de `posts`
+2. Para cada Post, computar o destino sem escrever
+3. Verificar se `legacy_post_id` já existe
+4. Verificar se `project_id` é válido
+5. Verificar se canal é mapeável
+6. Verificar se mídia é resolvível
+7. Emitir saída JSON por Post
+
+### 6.1 Schema de saída
+
+```json
+{
+  "dry_run": true,
+  "generated_at": "2026-06-24T...",
+  "total_posts": 4,
+  "summary": {
+    "auto_migravel": 2,
+    "requer_importacao_midia": 1,
+    "exige_atribuicao_projeto": 1,
+    "blockers_count": 2
+  },
+  "posts": [
+    {
+      "post_id": "d02a9507-d6c3-4203-9939-4667a4e0f027",
+      "classification": "MIGRÁVEL COM IMPORTAÇÃO DE MÍDIA",
+      "already_migrated": false,
+      "proposed_editorial_content": {
+        "title": "Teste Post Smoke Test 01",
+        "body": "POst para apresentar o novo frontend",
+        "ai_context": "contexto",
+        "status": "ready",
+        "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+        "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+        "legacy_post_id": "d02a9507-d6c3-4203-9939-4667a4e0f027"
+      },
+      "proposed_channel_piece": {
+        "channel": "instagram",
+        "format": "feed",
+        "body": "(feed_text completo — omitido no dry-run)",
+        "status": "approved"
+      },
+      "proposed_media": [
+        {
+          "action": "IMPORT_LIBRARY_FILE",
+          "storage_path": "users/35428fd4-4784-4934-9af9-82a606aad77e/posts/3f142fc2-df7f-4e39-ae04-ca63832f690d/Content-Agent-Studio-Future-Vision-Concept.png",
+          "mime_type": "image/png",
+          "file_size": 1293601,
+          "role": "primary",
+          "position": 0
+        }
+      ],
+      "warnings": [
+        "Mídia não rastreada em library_files — importação necessária antes de criar ChannelPieceMedia"
+      ],
+      "blockers": [
+        "library_file_id desconhecido — importar mídia primeiro (H2)"
+      ]
+    },
+    {
+      "post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428",
+      "classification": "AUTO_MIGRÁVEL",
+      "already_migrated": false,
+      "proposed_editorial_content": {
+        "title": "outro teste de post",
+        "body": "Teste de post de Youtube",
+        "ai_context": "COntexto correto",
+        "status": "ready",
+        "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+        "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+        "legacy_post_id": "7eb9ccf4-7989-4f4b-93ba-c10df0345428"
+      },
+      "proposed_channel_piece": {
+        "channel": "youtube",
+        "format": "post",
+        "body": null,
+        "status": "approved"
+      },
+      "proposed_media": [],
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80",
+      "classification": "EXIGE ATRIBUIÇÃO DE PROJETO",
+      "already_migrated": false,
+      "proposed_editorial_content": {
+        "title": "outro teste de story",
+        "body": "teste de story",
+        "ai_context": "contexto do teste de story",
+        "status": "ready",
+        "project_id": null,
+        "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+        "legacy_post_id": "083a69d5-de8f-4525-b1a1-f495b6404e80"
+      },
+      "proposed_channel_piece": {
+        "channel": "instagram",
+        "format": "story",
+        "body": null,
+        "status": "approved"
+      },
+      "proposed_media": [],
+      "warnings": [
+        "project_id = NULL — inferido como d0d008c3 via production.project_id (confiança ALTA)"
+      ],
+      "blockers": [
+        "project_id NULL — requer confirmação humana (H1) antes de migrar"
+      ]
+    },
+    {
+      "post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b",
+      "classification": "AUTO_MIGRÁVEL",
+      "already_migrated": false,
+      "proposed_editorial_content": {
+        "title": "teste 04",
+        "body": "teste  04",
+        "ai_context": null,
+        "status": "ready",
+        "project_id": "d0d008c3-321b-46fe-8225-2f1a68e833ec",
+        "production_id": "492af729-cb06-4e0e-8a2c-e83fada37fb1",
+        "legacy_post_id": "7aa6b5a4-8fb2-4e22-937e-82a228f87e8b"
+      },
+      "proposed_channel_piece": {
+        "channel": "youtube",
+        "format": "video_description",
+        "body": null,
+        "status": "approved"
+      },
+      "proposed_media": [],
+      "warnings": [],
+      "blockers": []
+    }
+  ]
+}
+```
+
+### 6.2 Contagens e checksums do dry-run
+
+O script deve emitir:
+
+```
+Total de Posts lidos:    4
+Auto_migráveis:          2
+Requer importação mídia: 1
+Exige atribuição projeto: 1
+Já migrados (skip):      0
+Blockers totais:         2
+```
+
+---
+
+## 7. Rollback
+
+### 7.1 Princípios
+
+- Rollback apaga **somente** os registros criados pela migration
+- Nunca apaga a tabela `posts` (fonte original intocada)
+- Nunca apaga mídia física no S3 se era preexistente
+- Nunca apaga `library_files` criados antes da migration (só os importados pela migration)
+- Permite rollback parcial por Post
+
+### 7.2 Procedimento por camada
+
+```sql
+-- 1. Coletar IDs criados pela migration (via legacy_post_id)
+SELECT id FROM editorial_contents WHERE legacy_post_id IS NOT NULL;
+
+-- 2. Coletar ChannelPieces filhos
+SELECT id FROM channel_pieces
+WHERE editorial_content_id IN (
+  SELECT id FROM editorial_contents WHERE legacy_post_id IS NOT NULL
+);
+
+-- 3. Coletar ChannelPieceMedia filhos
+SELECT id FROM channel_piece_media
+WHERE channel_piece_id IN (
+  SELECT id FROM channel_pieces
+  WHERE editorial_content_id IN (
+    SELECT id FROM editorial_contents WHERE legacy_post_id IS NOT NULL
+  )
+);
+
+-- 4. Coletar LibraryFiles importados pela migration
+-- (identificados por campo migration_source = 'posts_migration_m8' ou similar)
+SELECT id FROM library_files WHERE name ILIKE '%migration-m8%'; -- ou via metadata
+
+-- ROLLBACK REAL (executar em transação):
+BEGIN;
+  DELETE FROM channel_piece_media
+  WHERE channel_piece_id IN (
+    SELECT id FROM channel_pieces
+    WHERE editorial_content_id IN (
+      SELECT id FROM editorial_contents WHERE legacy_post_id IS NOT NULL
+    )
+  );
+
+  DELETE FROM channel_pieces
+  WHERE editorial_content_id IN (
+    SELECT id FROM editorial_contents WHERE legacy_post_id IS NOT NULL
+  );
+
+  DELETE FROM editorial_contents WHERE legacy_post_id IS NOT NULL;
+
+  -- Se importou library_files pela migration:
+  -- DELETE FROM library_files WHERE id IN ('<ids-importados>');
+COMMIT;
+```
+
+### 7.3 Verificação pós-rollback
+
+```sql
+SELECT COUNT(*) FROM editorial_contents WHERE legacy_post_id IS NOT NULL; -- deve ser 0
+SELECT COUNT(*) FROM posts; -- deve ser 4 (intactos)
+```
+
+---
+
+## 8. Estratégia de Mídia Legada (P1)
+
+A imagem de P1 está em `users/35428fd4.../posts/3f142fc2.../Content-Agent-Studio-Future-Vision-Concept.png`.  
+Não existe em `images` nem `library_files`. Três opções:
+
+### Opção A — Importar para `library_files` (RECOMENDADA)
+
+**Como:** INSERT em `library_files` com:
+- `storage_path`: caminho S3 existente (não mover o arquivo)
+- `kind`: `image`
+- `mime_type`: `image/png`
+- `file_size`: `1293601`
+- `name`: `Content-Agent-Studio-Future-Vision-Concept.png`
+- `user_id`: `35428fd4`
+
+**Vantagens:** rastreabilidade completa, compatível com `ChannelPieceMedia`, não requer mover arquivo.  
+**Riscos:** o `storage_path` aponta para pasta `posts/` — semanticamente incorreto mas funcionalmente OK. Pode ser movido para `library/` em M10 se necessário.
+
+### Opção B — Manter URL em estrutura temporária
+
+**Como:** armazenar `image_url` no EditorialContent sem CPM.  
+**Vantagens:** sem importação.  
+**Riscos:** `EditorialContent` não tem campo `image_url`. Exigiria adição de campo temporário. Dívida técnica. **Não recomendada.**
+
+### Opção C — Bloquear migração de P1 até decisão
+
+**Como:** migrar P2, P3, P4; deixar P1 com blocker registrado.  
+**Vantagens:** simplicidade no início.  
+**Riscos:** mídia fica órfã indefinidamente. Aceitável para records de teste.
+
+**Recomendação:** Opção A para P1 (simples, sem mover arquivo, rastreável). Decisão H2.
+
+---
+
+## 9. Validação Técnica
+
+Após cada fase (M8.2 a M8.6):
+
+```bash
+pnpm typecheck   # 0 erros
+pnpm lint        # 0 erros / ≤ 51 warnings
+pnpm build       # sem falha
+pnpm validate    # todos passam
+```
+
+Baseline atual: `typecheck 0 erros`, `lint 51 warnings/0 erros`, `build aprovado`.
+
+---
+
+## 10. Critérios de Go/No-Go
+
+### Go (migração autorizada) quando:
+
+```
+✅ 100% dos Posts inventariados (4/4)
+✅ 100% das mídias classificadas (1/1)
+✅ Decisão H1 respondida (project_id de P3)
+✅ Decisão H2 respondida (mídia de P1)
+✅ Decisão H3 respondida (migrar ou descartar os posts de teste)
+✅ Decisão H4 respondida (status dos ECs pós-migração)
+✅ legacy_post_id coluna criada (M8.2)
+✅ Dry-run executado e aprovado (M8.1)
+✅ Tag de rollback pré-M8 criada
+✅ pnpm validate aprovado
+```
+
+### No-Go quando:
+
+```
+❌ Qualquer Post sem projeto definido (sem H1 respondida)
+❌ Mídia P1 não resolvida e P1 incluído no lote
+❌ Dry-run com blockers não resolvidos
+❌ pnpm validate falhando
+❌ library_files com estrutura de chave incompatível
+```
+
+---
+
+## 11. Decisões Humanas Pendentes (resumo)
+
+| # | Questão | Opções | Impacto |
+|---|---------|--------|---------|
+| H1 | Confirmar `project_id = d0d008c3` para P3 | Confirmar / Rejeitar (não migrar P3) | Desbloqueia P3 |
+| H2 | Importar PNG de P1 para `library_files`? | Opção A (importar) / Opção C (bloquear P1) | Desbloqueia P1 |
+| H3 | Migrar os 4 posts de teste ou descartá-los? | Migrar todos / Migrar parcialmente / Não migrar (descartar) | Define lote da M8.3 |
+| H4 | Status do EditorialContent pós-migração | `ready` (recomendado) / `draft` / `archived` | Define estado inicial |
+
+---
+
+*Documento produzido em discovery M8 — 2026-06-24. Nenhum dado criado. Nenhuma migration executada.*
