@@ -1,8 +1,9 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M5)
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M6)
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
-**Estado:** Release M1–M5 deployado em produção. Smoke aprovado. M6 é o próximo passo.
+**Branch M6:** `feat/channel-piece-media-m6-organization` — implementado, aguardando migration 024 + testes  
+**Estado:** Release M1–M5 deployado em produção. M6 código pronto. Próximo: aplicar migration 024, executar 54 testes, smoke visual, merge.
 
 ---
 
@@ -24,7 +25,7 @@
 
 **Migrations em produção:** `022_create_channel_piece_media.sql` e `023_enforce_channel_piece_media_source_uniqueness.sql` — ambas aplicadas em 2026-06-23.
 
-**Próximo:** M6 (reordenação, role manual) — requer autorização explícita antes de iniciar.
+**M6:** `feat/channel-piece-media-m6-organization` — código commitado (`ce984e4`, `31a0e3b`). Migration 024 não aplicada ainda (MCP em read-only). Ver seção M6 abaixo.
 
 **Dados preservados (confirmado pós-release):**
 - Projeto `d0d008c3` "Content Agent" — intacto
@@ -207,6 +208,56 @@ _Integração no Dialog de edição:_ seção "Mídia da versão" inserida após
 - Formatos: JPEG, PNG, WebP, GIF, MP4, WebM, MOV; limite 50 MB
 
 **Auditoria:** 44/44 casos passados (Groups 1–7: auth, imagens, vídeo, atomicidade, concorrência, deleção, regressão). TypeScript limpo. Build OK.
+
+---
+
+### M6 — Organização das mídias da Versão para canal — CÓDIGO PRONTO, AGUARDANDO MIGRATION (2026-06-24)
+
+**Branch:** `feat/channel-piece-media-m6-organization`  
+**HEAD:** `31a0e3b` — test: add CPM M6 organization test suite (54 cases)  
+**Decisões:** CPM-D25, CPM-D26, CPM-D27
+
+**Arquivos entregues:**
+
+| Arquivo | Status |
+|---------|--------|
+| `scripts/024_channel_piece_media_organization.sql` | ✅ Escrito. **Não aplicado ao banco.** |
+| `app/api/channel-piece-media/_helpers.ts` | ✅ `mapRpcError` adicionado |
+| `app/api/channel-piece-media/organize/route.ts` | ✅ `PATCH /api/channel-piece-media/organize` |
+| `app/api/channel-piece-media/[id]/route.ts` | ✅ DELETE reescrito para RPC |
+| `components/publication/channel-piece-media-section.tsx` | ✅ Up/Down, role dropdown, primary |
+| `scripts/cpm_m6_tests.mjs` | ✅ 54 casos (Groups 1–7) |
+
+**Funcionalidade entregue:**
+- Botões Up/Down para reordenar itens (sem DnD pesado)
+- Dropdown de role por item: "Definir como principal", thumbnail, carousel_item, background, attachment
+- Delete atômico: compacta posições + promove primary se necessário
+- Proteção contra stale payload, lock conflict e payload malformado
+
+**Bloqueio atual:** Migration 024 deve ser aplicada manualmente via Supabase SQL Editor:
+
+```
+URL: https://supabase.com/dashboard/project/nuhdhnasuohizxtmyiju/sql
+Arquivo: scripts/024_channel_piece_media_organization.sql
+```
+
+Verificação pós-aplicação:
+```sql
+SELECT routine_name FROM information_schema.routines
+WHERE routine_name IN ('organize_channel_piece_media','remove_channel_piece_media')
+  AND routine_schema = 'public';
+-- Deve retornar 2 linhas
+```
+
+**Após migration aplicada:**
+1. `pnpm dev` (porta 3000)
+2. `node scripts/cpm_m6_tests.mjs` — deve passar 54/54
+3. Smoke visual: CP_A1 com 3 mídias em http://localhost:3000 — aprovar human
+4. Cleanup: deletar CPMs/LFs com prefixo `[TESTE CPM M6]`
+5. `pnpm typecheck && pnpm build` — ambos exit 0
+6. Commit docs + push
+
+**TypeScript:** `pnpm typecheck` ✅ exit 0 (validado em `31a0e3b`).
 
 ---
 
