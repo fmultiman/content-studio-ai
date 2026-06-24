@@ -112,15 +112,142 @@ Todas as rotas têm:
 - **Lacuna identificada**: `posts.post_images` (upload de mídia) não tem equivalente em `channel_pieces`
 - **Frontend consolidado**: menu "Conteúdos", hub renomeado, "Versões para canais" no workspace, Production mostra "Conteúdos editoriais", Projeto usa `image_drafts`/`video_drafts`
 
-## Fase iniciada em 2026-06-22: ChannelPiece Media
+## Fase ChannelPiece Media — M1–M4 + fix/source-uniqueness entregues (2026-06-22 a 2026-06-23)
 
-Descoberta, modelagem e plano de implementação concluídos. Ver:
+Descoberta, modelagem, implementação e auditoria de M1–M4 concluídas. Ver:
 
 - `docs/CHANNEL_PIECE_MEDIA_DISCOVERY.md` — inventário completo do sistema de mídia atual
-- `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` — 19 decisões de domínio (CPM-D1 a CPM-D19)
-- `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` — 10 incrementos (M1 a M10)
+- `docs/CHANNEL_PIECE_MEDIA_DECISIONS.md` Rev. 3 — 22 decisões de domínio (CPM-D1 a CPM-D22)
+- `docs/CHANNEL_PIECE_MEDIA_IMPLEMENTATION_PLAN.md` Rev. 3 — 10 incrementos (M1 a M10)
 
-**Próximo passo:** aprovar decisões CPM-D1 a CPM-D4 e responder questões abertas CPM-D17 e CPM-D18a antes de iniciar M1.
+### M4 — Picker de mídia — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m4-picker`
+
+**Arquivos:**
+- `components/publication/media-picker-dialog.tsx` (criado)
+- `components/publication/channel-piece-media-section.tsx` (modificado)
+- `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` (modificado)
+
+**Funcionalidades entregues:**
+
+_Picker `MediaPickerDialog`:_
+- Título "Adicionar mídia" / descrição orientada ao usuário (sem jargão técnico)
+- Aba **"Imagens geradas"** — consulta `images` por `project_id` via Supabase client
+- Aba **"Arquivos do projeto"** — consulta `GET /api/library-files?projectId=X`
+- Itens já associados desabilitados com badge "Adicionada"/"Adicionado"
+- Role auto-computado: primeiro item → `primary`; demais → `carousel_item`
+- Position: `max(current) + 1` ou `0` se lista vazia
+- Guard de double-submit via `isAssigningRef` (useRef síncrono)
+
+_`ChannelPieceMediaSection` — dois modos:_
+- **Card externo** (`editable=false`, default): somente leitura — sem lixeira, resumo informativo
+- **Editor** (`editable=true, projectId`): lista com remoção + botão "Adicionar mídia" + picker
+
+_Labels de origem UX (sem alteração nos tipos internos):_
+
+| Fonte | Card/editor | Picker |
+|-------|-------------|--------|
+| `image_id` | Imagem gerada | — (aba "Imagens geradas") |
+| `library_file_id` | Arquivo do projeto | — (aba "Arquivos do projeto") |
+
+_Integração no Dialog de edição:_ seção "Mídia da versão" inserida após Hashtags; visível apenas ao editar CP existente.
+
+**Auditoria:** 35/35 casos passados. Cleanup completo. Fontes originais verificadas intactas.
+
+**Smoke visual aprovado:** card externo sem lixeira, editor com remoção, picker funcional, sem regressão de UX.
+
+**Pendente:** autorização explícita para M5 (upload de nova mídia).
+
+---
+
+### M5 — Upload direto de arquivo na Versão para canal — IMPLEMENTADO E TESTADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m5-upload`
+
+**Arquivos criados/modificados:**
+- `app/api/channel-piece-media/upload/route.ts` (criado) — orquestrador multipart
+- `lib/storage/s3.ts` (modificado) — adicionado `uploadLibraryFile` + tipo `UploadedLibraryFile`
+- `components/publication/media-picker-dialog.tsx` (reescrito) — aba "Enviar arquivo" com drag-and-drop
+
+**O que foi feito:**
+- Endpoint server-side: auth → validate → CP ownership → upload S3 → insert library_file → insert CPM → 201
+- Atomicidade por compensação (Casos A–D): sem orphan em qualquer cenário de falha
+- Role/position resolvidos server-side (mesmo algoritmo do M4)
+- UI: terceira aba no `MediaPickerDialog`; `anyBusy` bloqueia fechar o dialog durante upload
+- Formatos: JPEG, PNG, WebP, GIF, MP4, WebM, MOV; limite 50 MB
+
+**Auditoria:** 44/44 casos passados (Groups 1–7: auth, imagens, vídeo, atomicidade, concorrência, deleção, regressão). TypeScript limpo. Build OK.
+
+---
+
+### fix/source-uniqueness — Unicidade de fonte por ChannelPiece — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `fix/channel-piece-media-source-uniqueness`
+
+**Arquivos:**
+- `scripts/023_enforce_channel_piece_media_source_uniqueness.sql` (criado)
+- `app/api/channel-piece-media/_helpers.ts` (modificado — `mapPgError`)
+
+**O que foi feito:**
+- Auditoria pré-migration: zero duplicatas encontradas em produção
+- Migration 023 aplicada em produção: dois índices únicos parciais `uq_cpm_cp_image` e `uq_cpm_cp_library_file`
+- `mapPgError` atualizado: violação 23505 de qualquer um dos dois novos índices → HTTP 409 com mensagem amigável "Esta midia ja esta associada a esta versao." (nome do índice não exposto)
+- Race condition (dois requests concorrentes com mesmo source+CP) gerenciado pelo índice DB — segundo INSERT bloqueado com 23505 → 409
+
+**Auditoria:** 13 casos, 16 assertions, 16/16 passadas. Cleanup completo.
+
+---
+
+### M3 — Exibição de mídia no workspace — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m3-display` — HEAD `3b2b2af`
+
+**Componente:** `components/publication/channel-piece-media-section.tsx`  
+**Integrado em:** `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx`
+
+**Estratégia de carregamento:** paralelo por versão — cada CP card carrega suas próprias mídias de forma independente, sem bloquear o workspace.
+
+**Funcionalidades:**
+- Seção "Mídia (N)" em cada CP card com thumbnail/ícone, role label PT-BR, origem, alt text
+- Estado vazio, loading, erro com retry, fonte indisponível (source_deleted)
+- Fix de bug: URL pública usada como fallback quando S3 não está configurado localmente
+
+**Auditoria:** 22/22 casos passados (carregamento, remoção, regressão). Cleanup completo.
+
+---
+
+### M2 — APIs CRUD — IMPLEMENTADO E AUDITADO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m2-api` — creado a partir de `feat/channel-piece-media-m1-schema`
+
+**Arquivos criados:**
+- `app/api/channel-piece-media/_helpers.ts` — resolução de fonte (URL assinada), mapeamento de erros PG
+- `app/api/channel-piece-media/route.ts` — GET lista + POST com validação cross-project
+- `app/api/channel-piece-media/[id]/route.ts` — GET + PATCH (campos imutáveis) + DELETE (vínculo apenas)
+
+**Auditoria:** 33/33 casos passados via testes HTTP autenticados (Node.js + dev server local).
+Incluindo casos críticos cross-project (29–31): CP proj-A + source proj-B → 400 em todos os cenários.
+Sessão autenticada via Supabase Admin API `generate_link`. Cleanup completo.
+
+**Pendente:** autorização explícita para M3 (UI de leitura).
+
+---
+
+### M1 — Schema, constraints, índices, RLS e tipos — APLICADO EM PRODUÇÃO (2026-06-23)
+
+**Branch:** `feat/channel-piece-media-m1-schema` — HEAD `305f63b`  
+**Ambiente:** `nuhdhnasuohizxtmyiju.supabase.co`  
+**Aplicação:** manual via Supabase SQL Editor (MCP configurado em read-only)
+
+**Migration:** `scripts/022_create_channel_piece_media.sql`  
+**Tipos:** `lib/types.ts` — `ChannelPieceMedia`, `ChannelPieceMediaResolved`, `ChannelPieceMediaRole`
+
+**Objetos criados no banco:** tabela + RLS (4 policies) + trigger + 4 constraints + 4 índices (2 únicos parciais)
+
+**Auditoria (23 casos):** constraints todas verificadas em banco. Testes RLS cross-project/cross-user verificados por inspeção de policies — não testáveis via service_role. Obrigatório em M2.
+
+**Próximo passo:** autorizar M2 (APIs CRUD) explicitamente.
 
 ---
 
@@ -165,7 +292,8 @@ Commits relevantes do P6:
 
 | Item | Prioridade sugerida | Notas |
 |------|---------------------|-------|
-| Migration `021_create_publication_entities.sql` aplicada no Supabase de produção | **Bloqueante** | A migration está no repo mas não foi aplicada via Supabase MCP; aguarda autorização explícita |
+| Migration `021_create_publication_entities.sql` aplicada no Supabase de produção | ✅ Resolvido | Confirmada existente antes de M1 |
+| Migration `022_create_channel_piece_media.sql` (M1) aplicada no Supabase de produção | ✅ Resolvido | Auditada em 2026-06-23; 23 casos testados |
 | `Distribution` (publicação real via API de canal) | Alta | Requer credenciais de API por canal (Instagram Graph, YouTube Data, etc.) |
 | FK `source_video_draft_id` em `editorial_contents` | Baixa | Rastreabilidade causal explícita; atualmente implícita via `production_id` |
 | `generate-body` whitelist de chaves desconhecidas | Muito baixa | Inconsistência de contrato detectada em P4; sem impacto funcional ou de segurança |

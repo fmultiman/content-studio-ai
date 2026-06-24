@@ -48,6 +48,7 @@ import type {
   PublicationFormat,
 } from '@/lib/types'
 import { Edit2, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react'
+import { ChannelPieceMediaSection } from '@/components/publication/channel-piece-media-section'
 
 // ---------------------------------------------------------------------------
 // Labels
@@ -756,6 +757,7 @@ export default function EditorialContentDetailPage() {
                           {cp.hashtags}
                         </p>
                       )}
+                      <ChannelPieceMediaSection channelPieceId={cp.id} />
                       <p className="mt-2 text-xs text-muted-foreground">
                         Atualizado em {new Date(cp.updated_at).toLocaleDateString('pt-BR')}
                       </p>
@@ -935,6 +937,18 @@ export default function EditorialContentDetailPage() {
                 placeholder="#hashtag1 #hashtag2 #hashtag3"
               />
             </div>
+
+            {/* Media — only shown when editing an existing CP */}
+            {editingCp && (
+              <div className="space-y-1.5">
+                <Label>Mídia da versão</Label>
+                <ChannelPieceMediaSection
+                  channelPieceId={editingCp.id}
+                  editable
+                  projectId={projectId}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter>

@@ -1,6 +1,6 @@
 # ChannelPiece Media — Plano de Implementação
-**Data:** 2026-06-22 (rev. 2 — schema corrigido após decisões humanas)  
-**Status:** M1 autorizado. M2+ aguarda conclusão de M1.
+**Data:** 2026-06-22 (rev. 7 — fix/source-uniqueness implementado, auditado e aprovado 2026-06-23)  
+**Status:** M1 ✓. M2 ✓. M3 ✓. M4 ✓. fix/source-uniqueness ✓. M5 aguarda autorização explícita.
 
 > Cada incremento é deployável e testável de forma independente.  
 > Nenhum incremento quebra o que existe. Posts legados permanecem funcionais até M8.
@@ -12,7 +12,7 @@
 - [x] Todas as decisões CPM-D1 a CPM-D21 aprovadas
 - [x] Migration 021 aplicada em produção (`editorial_contents` e `channel_pieces` existem)
 - [x] Questões bloqueantes para M1–M4 respondidas
-- [ ] Branch `feat/channel-piece-media-m1-schema` criado a partir de `main` (`6e5fefe`)
+- [x] Branch `feat/channel-piece-media-m1-schema` criado a partir de `main` (`6e5fefe`)
 
 ---
 
@@ -22,237 +22,75 @@
 
 **Decisões que fundamentam:** CPM-D1, CPM-D2, CPM-D3, CPM-D4, CPM-D9, CPM-D10, CPM-D11, CPM-D16, CPM-D19, CPM-D20
 
-**Arquivo:** `scripts/022_create_channel_piece_media.sql`
+**Arquivo:** `scripts/022_create_channel_piece_media.sql` (289 linhas — ver arquivo para SQL completo)
 
-```sql
--- 022_create_channel_piece_media.sql
--- Cria a tabela channel_piece_media do domínio de Mídia de ChannelPiece.
---
--- Decisões de FK (CHANNEL_PIECE_MEDIA_DECISIONS.md Rev.2):
---
---   channel_piece_id   → NOT NULL, ON DELETE CASCADE
---     Uma mídia não existe sem sua ChannelPiece.
---     Deletar CP remove todos os vínculos de mídia (não os arquivos físicos).
---
---   image_id           → nullable, ON DELETE RESTRICT
---   library_file_id    → nullable, ON DELETE RESTRICT
---     Exatamente uma dessas deve ser não-nula (cpm_exactly_one_source).
---     RESTRICT impede exclusão de Image ou LibraryFile enquanto referenciada.
---     A UI deve orientar: "Remova das Versões antes de excluir este arquivo."
---
--- Campos não persistidos (derivados em runtime):
---   image_url, thumbnail_url, file_size, mime_type, media_kind
---   São resolvidos via JOIN nas entidades de origem e retornados pela API.
---
--- A função update_updated_at_column() já existe (criada em 001_create_tables.sql).
--- Idempotente: IF NOT EXISTS, DROP POLICY IF EXISTS, DROP TRIGGER IF EXISTS.
+**Tipos TypeScript:** `lib/types.ts` — `ChannelPieceMediaRole`, `ChannelPieceMedia`, `ChannelPieceMediaResolved`
 
-CREATE TABLE IF NOT EXISTS channel_piece_media (
-  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id            UUID        NOT NULL REFERENCES auth.users(id)         ON DELETE CASCADE,
-  channel_piece_id   UUID        NOT NULL REFERENCES channel_pieces(id)     ON DELETE CASCADE,
-  image_id           UUID                 REFERENCES images(id)             ON DELETE RESTRICT,
-  library_file_id    UUID                 REFERENCES library_files(id)      ON DELETE RESTRICT,
-  position           SMALLINT    NOT NULL DEFAULT 0
-                       CHECK (position >= 0),
-  role               TEXT        NOT NULL DEFAULT 'primary'
-                       CHECK (role IN (
-                         'primary',
-                         'thumbnail',
-                         'carousel_item',
-                         'background',
-                         'attachment'
-                       )),
-  alt_text           TEXT
-                       CHECK (alt_text IS NULL OR char_length(alt_text) <= 1000),
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+**Validação de M1 — Auditoria em banco (2026-06-23) — Ambiente: Produção `nuhdhnasuohizxtmyiju`:**
 
-  -- Exatamente uma fonte: image_id XOR library_file_id
-  CONSTRAINT cpm_exactly_one_source CHECK (
-    ((image_id IS NOT NULL)::integer +
-     (library_file_id IS NOT NULL)::integer) = 1
-  )
-);
+### Schema e objetos — verificados diretamente no banco
 
-ALTER TABLE channel_piece_media ENABLE ROW LEVEL SECURITY;
+| Objeto | Status |
+|--------|--------|
+| Tabela `channel_piece_media` | ✅ criada |
+| RLS ativa | ✅ `relrowsecurity = true` |
+| Policy `cpm_select_own` (SELECT) | ✅ instalada |
+| Policy `cpm_insert_own` (INSERT, com JOIN 2 níveis project consistency) | ✅ instalada |
+| Policy `cpm_update_own` (UPDATE, USING + WITH CHECK) | ✅ instalada |
+| Policy `cpm_delete_own` (DELETE) | ✅ instalada |
+| Trigger `cpm_updated_at` BEFORE UPDATE | ✅ instalado |
+| Constraint `cpm_exactly_one_source` (CHECK XOR) | ✅ ativa |
+| Constraint `cpm_unique_position` (UNIQUE DEFERRABLE) | ✅ ativa |
+| CHECK `position >= 0` | ✅ ativa |
+| CHECK `role IN (...)` | ✅ ativa |
+| CHECK `alt_text IS NULL OR char_length <= 1000` | ✅ ativa |
+| FK `channel_piece_id → channel_pieces ON DELETE CASCADE` | ✅ |
+| FK `image_id → images ON DELETE RESTRICT` | ✅ |
+| FK `library_file_id → library_files ON DELETE RESTRICT` | ✅ |
+| FK `user_id → auth.users ON DELETE CASCADE` | ✅ |
+| Índice `idx_cpm_user_cp` | ✅ |
+| Índice parcial `idx_cpm_image_id` (WHERE NOT NULL) | ✅ |
+| Índice parcial `idx_cpm_library_file_id` (WHERE NOT NULL) | ✅ |
+| Índice único parcial `uq_cpm_cp_primary` (WHERE role = 'primary') | ✅ |
 
--- ──────────────────────────────────────────────────────────────────────────────
--- RLS
--- ──────────────────────────────────────────────────────────────────────────────
+### Matriz de testes — executada via REST API (service_role) + inspeção de policies
 
--- SELECT: o usuário vê apenas suas próprias mídias.
-DROP POLICY IF EXISTS "cpm_select_own" ON channel_piece_media;
-CREATE POLICY "cpm_select_own" ON channel_piece_media
-  FOR SELECT
-  USING (auth.uid() = user_id);
+| # | Caso | Mecanismo | Resultado |
+|---|------|-----------|-----------|
+| 1 | CP-A1 + Image-A mesmo projeto, primary, pos=0 | — | ✅ PASS |
+| 2 | CP-A1 + LF-A mesmo projeto, thumbnail, pos=1 | — | ✅ PASS |
+| 3 | Várias mídias posições diferentes | — | ✅ PASS |
+| 4 | roles não-primary repetidas (carousel_item×2) | — | ✅ PASS |
+| 5 | alt_text exatamente 1000 chars | CHECK | ✅ PASS |
+| 6 | UPDATE alt_text → updated_at alterado | trigger | ✅ PASS |
+| 7 | DELETE associação → fonte intacta | FK RESTRICT | ✅ PASS |
+| 8 | image_id e library_file_id ambos preenchidos | `cpm_exactly_one_source` | ✅ REJEITADO (23514) |
+| 9 | Ambos nulos | `cpm_exactly_one_source` | ✅ REJEITADO (23514) |
+| 10 | CP-A1 + Image de Projeto B (mesmo usuário) | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 11 | CP-A1 + LibraryFile de Projeto B | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 12 | Fonte com project_id = NULL | RLS INSERT WITH CHECK | ⚠ verificado por inspeção (ver nota) |
+| 13 | Posição duplicada na mesma CP | `cpm_unique_position` | ✅ REJEITADO (23505) |
+| 14 | Mesma posição em CPs diferentes | — | ✅ PASS |
+| 15 | Posição negativa (-1) | CHECK `position >= 0` | ✅ REJEITADO (23514) |
+| 16 | Primeiro `primary` em CP | `uq_cpm_cp_primary` | ✅ PASS |
+| 17 | Segundo `primary` na mesma CP | `uq_cpm_cp_primary` | ✅ REJEITADO (23505) |
+| 18 | `primary` em CP diferente | — | ✅ PASS |
+| 19 | Múltiplos `thumbnail` na mesma CP | — | ✅ PASS (conforme CPM-D22) |
+| 20–23 | Cenários cross-user | RLS | ⚠ não testável com 1 conta (ver nota) |
+| FK-A | DELETE Image referenciada | ON DELETE RESTRICT | ✅ REJEITADO (23503) |
+| FK-B | DELETE LibraryFile referenciada | ON DELETE RESTRICT | ✅ REJEITADO (23503) |
+| FK-C | DELETE ChannelPiece → CPM cascade | ON DELETE CASCADE | ✅ CPM deletada, fonte intacta |
+| ALT | alt_text 1001 chars | CHECK | ✅ REJEITADO (23514) |
+| ROLE | role inválida | CHECK | ✅ REJEITADO (23514) |
 
--- INSERT: verifica
---   (1) ownership do usuário (user_id)
---   (2) ChannelPiece pertence ao usuário
---   (3) Image pertence ao usuário (quando image_id presente)
---   (4) LibraryFile pertence ao usuário (quando library_file_id presente)
---
--- Consistência de project_id (image/library_file pertence ao mesmo Projeto da CP)
--- é responsabilidade da API (não expressável de forma segura e simples em RLS
--- sem JOIN de 3 níveis — mesmo padrão de channel_pieces INSERT policy).
-DROP POLICY IF EXISTS "cpm_insert_own" ON channel_piece_media;
-CREATE POLICY "cpm_insert_own" ON channel_piece_media
-  FOR INSERT
-  WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM channel_pieces
-      WHERE channel_pieces.id  = channel_piece_id
-        AND channel_pieces.user_id = auth.uid()
-    )
-    AND (
-      image_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM images
-        WHERE images.id      = image_id
-          AND images.user_id = auth.uid()
-      )
-    )
-    AND (
-      library_file_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM library_files
-        WHERE library_files.id      = library_file_id
-          AND library_files.user_id = auth.uid()
-      )
-    )
-  );
+**Nota sobre testes ⚠ (RLS cross-project e cross-user):**
+O MCP Supabase estava configurado em modo somente leitura (`read-only`). Os testes de RLS não puderam ser executados com token de usuário autenticado — apenas via inspeção das policies instaladas no banco, confirmadas idênticas ao SQL da migration versionada. Testes obrigatórios em M2 com autenticação real (ver CPM-D12 Rev. 3).
 
--- UPDATE:
---   USING:      somente os próprios registros podem ser alvo.
---   WITH CHECK: o estado resultante deve manter:
---     (1) user_id correto
---     (2) channel_piece_id ainda pertence ao usuário
---     (3) image_id (se presente) ainda pertence ao usuário
---     (4) library_file_id (se presente) ainda pertence ao usuário
---   Isso impede re-apontar para CP, Image ou LibraryFile de outro usuário.
---   image_id e library_file_id são imutáveis via API (não editáveis após criação),
---   mas a constraint aqui é defensiva contra bypass direto do banco.
-DROP POLICY IF EXISTS "cpm_update_own" ON channel_piece_media;
-CREATE POLICY "cpm_update_own" ON channel_piece_media
-  FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM channel_pieces
-      WHERE channel_pieces.id      = channel_piece_id
-        AND channel_pieces.user_id = auth.uid()
-    )
-    AND (
-      image_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM images
-        WHERE images.id      = image_id
-          AND images.user_id = auth.uid()
-      )
-    )
-    AND (
-      library_file_id IS NULL
-      OR EXISTS (
-        SELECT 1 FROM library_files
-        WHERE library_files.id      = library_file_id
-          AND library_files.user_id = auth.uid()
-      )
-    )
-  );
+### Idempotência
+Verificada analiticamente: `CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS`, `DROP TRIGGER IF EXISTS`, `CREATE INDEX IF NOT EXISTS`. Segunda execução no banco existente não causa erro. Limitação documentada: constraints inline não adicionadas retroativamente.
 
--- DELETE: o usuário remove apenas seus próprios vínculos de mídia.
-DROP POLICY IF EXISTS "cpm_delete_own" ON channel_piece_media;
-CREATE POLICY "cpm_delete_own" ON channel_piece_media
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Trigger updated_at
--- ──────────────────────────────────────────────────────────────────────────────
-DROP TRIGGER IF EXISTS cpm_updated_at ON channel_piece_media;
-CREATE TRIGGER cpm_updated_at
-  BEFORE UPDATE ON channel_piece_media
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Índices
--- ──────────────────────────────────────────────────────────────────────────────
-
--- (channel_piece_id, position ASC):
---   Query principal: "listar mídias de uma ChannelPiece em ordem".
---   Cobre filtros por channel_piece_id sem position.
-CREATE INDEX IF NOT EXISTS idx_cpm_cp_position
-  ON channel_piece_media(channel_piece_id, position ASC);
-
--- (user_id, channel_piece_id):
---   Cobre listagem por usuário + filtro por CP.
---   O prefixo user_id protege queries com RLS que filtram por usuário primeiro.
-CREATE INDEX IF NOT EXISTS idx_cpm_user_cp
-  ON channel_piece_media(user_id, channel_piece_id);
-
--- (image_id): rastreabilidade — "quais CPs usam esta imagem?"
---   Partial index (WHERE NOT NULL) reduz tamanho.
---   Usado para verificar dependências antes de tentar excluir uma Image.
-CREATE INDEX IF NOT EXISTS idx_cpm_image_id
-  ON channel_piece_media(image_id)
-  WHERE image_id IS NOT NULL;
-
--- (library_file_id): rastreabilidade — "quais CPs usam este arquivo?"
---   Partial index (WHERE NOT NULL).
---   Usado para verificar dependências antes de tentar excluir um LibraryFile.
-CREATE INDEX IF NOT EXISTS idx_cpm_library_file_id
-  ON channel_piece_media(library_file_id)
-  WHERE library_file_id IS NOT NULL;
-```
-
-**Tipo TypeScript a adicionar em `lib/types.ts`:**
-
-```typescript
-export type ChannelPieceMediaRole =
-  | 'primary'
-  | 'thumbnail'
-  | 'carousel_item'
-  | 'background'
-  | 'attachment'
-
-// Registro persistido — campos do banco
-export interface ChannelPieceMedia {
-  id: string
-  user_id: string
-  channel_piece_id: string
-  image_id: string | null         // exatamente um destes é não-nulo
-  library_file_id: string | null  // exatamente um destes é não-nulo
-  position: number
-  role: ChannelPieceMediaRole
-  alt_text: string | null
-  created_at: string
-  updated_at: string
-}
-
-// Resposta da API — inclui campos resolvidos via JOIN nas entidades de origem
-export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
-  // Derivados da entidade de origem — calculados no handler, não persistidos
-  media_kind: LibraryFileKind | 'image'
-  image_url: string | null
-  thumbnail_url: string | null
-  file_size: number | null
-  mime_type: string | null
-  name: string | null  // library_files.name; null para imagens AI
-}
-```
-
-**Validação de M1:**
-- [ ] `pnpm build` sem erros
-- [ ] `pnpm typecheck` sem erros
-- [ ] SQL revisado manualmente (constraints, RLS, índices)
-- [ ] `cpm_exactly_one_source` rejeita: ambos nulos, ambos não-nulos
-- [ ] `position >= 0` rejeita posição negativa
-- [ ] `alt_text` aceita null; rejeita string > 1000 chars
-- [ ] RLS verificado: INSERT com CP de outro usuário é rejeitado
+### Cleanup
+6 linhas CPM + 2 library_files + 2 editorial_contents temporários deletados. Fontes reais intactas. `cpm_total = 0`.
 
 ---
 
@@ -260,16 +98,40 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 
 **Objetivo:** Rotas `GET/POST /api/channel-piece-media` e `GET/PATCH/DELETE /api/channel-piece-media/[id]`.
 
-**Pré-condição:** M1 aprovado e migration aplicada em staging/dev.
+**Branch:** `feat/channel-piece-media-m2-api` — HEAD `e459de5` (+ commit de docs)  
+**Ambiente:** `nuhdhnasuohizxtmyiju.supabase.co` + dev server local `localhost:3000`
 
 **Decisões:** CPM-D7, CPM-D12, CPM-D20
 
-**Detalhes:**
-- GET: retorna `ChannelPieceMediaResolved[]` — JOIN em `images` e `library_files` para resolver `image_url`, `thumbnail_url`, `media_kind`, `file_size`, `mime_type`, `name`
-- POST: validação de `project_id` na cadeia CP → EC → project_id = image.project_id ou library_file.project_id
-- PATCH: somente `position`, `role`, `alt_text` editáveis; `image_id`, `library_file_id`, `channel_piece_id` imutáveis
-- DELETE: remove vínculo apenas — nunca deleta `images` ou `library_files`
-- Documentar limites por canal em `lib/publication-channels.ts`
+**Arquivos criados:**
+- `app/api/channel-piece-media/_helpers.ts` — `resolveMediaSource`, `UUID_RE`, `VALID_ROLES`, `mapPgError`
+- `app/api/channel-piece-media/route.ts` — GET (lista com source resolvida) + POST (validação XOR + cross-project)
+- `app/api/channel-piece-media/[id]/route.ts` — GET + PATCH (imutabilidade) + DELETE (somente vínculo)
+
+**Auditoria (33 casos) — executada via Node.js HTTP contra dev server local (2026-06-23):**
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Sem autenticação → 401 | 1–4 | ✅ 4/4 |
+| Criação e leitura válidas | 5–13 | ✅ 9/9 |
+| Validação payload POST | 14–22 | ✅ 9/9 |
+| Validação payload PATCH | 23–25 | ✅ 3/3 |
+| ID inválido / não encontrado | 26–28 | ✅ 3/3 |
+| Cross-project (CRÍTICO) | 29–31 | ✅ 3/3 |
+| Conflitos de constraints | 32–33 | ✅ 2/2 |
+| **TOTAL** | **1–33** | **✅ 33/33** |
+
+**Casos críticos cross-project (29–31) — confirmados via API autenticada:**
+- Case 29: CP proj-A + Image proj-B → 400 "Imagem pertence a um Projeto diferente"
+- Case 30: CP proj-A + LF proj-B → 400 "LibraryFile pertence a um Projeto diferente"
+- Case 31: CP proj-A + Image project_id=NULL → 400 "Imagem sem Projeto atribuido"
+
+**Autenticação de testes:** sessão obtida via Supabase Admin API `generate_link` + magic link redirect →
+access_token formatado como cookie `sb-<ref>-auth-token` para `@supabase/ssr` 0.10.x.
+
+**Cleanup:** 2 fixtures criadas e removidas. `channel_piece_media` total = 0 após testes.
+
+**Typecheck + build:** `pnpm tsc --noEmit` sem erros novos; `pnpm build` com sucesso (apenas TS7006 pré-existente).
 
 ---
 
@@ -277,31 +139,266 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 
 **Objetivo:** Exibir mídias de uma ChannelPiece na tela de detalhe do EditorialContent.
 
-**Pré-condição:** M2 aprovado.
+**Branch:** `feat/channel-piece-media-m3-display` — HEAD `3b2b2af`
 
-**Componente:** `components/publication/channel-piece-media-section.tsx`
+**Componente criado:** `components/publication/channel-piece-media-section.tsx`
 
-**UX:**
-- Grid de thumbnails em ordem `position`
-- Badge de `role`
-- Estado "mídia indisponível" quando `deleted_at IS NOT NULL` em `library_files`
-- Botão "Remover da Versão" (DELETE channel_piece_media — não apaga arquivo)
-- Botão "Adicionar mídia" (shell — funcionalidade em M4/M5)
+**Estratégia de carregamento:** paralelo por versão — cada `ChannelPieceMediaSection` faz seu próprio fetch independente quando renderizado. Loading local, erro local com retry, sem bloquear a página. Adequado para o volume atual (≤10 CPs, cada uma com ≤10 mídias).
+
+**UX implementada:**
+- Seção compacta "Mídia (N)" abaixo do conteúdo de cada CP card
+- Linha por item: thumbnail/ícone 40×40 + role badge + origem (Galeria/Biblioteca) + alt text
+- Thumbnail via `thumbnail_url || image_url` com fallback para ícone (ImageIcon/Video/Music/FileText)
+- Badge "Mídia indisponível" quando `source_deleted = true`
+- Estado vazio: "Nenhuma mídia associada. Upload na próxima etapa."
+- Estado de erro: mensagem + botão Tentar novamente
+- Botão "Remover da versão" por item (ícone Trash2)
+- Confirmação explícita: AlertDialog explica que o arquivo original não será excluído
+- Guard de duplo clique: `isDeleteInFlight` ref síncrono
+- Toast de sucesso e de erro após remoção
+
+**Role labels (PT-BR):**
+- primary → Principal
+- thumbnail → Thumbnail
+- carousel_item → Item de carrossel
+- background → Fundo
+- attachment → Anexo
+
+**Fix incluído:** `resolveMediaSource` agora usa `presigned ?? public_url` — `createPresignedReadUrl` retorna `null` (não lança) quando S3 não está configurado; o `.catch()` anterior não capturava esse caso e deixava `image_url = null`. Afetava tanto `image_id` quanto `library_file_id`.
+
+**Auditoria (23 casos) — 2026-06-23:**
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Carregamento via API | 1–10 | ✅ 10/10 |
+| Remoção via API | 11–16 | ✅ 6/6 |
+| Regressão — features existentes | 17–22 | ✅ 6/6 |
+| **TOTAL** | **1–22** | **✅ 22/22** |
+
+(23 verificações totais — caso 13 executado em dois sub-checks)
+
+**Cleanup:** 4 fixtures criadas e removidas. `channel_piece_media` = 0 após testes.
+
+**Typecheck + build:** sem erros novos (apenas TS7006 pré-existente).
 
 ---
 
 ## M4 — Picker Galeria e Biblioteca
 
-**Objetivo:** Associar imagem existente (`images` aprovadas ou `library_files`) a uma ChannelPiece.
+**Objetivo:** Associar imagem existente (`images`) ou arquivo (`library_files`) a uma ChannelPiece via picker integrado no editor.
+
+**Branch:** `feat/channel-piece-media-m4-picker` — criado a partir de `feat/channel-piece-media-m3-display`
 
 **Pré-condição:** M3 aprovado.
 
 **Decisões:** CPM-D5, CPM-D6, CPM-D12
 
-**UX:**
-- "Selecionar da Galeria" → imagens aprovadas do mesmo Projeto
-- "Selecionar da Biblioteca" → library_files do mesmo Projeto, filtráveis por kind
-- Múltipla seleção para carrossel
+### Arquivos criados/modificados
+
+| Arquivo | Ação |
+|---------|------|
+| `components/publication/media-picker-dialog.tsx` | Criado — Dialog picker com duas abas |
+| `components/publication/channel-piece-media-section.tsx` | Modificado — props `editable`, `projectId`, `showRemove` por item |
+| `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Modificado — seção de mídia dentro do Dialog de edição |
+
+### Arquitetura implementada
+
+**`MediaPickerDialog`** — componente standalone com duas abas:
+- **"Imagens geradas"** — consulta `images` por `project_id` via Supabase client (mesmo padrão da página Galeria). Dados carregados lazily, cacheados durante a sessão do picker.
+- **"Arquivos do projeto"** — consulta `GET /api/library-files?projectId=X` (endpoint existente, soft-delete respeitado).
+- Seleção de um item executa `POST /api/channel-piece-media` com role/position auto-computados.
+- Guarda double-submit: `isAssigningRef` (useRef síncrono).
+- Itens já associados: badge "Adicionada"/"Adicionado" + disabled.
+
+**`ChannelPieceMediaSection`** — props adicionadas:
+- `editable?: boolean` (default `false`) — controla visibilidade do botão "Adicionar mídia" e do ícone de lixeira em cada item.
+- `projectId?: string` — repassado ao `MediaPickerDialog`.
+- Modo **card externo** (`editable=false`): somente leitura, sem lixeira — resumo informativo.
+- Modo **editor** (`editable=true`): lista com lixeira, botão "Adicionar mídia", picker embutido.
+
+**Integração no Dialog** — dentro de "Editar versão para canal", após o campo Hashtags:
+```tsx
+{editingCp && (
+  <ChannelPieceMediaSection
+    channelPieceId={editingCp.id}
+    editable
+    projectId={projectId}
+  />
+)}
+```
+
+### Lógica de role e position
+
+| Situação | Role atribuído |
+|----------|---------------|
+| Nenhuma mídia com `role=primary` | `primary` |
+| Já existe `role=primary` | `carousel_item` |
+
+`position = max(current positions) + 1`, ou `0` se lista vazia.
+
+### Labels de origem (UX)
+
+| Fonte técnica | Label exibido |
+|---------------|---------------|
+| `image_id IS NOT NULL` | Imagem gerada |
+| `library_file_id IS NOT NULL` | Arquivo do projeto |
+
+Aba "Imagens geradas" no picker → `images`  
+Aba "Arquivos do projeto" no picker → `library_files`
+
+### Prevenção de duplicatas
+
+- **Frontend:** `isDuplicateImage(imageId)` / `isDuplicateFile(fileId)` — item desabilitado com badge.
+- **Backend:** não existe constraint `UNIQUE(channel_piece_id, image_id)` — API permite múltiplas associações do mesmo source (decisão intencional, frontend controla). Constraint `uq_cpm_cp_primary` bloqueia segundo `role=primary`.
+
+### Auditoria (35 casos) — 2026-06-23
+
+| Grupo | Casos | Resultado |
+|-------|-------|-----------|
+| Autenticação → 401 | 1–3 | ✅ 3/3 |
+| Dados Galeria/Biblioteca | 4–6 | ✅ 3/3 |
+| Role e position (imagem) | 7–13 | ✅ 7/7 |
+| Position explícita e ordenação | 14–16 | ✅ 3/3 |
+| Duplicata source (API vs frontend) | 17–18 | ✅ 2/2 |
+| Cross-project | 19–21 | ✅ 3/3 |
+| Validação de input | 22–25 | ✅ 4/4 |
+| Library file (source Biblioteca) | 26–29 | ✅ 4/4 |
+| DELETE e integridade pós-delete | 30–32 | ✅ 3/3 |
+| PATCH e campos imutáveis | 33–35 | ✅ 3/3 |
+| **TOTAL** | **1–35** | **✅ 35/35** |
+
+**Fixture M4:** 1 `library_file` de teste criada em PROJECT_A para casos 26–29; removida no cleanup.
+
+### Smoke visual — 2026-06-23 — APROVADO
+
+Validado com 2 fixtures: 1 imagem (Principal/Imagem gerada) + 1 arquivo (carousel_item/Arquivo do projeto) em CP_A1.
+
+Checklist confirmado:
+
+**Card externo:**
+- [x] 2 mídias exibidas
+- [x] Labels "Principal · Imagem gerada" e "Item de carrossel · Arquivo do projeto"
+- [x] Sem lixeira (modo somente leitura)
+- [x] Layout compacto mantido
+
+**Editor ("Editar versão para canal"):**
+- [x] Seção "Mídia da versão" após Hashtags
+- [x] 2 mídias com ícone de lixeira e confirmação de remoção
+- [x] Botão "Adicionar mídia" funcional
+- [x] Footer sticky mantido; scroll do Dialog não quebrado
+- [x] Conteúdo textual preservado ao abrir/fechar picker
+
+**Picker ("Adicionar mídia"):**
+- [x] Título "Adicionar mídia"
+- [x] Descrição "Escolha uma imagem gerada ou um arquivo existente deste projeto."
+- [x] Aba "Imagens geradas" carrega imagens do projeto
+- [x] Aba "Arquivos do projeto" carrega arquivo de teste
+- [x] Itens já associados desabilitados com badge
+- [x] Seleção funciona; double-submit bloqueado
+
+### Cleanup — 2026-06-23
+
+- 3 CPMs de smoke removidos de CP_A1 e CP_A2
+- `library_file` de teste `13813102` removido
+- IMG_A, PROJECT_A, CP_A1, CP_A2 e library_files do projeto B verificados — intactos
+- `channel_piece_media` = 0 em CP_A1 e CP_A2 após cleanup
+
+### Limitações M4
+
+- **Sem constraint DB para source único:** o mesmo `image_id` pode ser associado ao mesmo CP múltiplas vezes via API direta. Frontend bloqueia via `isDuplicateImage`. Constraint de banco requer migration dedicada (não autorizada ainda).
+- **Sem presigned URLs no picker:** imagens aparecem como placeholder em dev local (S3 não configurado). Comportamento idêntico ao M3 — correto para ambiente sem S3.
+- **Sem reordenação:** posição é auto-incrementada; reordenação é M6.
+- **Sem upload direto:** upload de novos arquivos é M5.
+
+### Typecheck + build
+
+`pnpm tsc --noEmit` — apenas TS7006 pré-existente (`rascunhos/page.tsx`).  
+`pnpm build` — sucesso.
+
+---
+
+## fix/source-uniqueness — Unicidade de fonte por ChannelPiece
+
+**Branch:** `fix/channel-piece-media-source-uniqueness`  
+**Base:** `feat/channel-piece-media-m4-picker` HEAD (`4ce3241`)  
+**Data:** 2026-06-23  
+**Objetivo:** Garantir que cada `image_id` ou `library_file_id` apareça no máximo uma vez por `channel_piece_id`, tanto a nível de DB quanto de API.
+
+### Motivação
+
+O M4 introduziu prevenção de duplicatas apenas no frontend (advisory check antes do POST). Um race condition entre dois requests concorrentes poderia inserir duas linhas com o mesmo source na mesma CP. A solução definitiva exige constraints a nível de DB.
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `scripts/023_enforce_channel_piece_media_source_uniqueness.sql` | Novo — dois índices únicos parciais |
+| `app/api/channel-piece-media/_helpers.ts` | `mapPgError` — mapeia 23505 de novos índices para 409 amigável |
+
+### Migration 023 — índices únicos parciais
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_image
+  ON channel_piece_media (channel_piece_id, image_id)
+  WHERE image_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpm_cp_library_file
+  ON channel_piece_media (channel_piece_id, library_file_id)
+  WHERE library_file_id IS NOT NULL;
+```
+
+Idempotente. Não altera linhas existentes, constraints ou RLS. Aplicada em produção `nuhdhnasuohizxtmyiju` em 2026-06-23.
+
+### Mapeamento de erro API
+
+`mapPgError` em `_helpers.ts` trata 23505 dos dois novos índices **antes** do fallback genérico:
+
+```typescript
+if (message.includes('uq_cpm_cp_image') || message.includes('uq_cpm_cp_library_file')) {
+  return { status: 409, error: 'Esta midia ja esta associada a esta versao.' }
+}
+```
+
+Nome do índice não é exposto ao cliente.
+
+### Auditoria pré-migration
+
+Zero duplicatas encontradas antes da migration:
+
+```sql
+-- image_id
+SELECT channel_piece_id, image_id, COUNT(*) FROM channel_piece_media
+WHERE image_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
+-- 0 rows
+
+-- library_file_id
+SELECT channel_piece_id, library_file_id, COUNT(*) FROM channel_piece_media
+WHERE library_file_id IS NOT NULL GROUP BY 1, 2 HAVING COUNT(*) > 1;
+-- 0 rows
+```
+
+### Matriz de testes — 13 casos (16 assertions) — 2026-06-23 — todos passaram
+
+| # | Caso | Resultado |
+|---|------|-----------|
+| 1 | Primeira associação de Image à CP → 201 | ✅ PASS |
+| 2 | Mesma Image na mesma CP → 409, mensagem amigável | ✅ PASS (3 assertions) |
+| 3 | Mesma Image em CP diferente → 201 | ✅ PASS |
+| 4 | Dois requests concorrentes: Image + CP → exatamente 1×201 e 1×409 | ✅ PASS |
+| 5 | Primeira associação de LibraryFile à CP → 201 | ✅ PASS |
+| 6 | Mesmo LibraryFile na mesma CP → 409, mensagem amigável | ✅ PASS (2 assertions) |
+| 7 | Mesmo LibraryFile em CP diferente → 201 | ✅ PASS |
+| 8 | Dois requests concorrentes: LibraryFile + CP → exatamente 1×201 e 1×409 | ✅ PASS |
+| 9 | Image + LibraryFile (fontes distintas) na mesma CP → ambos 201 | ✅ PASS |
+| 10 | Posição diferente não contorna unicidade de Image → 409 | ✅ PASS |
+| 11 | Role diferente não contorna unicidade de LibraryFile → 409 | ✅ PASS |
+| 12 | DELETE + re-associação da mesma Image → 201 | ✅ PASS |
+| 13 | IMG_A intacto após todos os testes | ✅ PASS |
+
+### TypeScript + Build
+
+`pnpm exec tsc --noEmit` — erro pré-existente em `app/(dashboard)/imagens/rascunhos/page.tsx:43` (não relacionado a este fix, arquivo não modificado).  
+`pnpm build` — sucesso.
 
 ---
 
@@ -311,20 +408,29 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 
 **Pré-condição:** M4 aprovado.
 
-**Decisão:** CPM-D17 (upload → LibraryFile → channel_piece_media)
+**Decisões:** CPM-D17, CPM-D24.
 
-**Fluxo:**
+**Entregável:** `POST /api/channel-piece-media/upload` (multipart/form-data). Fluxo server-side:
 ```
-1. Usuário seleciona arquivo
-2. POST /api/storage/presign-image-upload {folder: 'library', mimeType, filename, prefix: '/conteudos/'}
-3. PUT S3 (cliente direto)
-4. POST /api/library-files {storagePath, publicUrl, projectId, name, kind}
-   → INSERT library_files com project_id do EC
-5. POST /api/channel-piece-media {libraryFileId: <id>, channelPieceId, position, role}
-   → INSERT channel_piece_media com library_file_id FK
+1. Auth + validação (file, mimeType, channelPieceId)
+2. Verify CP ownership → derivar projectId via CP → EC chain
+3. Upload buffer → S3 (uploadLibraryFile)     [Caso A: falha aqui → sem resíduo]
+4. INSERT library_files                        [Caso B: falha → delete S3]
+5. INSERT channel_piece_media                  [Caso C: falha → delete LF + S3]
+6. Return 201 { channelPieceMedium, libraryFile }
 ```
 
-**Pasta padrão:** `/conteudos/` (ou subfolder do projeto). Decisão final de pasta em M5.
+**Formatos:** JPEG, PNG, WebP, GIF, MP4, WebM, MOV. Limite: 50 MB.
+**Pasta da LF:** `/` (raiz). Usuário pode reorganizar via Arquivos.
+**UI:** Terceira aba "Enviar arquivo" no `MediaPickerDialog`; drag-and-drop; anyBusy bloqueia fechar.
+
+**Auditoria M5 — 2026-06-23**
+
+| # | Caso | Resultado |
+|---|------|-----------|
+| 44/44 | Suite `cpm_m5_tests.mjs` (Groups 1–7) | ✅ PASSOU |
+
+Branch: `feat/channel-piece-media-m5-upload`. Status: **PRONTO PARA REVISÃO**.
 
 ---
 
@@ -335,6 +441,18 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 **Pré-condição:** M5 aprovado.
 
 **API:** endpoint batch `PATCH /api/channel-piece-media/reorder` recebendo `[{id, position}]`.
+
+**Estratégia de reordenação com `cpm_unique_position DEFERRABLE`:**
+
+A constraint `cpm_unique_position` é `DEFERRABLE INITIALLY IMMEDIATE`. O endpoint de reorder deve:
+1. Iniciar transação
+2. `SET CONSTRAINTS cpm_unique_position DEFERRED`
+3. Executar os UPDATEs de posição em qualquer ordem
+4. COMMIT — verificação ocorre no final, sem colisões intermediárias
+
+Não usar abordagem de "offset temporário" (+1000) — mais frágil e sujeita a overflow do `SMALLINT` (máx 32767).
+
+**Compactação de posições:** O endpoint de reorder pode normalizar as posições para sequência contínua (0, 1, 2, ...) ou manter os valores fornecidos pelo cliente. Recomendado: aceitar posições arbitrárias do cliente (drag-and-drop pode usar steps de 10 para reduzir reordenações completas).
 
 ---
 

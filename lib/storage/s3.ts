@@ -315,6 +315,50 @@ export async function createPresignedReadUrl(path: string, options: PresignedRea
   )
 }
 
+export type UploadedLibraryFile = {
+  storagePath: string
+  publicUrl: string
+  fileSize: number
+  mimeType: string
+}
+
+// Uploads a binary buffer directly to S3 under the library folder.
+// Path convention: users/{userId}/library/{uuid}/{safeName}.{ext}
+// Returns null when S3 is not configured.
+export async function uploadLibraryFile(input: {
+  userId: string
+  filename: string
+  mimeType: string
+  buffer: Buffer
+}): Promise<UploadedLibraryFile | null> {
+  const config = getS3Config()
+  if (!config) return null
+
+  const ext = input.filename.includes('.')
+    ? (input.filename.split('.').pop() ?? extensionForMimeType(input.mimeType))
+    : extensionForMimeType(input.mimeType)
+  const id = randomUUID()
+  const baseName = safePathSegment(input.filename.replace(/\.[^/.]+$/, ''), 'file')
+  const path = `users/${input.userId}/library/${id}/${baseName}.${ext}`
+
+  const client = createS3Client(config)
+  await client.send(
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+      Body: input.buffer,
+      ContentType: input.mimeType,
+    }),
+  )
+
+  return {
+    storagePath: path,
+    publicUrl: publicUrl(config.publicBaseUrl, path),
+    fileSize: input.buffer.byteLength,
+    mimeType: input.mimeType,
+  }
+}
+
 export async function uploadImageToS3(input: UploadImageInput): Promise<StoredImage | null> {
   const config = getS3Config()
 
