@@ -1,4 +1,4 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery
 **Data última atualização:** 2026-06-24  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
@@ -12,7 +12,48 @@
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
 **Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — DEPLOYADO (2026-06-24). Merge `0e412ed`. Tag `pre-posts-legacy-marking-m8-5b-release-2026-06-24`. Smoke produção 6/6 PASS.  
 **Branch M9:** `feat/posts-legacy-retirement-m9` — DEPLOYADO (2026-06-24). Merge `9b1bed7`. Tag `pre-posts-legacy-retirement-m9-release-2026-06-24`. Smoke visual aprovado.  
-**Estado:** M1–M9 em produção. Posts aposentados operacionalmente — arquivo acessível em `/posts`. Fluxo principal consolidado em Conteúdos Editoriais. Próximo: M10 (remoção definitiva da tabela, API e rota `/posts` — exige autorização explícita e período de observação).
+**Branch M10 Discovery:** `discovery/project-workspace-consolidation` — em andamento (2026-06-24). Somente leitura. Aguarda decisões antes de implementação.  
+**Estado:** M1–M9 em produção. Posts aposentados operacionalmente. Discovery M10 em andamento — auditoria do workspace do Projeto e consolidação em Productions. Próximos: M10-A (Production de Arquivo + atribuição de registros), M10-B (simplificação da página do Projeto), Project Identity (fase futura).
+
+---
+
+## M10 Discovery — Consolidação do Workspace do Projeto — 2026-06-24
+
+**Branch:** `discovery/project-workspace-consolidation`  
+**Status:** Discovery concluído — somente leitura. Aguarda decisões humanas antes de implementação.
+
+### Documentos criados
+
+| Documento | Conteúdo |
+|-----------|---------|
+| `docs/PROJECT_WORKSPACE_DISCOVERY.md` | Auditoria da página do Projeto, APIs, dados sem Production, fluxos paralelos, riscos |
+| `docs/PROJECT_PRODUCTION_CONSOLIDATION_PLAN.md` | Proposta da nova página, atribuição de registros, fases, validação, rollback |
+| `docs/PROJECT_IDENTITY_DISCOVERY.md` | Campos atuais, conceitos desejados, lacunas, perguntas de domínio |
+
+### Estado atual da página do Projeto
+
+| Tab | Dados | Criação via | Status |
+|-----|-------|------------|--------|
+| Imagens | `image_drafts` por `project_id` | `/imagens?project=P` | ⚠️ bypassa Production |
+| Vídeos | `video_drafts` por `project_id` | `/videos?project=P` | ⚠️ bypassa Production |
+| Produções | `productions` por `project_id` | Modal inline | ✅ correto |
+
+### Registros sem Production (banco — 2026-06-24)
+
+| Tabela | Total | sem production_id | Projeto |
+|--------|-------|------------------|---------|
+| `image_drafts` | 7 | **6** | Alquimia Cibernética (todos) |
+| `video_drafts` | 4 | **3** | Alquimia Cibernética (todos) |
+| `editorial_contents` | 7 | **2** | Content Agent (ambos — teste) |
+| `images` (geradas) | 15 | n/a (sem campo) | — |
+| `library_files` | 4 | n/a (sem campo) | — |
+
+### Próximas decisões necessárias
+
+1. Criar Production "Arquivo — Alquimia Cibernética" e atribuir os 6 image_drafts e 3 video_drafts com conteúdo real?
+2. Remover abas Imagens e Vídeos da página do Projeto (M10-B)?
+3. Deletar registros classificados como REGISTRO DE TESTE?
+4. Iniciar discovery de Project Identity (campos adicionais no schema)?
 
 ---
 
