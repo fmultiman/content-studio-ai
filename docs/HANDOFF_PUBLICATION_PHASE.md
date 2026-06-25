@@ -1,5 +1,5 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery
-**Data última atualização:** 2026-06-24  
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery + M10-A Archive
+**Data última atualização:** 2026-06-25  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
 **Branch M6:** `feat/channel-piece-media-m6-organization` — integrado em main em 2026-06-24 (commit `e4da6b8`)  
@@ -12,8 +12,9 @@
 **Branch M8.5A auditoria:** `feat/posts-migration-m8-5a-audit` — 139/139 PASS, determinístico (2026-06-24). Não integrado a main.  
 **Branch M8.5B legacy marking:** `feat/posts-migration-m8-5b-legacy-marking` — DEPLOYADO (2026-06-24). Merge `0e412ed`. Tag `pre-posts-legacy-marking-m8-5b-release-2026-06-24`. Smoke produção 6/6 PASS.  
 **Branch M9:** `feat/posts-legacy-retirement-m9` — DEPLOYADO (2026-06-24). Merge `9b1bed7`. Tag `pre-posts-legacy-retirement-m9-release-2026-06-24`. Smoke visual aprovado.  
-**Branch M10 Discovery:** `discovery/project-workspace-consolidation` — em andamento (2026-06-24). Somente leitura. Aguarda decisões antes de implementação.  
-**Estado:** M1–M9 em produção. Posts aposentados operacionalmente. Discovery M10 em andamento — auditoria do workspace do Projeto e consolidação em Productions. Próximos: M10-A (Production de Arquivo + atribuição de registros), M10-B (simplificação da página do Projeto), Project Identity (fase futura).
+**Branch M10 Discovery:** `discovery/project-workspace-consolidation` — concluído (2026-06-24). Somente leitura. Integrado a main antes do M10-A.  
+**Branch M10-A:** `feat/project-archive-production-m10a` — CONCLUÍDO (2026-06-25). Production "Arquivo — Alquimia Cibernética" criada. 4 ImageDrafts + 2 VideoDrafts atribuídos. 3 testes preservados.  
+**Estado:** M1–M9 em produção. Posts aposentados operacionalmente. M10-A concluído — registros reais consolidados. Próximos: M10-B (simplificação da página do Projeto), Project Identity (fase futura).
 
 ---
 
@@ -38,22 +39,50 @@
 | Vídeos | `video_drafts` por `project_id` | `/videos?project=P` | ⚠️ bypassa Production |
 | Produções | `productions` por `project_id` | Modal inline | ✅ correto |
 
-### Registros sem Production (banco — 2026-06-24)
+### Registros sem Production — estado pós-M10-A (banco — 2026-06-25)
 
 | Tabela | Total | sem production_id | Projeto |
 |--------|-------|------------------|---------|
-| `image_drafts` | 7 | **6** | Alquimia Cibernética (todos) |
-| `video_drafts` | 4 | **3** | Alquimia Cibernética (todos) |
+| `image_drafts` | 7 | **2** *(eram 6 — M10-A atribuiu 4)* | Alquimia Cibernética (testes) |
+| `video_drafts` | 4 | **1** *(eram 3 — M10-A atribuiu 2)* | Alquimia Cibernética (teste) |
 | `editorial_contents` | 7 | **2** | Content Agent (ambos — teste) |
 | `images` (geradas) | 15 | n/a (sem campo) | — |
 | `library_files` | 4 | n/a (sem campo) | — |
 
 ### Próximas decisões necessárias
 
-1. Criar Production "Arquivo — Alquimia Cibernética" e atribuir os 6 image_drafts e 3 video_drafts com conteúdo real?
+1. ~~Criar Production "Arquivo — Alquimia Cibernética"~~ ✅ FEITO M10-A
 2. Remover abas Imagens e Vídeos da página do Projeto (M10-B)?
 3. Deletar registros classificados como REGISTRO DE TESTE?
 4. Iniciar discovery de Project Identity (campos adicionais no schema)?
+
+---
+
+## M10-A — Production de Arquivo: Alquimia Cibernética — 2026-06-25
+
+**Branch:** `feat/project-archive-production-m10a`  
+**Status:** CONCLUÍDO. Production criada e 6 drafts reais atribuídos. 3 testes preservados.
+
+### O que foi feito
+
+| Ação | Resultado |
+|------|-----------|
+| Production criada | "Arquivo — Alquimia Cibernética" (`76120099`) · tipo: `editorial` |
+| 4 ImageDrafts atribuídos | `c44bf448`, `97508404`, `e624d457`, `0eb2a983` |
+| 2 VideoDrafts atribuídos | `f1029001`, `d46d2259` |
+| 3 testes preservados | `d52b83b6`, `8c5bbdb7`, `0bc4324c` — `production_id = NULL` |
+| Manifesto gerado | `docs/migrations/project-archive-m10a.json` + `.md` |
+| Rollback disponível | `scripts/project_archive_production_m10a_rollback.mjs` |
+
+### Checklist de validação pré-M10-B
+
+```
+[ ] Smoke visual: página da Production "Arquivo — Alquimia Cibernética"
+[ ] Smoke visual: cada um dos 4 ImageDrafts acessível via Production
+[ ] Smoke visual: cada um dos 2 VideoDrafts acessível via Production
+[ ] Confirmar: 3 testes sem production_id (não aparecem em nenhuma Production)
+[ ] pnpm validate: 0 erros / build pass
+```
 
 ---
 

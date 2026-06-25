@@ -1,5 +1,6 @@
 # PROJECT_PRODUCTION_CONSOLIDATION_PLAN.md
-**Planejamento · Pré-implementação · 2026-06-24**
+**Planejamento · 2026-06-24**  
+**M10-A concluído · 2026-06-25**
 
 > Proposta de consolidação do Projeto como contexto e das Productions como
 > único caminho operacional. Este documento define o que remover, o que migrar,
@@ -153,20 +154,19 @@ Registros a atribuir (PATCH production_id):
 
 ## 4. Fases de Implementação
 
-### Fase M10-A — Pré-condição: Migration de Arquivo (opcional)
+### Fase M10-A — Migration de Arquivo ✅ CONCLUÍDA (2026-06-25)
 
-Antes de remover as abas, garantir que registros com conteúdo real tenham Production.
+Production **"Arquivo — Alquimia Cibernética"** criada e 6 drafts reais atribuídos.
 
 ```
-Pré-condição:
-  [ ] Aprovar criação manual da Production "Arquivo — Alquimia Cibernética"
-  [ ] Executar PATCH nos 4 ImageDrafts identificados
-  [ ] Executar PATCH nos 2 VideoDrafts identificados
-  [ ] Confirmar no banco que sem_production_id = 0 para registros com imagem/cenas
+✅ Production "Arquivo — Alquimia Cibernética" criada (id: 76120099)
+✅ 4 ImageDrafts com imagem atribuídos (c44bf448, 97508404, e624d457, 0eb2a983)
+✅ 2 VideoDrafts com cenas atribuídos (f1029001, d46d2259)
+✅ 3 testes preservados com production_id=NULL (d52b83b6, 8c5bbdb7, 0bc4324c)
 ```
 
-Esta fase pode ser feita diretamente pelo usuário na UI atual (Production page → unlink → relink),
-ou via SQL controlado. Não é obrigatória para a fase M10-B — é uma limpeza de dados desejável.
+Manifesto: `docs/migrations/project-archive-m10a.json`  
+Rollback disponível: `scripts/project_archive_production_m10a_rollback.mjs`
 
 ### Fase M10-B — Simplificação da Página do Projeto
 
