@@ -1,9 +1,18 @@
 # PROJECT_WORKSPACE_DISCOVERY.md
-**Discovery · Somente Leitura · 2026-06-24**
+**Discovery · Somente Leitura · 2026-06-24**  
+**Atualizado pós-M10-A · 2026-06-25**
 
 > Auditoria completa do estado atual da página do Projeto, dependências,
 > fluxos paralelos, dados sem Production, e riscos de consolidação.
 > Nenhuma implementação foi realizada neste documento.
+>
+> **M10-A executado em 2026-06-25:** Production "Arquivo — Alquimia Cibernética"
+> criada e 6 drafts reais atribuídos. Os 3 registros de teste permanecem com
+> `production_id = NULL`. Manifesto: `docs/migrations/project-archive-m10a.json`.
+>
+> **M10-B executado em 2026-06-25:** Abas Imagens e Vídeos removidas da página do Projeto.
+> Productions é agora a única seção operacional. Estrutura de Tabs eliminada.
+> Queries de `image_drafts`/`video_drafts` removidas da página.
 
 ---
 
@@ -142,10 +151,13 @@ A página da Production **já passa `production_id` em todas as criações** —
 
 ### 4.1 Contagens gerais
 
+> **Estado pós-M10-A (2026-06-25):** M10-A atribuiu 4 ImageDrafts + 2 VideoDrafts à
+> Production "Arquivo — Alquimia Cibernética". Os 3 testes permanecem sem production_id.
+
 | Tabela | Total | com project_id | com production_id | sem production_id |
 |--------|-------|---------------|------------------|------------------|
-| `image_drafts` | 7 | 7 | 1 | **6** |
-| `video_drafts` | 4 | 4 | 1 | **3** |
+| `image_drafts` | 7 | 7 | 5 *(era 1)* | **2** *(eram 6)* |
+| `video_drafts` | 4 | 4 | 3 *(era 1)* | **1** *(eram 3)* |
 | `editorial_contents` | 7 | 7 | 5 | **2** |
 | `channel_pieces` | 6 | n/a | n/a | n/a |
 | `productions` | 2 | 2 | n/a | n/a |
@@ -155,28 +167,28 @@ A página da Production **já passa `production_id` em todas as criações** —
 
 > `images` e `library_files` não possuem coluna `production_id` — são sempre acessíveis apenas por `project_id`.
 
-### 4.2 ImageDrafts sem Production (6 registros)
+### 4.2 ImageDrafts sem Production — estado pós-M10-A
 
 Todos pertencem ao Projeto **"Alquimia Cibernética"** (id: `0b04df8b`).
 
-| id (prefixo) | user_input | image_status | tem image_url | created_at |
-|-------------|-----------|-------------|--------------|-----------|
-| `d52b83b6` | "uma montanha antiga" | draft | ❌ | 2026-04-26 |
-| `8c5bbdb7` | "uma imagem para um post sobre consciência e tecnologia..." | draft | ❌ | 2026-04-26 |
-| `c44bf448` | "Um símbolo mágico" | draft | ✅ | 2026-04-27 |
-| `97508404` | "Uma floresta vista do alto com pequenas luzes..." | draft | ✅ | 2026-04-27 |
-| `e624d457` | "Criar um objeto mágico" | draft | ✅ | 2026-04-27 (updated Jun 22) |
-| `0eb2a983` | "Uma imagem sobre Alquimia Cibernética" | draft | ✅ | 2026-06-22 |
+| id (prefixo) | user_input | image_status | tem image_url | production_id | M10-A |
+|-------------|-----------|-------------|--------------|--------------|-------|
+| `d52b83b6` | "uma montanha antiga" | draft | ❌ | NULL (teste) | preservado |
+| `8c5bbdb7` | "consciência e tecnologia..." | draft | ❌ | NULL (teste) | preservado |
+| `c44bf448` | "Um símbolo mágico" | draft | ✅ | Arquivo ✓ | atribuído |
+| `97508404` | "Uma floresta vista do alto..." | draft | ✅ | Arquivo ✓ | atribuído |
+| `e624d457` | "Criar um objeto mágico" | draft | ✅ | Arquivo ✓ | atribuído |
+| `0eb2a983` | "Uma imagem sobre Alquimia Cibernética" | draft | ✅ | Arquivo ✓ | atribuído |
 
-### 4.3 VideoDrafts sem Production (3 registros)
+### 4.3 VideoDrafts sem Production — estado pós-M10-A
 
 Todos pertencem ao Projeto **"Alquimia Cibernética"** (id: `0b04df8b`).
 
-| id (prefixo) | name | num_scenes | created_at |
-|-------------|------|-----------|-----------|
-| `f1029001` | "aluimia01" | 2 | 2026-04-24 |
-| `d46d2259` | "teste3" | 2 | 2026-04-24 (updated Jun 22) |
-| `0bc4324c` | "testevideo" | 1 | 2026-04-26 |
+| id (prefixo) | name | num_scenes | production_id | M10-A |
+|-------------|------|-----------|--------------|-------|
+| `f1029001` | "aluimia01" | 2 | Arquivo ✓ | atribuído |
+| `d46d2259` | "teste3" | 2 | Arquivo ✓ | atribuído |
+| `0bc4324c` | "testevideo" | 1 | NULL (teste) | preservado |
 
 ### 4.4 EditorialContents sem Production (2 registros)
 
@@ -232,7 +244,7 @@ Nenhum LibraryFile tem `production_id` — a tabela não possui esse campo.
 
 | id (prefixo) | name | Productions | ImageDrafts | VideoDrafts | ECs | created_at |
 |-------------|------|------------|------------|------------|-----|-----------|
-| `0b04df8b` | Alquimia Cibernética | 1 (vazia) | 7 (6 sem prod) | 4 (3 sem prod) | 0 | 2026-04-24 |
+| `0b04df8b` | Alquimia Cibernética | 2 (1 Arquivo ✓) | 7 (2 testes sem prod) | 4 (1 teste sem prod) | 0 | 2026-04-24 |
 | `d0d008c3` | Content Agent | 1 (ativa) | 1 (1 com prod) | 1 (1 com prod) | 7 (5 com prod) | 2026-06-23 |
 
 ---
@@ -304,18 +316,21 @@ O modal de criação do EC pré-seleciona a Production da URL, mas o campo é ed
 
 ---
 
-## 8. Resumo Diagnóstico
+## 8. Resumo Diagnóstico — estado pós-M10-B (2026-06-25)
 
 | Dimensão | Status |
 |----------|--------|
 | Fluxo Production (novo) | ✅ Funcionando corretamente |
-| Aba Produções na página do Projeto | ✅ Funcionando |
+| Seção Produções na página do Projeto | ✅ Única seção operacional — M10-B |
 | Fluxo Imagens/Vídeos via Production | ✅ Funcionando |
-| Aba Imagens na página do Projeto | ⚠️ Agrega sem filtro de Production |
-| Aba Vídeos na página do Projeto | ⚠️ Agrega sem filtro de Production |
-| Botões de criação na página do Projeto | ⚠️ Bypassam Production |
-| ImageDrafts sem Production | ⚠️ 6 registros (todos pré-Productions) |
-| VideoDrafts sem Production | ⚠️ 3 registros (todos pré-Productions) |
+| Aba Imagens na página do Projeto | ✅ Removida — M10-B |
+| Aba Vídeos na página do Projeto | ✅ Removida — M10-B |
+| Botões Criar Imagem / Criar Vídeo na página do Projeto | ✅ Removidos — M10-B |
+| Queries image_drafts / video_drafts na página do Projeto | ✅ Removidas — M10-B |
+| ImageDrafts sem Production (reais) | ✅ 0 — M10-A atribuiu todos os 4 |
+| ImageDrafts sem Production (testes) | ℹ️ 2 registros preservados, não exibidos |
+| VideoDrafts sem Production (reais) | ✅ 0 — M10-A atribuiu todos os 2 |
+| VideoDrafts sem Production (testes) | ℹ️ 1 registro preservado, não exibido |
 | images geradas sem production_id | ℹ️ Schema não possui esse campo |
 | library_files sem production_id | ℹ️ Schema não possui esse campo |
 | EditorialContents sem Production | ℹ️ 2 registros de teste |

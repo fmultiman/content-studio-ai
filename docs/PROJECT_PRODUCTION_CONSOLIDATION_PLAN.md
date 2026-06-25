@@ -1,5 +1,7 @@
 # PROJECT_PRODUCTION_CONSOLIDATION_PLAN.md
-**Planejamento · Pré-implementação · 2026-06-24**
+**Planejamento · 2026-06-24**  
+**M10-A concluído · 2026-06-25**  
+**M10-B concluído · 2026-06-25**
 
 > Proposta de consolidação do Projeto como contexto e das Productions como
 > único caminho operacional. Este documento define o que remover, o que migrar,
@@ -153,39 +155,42 @@ Registros a atribuir (PATCH production_id):
 
 ## 4. Fases de Implementação
 
-### Fase M10-A — Pré-condição: Migration de Arquivo (opcional)
+### Fase M10-A — Migration de Arquivo ✅ CONCLUÍDA (2026-06-25)
 
-Antes de remover as abas, garantir que registros com conteúdo real tenham Production.
-
-```
-Pré-condição:
-  [ ] Aprovar criação manual da Production "Arquivo — Alquimia Cibernética"
-  [ ] Executar PATCH nos 4 ImageDrafts identificados
-  [ ] Executar PATCH nos 2 VideoDrafts identificados
-  [ ] Confirmar no banco que sem_production_id = 0 para registros com imagem/cenas
-```
-
-Esta fase pode ser feita diretamente pelo usuário na UI atual (Production page → unlink → relink),
-ou via SQL controlado. Não é obrigatória para a fase M10-B — é uma limpeza de dados desejável.
-
-### Fase M10-B — Simplificação da Página do Projeto
+Production **"Arquivo — Alquimia Cibernética"** criada e 6 drafts reais atribuídos.
 
 ```
-Arquivos a modificar:
+✅ Production "Arquivo — Alquimia Cibernética" criada (id: 76120099)
+✅ 4 ImageDrafts com imagem atribuídos (c44bf448, 97508404, e624d457, 0eb2a983)
+✅ 2 VideoDrafts com cenas atribuídos (f1029001, d46d2259)
+✅ 3 testes preservados com production_id=NULL (d52b83b6, 8c5bbdb7, 0bc4324c)
+```
+
+Manifesto: `docs/migrations/project-archive-m10a.json`  
+Rollback disponível: `scripts/project_archive_production_m10a_rollback.mjs`
+
+### Fase M10-B — Simplificação da Página do Projeto ✅ CONCLUÍDA (2026-06-25)
+
+```
+Arquivo modificado:
   app/(dashboard)/projetos/[id]/page.tsx
 
-Mudanças:
-  1. Remover TabsTrigger "images" e "videos"
-  2. Remover TabsContent "images" e "videos"
-  3. Remover queries image_drafts e video_drafts do useEffect
-  4. Remover useState para images e videos
-  5. Remover imports ImageIcon, Video (se não usados em outro lugar)
-  6. Trocar TabsList grid-cols-3 para grid-cols-1 (só Produções)
-     OU eliminar as Tabs e listar Productions diretamente no card
-  7. Opcionalmente: adicionar seção de métricas de arquivo (colapsável)
+Mudanças realizadas:
+  ✅ Removida estrutura completa de Tabs (TabsList, TabsTrigger, TabsContent)
+  ✅ Removida aba Imagens (TabsContent + cards + botão Criar Imagem)
+  ✅ Removida aba Vídeos (TabsContent + cards + botão Criar Vídeo)
+  ✅ Removidas queries image_drafts e video_drafts do useEffect
+  ✅ Removidos useState para images e videos
+  ✅ Removidos imports: ImageIcon, Video, ImageDraft, VideoDraft, Tabs*
+  ✅ Removido activeTab state
+  ✅ Productions exposta como seção flat com header "Produções" + badge de contagem
+  ✅ Botão "Nova Produção" sempre visível no header da seção
+  ✅ Estado vazio: "Este projeto ainda não possui Produções."
+  ✅ tabsSectionRef renomeado para productionsSectionRef
+  ✅ "Ir para Produções" no block dialog renomeado para "Ver Produções"
 ```
 
-**Impacto esperado:** typecheck + lint inalterados; 0 erros novos.
+**Resultado:** typecheck 0 erros / lint 50 warnings (era 51) / build pass.
 
 ### Fase M10-C — Reforço dos fluxos de criação (futuro)
 

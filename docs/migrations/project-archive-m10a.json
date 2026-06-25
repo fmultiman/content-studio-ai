@@ -1,0 +1,46 @@
+{
+  "m10a": true,
+  "executed_at": "2026-06-25T01:19:32.117Z",
+  "project_id": "0b04df8b-dfd3-45c5-b7b7-8fe7b95e8187",
+  "project_name": "Alquimia Cibernética",
+  "user_id": "35428fd4-4784-4934-9af9-82a606aad77e",
+  "production": {
+    "id": "76120099-e0f0-4b86-ae79-6e13d93f9d75",
+    "title": "Arquivo — Alquimia Cibernética",
+    "type": "editorial",
+    "was": "created"
+  },
+  "assigned": {
+    "image_draft_ids": [
+      "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "0eb2a983-4354-451a-8038-fd3f502c2413"
+    ],
+    "video_draft_ids": [
+      "f1029001-2adf-491f-8063-1c2c9c12ab85",
+      "d46d2259-83d8-4633-a040-92a3a64316d7"
+    ]
+  },
+  "preserved_tests": {
+    "description": "Registros de teste — production_id mantido NULL",
+    "ids": [
+      "d52b83b6-cf1c-4d83-9491-df0d6408c933",
+      "8c5bbdb7-e864-4cfe-8745-63e1030be9cd",
+      "0bc4324c-94f0-41d7-af50-93827ee4da13"
+    ]
+  },
+  "rollback": {
+    "script": "scripts/project_archive_production_m10a_rollback.mjs",
+    "requires_confirm": "PROJECT_ARCHIVE_ROLLBACK_CONFIRM=M10A_ROLLBACK_APPROVED",
+    "will_restore_production_id_to_null": [
+      "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "0eb2a983-4354-451a-8038-fd3f502c2413",
+      "f1029001-2adf-491f-8063-1c2c9c12ab85",
+      "d46d2259-83d8-4633-a040-92a3a64316d7"
+    ],
+    "will_delete_production_if_empty": true
+  }
+}
