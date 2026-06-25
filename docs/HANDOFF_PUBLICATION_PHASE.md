@@ -14,8 +14,8 @@
 **Branch M9:** `feat/posts-legacy-retirement-m9` — DEPLOYADO (2026-06-24). Merge `9b1bed7`. Tag `pre-posts-legacy-retirement-m9-release-2026-06-24`. Smoke visual aprovado.  
 **Branch M10 Discovery:** `discovery/project-workspace-consolidation` — concluído (2026-06-24). Somente leitura. Integrado a main antes do M10-A.  
 **Branch M10-A:** `feat/project-archive-production-m10a` — CONCLUÍDO (2026-06-25). Production "Arquivo — Alquimia Cibernética" criada. 4 ImageDrafts + 2 VideoDrafts atribuídos. 3 testes preservados.  
-**Branch M10-B:** `feat/project-page-simplification-m10b` — AGUARDA SMOKE E RELEASE (2026-06-25). Abas Imagens e Vídeos removidas. Productions é agora a única seção operacional do Projeto.  
-**Estado:** M1–M9 em produção. M10-A concluído. M10-B implementado e aguardando smoke approval antes de merge. Próximos: smoke M10-B → merge → release, depois M10-C (futuro), Project Identity (futuro).
+**Branch M10-B:** `feat/project-page-simplification-m10b` — DEPLOYADO (2026-06-25). Merge `dc91788`. Tag `pre-project-workspace-consolidation-m10ab-release-2026-06-24`. Smoke visual aprovado.  
+**Estado:** M1–M9 em produção. M10-A/B integrados e deployados. Projeto consolidado como identidade. Productions como único workspace operacional. Lint baseline: 50 warnings. Próximos: M10-C (fechar criação sem Production), Project Identity (futuro).
 
 ---
 
@@ -93,18 +93,18 @@ build:      aprovado
 validate:   aprovado
 ```
 
-### Smoke visual necessário antes do merge
+### Smoke visual — APROVADO (2026-06-25)
 
 ```
-[ ] Projeto Alquimia Cibernética: sem abas, identidade em destaque
-[ ] Seção Produções com "Arquivo — Alquimia Cibernética"
-[ ] Production de Arquivo: 4 ImageDrafts + 2 VideoDrafts acessíveis
-[ ] Projeto Content Agent: Productions listadas corretamente
-[ ] Estado vazio: projeto sem Productions mostra mensagem correta
-[ ] Editar projeto funciona
-[ ] Excluir projeto (bloqueado por Productions): "Ver Produções" scroll funciona
-[ ] Nova Produção cria e aparece na lista
-[ ] /imagens, /videos, /galeria, /arquivos continuam carregando
+✅ Projeto Alquimia Cibernética: sem abas, identidade em destaque
+✅ Seção Produções com "Arquivo — Alquimia Cibernética"
+✅ Production de Arquivo: 4 ImageDrafts + 2 VideoDrafts acessíveis
+✅ Cards de Production abrem corretamente
+✅ Estado vazio para Projeto sem Productions correto
+✅ Editar projeto funciona
+✅ Botão Nova Produção funciona
+✅ Três testes não promovidos pela interface
+✅ Nenhuma regressão visual relevante
 ```
 
 ### O que NÃO foi alterado
