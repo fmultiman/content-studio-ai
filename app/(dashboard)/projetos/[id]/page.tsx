@@ -7,7 +7,6 @@ import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,8 +31,6 @@ import {
   ArrowLeft,
   Loader2,
   FolderOpen,
-  ImageIcon,
-  Video,
   FileText,
   Calendar,
   Edit2,
@@ -45,7 +42,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, ImageDraft, VideoDraft, Production } from '@/lib/types'
+import type { Project, Production } from '@/lib/types'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -60,17 +57,14 @@ export default function ProjectDetailPage() {
 
   const { toast } = useToast()
 
-  // Project + content state
+  // Project + productions state
   const [project, setProject] = useState<Project | null>(null)
-  const [images, setImages] = useState<ImageDraft[]>([])
-  const [videos, setVideos] = useState<VideoDraft[]>([])
   const [productions, setProductions] = useState<Production[]>([])
   const [productionsError, setProductionsError] = useState(false)
 
   // Page state
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('images')
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
 
   // Project edit/delete state
@@ -83,7 +77,7 @@ export default function ProjectDetailPage() {
   const [showProductionForm, setShowProductionForm] = useState(false)
   const [editingProduction, setEditingProduction] = useState<Production | null>(null)
 
-  const tabsSectionRef = useRef<HTMLDivElement>(null)
+  const productionsSectionRef = useRef<HTMLDivElement>(null)
 
   // Production delete state
   const [showDeleteProductionDialog, setShowDeleteProductionDialog] = useState(false)
@@ -104,23 +98,7 @@ export default function ProjectDetailPage() {
         if (projectError) throw projectError
         setProject(projectData)
 
-        // Fetch images, videos, productions in parallel
-        const [imagesResult, videosResult, productionsRes] = await Promise.all([
-          supabase
-            .from('image_drafts')
-            .select('*')
-            .eq('project_id', projectId)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('video_drafts')
-            .select('*')
-            .eq('project_id', projectId)
-            .order('created_at', { ascending: false }),
-          fetch(`/api/productions?projectId=${projectId}`),
-        ])
-
-        if (imagesResult.data) setImages(imagesResult.data)
-        if (videosResult.data) setVideos(videosResult.data)
+        const productionsRes = await fetch(`/api/productions?projectId=${projectId}`)
 
         if (productionsRes.ok) {
           const productionsData = await productionsRes.json()
@@ -305,7 +283,7 @@ export default function ProjectDetailPage() {
             Voltar para Projetos
           </Button>
 
-          {/* Project Info Card */}
+          {/* Project Identity Card */}
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-start justify-between">
               <div className="flex items-start gap-4">
@@ -427,213 +405,114 @@ export default function ProjectDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Content Tabs */}
-          <div ref={tabsSectionRef} className="scroll-mt-24">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="images" className="gap-2">
-                <ImageIcon className="h-4 w-4" />
-                Imagens ({images.length})
-              </TabsTrigger>
-              <TabsTrigger value="videos" className="gap-2">
-                <Video className="h-4 w-4" />
-                Vídeos ({videos.length})
-              </TabsTrigger>
-              <TabsTrigger value="productions" className="gap-2">
-                <Layers className="h-4 w-4" />
-                Produções ({productions.length})
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Images tab */}
-            <TabsContent value="images" className="mt-4">
-              {images.length === 0 ? (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold">Nenhuma imagem ainda</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      As imagens criadas para este projeto aparecerão aqui.
-                    </p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => router.push(`/imagens?project=${projectId}`)}
-                    >
-                      Criar Imagem
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {images.map((image) => (
-                    <Card key={image.id} className="overflow-hidden">
-                      {image.image_url && (
-                        <div className="aspect-square">
-                          <img
-                            src={image.image_url}
-                            alt={image.user_input}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                      )}
-                      <CardContent className="p-3">
-                        <p className="line-clamp-2 text-sm text-muted-foreground">
-                          {image.user_input}
-                        </p>
-                        <Badge variant="outline" className="mt-2">
-                          {image.image_status ?? 'draft'}
-                        </Badge>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Videos tab */}
-            <TabsContent value="videos" className="mt-4">
-              {videos.length === 0 ? (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Video className="mb-4 h-12 w-12 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold">Nenhum vídeo ainda</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Os vídeos criados para este projeto aparecerão aqui.
-                    </p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => router.push(`/videos?project=${projectId}`)}
-                    >
-                      Criar Vídeo
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {videos.map((video) => (
-                    <Card key={video.id}>
-                      <CardContent className="p-4">
-                        <h3 className="font-semibold">{video.name || 'Rascunho sem título'}</h3>
-                        <div className="mt-2 flex items-center gap-2">
-                          <Badge variant="outline">
-                            {(video.scenes?.length ?? 0)} cena{(video.scenes?.length ?? 0) !== 1 ? 's' : ''}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(video.updated_at).toLocaleDateString('pt-BR')}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Productions tab */}
-            <TabsContent value="productions" className="mt-4">
-              <div className="mb-4 flex justify-end">
-                <Button
-                  size="sm"
-                  className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-                  onClick={() => {
-                    setEditingProduction(null)
-                    setShowProductionForm(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Nova Produção
-                </Button>
+          {/* Productions Section */}
+          <div ref={productionsSectionRef} className="scroll-mt-24 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold">Produções</h2>
+                <Badge variant="secondary">{productions.length}</Badge>
               </div>
+              <Button
+                size="sm"
+                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                onClick={() => {
+                  setEditingProduction(null)
+                  setShowProductionForm(true)
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Nova Produção
+              </Button>
+            </div>
 
-              {productionsError ? (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
-                    <p className="text-muted-foreground">
-                      Erro ao carregar Produções. Tente recarregar a página.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : productions.length === 0 ? (
-                <Card className="border-dashed">
-                  <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold">Nenhuma Produção ainda</h3>
-                    <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">
-                      Produções são unidades de trabalho criativo dentro deste Projeto.
-                    </p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => {
-                        setEditingProduction(null)
-                        setShowProductionForm(true)
-                      }}
-                    >
-                      Criar primeira Produção
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {productions.map((prod) => (
-                    <Card
-                      key={prod.id}
-                      className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                      onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="truncate font-semibold">{prod.title}</h3>
-                              <Badge variant="outline" className="shrink-0">
-                                {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
-                              </Badge>
-                            </div>
-                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                              {prod.intention}
-                            </p>
-                            <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              Atualizado em {formatDate(prod.updated_at)}
-                            </p>
+            {productionsError ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    Erro ao carregar Produções. Tente recarregar a página.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : productions.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Layers className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">Nenhuma Produção ainda</h3>
+                  <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">
+                    Este projeto ainda não possui Produções. Crie uma Production para organizar
+                    imagens, vídeos e conteúdos.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    onClick={() => {
+                      setEditingProduction(null)
+                      setShowProductionForm(true)
+                    }}
+                  >
+                    Nova Produção
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {productions.map((prod) => (
+                  <Card
+                    key={prod.id}
+                    className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
+                    onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate font-semibold">{prod.title}</h3>
+                            <Badge variant="outline" className="shrink-0">
+                              {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
+                            </Badge>
                           </div>
-                          <div className="flex shrink-0 gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setEditingProduction(prod)
-                                setShowProductionForm(true)
-                              }}
-                              aria-label="Editar Produção"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setDeletingProductionId(prod.id)
-                                setShowDeleteProductionDialog(true)
-                              }}
-                              aria-label="Excluir Produção"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                            {prod.intention}
+                          </p>
+                          <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                            <Calendar className="h-3 w-3" />
+                            Atualizado em {formatDate(prod.updated_at)}
+                          </p>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingProduction(prod)
+                              setShowProductionForm(true)
+                            }}
+                            aria-label="Editar Produção"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDeletingProductionId(prod.id)
+                              setShowDeleteProductionDialog(true)
+                            }}
+                            aria-label="Excluir Produção"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -703,14 +582,13 @@ export default function ProjectDetailPage() {
             <Button
               onClick={() => {
                 setShowProductionsBlockDialog(false)
-                setActiveTab('productions')
                 requestAnimationFrame(() => {
-                  tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  productionsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 })
               }}
               className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
             >
-              Ir para Produções
+              Ver Produções
             </Button>
           </DialogFooter>
         </DialogContent>
