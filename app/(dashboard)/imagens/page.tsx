@@ -264,6 +264,7 @@ function ImagesPageContent() {
     if (!isDataReady) return
 
     const autoSaveDraft = async () => {
+      if (!productionId) return
       try {
         const draft = await saveImageDraft()
 
@@ -409,6 +410,15 @@ function ImagesPageContent() {
       toast({
         title: 'Conteudo obrigatorio',
         description: 'Por favor, insira uma descricao ou gere um prompt para salvar o rascunho.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!productionId) {
+      toast({
+        title: 'Production obrigatória',
+        description: 'Acesse esta página a partir de uma Production para salvar o rascunho.',
         variant: 'destructive',
       })
       return
@@ -1257,85 +1267,99 @@ function ImagesPageContent() {
             </Card>
           )}
 
-          {/* Current Draft Indicator */}
-          {currentDraftId && (
-            <div className="flex items-center justify-between rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-2">
-              <span className="text-sm text-violet-300">
-                Editando rascunho
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleNewImage}
-                className="text-violet-300 hover:text-violet-200"
-              >
-                Limpar e criar novo
+          {isDataReady && !productionId ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
+              <h3 className="text-lg font-semibold text-foreground">Production obrigatória</h3>
+              <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                Para criar ou salvar um rascunho de imagem, acesse esta página a partir de uma Production.
+              </p>
+              <Button className="mt-4" onClick={() => router.back()}>
+                Voltar
               </Button>
             </div>
-          )}
+          ) : (
+            <>
+              {/* Current Draft Indicator */}
+              {currentDraftId && (
+                <div className="flex items-center justify-between rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-2">
+                  <span className="text-sm text-violet-300">
+                    Editando rascunho
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleNewImage}
+                    className="text-violet-300 hover:text-violet-200"
+                  >
+                    Limpar e criar novo
+                  </Button>
+                </div>
+              )}
 
-          {/* Input Section */}
-          <ImageInputSection
-            projects={projects}
-            userInput={userInput}
-            setUserInput={setUserInput}
-            selectedProject={selectedProject}
-            setSelectedProject={setSelectedProject}
-            autoMode={autoMode}
-            setAutoMode={setAutoMode}
-            onGeneratePrompt={handleGeneratePrompt}
-            isGeneratingPrompt={isGeneratingPrompt}
-            onSaveDraft={handleSaveDraft}
-            isSavingDraft={isSavingDraft}
-            onNewImage={handleNewImage}
-            generatedPrompt={generatedPrompt}
-            automationEnabled={automationEnabled}
-          />
-
-          {/* Prompt Section */}
-          <div ref={promptSectionRef}>
-            <PromptSection
-              generatedPrompt={generatedPrompt}
-              setGeneratedPrompt={updateGeneratedPrompt}
-              generatedPromptPt={generatedPromptPt}
-              onTranslatePrompt={handleTranslatePrompt}
-              isTranslatingPrompt={isTranslatingPrompt}
-              promptDetails={promptDetails}
-              onCreateImage={handleCreateImageWithModel}
-              isCreatingImage={isCreatingImage || isGeneratingNanoBanana}
-              hasNanoBananaKey={!!nanobananaApiKey}
-              automationEnabled={automationEnabled}
-              selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
-            />
-          </div>
-
-          {/* Image Result */}
-          <div ref={resultSectionRef}>
-            {imageUrl && (
-              <ImageResult
-                imageUrl={imageUrl}
-                status={imageStatus}
-                onRegenerate={handleRegenerate}
-                onApprove={handleApprove}
-                isRegenerating={isRegenerating}
-                isApproving={isApproving}
-                imageName={userInput.slice(0, 50)}
-                evaluatorEnabled={evaluatorEnabled}
-                evaluation={currentEvaluation}
-                onEvaluate={handleEvaluateImage}
-                isEvaluating={isEvaluating}
-                onUseRefinedPrompt={handleUseRefinedPrompt}
+              {/* Input Section */}
+              <ImageInputSection
+                projects={projects}
+                userInput={userInput}
+                setUserInput={setUserInput}
+                selectedProject={selectedProject}
+                setSelectedProject={setSelectedProject}
+                autoMode={autoMode}
+                setAutoMode={setAutoMode}
+                onGeneratePrompt={handleGeneratePrompt}
+                isGeneratingPrompt={isGeneratingPrompt}
+                onSaveDraft={handleSaveDraft}
+                isSavingDraft={isSavingDraft}
+                onNewImage={handleNewImage}
+                generatedPrompt={generatedPrompt}
+                automationEnabled={automationEnabled}
               />
-            )}
-          </div>
 
-          {/* Generation History */}
-          {generationAttempts.length > 0 && (
-            <GenerationHistory
-              attempts={generationAttempts}
-              onUsePrompt={handleUseRefinedPrompt}
-            />
+              {/* Prompt Section */}
+              <div ref={promptSectionRef}>
+                <PromptSection
+                  generatedPrompt={generatedPrompt}
+                  setGeneratedPrompt={updateGeneratedPrompt}
+                  generatedPromptPt={generatedPromptPt}
+                  onTranslatePrompt={handleTranslatePrompt}
+                  isTranslatingPrompt={isTranslatingPrompt}
+                  promptDetails={promptDetails}
+                  onCreateImage={handleCreateImageWithModel}
+                  isCreatingImage={isCreatingImage || isGeneratingNanoBanana}
+                  hasNanoBananaKey={!!nanobananaApiKey}
+                  automationEnabled={automationEnabled}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                />
+              </div>
+
+              {/* Image Result */}
+              <div ref={resultSectionRef}>
+                {imageUrl && (
+                  <ImageResult
+                    imageUrl={imageUrl}
+                    status={imageStatus}
+                    onRegenerate={handleRegenerate}
+                    onApprove={handleApprove}
+                    isRegenerating={isRegenerating}
+                    isApproving={isApproving}
+                    imageName={userInput.slice(0, 50)}
+                    evaluatorEnabled={evaluatorEnabled}
+                    evaluation={currentEvaluation}
+                    onEvaluate={handleEvaluateImage}
+                    isEvaluating={isEvaluating}
+                    onUseRefinedPrompt={handleUseRefinedPrompt}
+                  />
+                )}
+              </div>
+
+              {/* Generation History */}
+              {generationAttempts.length > 0 && (
+                <GenerationHistory
+                  attempts={generationAttempts}
+                  onUsePrompt={handleUseRefinedPrompt}
+                />
+              )}
+            </>
           )}
         </div>
       </div>

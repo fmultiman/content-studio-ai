@@ -1,4 +1,4 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery + M10-A Archive + M10-B Simplification
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery + M10-A Archive + M10-B Simplification + M10-C Production Required
 **Data última atualização:** 2026-06-25  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
@@ -15,7 +15,8 @@
 **Branch M10 Discovery:** `discovery/project-workspace-consolidation` — concluído (2026-06-24). Somente leitura. Integrado a main antes do M10-A.  
 **Branch M10-A:** `feat/project-archive-production-m10a` — CONCLUÍDO (2026-06-25). Production "Arquivo — Alquimia Cibernética" criada. 4 ImageDrafts + 2 VideoDrafts atribuídos. 3 testes preservados.  
 **Branch M10-B:** `feat/project-page-simplification-m10b` — DEPLOYADO (2026-06-25). Merge `dc91788`. Tag `pre-project-workspace-consolidation-m10ab-release-2026-06-24`. Smoke visual aprovado.  
-**Estado:** M1–M9 em produção. M10-A/B integrados e deployados. Projeto consolidado como identidade. Productions como único workspace operacional. Lint baseline: 50 warnings. Próximos: M10-C (fechar criação sem Production), Project Identity (futuro).
+**Branch M10-C:** `feat/require-production-for-drafts-m10c` — AGUARDANDO RELEASE (2026-06-25). Commit `8f6c366`. Smoke visual aprovado. 22/22 testes HTTP PASS. Lint 50 warnings (baseline). Build pass.  
+**Estado:** M1–M9 em produção. M10-A/B integrados e deployados. M10-C validado e pronto para release. Imagens e Vídeos no menu lateral com gate. 3 drafts de teste históricos preservados. Lint baseline: 50 warnings. Próximos: release M10-C, seletor Production nas telas globais (refinamento futuro), Project Identity (futuro).
 
 ---
 
@@ -964,3 +965,65 @@ O branch `feat/publication-p6-post-video-flow` está limpo e buildando. Qualquer
 | `app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/page.tsx` | Workspace de detalhe |
 | `app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx` | Aba Conteúdos da Production |
 | `app/(dashboard)/videos/page.tsx` | Entry point de vídeo para publicação |
+
+---
+
+## M10-C — Production obrigatória para criação de drafts — 2026-06-25
+
+**Branch:** `feat/require-production-for-drafts-m10c`  
+**Commit principal:** `8f6c366`  
+**Status:** AGUARDANDO RELEASE — validado, smoke aprovado, pronto para merge em main
+
+### O que foi implementado
+
+| Camada | Mudança |
+|--------|---------|
+| `app/api/image-drafts/route.ts` | POST agora exige `productionId`; deriva `project_id` da Production |
+| `app/api/video-drafts/route.ts` | Mesmo contrato |
+| `app/(dashboard)/imagens/page.tsx` | Gate UI + auto-save bloqueado sem `?production=` |
+| `app/(dashboard)/videos/page.tsx` | Gate UI + auto-save bloqueado sem `?production=` |
+| `scripts/m10c_api_test.mjs` | Suite de testes HTTP automatizados (22 casos) |
+| `docs/PRODUCTION_REQUIRED_FOR_DRAFTS.md` | Documentação do contrato |
+
+### Smoke visual (aprovado pelo usuário)
+
+```
+✅ /imagens?project=0b04df8b-...&production=76120099-... → criação de Imagem funciona
+✅ /videos?project=6d09d50d-...&production=3719a3a2-... → criação de Vídeo funciona
+✅ Acesso direto via menu (sem ?production=) → gate "Production obrigatória" exibido
+✅ Gate não expõe o workspace sem Production
+```
+
+### Decisão de produto registrada
+
+Imagens e Vídeos permanecem no menu lateral. Gate atual é aceito nesta fase.
+**Refinamento futuro (não blocker):** adicionar seletor Projeto → Production nas telas globais `/imagens` e `/videos`.
+
+### Testes HTTP — 22/22 PASS
+
+Cenários por endpoint (ImageDraft + VideoDraft): sem auth → 401, sem productionId → 422, productionId null → 422, UUID inválido → 400, UUID inexistente → 404, production de outro usuário → 404, projectId divergente → 409, criação válida com projectId → 200 (IDs corretos), criação válida sem projectId → 200 (project_id derivado da Production). PATCH preserva production_id. Histórico de 3+6 drafts intacto.
+
+### Integridade do banco
+
+Pré e pós testes idênticos: `image_drafts` 2 NULL + 7 com production; `video_drafts` 1 NULL + 5 com production. Zero órfãos.
+
+### Validação técnica final
+
+```
+tsc --noEmit:  0 erros
+eslint:        0 erros / 50 warnings (baseline)
+pnpm build:    PASS
+testes HTTP:   22/22 PASS
+```
+
+### Checklist de release
+
+```
+[ ] Criar tag rollback: pre-require-production-drafts-m10c-release-YYYY-MM-DD
+[ ] git merge --no-ff feat/require-production-for-drafts-m10c
+[ ] pnpm validate pós-merge
+[ ] git push origin main
+[ ] Verificar deploy em content.multihuman.com.br
+[ ] Smoke produção: /imagens via Production + gate direto
+[ ] Atualizar status para DEPLOYADO
+```
