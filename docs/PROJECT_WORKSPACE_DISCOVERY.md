@@ -9,6 +9,10 @@
 > **M10-A executado em 2026-06-25:** Production "Arquivo — Alquimia Cibernética"
 > criada e 6 drafts reais atribuídos. Os 3 registros de teste permanecem com
 > `production_id = NULL`. Manifesto: `docs/migrations/project-archive-m10a.json`.
+>
+> **M10-B executado em 2026-06-25:** Abas Imagens e Vídeos removidas da página do Projeto.
+> Productions é agora a única seção operacional. Estrutura de Tabs eliminada.
+> Queries de `image_drafts`/`video_drafts` removidas da página.
 
 ---
 
@@ -312,18 +316,21 @@ O modal de criação do EC pré-seleciona a Production da URL, mas o campo é ed
 
 ---
 
-## 8. Resumo Diagnóstico
+## 8. Resumo Diagnóstico — estado pós-M10-B (2026-06-25)
 
 | Dimensão | Status |
 |----------|--------|
 | Fluxo Production (novo) | ✅ Funcionando corretamente |
-| Aba Produções na página do Projeto | ✅ Funcionando |
+| Seção Produções na página do Projeto | ✅ Única seção operacional — M10-B |
 | Fluxo Imagens/Vídeos via Production | ✅ Funcionando |
-| Aba Imagens na página do Projeto | ⚠️ Agrega sem filtro de Production |
-| Aba Vídeos na página do Projeto | ⚠️ Agrega sem filtro de Production |
-| Botões de criação na página do Projeto | ⚠️ Bypassam Production |
-| ImageDrafts sem Production | ⚠️ 6 registros (todos pré-Productions) |
-| VideoDrafts sem Production | ⚠️ 3 registros (todos pré-Productions) |
+| Aba Imagens na página do Projeto | ✅ Removida — M10-B |
+| Aba Vídeos na página do Projeto | ✅ Removida — M10-B |
+| Botões Criar Imagem / Criar Vídeo na página do Projeto | ✅ Removidos — M10-B |
+| Queries image_drafts / video_drafts na página do Projeto | ✅ Removidas — M10-B |
+| ImageDrafts sem Production (reais) | ✅ 0 — M10-A atribuiu todos os 4 |
+| ImageDrafts sem Production (testes) | ℹ️ 2 registros preservados, não exibidos |
+| VideoDrafts sem Production (reais) | ✅ 0 — M10-A atribuiu todos os 2 |
+| VideoDrafts sem Production (testes) | ℹ️ 1 registro preservado, não exibido |
 | images geradas sem production_id | ℹ️ Schema não possui esse campo |
 | library_files sem production_id | ℹ️ Schema não possui esse campo |
 | EditorialContents sem Production | ℹ️ 2 registros de teste |

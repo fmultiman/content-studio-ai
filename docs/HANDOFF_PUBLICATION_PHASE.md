@@ -1,4 +1,4 @@
-# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery + M10-A Archive
+# Handoff — Fase de Publicações (P1–P6) + ChannelPiece Media (M1–M7) + M8 Migration + M9 Retirement + M10 Discovery + M10-A Archive + M10-B Simplification
 **Data última atualização:** 2026-06-25  
 **Branch P1–P6:** `feat/publication-p6-post-video-flow` — integrado em main em 2026-06-22  
 **Branch M1–M5:** `feat/channel-piece-media-m5-upload` — integrado em main em 2026-06-24  
@@ -14,7 +14,8 @@
 **Branch M9:** `feat/posts-legacy-retirement-m9` — DEPLOYADO (2026-06-24). Merge `9b1bed7`. Tag `pre-posts-legacy-retirement-m9-release-2026-06-24`. Smoke visual aprovado.  
 **Branch M10 Discovery:** `discovery/project-workspace-consolidation` — concluído (2026-06-24). Somente leitura. Integrado a main antes do M10-A.  
 **Branch M10-A:** `feat/project-archive-production-m10a` — CONCLUÍDO (2026-06-25). Production "Arquivo — Alquimia Cibernética" criada. 4 ImageDrafts + 2 VideoDrafts atribuídos. 3 testes preservados.  
-**Estado:** M1–M9 em produção. Posts aposentados operacionalmente. M10-A concluído — registros reais consolidados. Próximos: M10-B (simplificação da página do Projeto), Project Identity (fase futura).
+**Branch M10-B:** `feat/project-page-simplification-m10b` — AGUARDA SMOKE E RELEASE (2026-06-25). Abas Imagens e Vídeos removidas. Productions é agora a única seção operacional do Projeto.  
+**Estado:** M1–M9 em produção. M10-A concluído. M10-B implementado e aguardando smoke approval antes de merge. Próximos: smoke M10-B → merge → release, depois M10-C (futuro), Project Identity (futuro).
 
 ---
 
@@ -55,6 +56,66 @@
 2. Remover abas Imagens e Vídeos da página do Projeto (M10-B)?
 3. Deletar registros classificados como REGISTRO DE TESTE?
 4. Iniciar discovery de Project Identity (campos adicionais no schema)?
+
+---
+
+## M10-B — Simplificação da Página do Projeto — 2026-06-25
+
+**Branch:** `feat/project-page-simplification-m10b`  
+**Status:** IMPLEMENTADO — aguarda smoke visual e aprovação antes do merge.
+
+### O que foi feito
+
+| Antes (M10-B) | Depois |
+|---------------|--------|
+| Página com 3 abas: Imagens, Vídeos, Produções | Página com card de identidade + seção Produções |
+| Queries `image_drafts` e `video_drafts` no carregamento | Apenas query de Productions |
+| Botões "Criar Imagem" e "Criar Vídeo" | Removidos — criação apenas dentro de Production |
+| Tabs component com `activeTab` state | Eliminado completamente |
+| `images[]` e `videos[]` em estado local | Removidos |
+| "Ir para Produções" no dialog de bloqueio | Renomeado para "Ver Produções" |
+
+### Arquivos alterados
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `app/(dashboard)/projetos/[id]/page.tsx` | `refactor` | Página simplificada: sem abas, sem queries de drafts, Productions como única seção operacional |
+| `docs/PROJECT_WORKSPACE_DISCOVERY.md` | `docs` | Atualizado pós-M10-B |
+| `docs/PROJECT_PRODUCTION_CONSOLIDATION_PLAN.md` | `docs` | M10-B marcado como concluído |
+| `docs/HANDOFF_PUBLICATION_PHASE.md` | `docs` | Esta seção |
+
+### Estado da validação
+
+```
+typecheck:  0 erros
+lint:       50 warnings (era 51 antes do M10-B)
+build:      aprovado
+validate:   aprovado
+```
+
+### Smoke visual necessário antes do merge
+
+```
+[ ] Projeto Alquimia Cibernética: sem abas, identidade em destaque
+[ ] Seção Produções com "Arquivo — Alquimia Cibernética"
+[ ] Production de Arquivo: 4 ImageDrafts + 2 VideoDrafts acessíveis
+[ ] Projeto Content Agent: Productions listadas corretamente
+[ ] Estado vazio: projeto sem Productions mostra mensagem correta
+[ ] Editar projeto funciona
+[ ] Excluir projeto (bloqueado por Productions): "Ver Produções" scroll funciona
+[ ] Nova Produção cria e aparece na lista
+[ ] /imagens, /videos, /galeria, /arquivos continuam carregando
+```
+
+### O que NÃO foi alterado
+
+- Banco de dados: zero changes
+- APIs: zero changes
+- `production_id`: não foi tornado obrigatório
+- Registros de teste (3): continuam com `production_id = NULL`, não exibidos
+- Production de Arquivo: preservada, acessível via seção Produções
+- Rotas `/imagens` e `/videos` globais: intocadas
+- `/galeria` e `/arquivos`: intocados
 
 ---
 

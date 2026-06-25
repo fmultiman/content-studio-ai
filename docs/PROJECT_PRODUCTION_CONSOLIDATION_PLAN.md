@@ -1,6 +1,7 @@
 # PROJECT_PRODUCTION_CONSOLIDATION_PLAN.md
 **Planejamento · 2026-06-24**  
-**M10-A concluído · 2026-06-25**
+**M10-A concluído · 2026-06-25**  
+**M10-B concluído · 2026-06-25**
 
 > Proposta de consolidação do Projeto como contexto e das Productions como
 > único caminho operacional. Este documento define o que remover, o que migrar,
@@ -168,24 +169,28 @@ Production **"Arquivo — Alquimia Cibernética"** criada e 6 drafts reais atrib
 Manifesto: `docs/migrations/project-archive-m10a.json`  
 Rollback disponível: `scripts/project_archive_production_m10a_rollback.mjs`
 
-### Fase M10-B — Simplificação da Página do Projeto
+### Fase M10-B — Simplificação da Página do Projeto ✅ CONCLUÍDA (2026-06-25)
 
 ```
-Arquivos a modificar:
+Arquivo modificado:
   app/(dashboard)/projetos/[id]/page.tsx
 
-Mudanças:
-  1. Remover TabsTrigger "images" e "videos"
-  2. Remover TabsContent "images" e "videos"
-  3. Remover queries image_drafts e video_drafts do useEffect
-  4. Remover useState para images e videos
-  5. Remover imports ImageIcon, Video (se não usados em outro lugar)
-  6. Trocar TabsList grid-cols-3 para grid-cols-1 (só Produções)
-     OU eliminar as Tabs e listar Productions diretamente no card
-  7. Opcionalmente: adicionar seção de métricas de arquivo (colapsável)
+Mudanças realizadas:
+  ✅ Removida estrutura completa de Tabs (TabsList, TabsTrigger, TabsContent)
+  ✅ Removida aba Imagens (TabsContent + cards + botão Criar Imagem)
+  ✅ Removida aba Vídeos (TabsContent + cards + botão Criar Vídeo)
+  ✅ Removidas queries image_drafts e video_drafts do useEffect
+  ✅ Removidos useState para images e videos
+  ✅ Removidos imports: ImageIcon, Video, ImageDraft, VideoDraft, Tabs*
+  ✅ Removido activeTab state
+  ✅ Productions exposta como seção flat com header "Produções" + badge de contagem
+  ✅ Botão "Nova Produção" sempre visível no header da seção
+  ✅ Estado vazio: "Este projeto ainda não possui Produções."
+  ✅ tabsSectionRef renomeado para productionsSectionRef
+  ✅ "Ir para Produções" no block dialog renomeado para "Ver Produções"
 ```
 
-**Impacto esperado:** typecheck + lint inalterados; 0 erros novos.
+**Resultado:** typecheck 0 erros / lint 50 warnings (era 51) / build pass.
 
 ### Fase M10-C — Reforço dos fluxos de criação (futuro)
 
