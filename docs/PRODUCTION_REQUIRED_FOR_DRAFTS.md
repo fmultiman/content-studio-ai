@@ -144,3 +144,41 @@ pnpm build:    PASS
 testes HTTP:   22/22 PASS
 fixtures:      0 órfãos (todos deletados pelo teardown)
 ```
+
+## Release — 2026-06-25 — DEPLOYADO
+
+**Merge commit:** `4dce9f9` — `feat: enforce Production boundary for media drafts M10-C`  
+**Tag de rollback:** `pre-production-required-drafts-m10c-release-2026-06-25` → main `1f82483`  
+**Deploy:** Vercel auto-deploy `content.multihuman.com.br`
+
+**Pós-merge validation:**
+```
+tsc --noEmit:  0 erros ✅
+eslint:        50 warnings, 0 erros ✅
+pnpm build:    PASS ✅
+```
+
+**Smoke público pós-deploy:**
+```
+/login → 200 ✅
+/imagens sem sessão → 307 ✅
+/videos sem sessão → 307 ✅
+POST /api/image-drafts sem sessão → 401 ✅
+POST /api/video-drafts sem sessão → 401 ✅
+```
+
+**DB final (idêntico ao pré-release):**
+```
+image_drafts: 2 NULL + 7 com production ✅
+video_drafts: 1 NULL + 5 com production ✅
+3 NULL = d52b83b6, 8c5bbdb7, 0bc4324c (testes preservados) ✅
+6 drafts reais → production 76120099 (Arquivo — Alquimia Cibernética) ✅
+```
+
+**Rollback (se necessário):**
+```bash
+git checkout pre-production-required-drafts-m10c-release-2026-06-25
+# ou
+git revert 4dce9f9
+```
+Sem migration associada — rollback é puramente de código.

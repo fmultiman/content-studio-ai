@@ -15,8 +15,8 @@
 **Branch M10 Discovery:** `discovery/project-workspace-consolidation` — concluído (2026-06-24). Somente leitura. Integrado a main antes do M10-A.  
 **Branch M10-A:** `feat/project-archive-production-m10a` — CONCLUÍDO (2026-06-25). Production "Arquivo — Alquimia Cibernética" criada. 4 ImageDrafts + 2 VideoDrafts atribuídos. 3 testes preservados.  
 **Branch M10-B:** `feat/project-page-simplification-m10b` — DEPLOYADO (2026-06-25). Merge `dc91788`. Tag `pre-project-workspace-consolidation-m10ab-release-2026-06-24`. Smoke visual aprovado.  
-**Branch M10-C:** `feat/require-production-for-drafts-m10c` — AGUARDANDO RELEASE (2026-06-25). Commit `8f6c366`. Smoke visual aprovado. 22/22 testes HTTP PASS. Lint 50 warnings (baseline). Build pass.  
-**Estado:** M1–M9 em produção. M10-A/B integrados e deployados. M10-C validado e pronto para release. Imagens e Vídeos no menu lateral com gate. 3 drafts de teste históricos preservados. Lint baseline: 50 warnings. Próximos: release M10-C, seletor Production nas telas globais (refinamento futuro), Project Identity (futuro).
+**Branch M10-C:** `feat/require-production-for-drafts-m10c` — DEPLOYADO (2026-06-25). Merge commit `4dce9f9`. Tag rollback `pre-production-required-drafts-m10c-release-2026-06-25`. Smoke visual aprovado. 22/22 testes HTTP PASS. Build pass.  
+**Estado:** M1–M9 em produção. M10-A/B/C integrados e deployados. Imagens e Vídeos no menu lateral com gate de Production. 3 drafts de teste históricos preservados. Lint baseline: 50 warnings. Próximos: seletor Production nas telas globais (refinamento futuro), Project Identity (futuro).
 
 ---
 
@@ -971,8 +971,9 @@ O branch `feat/publication-p6-post-video-flow` está limpo e buildando. Qualquer
 ## M10-C — Production obrigatória para criação de drafts — 2026-06-25
 
 **Branch:** `feat/require-production-for-drafts-m10c`  
-**Commit principal:** `8f6c366`  
-**Status:** AGUARDANDO RELEASE — validado, smoke aprovado, pronto para merge em main
+**Merge commit:** `4dce9f9` — `feat: enforce Production boundary for media drafts M10-C`  
+**Tag de rollback:** `pre-production-required-drafts-m10c-release-2026-06-25` → main `1f82483`  
+**Status:** DEPLOYADO — 2026-06-25
 
 ### O que foi implementado
 
@@ -1016,14 +1017,22 @@ pnpm build:    PASS
 testes HTTP:   22/22 PASS
 ```
 
-### Checklist de release
+### Release — 2026-06-25 — DEPLOYADO
 
 ```
-[ ] Criar tag rollback: pre-require-production-drafts-m10c-release-YYYY-MM-DD
-[ ] git merge --no-ff feat/require-production-for-drafts-m10c
-[ ] pnpm validate pós-merge
-[ ] git push origin main
-[ ] Verificar deploy em content.multihuman.com.br
-[ ] Smoke produção: /imagens via Production + gate direto
-[ ] Atualizar status para DEPLOYADO
+✅ Tag rollback: pre-production-required-drafts-m10c-release-2026-06-25 → main 1f82483
+✅ git merge --no-ff → commit 4dce9f9
+✅ pnpm validate pós-merge: tsc 0 erros / lint 50 warnings / build PASS
+✅ git push origin main
+✅ Deploy: Vercel auto-deploy content.multihuman.com.br
+✅ Smoke público: /login 200, /imagens 307, /videos 307, APIs sem auth → 401
+✅ DB final: image_drafts 2 NULL + 7 com production / video_drafts 1 NULL + 5 com production
 ```
+
+**Rollback (se necessário):**
+```bash
+git checkout pre-production-required-drafts-m10c-release-2026-06-25
+# ou reverter o merge commit
+git revert 4dce9f9
+```
+Sem migration associada — rollback é puramente de código.

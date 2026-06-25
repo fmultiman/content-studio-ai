@@ -213,7 +213,12 @@ Mudanças realizadas:
   ✅ Rotas /imagens e /videos mantidas (não removidas)
   ✅ Nenhum NOT NULL SQL adicionado
   ✅ 3 drafts de teste preservados com production_id=NULL
+  ✅ 22/22 testes HTTP PASS (scripts/m10c_api_test.mjs)
 ```
+
+**Merge commit:** `4dce9f9` — `feat: enforce Production boundary for media drafts M10-C`  
+**Tag de rollback:** `pre-production-required-drafts-m10c-release-2026-06-25` → main `1f82483`  
+**Deploy:** Vercel auto-deploy `content.multihuman.com.br` — 2026-06-25
 
 **Resultado:** typecheck 0 erros / lint 50 warnings (baseline mantido) / build pass.  
 Documentação: `docs/PRODUCTION_REQUIRED_FOR_DRAFTS.md`
