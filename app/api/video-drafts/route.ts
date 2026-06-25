@@ -129,21 +129,32 @@ export async function POST(request: Request) {
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
 
-    if (body.productionId) {
-      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
-      if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 400 })
-      }
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!body.productionId || typeof body.productionId !== 'string') {
+      return NextResponse.json({ error: 'Production obrigatória.', code: 'PRODUCTION_REQUIRED' }, { status: 422 })
+    }
+    if (!UUID_RE.test(body.productionId)) {
+      return NextResponse.json({ error: 'productionId inválido.', code: 'INVALID_PRODUCTION_ID' }, { status: 400 })
+    }
+    const { data: production, error: productionError } = await supabase
+      .from('productions')
+      .select('id, project_id')
+      .eq('id', body.productionId)
+      .eq('user_id', user.id)
+      .single()
+    if (productionError || !production) {
+      return NextResponse.json({ error: 'Production não encontrada ou acesso negado.', code: 'PRODUCTION_NOT_FOUND' }, { status: 404 })
+    }
+    if (body.projectId && typeof body.projectId === 'string' && body.projectId !== production.project_id) {
+      return NextResponse.json({ error: 'Production não pertence a este Projeto.', code: 'PROJECT_PRODUCTION_MISMATCH' }, { status: 409 })
     }
 
     const insertPayload: Record<string, unknown> = {
       user_id: user.id,
       name,
-      project_id: body.projectId || null,
+      project_id: production.project_id,
+      production_id: production.id,
       scenes,
-    }
-    if (Object.hasOwn(body, 'productionId')) {
-      insertPayload.production_id = body.productionId || null
     }
 
     const { data, error } = await supabase

@@ -192,20 +192,31 @@ Mudanças realizadas:
 
 **Resultado:** typecheck 0 erros / lint 50 warnings (era 51) / build pass.
 
-### Fase M10-C — Reforço dos fluxos de criação (futuro)
-
-Após confirmar que registros estão atribuídos a Productions:
+### Fase M10-C — Reforço dos fluxos de criação ✅ CONCLUÍDA (2026-06-25)
 
 ```
-Oportunidade futura:
-  - Remover query parameter ?project= das pages /imagens e /videos
-    (ou ignorar se production não for passado)
-  - Tornar production_id obrigatório nas APIs image-drafts e video-drafts POST
-  - Redirecionar usuário para selecionar Production antes de criar
+Arquivos modificados:
+  app/api/image-drafts/route.ts
+  app/api/video-drafts/route.ts
+  app/(dashboard)/imagens/page.tsx
+  app/(dashboard)/videos/page.tsx
+
+Mudanças realizadas:
+  ✅ POST /api/image-drafts: productionId obrigatório (422 PRODUCTION_REQUIRED)
+  ✅ POST /api/video-drafts: productionId obrigatório (422 PRODUCTION_REQUIRED)
+  ✅ Servidor deriva project_id da Production (não confia no cliente)
+  ✅ Códigos de erro estruturados: PRODUCTION_REQUIRED / INVALID_PRODUCTION_ID
+     / PRODUCTION_NOT_FOUND / PROJECT_PRODUCTION_MISMATCH
+  ✅ /imagens: gate UI quando productionId é null + auto-save bloqueado
+  ✅ /videos: gate UI quando productionId é null + auto-save bloqueado
+  ✅ PATCH não alterado (atualização de rascunhos existentes continua livre)
+  ✅ Rotas /imagens e /videos mantidas (não removidas)
+  ✅ Nenhum NOT NULL SQL adicionado
+  ✅ 3 drafts de teste preservados com production_id=NULL
 ```
 
-Esta fase não deve ser implementada antes de confirmar que todos os registros
-existentes estão atribuídos ou descartados.
+**Resultado:** typecheck 0 erros / lint 50 warnings (baseline mantido) / build pass.  
+Documentação: `docs/PRODUCTION_REQUIRED_FOR_DRAFTS.md`
 
 ---
 

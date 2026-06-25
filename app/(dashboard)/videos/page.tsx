@@ -134,6 +134,7 @@ function VideosPageContent() {
     if (!isDataReady) return
 
     const autoSaveDraft = async () => {
+      if (!productionId) return
       const hasSceneContent = scenes.some((scene) =>
         scene.description.trim() ||
         scene.prompt?.trim() ||
@@ -260,6 +261,17 @@ function VideosPageContent() {
         toast({
           title: 'Nome obrigatorio',
           description: 'Por favor, insira um nome ou uma cena para o video.',
+          variant: 'destructive',
+        })
+      }
+      return null
+    }
+
+    if (!productionId) {
+      if (showToast) {
+        toast({
+          title: 'Production obrigatória',
+          description: 'Acesse esta página a partir de uma Production para salvar o rascunho.',
           variant: 'destructive',
         })
       }
@@ -501,6 +513,18 @@ function VideosPageContent() {
             </Card>
           )}
 
+          {isDataReady && !productionId ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
+              <h3 className="text-lg font-semibold text-foreground">Production obrigatória</h3>
+              <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                Para criar ou salvar um rascunho de vídeo, acesse esta página a partir de uma Production.
+              </p>
+              <Button className="mt-4" onClick={() => router.back()}>
+                Voltar
+              </Button>
+            </div>
+          ) : (
+          <>
           {/* Video Settings */}
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardHeader>
@@ -693,6 +717,8 @@ function VideosPageContent() {
               </p>
             </CardContent>
           </Card>
+          </>
+          )}
         </div>
       </div>
 

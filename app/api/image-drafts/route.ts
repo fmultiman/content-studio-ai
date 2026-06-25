@@ -208,16 +208,31 @@ export async function POST(request: Request) {
       )
     }
 
-    if (body.productionId) {
-      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
-      if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 400 })
-      }
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!body.productionId || typeof body.productionId !== 'string') {
+      return NextResponse.json({ error: 'Production obrigatória.', code: 'PRODUCTION_REQUIRED' }, { status: 422 })
+    }
+    if (!UUID_RE.test(body.productionId)) {
+      return NextResponse.json({ error: 'productionId inválido.', code: 'INVALID_PRODUCTION_ID' }, { status: 400 })
+    }
+    const { data: production, error: productionError } = await supabase
+      .from('productions')
+      .select('id, project_id')
+      .eq('id', body.productionId)
+      .eq('user_id', user.id)
+      .single()
+    if (productionError || !production) {
+      return NextResponse.json({ error: 'Production não encontrada ou acesso negado.', code: 'PRODUCTION_NOT_FOUND' }, { status: 404 })
+    }
+    if (body.projectId && typeof body.projectId === 'string' && body.projectId !== production.project_id) {
+      return NextResponse.json({ error: 'Production não pertence a este Projeto.', code: 'PROJECT_PRODUCTION_MISMATCH' }, { status: 409 })
     }
 
     const payload = await attachImageFromReference(supabase, user.id, body, {
       user_id: user.id,
       ...buildDraftPayload(body),
+      project_id: production.project_id,
+      production_id: production.id,
     })
 
     let result = await supabase
@@ -235,11 +250,15 @@ export async function POST(request: Request) {
             supabase,
             user.id,
             body,
-            Object.fromEntries(
-              Object.entries(buildDraftPayload(body, false)).filter(
-                ([key]) => key !== 'current_image_id',
+            {
+              ...Object.fromEntries(
+                Object.entries(buildDraftPayload(body, false)).filter(
+                  ([key]) => key !== 'current_image_id',
+                ),
               ),
-            ),
+              project_id: production.project_id,
+              production_id: production.id,
+            },
           )),
         })
         .select()
