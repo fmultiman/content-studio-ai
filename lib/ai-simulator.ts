@@ -1,6 +1,9 @@
 // AI Integration - Uses OpenAI when available, falls back to simulation
 // Prepared for future evolution: intelligent loop, webhook integration, advanced agents
 
+import type { ProjectIdentity } from './schemas/project-identity'
+import { buildImageGenerationContext } from './context-compiler'
+
 // =============================================================================
 // TYPES & INTERFACES
 // =============================================================================
@@ -160,7 +163,8 @@ async function generateWithOpenAI(
   projectContext?: string | null,
   styleProfile?: string | null,
   apiKey?: string,
-  evaluationMode: EvaluationMode = 'default'
+  evaluationMode: EvaluationMode = 'default',
+  identity: ProjectIdentity | null = null,
 ): Promise<PromptGenerationResult | null> {
   if (!apiKey) return null
 
@@ -233,16 +237,19 @@ Gerar um prompt que ja esteja alinhado com o modo de avaliacao, reduzindo a nece
 
 Responda apenas com um unico prompt final em ingles, sem explicacoes, sem markdown e sem JSON.`
 
+    const compiledContext = buildImageGenerationContext({
+      context: projectContext,
+      style_profile: styleProfile,
+      identity,
+    })
+
     const userMessage = `INPUTS RECEBIDOS
 
 userInput:
 ${userInput}
 
-context:
-${projectContext || 'Not specified'}
-
-style_profile:
-${styleProfile || 'Not specified'}
+PROJECT CONTEXT AND IDENTITY:
+${compiledContext || 'Not specified'}
 
 evaluation_mode:
 ${evaluationMode}`
@@ -274,8 +281,8 @@ ${evaluationMode}`
 
     if (!generatedPrompt) return null
 
-    // Extract details for display
-    const style = styleProfile || detectStyle(userInput)
+    // Extract details for display — prefer identity.expression.visual_identity, then style_profile
+    const style = identity?.expression?.visual_identity || styleProfile || detectStyle(userInput)
     const lighting = generatedPrompt.match(/lighting[^,.]*/i)?.[0] || getRandomElement(lightingOptions)
     const composition = generatedPrompt.match(/composition[^,.]*/i)?.[0] || getRandomElement(compositionOptions)
 
@@ -309,12 +316,18 @@ function generateSimulated(
   projectContext?: string | null,
   styleProfile?: string | null,
   evaluationMode: EvaluationMode = 'default',
+  identity: ProjectIdentity | null = null,
 ): PromptGenerationResult {
-  const detectedStyle = styleProfile || detectStyle(userInput)
+  const compiledContext = buildImageGenerationContext({
+    context: projectContext,
+    style_profile: styleProfile,
+    identity,
+  })
+  const detectedStyle = identity?.expression?.visual_identity || styleProfile || detectStyle(userInput)
   const lighting = getRandomElement(lightingOptions)
   const composition = getRandomElement(compositionOptions)
   const modeGuidance = getModeGuidance(evaluationMode)
-  const contextClause = projectContext ? `, grounded in this project context: ${projectContext}` : ''
+  const contextClause = compiledContext ? `, grounded in this context: ${compiledContext}` : ''
 
   const enhancedPrompt = `${userInput}${contextClause}, ${modeGuidance}, ${detectedStyle}, clear main subject, intentional environment, ${lighting}, ${composition}, specific visual details, avoid generic AI cliches`
   const translatedPrompt = translateToEnglish(enhancedPrompt)
@@ -334,16 +347,17 @@ export async function generateImagePrompt(
   styleProfile?: string | null,
   apiKey?: string,
   evaluationMode: EvaluationMode = 'default',
+  identity: ProjectIdentity | null = null,
 ): Promise<PromptGenerationResult> {
   // Try OpenAI first
   if (apiKey) {
-    const result = await generateWithOpenAI(userInput, projectContext, styleProfile, apiKey, evaluationMode)
+    const result = await generateWithOpenAI(userInput, projectContext, styleProfile, apiKey, evaluationMode, identity)
     if (result) return result
   }
 
   // Fallback to simulation
   await delay(1500)
-  return generateSimulated(userInput, projectContext, styleProfile, evaluationMode)
+  return generateSimulated(userInput, projectContext, styleProfile, evaluationMode, identity)
 }
 
 export async function regeneratePrompt(currentPrompt: string): Promise<PromptGenerationResult> {
@@ -550,6 +564,7 @@ export async function intelligentGenerationLoop(
     context.styleProfile,
     undefined,
     context.evaluationMode || 'default',
+    null,
   )
   
   // Track attempt (for future use)
