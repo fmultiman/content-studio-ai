@@ -1048,10 +1048,22 @@ A migração M11-F documentou 3 projects (Alquimia, Content Agent, Projeto teste
 
 ### 3. Smokes humanos
 
+**Executado em 2026-06-26 — pré-merge, branch `discovery/project-identity-v1-implementation`**
+
 | Smoke | Status |
 |-------|--------|
-| Alquimia — página abre, identidade visível, geração funciona, avaliação funciona | **PENDENTE** — a ser executado pelo usuário após merge |
-| Project sem identity (Content Agent/Projeto teste) — página não quebra, context ativo, geração sem erro | **PENDENTE** — a ser executado pelo usuário após merge |
+| Alquimia — página abre normalmente | ✅ APROVADO |
+| Alquimia — Project Identity aparece corretamente | ✅ APROVADO |
+| Alquimia — campo "Perfil de Estilo" não existe mais | ✅ APROVADO |
+| Alquimia — geração de prompt funciona | ✅ APROVADO |
+| Alquimia — identidade continua orientando o resultado | ✅ APROVADO |
+| Project sem identity — página abre normalmente, identity = NULL não causa erro | ✅ APROVADO |
+| Project sem identity — context continua funcionando | ✅ APROVADO |
+| Project sem identity — ausência de style_profile não causa regressão | ✅ APROVADO |
+| Vídeo — carrega sem erro relacionado a style_profile | ✅ APROVADO |
+| Channel Piece — carrega sem erro relacionado a style_profile | ✅ APROVADO |
+
+**Checkpoint humano:** ✅ APROVADO — 2026-06-26
 
 ---
 
@@ -1116,6 +1128,27 @@ Resultados restantes — todos **permitidos**:
 | Risco | Severidade | Mitigação |
 |-------|-----------|-----------|
 | Test 8 flaky (Math.random() não seeded) | BAIXO | Pré-existente; não bloqueia release |
-| Smoke humanos pendentes | MÉDIO | A executar após merge; qualquer erro reportado em issue |
+| Smoke humanos | ✅ APROVADO (2026-06-26) | Todos os 10 cenários passaram pré-merge |
 | Content Agent e Projeto teste sem identity | INFORMATIVO | Dados de teste; `context` continua ativo para geração |
 | Videos e ChannelPiece sem Project Identity V1 | INFORMATIVO | Decisão de produto — escopo V1 não inclui esses fluxos |
+
+---
+
+### 8. Veredito final
+
+```
+PROJECT IDENTITY V1 RELEASE READY — SAFE TO MERGE
+```
+
+**Data:** 2026-06-26
+**Branch:** `discovery/project-identity-v1-implementation`
+**Evidências:**
+- 193/193 testes passando (flakiness test 8 pré-existente, não-regressão)
+- 0 erros TypeScript, 0 erros lint, build PASS
+- `style_profile` removido de código (M11-G) e banco (M11-H)
+- `Project` TypeScript type sem `style_profile`
+- 0 ocorrências proibidas em busca global
+- Alquimia identity: Zod VALID, schema_v1, 5 zonas intactas
+- Smokes humanos: ✅ 10/10 aprovados pré-merge (2026-06-26)
+
+**Pendente pós-merge:** nenhum. Deploy a critério do usuário.
