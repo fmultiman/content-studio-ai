@@ -350,17 +350,30 @@ O campo `PROJECT CONTEXT AND IDENTITY` substitui os campos separados `context:` 
 
 **Fallback simulado:** `generateSimulated` recebe identity e usa contexto compilado no `contextClause`. Não finge compreensão completa — o conteúdo da identidade aparece na string de contexto conforme formatado pelo compiler.
 
-**Testes adicionados (33/33 PASS):**
+**Testes adicionados (33 M11-D + 10 refinamento = 43 novos / 139 total):**
 - Casos 1-11: context+style_profile preservation, identity parcial/completa, context vs purpose, visual_identity precedence, style_profile fallback, principles/restrictions/preferences, schema_version absent, no raw JSON
 - Casos 12-13: normalizeProjectIdentity throws para input inválido (prova que a página bloqueia antes de chamar o generator)
 - Caso 14: identity null → comportamento legado
 - Casos 15-20: evaluation_mode unchanged, output contract, simulated fallback, no mutation, determinism
 - Mocked OpenAI path: formato do userMessage, `Not specified` quando vazio, visual_identity no field `style`
+- Metadata refinement (10 testes): extração de lighting/composition por regex, null quando ausente, sem fallback aleatório no caminho OpenAI, null é determinístico, contrato de UI (null → chip omitido), caminho simulado retém valores sorteados embutidos no prompt, precedência de style, prompt string inalterado
 
 **Notas sobre translateToEnglish:** a função existente usa substituições sem word boundary (ex: "cidade" → "city" substitui substrings). Os testes de princípios usam textos que evitam colisão com o dicionário de tradução existente. Esse comportamento é pré-existente e fora do escopo de M11-D.
 
-**Resultados de validação:**
-- `pnpm test`: **129/129 PASS** (96 anteriores + 33 novos)
+**Refinamento de metadados visuais (M11-D closure — 2026-06-26):**
+
+Problema identificado pós-implementação: chips de iluminação e composição no caminho OpenAI usavam `getRandomElement(lightingOptions)` como fallback quando a regex `/lighting[^,.]*/i` ou `/composition[^,.]*/i` não encontrava correspondência no prompt do modelo. Isso produzia chips desconectados do prompt real.
+
+Solução:
+- `PromptGenerationResult.lighting: string | null` (era `string`)
+- `PromptGenerationResult.composition: string | null` (era `string`)
+- `generateWithOpenAI`: usa `?? null` em vez de `|| getRandomElement(...)` — null quando a regex não encontra correspondência
+- `generateSimulated`: comportamento preservado — lighting/composition são sorteados E embutidos no `enhancedPrompt`, garantindo que os chips correspondam ao conteúdo enviado
+- `PromptSection`: chips de lighting e composition renderizados condicionalmente (`!== null`)
+- `imagens/page.tsx`: tipo de `promptDetails` atualizado para aceitar `string | null`
+
+**Resultados de validação (pós-refinamento):**
+- `pnpm test`: **139/139 PASS** (96 anteriores + 43 novos)
 - `pnpm typecheck`: 0 erros
 - `pnpm lint`: 0 erros, 50 warnings (baseline)
 - `pnpm build`: PASS
@@ -368,6 +381,8 @@ O campo `PROJECT CONTEXT AND IDENTITY` substitui os campos separados `context:` 
 **Commits:**
 - `283a5ec` — `feat: use Project Identity in image prompt generation — M11-D`
 - `4d04718` — `test: cover Project Identity prompt generation — M11-D`
+- `(pending)` — `fix: remove random chip fallback in OpenAI prompt path`
+- `(pending)` — `docs: record M11-D metadata refinement`
 
 **Pontos de parada obrigatória:**
 - STOP: aprovação humana antes de M11-E (Image Evaluator)
