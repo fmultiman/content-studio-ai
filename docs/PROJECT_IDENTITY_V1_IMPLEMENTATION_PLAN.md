@@ -76,51 +76,108 @@ Antes de iniciar M11-A, as seguintes condições devem ser verdadeiras:
 
 ---
 
-### M11-B — Schema, Types e Validação
+### M11-B — Persistência e Integração do Tipo Project Identity V1 ✅ CONCLUÍDO (2026-06-26)
 
 **Objetivo:** Adicionar a coluna `identity JSONB` na tabela `projects`. Atualizar o tipo `Project` em `lib/types.ts`. Garantir que nenhum código existente quebre.
 
-**Arquivos modificados:**
-- `lib/types.ts` — adicionar `ProjectIdentity`, `ProjectIdentityFoundation`, `ProjectIdentityRelationship`, `ProjectIdentityExpression`, `ProjectIdentityGovernance` interfaces; adicionar campo `identity?: ProjectIdentity | null` ao `Project`
-- `lib/schemas/project-identity.ts` — (criado em M11-A, pode sofrer ajuste)
+**Status:** IMPLEMENTADO, TESTADO E APLICADO. Branch: `discovery/project-identity-v1-implementation`.
 
-**Migration SQL:**
+**Arquivos alterados:**
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `scripts/027_add_project_identity.sql` | A (novo) | Migration SQL com header documental conforme padrão do repo |
+| `lib/types.ts` | M | Campo `identity: ProjectIdentity | null` adicionado ao `Project` |
+
+**Migration:**
 
 ```sql
--- migration 020_add_project_identity.sql
+-- 027_add_project_identity.sql
 ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS identity JSONB DEFAULT NULL;
-
--- Nenhum NOT NULL, nenhum CHECK constraint
--- Projetos existentes ficam com identity = NULL (comportamento correto)
--- RLS existente cobre automaticamente a nova coluna
 ```
 
-**APIs afetadas:**
-- Nenhuma rota de API é alterada. O Supabase client já serializa JSONB automaticamente.
-- Verificar que o `select('*')` existente em `projetos/[id]/page.tsx` passa a incluir `identity` automaticamente.
+Aplicada em 2026-06-26 via `postgres` (POSTGRES_URL_NON_POOLING).
 
-**UI afetada:** Nenhuma (a nova coluna é invisível até M11-C).
+**Decisão sobre o campo no tipo:**
 
-**Compatibilidade e rollback:**
-- A migration é reversível: `ALTER TABLE projects DROP COLUMN IF EXISTS identity`
-- Nenhum código existente referencia `identity` ainda — zero risco de quebra
-- TypeScript: o campo é opcional (`identity?: ProjectIdentity | null`) — nenhum consumidor existente quebra
+Campo definido como `identity: ProjectIdentity | null` (obrigatório nullable, não `?:`).
 
-**Testes necessários:**
-- Verificar que `select('*')` retorna `identity: null` para projetos existentes
-- Verificar que um PATCH `{ identity: { foundation: { purpose: "teste" } } }` persiste corretamente
-- Verificar que a migration roda sem erros no ambiente de desenvolvimento
+Justificativa: após migration, `SELECT *` sempre retorna a propriedade com valor `null` para projetos sem identity. `undefined` não é um estado válido para campos persistidos. O typecheck confirma que nenhum consumidor existente quebrou — todos os `select('*')` já retornam `identity: null` que satisfaz `ProjectIdentity | null`.
 
-**Critério de aceite:**
-- Migration aplicada com sucesso
-- `lib/types.ts` tipado com `ProjectIdentity`
-- `tsc --noEmit`: 0 erros
+`ProjectIdentity` importado de `@/lib/schemas/project-identity` — não redefinido em `lib/types.ts`.
+
+**APIs afetadas:** Nenhuma.
+
+**UI afetada:** Nenhuma (coluna invisível até M11-C).
+
+**Estratégia de leitura (fronteira de validação):**
+
+```text
+banco (JSONB raw)
+→ Supabase client serializa para objeto JS
+→ tipado como ProjectIdentity | null no campo Project.identity
+→ M11-C deve chamar normalizeProjectIdentity(project.identity)
+  antes de uso semântico (agentes, formatters)
+```
+
+O banco não valida o contrato semântico (conforme testado: aceita `{}` e `schema_version: 2`). Zod é a fronteira de validação da V1.
+
+**Estratégia de escrita:**
+
+Não há consumidor de escrita de `identity` ainda (M11-C cria a UI). Contrato documentado:
+- M11-C deve chamar `normalizeProjectIdentity(input)` antes de qualquer UPDATE
+- Resultado `null` → enviar `NULL` ao banco (não `{}`)
+- Resultado `ProjectIdentity` → serializar diretamente via Supabase client
+- A função `normalizeProjectIdentity` é a única fronteira entre UI e banco
+
+**RLS:**
+
+| Operação | Policy | Cobre identity |
+|----------|--------|----------------|
+| SELECT | `auth.uid() = user_id` | ✅ automático |
+| INSERT | `auth.uid() = user_id` | ✅ automático |
+| UPDATE | `auth.uid() = user_id` | ✅ automático |
+| DELETE | `auth.uid() = user_id` | ✅ automático |
+
+Nenhuma nova policy necessária.
+
+**Testes de persistência executados (34/34 PASS):**
+
+| Caso | Resultado |
+|------|-----------|
+| A. Insert sem identity → NULL | ✅ |
+| B. Insert com identity parcial válida | ✅ |
+| C. Update para identity completa (all zones) | ✅ |
+| D. Update para NULL | ✅ |
+| E. `{}` — DB permissivo, application contract proíbe | ✅ documentado |
+| F. JSON inválido semântico (schema_version: 2) — DB permissivo | ✅ documentado |
+| G. SELECT * inclui identity | ✅ |
+| H. information_schema confirma tipo/nullable/default | ✅ |
+| I. Projects pré-existentes com identity = NULL | ✅ (3/3) |
+| J. RLS: 4 políticas cobrindo todas as operações | ✅ |
+| Cleanup: fixture deletado, 3 projects reais intactos | ✅ |
+
+**Compatibilidade:**
+- `context`: intacto ✅
+- `style_profile`: intacto ✅
+- `evaluation_mode`: intacto ✅
+- Projects sem identity: válidos, identity = NULL ✅
+- Código atual: ignora identity sem alteração de comportamento ✅
+
+**Rollback:**
+```sql
+ALTER TABLE projects DROP COLUMN IF EXISTS identity;
+```
+
+**Resultados de validação:**
+- `pnpm test`: 72/72 PASS
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (baseline)
 - `pnpm build`: PASS
-- SELECT em projetos existentes retorna `identity: null` (não undefined)
 
 **Pontos de parada obrigatória:**
-- STOP: validação do SELECT em produção antes de iniciar M11-C
+- STOP: aprovação humana antes de avançar para M11-C
 
 **Dependências:** M11-A concluído e aprovado
 
