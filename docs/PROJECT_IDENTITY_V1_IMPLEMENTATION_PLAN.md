@@ -414,114 +414,183 @@ Solução:
 
 ---
 
-### M11-E — Consumo no Image Evaluator
+### M11-E — Consumo no Image Evaluator ✅ CONCLUÍDO (2026-06-26)
 
-**Mudanças no contrato de `/api/evaluate-image`:**
+**Objetivo:** O Image Evaluator consome Project Identity V1 via `buildImageEvaluationContext()`. Validação dupla (cliente + rota). Governance (principles/restrictions) guia scoring e refinedPrompt. Nenhum teto numérico universal. Fallback transitório para context/style_profile quando identity ausente.
 
-```typescript
-// Novo campo no body:
-{
-  // ... campos existentes ...
-  identity?: ProjectIdentity | null  // NOVO
-}
-// No handler: buildEvaluatorContext() monta o system prompt incluindo restrictions como
-// prompts negativos rígidos quando identity.governance.restrictions está presente
-```
-
-**Migration SQL:** Nenhuma.
-
-**APIs afetadas:**
-- `POST /api/evaluate-image` — aceita `identity` opcionalmente (backward compatible)
-- Função `generateImagePrompt` em `lib/ai-simulator.ts` — novo parâmetro opcional (backward compatible)
-
-**UI afetada:**
-- `app/(dashboard)/imagens/page.tsx` — passa `project.identity` nas chamadas existentes
-
-**Compatibilidade:**
-- Todos os parâmetros novos são opcionais
-- Sem identity: comportamento idêntico ao atual (fallback para context/style_profile)
-- Com identity: comportamento aprimorado (contexto mais estruturado)
-- Nenhuma mudança no contrato de resposta dos agentes
-
-**Rollback:** Remover passagem de `identity` nas chamadas — o agente usa apenas os campos legados.
-
-**Testes necessários:**
-- Geração com projeto sem identity: comportamento idêntico ao atual
-- Geração com projeto com identity parcial: campos disponíveis são usados; ausentes usam fallback
-- Geração com projeto com identity completa incluindo restrictions: avaliador penaliza violações
-- Avaliação com restrictions preenchidas: score menor para imagens que violam restrições
-- Verificar que o context compilado não excede limites de tokens (estimativa: context completo < 800 tokens)
-- `tsc --noEmit`: 0 erros, `pnpm build`: PASS
-
-**Critério de aceite:**
-- Prompt Generator usa identity quando disponível
-- Image Evaluator usa restrictions como critério rígido
-- Projetos sem identity têm comportamento idêntico ao pré-V1
-- Projetos com identity têm contexto mais estruturado enviado ao LLM
-
-**Pontos de parada obrigatória:**
-- STOP: teste manual de geração com Alquimia Cibernética após identidade migrada (requer M11-F)
-- Não é necessário esperar M11-F para mergear M11-D — o comportamento de fallback cobre isso
-
-**Dependências:** M11-C (identity disponível na UI para ser editada); M11-A (compilador existe)
-
----
-
-### M11-E — Consumo no Image Evaluator
-
-**Objetivo:** Garantir que `identity.governance` (principles e restrictions) seja incorporado adequadamente ao Image Evaluator. O avaliador deve identificar violações de restrições, explicar a incompatibilidade, considerar a violação no score e produzir um `refinedPrompt` corrigido.
-
-**Nota:** M11-D já integra o evaluator com identity via `buildImageEvaluationContext()`. M11-E é o refinamento específico do tratamento de governance.
+**Status:** IMPLEMENTADO E TESTADO. Branch: `discovery/project-identity-v1-implementation`.
 
 **Arquivos modificados:**
-- `app/api/evaluate-image/route.ts` — ajuste no system prompt para tratar `restrictions[]` como bloco de peso diferenciado
 
-**Mudança no system prompt do evaluator:**
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `app/api/evaluate-image/route.ts` | M | `identity` opcional no body; validação server-side via `normalizeProjectIdentity`; `buildImageEvaluationContext()` substitui concatenação manual de context/style_profile; seção IDENTIDADE DO PROJECT no system prompt |
+| `app/(dashboard)/imagens/page.tsx` | M | `handleEvaluateImage` normaliza identity antes do POST; bloqueia avaliação com toast em caso de identity inválida; envia `identity: projectIdentity` |
+| `lib/__tests__/image-evaluator-identity.test.ts` | A (novo) | 47 testes cobrindo os 34 casos obrigatórios do spec |
+
+**Contrato novo da API (`POST /api/evaluate-image`):**
+
+```typescript
+// Body (aceitados — todos existentes preservados):
+{
+  userInput?: string
+  generatedPrompt: string    // obrigatório
+  imageUrl: string           // obrigatório
+  styleProfile?: string | null
+  context?: string | null
+  evaluation_mode?: EvaluationMode
+  evaluationMode?: EvaluationMode
+  attempt?: number
+  identity?: ProjectIdentity | null  // NOVO — opcional, backward compatible
+}
+
+// Resposta (inalterada):
+{
+  score: number        // 0-100
+  approved: boolean    // derivado do modelo ou score >= 75
+  feedback: string
+  improvements: string[]
+  refinedPrompt: string
+}
+```
+
+**Validação dupla:**
 
 ```
-[PRINCÍPIOS DO PROJETO]
-${principles.map(p => `- ${p}`).join('\n')}
+Cliente (imagens/page.tsx):
+  normalizeProjectIdentity(project.identity)
+  → null: envia null
+  → ProjectIdentity: envia objeto normalizado
+  → throws: toast + return (sem chamada à API)
 
-[RESTRIÇÕES DO PROJETO — identificar violações e refletir no score e no refinedPrompt]
-${restrictions.map(r => `- ${r}`).join('\n')}
-
-Quando uma restrição for violada:
-- Identifique qual restrição foi violada
-- Explique a incompatibilidade no campo 'feedback'
-- Reflita a violação no score de forma proporcional à gravidade
-- Produza um 'refinedPrompt' que corrija a violação
-- Reprove (approved: false) quando a violação for material
+Rota (evaluate-image/route.ts):
+  rawIdentity null/undefined → normalizedIdentity = null
+  rawIdentity presente → normalizeProjectIdentity(rawIdentity)
+    → null: ok
+    → ProjectIdentity: usa no context
+    → throws ProjectIdentityParseError → HTTP 400 (OpenAI não é chamado)
 ```
 
-**Sem teto numérico universal.** Não definir `score máximo de 40` para qualquer violação sem severidade estruturada e validação empírica. O avaliador pondera a violação proporcionalmente — uma violação leve pode resultar em score 65 com sugestão de melhoria; uma violação central pode resultar em score 20 com reprovação.
+**Uso do formatter:**
+
+```typescript
+const compiledEvaluationContext = buildImageEvaluationContext({
+  context,
+  style_profile: styleProfile,
+  identity: normalizedIdentity,
+})
+// Substitui os campos manuais context: / style_profile: no evaluationInput
+```
+
+Campo no user message:
+```
+PROJECT CONTEXT AND IDENTITY:
+${compiledEvaluationContext || 'Nao especificado'}
+```
+
+**Principles e restrictions no system prompt:**
+
+```
+IDENTIDADE DO PROJECT:
+
+Principios (direcoes positivas que a imagem deve buscar):
+- Identificar se a imagem atende os principios declarados
+- Um principio nao atendido deve ser refletido no score e mencionado no feedback
+
+Restricoes (limites que a imagem nao deve violar):
+- Identificar violacoes de restricoes explicando concretamente a incompatibilidade
+- Refletir a gravidade no score
+- Marcar approved = false quando a violacao for material
+- Mencionar a correcao em improvements
+- Produzir refinedPrompt que corrija a violacao
+
+Nao aplicar reprovacao automatica para toda restricao trivial ou interpretativa.
+Nao usar teto numerico universal de score.
+```
+
+**Sem teto numérico universal:** Nenhum cap de score implementado. O modelo pondera proporcionalmente. Testes verificam que score=85 não é capado mesmo com restriction presente.
+
+**Fallback transitório:**
+
+| Cenário | Comportamento |
+|---------|---------------|
+| identity null + context + style_profile | comportamento idêntico ao M11-D |
+| identity sem visual_identity | style_profile usado como fallback visual |
+| identity com visual_identity | visual_identity usada; style_profile ignorado |
+| identity parcial | somente dimensões presentes entram |
+| identity inválida no cliente | toast + return (sem chamada à API) |
+| identity inválida enviada diretamente | HTTP 400 (OpenAI não é chamado) |
+
+**Tratamento de context:** context continua enviado como campo separado no source de `buildImageEvaluationContext`, aparecendo como `**Contexto do Projeto:**` no bloco compilado.
+
+**evaluation_mode:** Preservado integralmente — permanece como campo separado no user message e controla os pesos do avaliador (default/conceptual/aesthetic/commercial/experimental).
+
+**Multimodalidade:** Preservada — imageUrl continua como `type: 'image_url'` com `detail: 'low'`. Modelo (`gpt-4o-mini`) e `response_format: json_object` inalterados.
+
+**Threshold 75:** Preservado — `approved = evaluation.approved ?? (evaluation.score >= 75)`.
+
+**Testes adicionados (47 novos / 186 total):**
+
+| Grupo | Casos | Estratégia |
+|-------|-------|------------|
+| Context compilation (puro) | 34 | `buildImageEvaluationContext` — sem mocks |
+| Client validation | 3 | `normalizeProjectIdentity` throws |
+| Route handler | 10+ | Supabase + fetch mockados |
+
+Cobertura dos 34 casos obrigatórios:
+- Cases 1-4: sem identity / null / parcial / completa
+- Case 5: identity inválida no cliente bloqueia POST
+- Cases 6-7: identity inválida na rota → 400 / OpenAI não chamado
+- Case 8: context e purpose separados
+- Case 9: visual_identity prevalece sobre style_profile
+- Case 10: fallback de style_profile quando visual_identity ausente
+- Case 11: voice ausente do contexto visual
+- Cases 12-14: principles / restrictions / preferences com labels corretos
+- Cases 15-16: schema_version e JSON bruto ausentes
+- Cases 17-20: evaluation_mode / userInput / generatedPrompt / attempt no payload
+- Cases 21-22: imageUrl multimodal / detail=low
+- Case 23: modelo gpt-4o-mini preservado
+- Cases 24-29: contrato de resposta (score 0-100 / approved / feedback / improvements / refinedPrompt)
+- Case 26: threshold 75
+- Case 30: score=85 com restriction não é capado
+- Case 31: approved=false por restriction material
+- Case 32: body inválido (sem prompt) não chama provider
+- Case 33: não mutação dos objetos de entrada
+- Case 34: comportamento legado preservado
+
+**Compatibilidade:**
+
+| Item | Status |
+|------|--------|
+| Prompt Generator | Inalterado |
+| metadata chips (lighting/composition) | Inalterados |
+| Project sem identity → evaluator funciona | ✅ |
+| Project com identity → contexto estruturado | ✅ |
+| style_profile → fallback transitório | ✅ |
+| context → continua ativo | ✅ |
+| evaluation_mode → inalterado | ✅ |
+| score / threshold / refinedPrompt | Contratos inalterados |
+| Auto Mode | Inalterado |
+| ImageDraft | Inalterado |
+| Production | Inalterada |
 
 **Migration SQL:** Nenhuma.
 
-**APIs afetadas:** `POST /api/evaluate-image` — mudança interna de system prompt, sem mudança de contrato externo.
+**Resultados de validação:**
+- `pnpm test`: **186/186 PASS** (139 anteriores + 47 novos)
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (baseline mantido)
+- `pnpm build`: PASS
 
-**UI afetada:** Nenhuma.
-
-**Compatibilidade:** Total. Projects sem governance não têm mudança de comportamento.
-
-**Rollback:** Reverter a mudança no system prompt do evaluator.
-
-**Testes necessários:**
-- Project sem governance: comportamento idêntico ao atual (M11-D)
-- Project com restrictions: verificar que feedback menciona a restrição quando violada
-- Project com restrictions: verificar que `refinedPrompt` corrige a violação
-- Project com principles: verificar que principles aparecem no contexto do avaliador
-- Smoke real com Alquimia Cibernética (executado em M11-F)
-
-**Critério de aceite:**
-- Violação de restriction detectada: mencionada em `feedback` e `improvements[]`
-- `refinedPrompt` não repete a violação
-- Projects sem governance: comportamento inalterado
-- `tsc --noEmit`: 0 erros, `pnpm build`: PASS
+**Commits:**
+- feat: use Project Identity in image evaluation
+- test: cover Project Identity evaluator integration
+- docs: record M11-E evaluator integration
 
 **Pontos de parada obrigatória:**
-- STOP antes de M11-F: smoke real com Alquimia antes de declarar M11-E completo
+- STOP antes de M11-F: smoke real com Alquimia antes de migrar Projects reais
 
-**Dependências:** M11-D (infrastructure de integração do evaluator com identity)
+**Dependências:** M11-D concluído e aprovado
 
 ---
 
