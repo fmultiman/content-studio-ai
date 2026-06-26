@@ -1,7 +1,7 @@
 # UX Production Hardening Results
 
-**Data:** 2026-06-26  
-**Escopo:** UX-H1 - hardening imediato da Production e continuidade.  
+**Data:** 2026-06-26
+**Escopo:** UX-H1 - hardening imediato da Production e continuidade.
 **Restricao:** nao houve alteracao de schema, banco, migrations, Project Identity, Prompt Generator, Image Evaluator, dashboard, sidebar, Galeria ou Arquivos.
 
 ---
@@ -84,6 +84,10 @@ Validacao local por HTTP:
 - `GET /projetos?new=true -> 200`
 - `GET /videos -> 200`
 - `GET /imagens?draft=test&project=test&production=test -> 200`
+
+Validacao humana manual:
+
+- Aprovada pelo usuario apos o commit `50b6a2c`.
 
 Validacao interativa no browser ficou limitada por falha de inicializacao do plugin de navegador embutido no sandbox.
 
