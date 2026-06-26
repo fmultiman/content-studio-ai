@@ -857,52 +857,80 @@ Experiência qualitativamente superior ao antigo uso de `context + style_profile
 
 ---
 
-### M11-H — DROP COLUMN style_profile
+### M11-H — DROP COLUMN style_profile ✅ CONCLUÍDO (2026-06-26)
 
 **Objetivo:** Remover a coluna `style_profile` do banco de dados e do tipo `Project`.
 
-**Pré-condição:** M11-G concluído e em produção. Auditoria confirma zero usos ativos de `style_profile`.
+**Pré-condição:** M11-G concluído (commit `3116b24`). Auditoria confirma zero usos ativos de `style_profile`.
+
+**Bloqueador resolvido antes da migration:** Duas rotas out-of-scope de M11-G ainda referenciavam `style_profile` em SELECTs (`videos/generate-scene-prompt`, `channel-pieces/generate-body`). Removidas como pré-requisito do DROP COLUMN para evitar erro `column does not exist` em runtime.
 
 **Arquivos modificados:**
 
-| Arquivo | Mudança |
-|---------|---------|
-| `lib/types.ts` | Remover campo `style_profile: string \| null` do `Project` interface |
-| Migration SQL | `ALTER TABLE projects DROP COLUMN style_profile` |
+| Arquivo | Mudança | Status |
+|---------|---------|--------|
+| `lib/types.ts` | Removido `style_profile: string \| null` do `Project` interface | ✅ |
+| `app/api/videos/generate-scene-prompt/route.ts` | Removido `style_profile` do `.select()`; removida variável `styleProfile` e referência no user prompt; removida bullet "adherence to style profile" do system prompt | ✅ |
+| `app/api/channel-pieces/generate-body/route.ts` | Removido `style_profile` do `.select()`; removida linha `Perfil de estilo: ...` do projectParts | ✅ |
+| `scripts/029_drop_project_style_profile.sql` | `ALTER TABLE projects DROP COLUMN IF EXISTS style_profile` | ✅ |
 
-**Migration SQL:**
+**Auditoria pré-migration (2026-06-26):**
 
+| Project | identity | context | evaluation_mode | style_profile antes |
+|---------|---------|---------|----------------|---------------------|
+| Alquimia Cibernética | schema_version=1, foundation+expression+governance | ✅ | default | HAS_VALUE (decomposto em M11-F → identity) |
+| Content Agent | NULL | ✅ | default | HAS_VALUE (dados de teste — perda aceitável) |
+| Projeto teste | NULL | ✅ | default | HAS_VALUE (dados de teste — perda aceitável) |
+| Auditoria UX 2026-06-26T08 | schema_version=1 | ✅ | default | HAS_VALUE |
+| Auditoria UX Reconciliação | schema_version=1 | ✅ | default | NULL |
+| Novo Identity | schema_version=1 | ✅ | default | HAS_VALUE |
+
+**Migration SQL (scripts/029_drop_project_style_profile.sql):**
 ```sql
--- migration 021_drop_project_style_profile.sql
 ALTER TABLE projects DROP COLUMN IF EXISTS style_profile;
 ```
 
-**Auditoria pré-migration:**
+**Aplicação:** Executada via pg (POSTGRES_URL_NON_POOLING) em 2026-06-26.
+
+**Schema pós-migration confirmado:**
+
+| Coluna | Tipo | Nullable | Status |
+|--------|------|---------|--------|
+| `id` | uuid | NO | ✅ presente |
+| `user_id` | uuid | NO | ✅ presente |
+| `name` | text | NO | ✅ presente |
+| `description` | text | YES | ✅ presente |
+| `context` | text | YES | ✅ presente |
+| `status` | text | YES | ✅ presente |
+| `created_at` | timestamp | YES | ✅ presente |
+| `updated_at` | timestamp | YES | ✅ presente |
+| `evaluation_mode` | text | NO | ✅ presente |
+| `identity` | jsonb | YES | ✅ presente |
+| `style_profile` | — | — | ✅ **REMOVIDA** |
+
+**Busca global final (`.ts/.tsx`):** Apenas comentários de teste sobre ausência do campo e JSDoc. Nenhum acesso em runtime.
+
+**Resultados da validação (2026-06-26):**
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `tsc --noEmit` | 0 erros |
+| `eslint` | 0 erros, 50 warnings (pré-existentes, sem novos) |
+| `pnpm build` | ✅ PASS — Compiled successfully in 45s |
+| `pnpm test` | ✅ 193/193 testes passando (6 arquivos) |
+
+**Rollback (estrutural apenas):**
 ```sql
--- Confirmar que todos os Projects têm identity preenchida (ou que style_profile é null para todos que serão afetados)
-SELECT id, name, style_profile, identity IS NOT NULL as has_identity
-FROM projects
-WHERE user_id = '35428fd4-4784-4934-9af9-82a606aad77e';
+ALTER TABLE projects ADD COLUMN style_profile TEXT;
+-- NOTA: Recria a coluna mas NÃO recupera dados.
+-- Recuperação de dados exige snapshot de backup anterior a esta migration.
 ```
 
-**APIs afetadas:** Nenhuma — M11-G já removeu os consumidores.
+**APIs afetadas:** Nenhuma consumidora ativa remanescente.
 
-**UI afetada:** Nenhuma — M11-G já removeu a UI.
+**UI afetada:** Nenhuma — M11-G já removeu toda a UI relacionada.
 
-**Compatibilidade:** Operação irreversível. Migration aplicada apenas após validação completa de M11-G.
-
-**Rollback:** Não há rollback para DROP COLUMN. Se necessário, recriar a coluna e repopular manualmente. Por isso M11-G é separado — garante período de validação antes da operação irreversível.
-
-**Critério de aceite:**
-- Coluna `style_profile` removida do banco
-- `Project` type sem `style_profile`
-- `tsc --noEmit`: 0 erros, `pnpm build`: PASS
-- SELECT em `projects` não retorna `style_profile`
-
-**Pontos de parada obrigatória:**
-- STOP antes da migration: confirmação explícita do usuário após auditoria
-
-**Dependências:** M11-G concluído, em produção, validado
+**Dependências:** M11-G concluído (commit `3116b24`, 2026-06-26)
 
 ---
 
