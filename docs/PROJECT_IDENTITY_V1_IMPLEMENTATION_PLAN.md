@@ -183,76 +183,73 @@ ALTER TABLE projects DROP COLUMN IF EXISTS identity;
 
 ---
 
-### M11-C — UI Progressiva de Project Identity
+### M11-C — UI Progressiva de Project Identity ✅ CONCLUÍDO (2026-06-26)
 
-**Objetivo:** Exibir e permitir edição da Project Identity na página do Projeto. Nenhuma mudança nos agentes ainda.
+**Objetivo:** Exibir e permitir edição da Project Identity na página do Projeto. Nenhuma mudança nos agentes.
 
-**Arquivos modificados:**
-- `app/(dashboard)/projetos/[id]/page.tsx` — adicionar seção "Identidade do Projeto" com campos progressivos
-- `components/projects/project-form.tsx` — adicionar campos de identity ao formulário de edição (ou criar modal separado)
+**Status:** IMPLEMENTADO E TESTADO. Branch: `discovery/project-identity-v1-implementation`.
 
-**Novos componentes (se necessário):**
-- `components/projects/project-identity-form.tsx` — formulário de edição de identity com campos individuais por dimensão
-- `components/projects/project-identity-display.tsx` — exibição read-only da identity com estado de preenchimento
+**Arquivos criados/modificados:**
 
-**Comportamento da UI:**
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `lib/project-identity-form-helpers.ts` | A (novo) | Helpers puros: `identityToFormState`, `formStateToIdentityInput`, `arrayToLineString`, `lineStringToArray`, `emptyFormState` |
+| `components/projects/project-identity-display.tsx` | A (novo) | Card com 3 estados: read error / vazio / preenchido |
+| `components/projects/project-identity-form.tsx` | A (novo) | Dialog de edição com 5 zonas, textareas (uma por linha para arrays) |
+| `lib/__tests__/project-identity-form-helpers.test.ts` | A (novo) | 15 casos de teste cobrindo round-trips, zone isolation, normalização, imutabilidade |
+| `app/(dashboard)/projetos/[id]/page.tsx` | M | Seção de identidade entre card do projeto e Produções; modal `ProjectIdentityForm` |
+| `vitest.config.ts` | M | Alias `@/` adicionado para resolução de imports nos testes |
+
+**Comportamento implementado:**
 
 Estado sem identity (null):
-```
-IDENTIDADE DO PROJETO
-  Propósito         [Não definido]   [+ Adicionar]
-  Público           [Não definido]   [+ Adicionar]
-  Direção Visual    [Não definido]   [+ Adicionar]
-  Voz e Linguagem   [Não definido]   [+ Adicionar]
-  Restrições        [Não definidas]  [+ Adicionar]
-```
+- Card com ícone Fingerprint, texto "Identidade não estruturada", botão "Estruturar identidade"
 
-Estado com identity parcial:
-```
-IDENTIDADE DO PROJETO
-  Propósito         [texto preenchido]  [Editar]
-  Público           [Não definido]      [+ Adicionar]
-  Direção Visual    [texto preenchido]  [Editar]
-  ...
-```
+Estado com identity presente:
+- Card com seções por zona: Propósito, Público, Expressão (visual_identity + voice), Governança (princípios e restrições como badges), Prática (preferências como badges)
+- Botão "Editar" abre o dialog
 
-**Comportamento de edição:**
-- Clique em [+ Adicionar] ou [Editar] abre um textarea inline ou modal simples
-- Salvar faz PATCH `{ identity: { ...existente, [zona]: { [campo]: valor } } }` via Supabase client
-- A função `mergeIdentity(existing, patch)` garante que campos não editados não sejam perdidos
+Estado com erro de leitura (JSONB corrompido):
+- Card vermelho com AlertTriangle, mensagem de diagnóstico, botão "Editar" desabilitado
 
 **Campos legados (context / style_profile):**
-- Continuam exibidos no card atual
-- Sem mudança de comportamento — a UI de identity é ADICIONAL, não substitutiva
-- Resolução de D-BLOCKER-2 determina se eles são colapsados ou mantidos visíveis
+- Continuam exibidos no card do projeto — a UI de identity é ADICIONAL, não substitutiva
+- `ProjectIdentityForm` nunca inclui `context`, `style_profile`, ou `evaluation_mode` no payload
+
+**Decisão de design (arrays):**
+- `TagInput` descartado: lowercase automático quebra preservação de case
+- Textarea (uma orientação/restrição por linha) para todos os campos de array
+
+**Decisão de design (form re-init):**
+- Pattern `key='identity-open'/'identity-closed'` + lazy `useState(() => identityToFormState(identity))` em vez de `useEffect` com setState
+- Elimina o warning `react-hooks/set-state-in-effect` sem alterar comportamento
+
+**Fronteira de validação:**
+- Leitura: `try { resolvedIdentity = normalizeProjectIdentity(project.identity) } catch { identityReadError = ... }` na render
+- Escrita: `formStateToIdentityInput(state)` → `normalizeProjectIdentity(raw)` → Supabase UPDATE
 
 **Migration SQL:** Nenhuma (M11-B já aplicou a coluna).
 
-**APIs afetadas:** Nenhuma nova rota. O PATCH vai diretamente para Supabase client.
+**APIs afetadas:** Nenhuma nova rota. UPDATE via Supabase client diretamente.
 
 **Compatibilidade e rollback:**
-- Rollback: reverter a seção de UI no page.tsx e o formulário
-- Nenhum dado é perdido no rollback (a coluna `identity` permanece no banco)
+- Rollback: reverter page.tsx e remover os 3 arquivos novos
+- Nenhum dado é perdido no rollback (a coluna `identity` permanece no banco com seus dados)
 
-**Testes necessários:**
-- Criar Project sem identity: seção exibe "Não definido" em todos os campos
-- Preencher um campo de identity: exibido corretamente após salvar
-- Preencher múltiplos campos: sem perda de dados entre edições
-- Projects com `context` e `style_profile` existentes: campos legados não são afetados
-- Responsividade da nova seção
-- `tsc --noEmit`: 0 erros, `pnpm build`: PASS
+**Resultados de validação:**
+- `pnpm test`: **96/96 PASS** (72 anteriores + 24 novos da suite M11-C)
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (baseline mantido)
+- `pnpm build`: PASS (Next.js 16.2, compilação otimizada, 37 páginas estáticas)
 
-**Critério de aceite:**
-- Seção "Identidade do Projeto" exibida na página de todos os projetos
-- Preenchimento e edição funcionam sem erros
-- Dados persistem corretamente no banco
-- Campos legados (context, style_profile) continuam funcionando
-- Typecheck e build passam
+**Commits:**
+- `41bae04` — `feat: add progressive Project Identity UI — M11-C`
+- `a6e4df5` — `test: cover Project Identity editing behavior — M11-C`
 
 **Pontos de parada obrigatória:**
 - STOP: smoke test manual no ambiente de produção antes de M11-D
 
-**Dependências:** M11-B concluído
+**Dependências:** M11-B concluído e aprovado
 
 ---
 
