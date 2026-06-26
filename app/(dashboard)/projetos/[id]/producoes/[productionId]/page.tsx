@@ -48,6 +48,11 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import {
+  PRODUCTION_TABS_GRID_CLASS,
+  productionWorkspaceLoadingMessage,
+  resolveProductionDisplay,
+} from '@/lib/ux-production-hardening'
 
 const CHANNEL_LABELS: Record<string, string> = {
   instagram: 'Instagram',
@@ -307,9 +312,12 @@ export default function ProductionDetailPage() {
   if (isLoading) {
     return (
       <>
-        <Header title="Carregando..." />
-        <div className="flex flex-1 items-center justify-center">
+        <Header title="Carregando Production..." />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            {productionWorkspaceLoadingMessage('page')}
+          </p>
         </div>
       </>
     )
@@ -330,9 +338,15 @@ export default function ProductionDetailPage() {
     )
   }
 
+  const productionDisplay = resolveProductionDisplay({
+    title: production.title,
+    intention: production.intention,
+    projectName: project.name,
+  })
+
   return (
     <>
-      <Header title={production.title} />
+      <Header title={productionDisplay.title} />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
 
@@ -356,7 +370,7 @@ export default function ProductionDetailPage() {
               {project.name}
             </Button>
             <span>/</span>
-            <span className="truncate font-medium text-foreground">{production.title}</span>
+            <span className="truncate font-medium text-foreground">{productionDisplay.title}</span>
           </nav>
 
           {/* Production Info Card */}
@@ -368,7 +382,7 @@ export default function ProductionDetailPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-2xl">{production.title}</CardTitle>
+                    <CardTitle className="text-2xl">{productionDisplay.title}</CardTitle>
                     <Badge variant="outline">
                       {PRODUCTION_TYPE_LABELS[production.type] ?? production.type}
                     </Badge>
@@ -409,14 +423,14 @@ export default function ProductionDetailPage() {
             <CardContent>
               <div className="rounded-lg border border-border/50 bg-background/50 p-4">
                 <h3 className="mb-2 text-sm font-medium text-muted-foreground">Intenção</h3>
-                <p className="whitespace-pre-wrap text-foreground">{production.intention}</p>
+                <p className="whitespace-pre-wrap text-foreground">{productionDisplay.intention}</p>
               </div>
             </CardContent>
           </Card>
 
           {/* Workspace Tabs */}
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className={PRODUCTION_TABS_GRID_CLASS}>
               <TabsTrigger value="overview" className="gap-2">
                 <Layers className="h-4 w-4" />
                 Visão Geral
@@ -442,8 +456,11 @@ export default function ProductionDetailPage() {
                   <CardContent className="p-4">
                     <h3 className="mb-3 font-medium">Resumo desta Produção</h3>
                     {isLoadingWorkspace ? (
-                      <div className="flex justify-center py-4">
+                      <div className="flex flex-col items-center justify-center gap-2 py-4">
                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground">
+                          {productionWorkspaceLoadingMessage('overview')}
+                        </p>
                       </div>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-3">
@@ -563,8 +580,11 @@ export default function ProductionDetailPage() {
                 </div>
 
                 {isLoadingWorkspace ? (
-                  <div className="flex justify-center py-8">
+                  <div className="flex flex-col items-center justify-center gap-2 py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {productionWorkspaceLoadingMessage('images')}
+                    </p>
                   </div>
                 ) : imageDrafts.length === 0 ? (
                   <Card className="border-dashed">
@@ -645,8 +665,11 @@ export default function ProductionDetailPage() {
                 </div>
 
                 {isLoadingWorkspace ? (
-                  <div className="flex justify-center py-8">
+                  <div className="flex flex-col items-center justify-center gap-2 py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {productionWorkspaceLoadingMessage('videos')}
+                    </p>
                   </div>
                 ) : videoDrafts.length === 0 ? (
                   <Card className="border-dashed">
@@ -738,8 +761,11 @@ export default function ProductionDetailPage() {
                 </div>
 
                 {isLoadingWorkspace ? (
-                  <div className="flex justify-center py-8">
+                  <div className="flex flex-col items-center justify-center gap-2 py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {productionWorkspaceLoadingMessage('editorial')}
+                    </p>
                   </div>
                 ) : editorialContents.length === 0 ? (
                   <Card className="border-dashed">
@@ -844,7 +870,7 @@ export default function ProductionDetailPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Produção?</AlertDialogTitle>
             <AlertDialogDescription>
-              A Produção <strong>&quot;{production.title}&quot;</strong> será removida
+              A Produção <strong>&quot;{productionDisplay.title}&quot;</strong> será removida
               permanentemente. Imagens, vídeos e publicações vinculados <strong>não serão excluídos</strong> —
               apenas perderão o vínculo com esta Produção. Esta ação não pode ser desfeita.
             </AlertDialogDescription>

@@ -18,6 +18,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Reconciliation Audit - Post Project Identity](./product/ux/ux-reconciliation-audit-post-project-identity.md)  
   Segunda auditoria pratica confrontando produto percebido, Project Identity, Production workspace e experiencia real no browser.
 
+- [UX Production Hardening Results](./product/ux/ux-production-hardening-results.md)
+  Fechamento do UX-H1 com correcoes localizadas de continuidade da Production, loading e retorno contextual.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

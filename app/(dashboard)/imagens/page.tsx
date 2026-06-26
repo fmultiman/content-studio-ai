@@ -16,6 +16,7 @@ import { FileText, ChevronRight, Loader2, ArrowLeft } from 'lucide-react'
 import { GenerationHistory } from '@/components/images/generation-history'
 import type { Project, Image as ImageType, ImageDraft, ImageEvaluation, GenerationAttempt } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
+import { draftLoadingMessage } from '@/lib/ux-production-hardening'
 
 type GeneratedImageResult = {
   imageUrl: string
@@ -442,7 +443,7 @@ function ImagesPageContent() {
       toast({
         title: currentDraftId ? 'Rascunho atualizado!' : 'Rascunho salvo!',
         description: currentDraftId
-          ? 'As alteracoes foram salvas.'
+          ? 'As alterações foram salvas.'
           : 'Voce pode continuar editando mais tarde.',
       })
     } catch (error) {
@@ -1215,6 +1216,8 @@ function ImagesPageContent() {
     }
   }
 
+  const requestedDraftId = searchParams.get('draft')
+
   return (
     <>
       <Header title="Geração de Imagens" />
@@ -1300,7 +1303,14 @@ function ImagesPageContent() {
             </Card>
           )}
 
-          {isDataReady && !productionId ? (
+          {loadError ? null : !isDataReady ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-border/50 bg-card/30 p-12 text-center">
+              <Loader2 className="mb-3 h-8 w-8 animate-spin text-muted-foreground" />
+              <h3 className="text-lg font-semibold text-foreground">
+                {draftLoadingMessage('image', !!requestedDraftId)}
+              </h3>
+            </div>
+          ) : !productionId ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
               <h3 className="text-lg font-semibold text-foreground">Production obrigatória</h3>
               <p className="mt-2 max-w-sm text-sm text-muted-foreground">

@@ -46,6 +46,7 @@ import { useToast } from '@/hooks/use-toast'
 import type { Project, Production } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
+import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -452,7 +453,14 @@ export default function ProjectDetailPage() {
               </Card>
             ) : (
               <div className="space-y-3">
-                {productions.map((prod) => (
+                {productions.map((prod) => {
+                  const productionDisplay = resolveProductionDisplay({
+                    title: prod.title,
+                    intention: prod.intention,
+                    projectName: project.name,
+                  })
+
+                  return (
                   <Card
                     key={prod.id}
                     className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
@@ -462,13 +470,13 @@ export default function ProjectDetailPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate font-semibold">{prod.title}</h3>
+                            <h3 className="truncate font-semibold">{productionDisplay.title}</h3>
                             <Badge variant="outline" className="shrink-0">
                               {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
                             </Badge>
                           </div>
                           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                            {prod.intention}
+                            {productionDisplay.intention}
                           </p>
                           <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />
@@ -506,7 +514,8 @@ export default function ProjectDetailPage() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
