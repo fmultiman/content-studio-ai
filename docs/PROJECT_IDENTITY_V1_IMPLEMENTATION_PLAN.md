@@ -1151,4 +1151,19 @@ PROJECT IDENTITY V1 RELEASE READY — SAFE TO MERGE
 - Alquimia identity: Zod VALID, schema_v1, 5 zonas intactas
 - Smokes humanos: ✅ 10/10 aprovados pré-merge (2026-06-26)
 
-**Pendente pós-merge:** nenhum. Deploy a critério do usuário.
+**Pendente pós-merge:** deploy a critério do usuário (mecanismo não documentado no repositório).
+
+---
+
+### 9. Merge executado (2026-06-26)
+
+| Item | Valor |
+|------|-------|
+| Branch de origem | `discovery/project-identity-v1-implementation` |
+| Branch de destino | `main` |
+| Commit HEAD pré-merge (origin) | `858788d` |
+| Estratégia | `--no-ff` (histórico preservado) |
+| Commit do merge | `e57b565` |
+| Push origin/main | ✅ `7dd5395..e57b565` |
+| Validação pós-merge | ✅ 193/193 testes, 0 erros typecheck, 0 erros lint, build PASS |
+| Deploy | **PENDENTE** — mecanismo não encontrado no repositório (sem `vercel.json`, sem `.vercel/project.json`, sem CI/CD, sem scripts de deploy em `package.json`) |
