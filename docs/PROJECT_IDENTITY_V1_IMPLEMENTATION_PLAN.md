@@ -588,9 +588,50 @@ Cobertura dos 34 casos obrigatórios:
 - docs: record M11-E evaluator integration
 
 **Pontos de parada obrigatória:**
-- STOP antes de M11-F: smoke real com Alquimia antes de migrar Projects reais
+- ✅ Checkpoint humano final concluído e aprovado
 
 **Dependências:** M11-D concluído e aprovado
+
+**Checkpoint humano final (2026-06-26) — Projeto teste `6d09d50d`:**
+
+Identity temporária usada:
+- identidade visual natural, orgânica e contemplativa
+- princípios de integração entre natureza, humanidade e tecnologia
+- restrições contra estética cyberpunk, neon, hologramas e cenários futuristas
+- preferências por iluminação natural e suave
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Score refletiu múltiplas violações de governance (Score: 40/100) | ✅ |
+| Conflito com princípios e restrições identificado explicitamente | ✅ |
+| Estética cyberpunk e cenários futuristas citados diretamente | ✅ |
+| Excesso de tecnologia avançada e hologramas reconhecidos | ✅ |
+| Incompatibilidade de iluminação com preferências identificada | ✅ |
+| Insuficiência de simbolismo e contemplação identificada | ✅ |
+| Melhorias alinhadas à identidade: reduzir tech, luz natural, contemplação | ✅ |
+| Nenhuma regra universal de score aplicada pelo modelo | ✅ |
+| Ausência de JSON bruto e schema_version na saída | ✅ |
+| Cleanup: Projeto teste.identity = NULL | ✅ |
+
+**Checkpoint humano:** APROVADO — 2026-06-26
+
+**Oportunidade futura de produto identificada:**
+
+Durante o checkpoint, foi constatado que a UI atual só permite avaliar a imagem recém-gerada dentro do fluxo ativo de criação. Não existe utilidade para:
+
+```text
+selecionar imagem existente da galeria
+→ revisar com Project Identity ativa
+→ receber score, feedback e refinedPrompt
+```
+
+Registrado como oportunidade futura:
+
+```text
+Image Review Utility / Revisar imagem existente
+```
+
+Não implementar nesta fase. Considerar como feature standalone em versão futura do Image Evaluator.
 
 ---
 
