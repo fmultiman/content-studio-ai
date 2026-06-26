@@ -745,15 +745,27 @@ Alquimia: 5 zonas, 4 principles, 5 restrictions, 6 preferences.
 
 ---
 
-**Validação comparativa — checkpoint humano:**
+**Validação comparativa — checkpoint humano: ✅ APROVADO (2026-06-26)**
 
-Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geração + 1 avaliação) para confirmar que a identity V1 produz contexto superior ao blob legado de `style_profile`. Critérios:
+Smoke realizado com o Project Alquimia Cibernética. Prompt de teste: "Uma imagem sobre como sistemas ancestrais podem revelar falhas de execução da vida contemporânea."
 
-- Prompt Generator usa purpose, visual_identity, principles, restrictions, generation_preferences
-- Sem concatenação de `style_profile` quando `visual_identity` presente
-- Sem JSON bruto nem schema_version no prompt
-- Image Evaluator considera identidade visual, principles e restrictions
-- Feedback específico e alinhado à identity
+| Critério | Resultado |
+|----------|-----------|
+| Prompt Generator incorporou propósito conceitual | ✅ |
+| Relacionou sistemas ancestrais e estruturas contemporâneas | ✅ |
+| Identidade visual simbólica, densa, cinematográfica | ✅ |
+| Considerou principles e generation_preferences | ✅ |
+| Evitou aparência clean, corporativa ou genérica | ✅ |
+| Sem JSON bruto nem schema_version no prompt | ✅ |
+| Sem duplicação visível do style_profile legado | ✅ |
+| Imagem: profundidade simbólica e estética coerente | ✅ |
+| Imagem: ausência de clichê espiritual ou visual corporativo | ✅ |
+| Avaliador considerou identidade visual e propósito | ✅ |
+| Avaliador usou principles e restrictions quando relevantes | ✅ |
+| Feedback específico e alinhado à identity | ✅ |
+| score, approved e refinedPrompt funcionais | ✅ |
+
+Experiência qualitativamente superior ao antigo uso de `context + style_profile` como blobs indiferenciados.
 
 ---
 
@@ -779,10 +791,10 @@ Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geraç�
 - `pnpm validate`: PASS
 
 **Commits:**
-- `docs: record Project Identity migration validation` (este commit)
+- `docs: record Project Identity migration — M11-F complete`
+- `docs: record M11-F smoke approval — READY FOR LEGACY REMOVAL REVIEW`
 
-**Pontos de parada obrigatória:**
-- STOP: smoke comparativo humano com Alquimia antes de autorizar M11-G
+**Status:** M11-F APROVADO — READY FOR LEGACY REMOVAL REVIEW
 
 **Dependências:** M11-D e M11-E concluídos e aprovados
 
@@ -792,7 +804,9 @@ Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geraç�
 
 **Objetivo:** Remover `style_profile` da UI (formulário e detalhe do Projeto), dos consumidores de IA (Prompt Generator, Image Evaluator, Feed Generator) e dos tipos operacionais (`CreateProjectForm`). A coluna permanece no banco e no tipo `Project` — a remoção física é M11-H.
 
-**Pré-condição:** M11-F concluído e aprovado (identity dos 3 Projects preenchida e validada).
+**Escopo V1 confirmado:** A integração de Project Identity com VideoDraft, EditorialContent e ChannelPiece está fora do escopo da V1 e será planejada em marco posterior.
+
+**Pré-condição:** M11-F APROVADO — READY FOR LEGACY REMOVAL REVIEW ✅ (2026-06-26).
 
 **Arquivos modificados:**
 
@@ -805,6 +819,8 @@ Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geraç�
 | `app/api/evaluate-image/route.ts` | Remover leitura de `styleProfile` no body; usar apenas `buildImageEvaluationContext()` |
 | `app/api/posts/generate-feed-text/route.ts` | Remover concatenação de `style_profile` no prompt |
 | `app/(dashboard)/imagens/page.tsx` | Remover passagem de `project.style_profile` para os agentes |
+
+**Fora de escopo M11-G:** `lib/video-generator`, `EditorialContent`, `ChannelPiece` — não alterar.
 
 **Migration SQL:** Nenhuma (coluna permanece).
 
@@ -836,7 +852,7 @@ Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geraç�
 **Pontos de parada obrigatória:**
 - STOP: auditoria final de dados antes de M11-H (confirmar que `style_profile` pode ser dropado)
 
-**Dependências:** M11-F concluído e aprovado
+**Dependências:** M11-F APROVADO (2026-06-26)
 
 ---
 
