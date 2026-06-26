@@ -92,8 +92,11 @@ Na migração, dados existentes em `context` alimentarão `foundation.purpose`, 
 ### Relação com Production
 A Production ganha, via UI (ou banco), o poder de armazenar em seu próprio escopo a sua **Intenção** e o **Override de Evaluation Mode**. As zonas `Locked` (ex: `restrictions` do projeto) nunca serão sobrescritas e são injetadas em toda execução atrelada a esse projeto.
 
+### Nota da Auditoria do Image Evaluator
+Como o Image Evaluator consome o contexto de forma multimodal via OpenAI, o novo campo JSONB não deve ser repassado cru (`JSON.stringify`). O `Effective Context Compiler` da V1 deverá extrair os blocos relevantes (como `purpose`, `audience`, `visual_direction`, `restrictions`) e montar um bloco de texto formatado antes de enviar ao avaliador.
+
 ### Itens Adiados para V2
 * O `Identity Builder` (Chatbot Interativo de setup).
-* O `Effective Context Compiler` avançado (que decide magicamente qual pedaço passar; na V1, passaremos as propriedades JSON de forma estruturada dentro do prompt de sistema unificado).
+* O `Effective Context Compiler` avançado (que decide magicamente qual pedaço passar; na V1, passaremos as propriedades JSON de forma estruturada textual dentro do prompt de sistema unificado).
 * Histórico e Versionamento de Identidade.
 * Production Style Direction (a abstração completa da substituição visual restrita à campanha).
