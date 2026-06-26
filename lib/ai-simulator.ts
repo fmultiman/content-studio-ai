@@ -33,7 +33,6 @@ export interface WebhookPayload {
   action: 'generate_prompt' | 'generate_image' | 'evaluate_result'
   input: string
   context?: string
-  styleProfile?: string
   evaluationMode?: EvaluationMode
   retryCount?: number
   metadata?: Record<string, unknown>
@@ -43,7 +42,6 @@ export interface WebhookPayload {
 export interface GenerationContext {
   userInput: string
   projectContext?: string | null
-  styleProfile?: string | null
   evaluationMode?: EvaluationMode
   intention?: string
   retryCount?: number
@@ -163,7 +161,6 @@ function translateToEnglish(text: string): string {
 async function generateWithOpenAI(
   userInput: string,
   projectContext?: string | null,
-  styleProfile?: string | null,
   apiKey?: string,
   evaluationMode: EvaluationMode = 'default',
   identity: ProjectIdentity | null = null,
@@ -178,14 +175,12 @@ Seu objetivo e transformar uma ideia inicial (userInput) em um prompt estruturad
 INPUTS:
 
 - userInput
-- context
-- style_profile
+- context e identidade do projeto
 - evaluation_mode
 
 REGRAS BASE:
 
-- Sempre usar o contexto do projeto como base principal
-- Aplicar o style_profile de forma consistente
+- Sempre usar o contexto e identidade do projeto como base principal
 - Evitar cliches comuns de IA
 - Criar prompts claros, especificos e nao genericos
 
@@ -241,7 +236,6 @@ Responda apenas com um unico prompt final em ingles, sem explicacoes, sem markdo
 
     const compiledContext = buildImageGenerationContext({
       context: projectContext,
-      style_profile: styleProfile,
       identity,
     })
 
@@ -283,9 +277,8 @@ ${evaluationMode}`
 
     if (!generatedPrompt) return null
 
-    // Extract details for display — prefer identity.expression.visual_identity, then style_profile.
     // lighting and composition are extracted from the actual model output only; no random fallback.
-    const style = identity?.expression?.visual_identity || styleProfile || detectStyle(userInput)
+    const style = identity?.expression?.visual_identity || detectStyle(userInput)
     const lighting = generatedPrompt.match(/lighting[^,.]*/i)?.[0] ?? null
     const composition = generatedPrompt.match(/composition[^,.]*/i)?.[0] ?? null
 
@@ -317,16 +310,14 @@ function getModeGuidance(evaluationMode: EvaluationMode) {
 function generateSimulated(
   userInput: string,
   projectContext?: string | null,
-  styleProfile?: string | null,
   evaluationMode: EvaluationMode = 'default',
   identity: ProjectIdentity | null = null,
 ): PromptGenerationResult {
   const compiledContext = buildImageGenerationContext({
     context: projectContext,
-    style_profile: styleProfile,
     identity,
   })
-  const detectedStyle = identity?.expression?.visual_identity || styleProfile || detectStyle(userInput)
+  const detectedStyle = identity?.expression?.visual_identity || detectStyle(userInput)
   const lighting = getRandomElement(lightingOptions)
   const composition = getRandomElement(compositionOptions)
   const modeGuidance = getModeGuidance(evaluationMode)
@@ -347,20 +338,19 @@ function generateSimulated(
 export async function generateImagePrompt(
   userInput: string,
   projectContext?: string | null,
-  styleProfile?: string | null,
   apiKey?: string,
   evaluationMode: EvaluationMode = 'default',
   identity: ProjectIdentity | null = null,
 ): Promise<PromptGenerationResult> {
   // Try OpenAI first
   if (apiKey) {
-    const result = await generateWithOpenAI(userInput, projectContext, styleProfile, apiKey, evaluationMode, identity)
+    const result = await generateWithOpenAI(userInput, projectContext, apiKey, evaluationMode, identity)
     if (result) return result
   }
 
   // Fallback to simulation
   await delay(1500)
-  return generateSimulated(userInput, projectContext, styleProfile, evaluationMode, identity)
+  return generateSimulated(userInput, projectContext, evaluationMode, identity)
 }
 
 export async function regeneratePrompt(currentPrompt: string): Promise<PromptGenerationResult> {
@@ -564,7 +554,6 @@ export async function intelligentGenerationLoop(
   const result = await generateImagePrompt(
     context.userInput,
     context.projectContext,
-    context.styleProfile,
     undefined,
     context.evaluationMode || 'default',
     null,

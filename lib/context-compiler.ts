@@ -11,8 +11,6 @@ import type { ProjectIdentity } from './schemas/project-identity'
 export interface ProjectContextSource {
   /** General project narrative — semantically distinct from foundation.purpose. */
   context?: string | null
-  /** Legacy field. Used only as fallback when identity.expression.visual_identity is absent. */
-  style_profile?: string | null
   /** Structured identity from the JSONB column. */
   identity?: ProjectIdentity | null
 }
@@ -27,19 +25,6 @@ function listBlock(label: string, items: string[]): string {
   return `**${label}:**\n${items.map((item) => `- ${item}`).join('\n')}`
 }
 
-/**
- * Resolves the visual identity string to use.
- *
- * Priority: identity.expression.visual_identity → style_profile (fallback only).
- * Never concatenates both.
- */
-function resolveVisualIdentity(source: ProjectContextSource): string | null {
-  const fromIdentity = source.identity?.expression?.visual_identity
-  if (fromIdentity) return fromIdentity
-  if (source.style_profile?.trim()) return source.style_profile.trim()
-  return null
-}
-
 // ─── Generation Context ───────────────────────────────────────────────────────
 
 /**
@@ -49,7 +34,7 @@ function resolveVisualIdentity(source: ProjectContextSource): string | null {
  * 1. context (general project narrative)
  * 2. foundation.purpose (project raison d'être — distinct from context)
  * 3. relationship.audience
- * 4. expression.visual_identity (or style_profile as fallback)
+ * 4. expression.visual_identity
  * 5. expression.voice
  * 6. governance.principles[]
  * 7. governance.restrictions[]
@@ -73,7 +58,7 @@ export function buildImageGenerationContext(source: ProjectContextSource): strin
     parts.push(block('Audiência', id.relationship.audience))
   }
 
-  const visualIdentity = resolveVisualIdentity(source)
+  const visualIdentity = id?.expression?.visual_identity
   if (visualIdentity) {
     parts.push(block('Identidade Visual', visualIdentity))
   }
@@ -109,7 +94,7 @@ export function buildImageGenerationContext(source: ProjectContextSource): strin
  * 1. context (general project narrative)
  * 2. foundation.purpose
  * 3. relationship.audience
- * 4. expression.visual_identity (or style_profile as fallback)
+ * 4. expression.visual_identity
  * 5. governance.principles[]
  * 6. governance.restrictions[] — emphasized, must be checked in scoring
  * 7. practice.generation_preferences[] — treated as preference, not absolute rule
@@ -133,7 +118,7 @@ export function buildImageEvaluationContext(source: ProjectContextSource): strin
     parts.push(block('Audiência', id.relationship.audience))
   }
 
-  const visualIdentity = resolveVisualIdentity(source)
+  const visualIdentity = id?.expression?.visual_identity
   if (visualIdentity) {
     parts.push(block('Identidade Visual', visualIdentity))
   }

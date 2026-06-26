@@ -800,7 +800,7 @@ Experiência qualitativamente superior ao antigo uso de `context + style_profile
 
 ---
 
-### M11-G — Remoção Lógica de style_profile
+### M11-G — Remoção Lógica de style_profile ✅ CONCLUÍDO (2026-06-26)
 
 **Objetivo:** Remover `style_profile` da UI (formulário e detalhe do Projeto), dos consumidores de IA (Prompt Generator, Image Evaluator, Feed Generator) e dos tipos operacionais (`CreateProjectForm`). A coluna permanece no banco e no tipo `Project` — a remoção física é M11-H.
 
@@ -810,44 +810,45 @@ Experiência qualitativamente superior ao antigo uso de `context + style_profile
 
 **Arquivos modificados:**
 
-| Arquivo | Mudança |
-|---------|---------|
-| `components/projects/project-form.tsx` | Remover campo `style_profile` (TagInput) — formulário de criação/edição |
-| `app/(dashboard)/projetos/[id]/page.tsx` | Remover caixa "Perfil de Estilo" da exibição |
-| `lib/types.ts` | Remover `style_profile` de `CreateProjectForm` (mas manter em `Project` por enquanto) |
-| `lib/ai-simulator.ts` | Remover passagem de `styleProfile` para o system prompt; usar apenas `buildImageGenerationContext()` |
-| `app/api/evaluate-image/route.ts` | Remover leitura de `styleProfile` no body; usar apenas `buildImageEvaluationContext()` |
-| `app/api/posts/generate-feed-text/route.ts` | Remover concatenação de `style_profile` no prompt |
-| `app/(dashboard)/imagens/page.tsx` | Remover passagem de `project.style_profile` para os agentes |
+| Arquivo | Mudança | Status |
+|---------|---------|--------|
+| `components/projects/project-form.tsx` | Removidos: imports `TagInput/Popover/HelpCircle`; campo `style_profile` do state, useEffect, update, insert, reset; seção "Perfil de Estilo" do JSX | ✅ |
+| `app/(dashboard)/projetos/[id]/page.tsx` | Removidos: import `Palette`; bloco `{project.style_profile && ...}` ("Perfil de Estilo") | ✅ |
+| `app/(dashboard)/projetos/page.tsx` | Removido: `p.style_profile?.toLowerCase().includes(query)` da busca | ✅ |
+| `lib/types.ts` | `style_profile` removido de `CreateProjectForm`; permanece em `Project` até M11-H (coluna ainda existe no banco) | ✅ |
+| `lib/context-compiler.ts` | `ProjectContextSource`: removido campo `style_profile`; `resolveVisualIdentity()` eliminada; formatters usam `id?.expression?.visual_identity` diretamente | ✅ |
+| `lib/ai-simulator.ts` | `WebhookPayload`/`GenerationContext`: removido `styleProfile`; `generateImagePrompt` nova assinatura `(userInput, projectContext, apiKey, evaluationMode, identity)`; style via `identity?.expression?.visual_identity \|\| detectStyle(userInput)` | ✅ |
+| `app/(dashboard)/imagens/page.tsx` | `handleGeneratePrompt`: removido `styleProfile`; `handleEvaluateImage`: removido `styleProfile` do body | ✅ |
+| `app/api/evaluate-image/route.ts` | Removido `styleProfile` do body destructuring e da chamada `buildImageEvaluationContext` | ✅ |
+| `app/api/posts/generate-feed-text/route.ts` | `.select()` sem `style_profile`; removida concatenação de perfil de estilo no prompt | ✅ |
 
-**Fora de escopo M11-G:** `lib/video-generator`, `EditorialContent`, `ChannelPiece` — não alterar.
+**Fora de escopo M11-G:** `app/api/videos/generate-scene-prompt/route.ts`, `app/api/channel-pieces/generate-body/route.ts`, `EditorialContent` — não alterados.
 
 **Migration SQL:** Nenhuma (coluna permanece).
 
-**APIs afetadas:**
-- `POST /api/evaluate-image` — remover campo `styleProfile` do contrato (breaking change interno, sem clientes externos)
-- `app/(dashboard)/imagens/page.tsx` — remove passagem de `style_profile`
+**Decisão Feed Generator:** Classificado como LEGADO/INATIVO (Posts retirados da experiência primária em M9). Opção C escolhida: remoção de `style_profile` sem adicionar identity — context/description suficientes para a rota em estado de manutenção.
 
-**UI afetada:**
-- `ProjectForm` — sem campo `style_profile`
-- `ProjectDetailPage` — sem caixa "Perfil de Estilo"
+**Resultados da validação (2026-06-26):**
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `tsc --noEmit` | 0 erros |
+| `eslint` | 0 erros, 50 warnings (pré-existentes) |
+| `pnpm build` | ✅ PASS — Compiled successfully in 38.6s |
+| `pnpm test` | ✅ 193 testes passando (6 arquivos) |
+| Busca global `style_profile` em `.ts/.tsx` | Apenas: types.ts (coluna ainda existe), lib/ comments/tests M11-G, rotas out-of-scope |
+
+**Testes adicionados/atualizados:**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `lib/__tests__/context-compiler.test.ts` | Removido fallback `style_profile`; adicionado describe "no style_profile fallback — M11-G" (3 testes) |
+| `lib/__tests__/image-prompt-generation.test.ts` | `callSimulated` sem `styleProfile`; case 6 novo (detectStyle quando identity null); cases 1, 5, 9, 14, 20 atualizados; OpenAI path sem styleProfile |
+| `lib/__tests__/image-evaluator-identity.test.ts` | Reescrito: cases 1, 9, 34 atualizados; case 10 ("fallback style_profile") removido; case 33 mutability test sem style_profile; rota sem styleProfile no body |
 
 **Compatibilidade:** Projects existentes mantêm `style_profile` no banco (coluna não removida). A remoção da UI e dos consumidores é irreversível após deploy — dados no banco permanecem disponíveis para auditoria.
 
 **Rollback:** Reverter os arquivos modificados; dados no banco intactos.
-
-**Testes necessários:**
-- Formulário de Project sem campo style_profile: criar e editar sem erro
-- Geração de imagem com Alquimia: funciona apenas com identity
-- Avaliação de imagem: funciona apenas com identity e context
-- Feed Generator: prompt não menciona style_profile
-- `tsc --noEmit`: 0 erros, `pnpm build`: PASS
-
-**Critério de aceite:**
-- Nenhum consumidor de IA referencia `style_profile` diretamente
-- UI não exibe nem permite edição de `style_profile`
-- `CreateProjectForm` não inclui `style_profile`
-- Geração e avaliação funcionam corretamente apenas com identity
 
 **Pontos de parada obrigatória:**
 - STOP: auditoria final de dados antes de M11-H (confirmar que `style_profile` pode ser dropado)

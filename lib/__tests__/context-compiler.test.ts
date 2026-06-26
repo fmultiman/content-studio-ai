@@ -79,32 +79,28 @@ describe('buildImageGenerationContext', () => {
     expect(result).toContain('Luz natural')
   })
 
-  it('uses style_profile as fallback when visual_identity is absent', () => {
+  it('returns empty string when identity has no visual_identity and no context', () => {
     const noVisual: ProjectIdentity = {
       schema_version: 1,
       expression: { voice: 'Sutil.' },
     }
-    const result = buildImageGenerationContext({
-      identity: noVisual,
-      style_profile: 'Estilo minimalista legado.',
-    })
-    expect(result).toContain('Identidade Visual')
-    expect(result).toContain('Estilo minimalista legado.')
+    const result = buildImageGenerationContext({ identity: noVisual })
+    expect(result).toContain('Voz e Tom')
+    expect(result).not.toContain('Identidade Visual')
   })
 
-  it('prefers visual_identity over style_profile (no concatenation)', () => {
-    const result = buildImageGenerationContext({
-      identity: fullIdentity,
-      style_profile: 'Legado que não deve aparecer.',
-    })
-    expect(result).not.toContain('Legado que não deve aparecer.')
-    expect(result).toContain('Paleta terrosa')
+  it('omits Identidade Visual block when visual_identity is absent', () => {
+    const noVisual: ProjectIdentity = {
+      schema_version: 1,
+      foundation: { purpose: 'Só foundation.' },
+    }
+    const result = buildImageGenerationContext({ identity: noVisual })
+    expect(result).not.toContain('Identidade Visual')
   })
 
   it('omits blocks whose values are null or undefined', () => {
     const result = buildImageGenerationContext({
       context: null,
-      style_profile: null,
       identity: null,
     })
     expect(result).toBe('')
@@ -194,6 +190,15 @@ describe('buildImageEvaluationContext', () => {
     expect(result).toContain('Luz natural')
   })
 
+  it('omits Identidade Visual block when visual_identity is absent', () => {
+    const noVisual: ProjectIdentity = {
+      schema_version: 1,
+      foundation: { purpose: 'Só foundation.' },
+    }
+    const result = buildImageEvaluationContext({ identity: noVisual })
+    expect(result).not.toContain('Identidade Visual')
+  })
+
   it('outputs blocks in the correct order (no voice block)', () => {
     const result = buildImageEvaluationContext({
       context: 'ctx',
@@ -232,14 +237,11 @@ describe('formatter determinism and immutability', () => {
   it('buildImageGenerationContext does not mutate the source object', () => {
     const source: ProjectContextSource = {
       context: 'ctx',
-      style_profile: 'legado',
       identity: fullIdentity,
     }
     const contextBefore = source.context
-    const profileBefore = source.style_profile
     buildImageGenerationContext(source)
     expect(source.context).toBe(contextBefore)
-    expect(source.style_profile).toBe(profileBefore)
     expect(source.identity).toBe(fullIdentity)
   })
 
@@ -248,5 +250,35 @@ describe('formatter determinism and immutability', () => {
     buildImageEvaluationContext(source)
     expect(source.context).toBe('ctx')
     expect(source.identity).toBe(fullIdentity)
+  })
+})
+
+// ─── No style_profile fallback (M11-G) ───────────────────────────────────────
+
+describe('no style_profile fallback — M11-G', () => {
+  it('identity without visual_identity produces no Identidade Visual block (no fallback)', () => {
+    const noVisual: ProjectIdentity = {
+      schema_version: 1,
+      foundation: { purpose: 'Purpose only, no visual_identity' },
+    }
+    const result = buildImageGenerationContext({ identity: noVisual })
+    expect(result).not.toContain('Identidade Visual')
+    expect(result).toContain('Propósito')
+  })
+
+  it('identity null with context only produces only context block', () => {
+    const result = buildImageGenerationContext({ context: 'Só contexto.', identity: null })
+    expect(result).toContain('Contexto do Projeto')
+    expect(result).not.toContain('Identidade Visual')
+  })
+
+  it('buildImageEvaluationContext: no fallback when visual_identity absent', () => {
+    const noVisual: ProjectIdentity = {
+      schema_version: 1,
+      governance: { restrictions: ['Sem clichê'] },
+    }
+    const result = buildImageEvaluationContext({ identity: noVisual })
+    expect(result).not.toContain('Identidade Visual')
+    expect(result).toContain('verificar violações')
   })
 })

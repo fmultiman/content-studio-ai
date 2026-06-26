@@ -73,7 +73,6 @@ function ProjectsContent() {
         (p) =>
           p.name.toLowerCase().includes(query) ||
           p.description?.toLowerCase().includes(query) ||
-          p.style_profile?.toLowerCase().includes(query) ||
           p.context?.toLowerCase().includes(query)
       )
     }

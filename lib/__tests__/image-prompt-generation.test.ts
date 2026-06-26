@@ -10,33 +10,33 @@ import type { ProjectIdentity } from '../schemas/project-identity'
 async function callSimulated(
   userInput: string,
   projectContext: string | null,
-  styleProfile: string | null,
   evaluationMode: 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental' = 'default',
   identity: ProjectIdentity | null = null,
 ) {
-  const p = generateImagePrompt(userInput, projectContext, styleProfile, undefined, evaluationMode, identity)
+  const p = generateImagePrompt(userInput, projectContext, undefined, evaluationMode, identity)
   await vi.runAllTimersAsync()
   return p
 }
 
-// ─── Case 1: Project sem identity + context + style_profile ──────────────────
+// ─── Case 1: Project sem identity + context ───────────────────────────────────
 
-describe('case 1 — sem identity: context + style_profile preservados', () => {
+describe('case 1 — sem identity: context preservado', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
   it('includes context in the prompt when identity is null', async () => {
-    const result = await callSimulated('foto de produto', 'Contexto legado do projeto', null)
+    const result = await callSimulated('foto de produto', 'Contexto legado do projeto')
     expect(result.prompt).toContain('Contexto legado do projeto')
   })
 
-  it('uses style_profile as visual style when identity is null', async () => {
-    const result = await callSimulated('foto de produto', null, 'Minimalista escuro')
-    expect(result.style).toBe('Minimalista escuro')
+  it('uses detectStyle when identity is null and no visual_identity', async () => {
+    const result = await callSimulated('foto de produto', null)
+    expect(typeof result.style).toBe('string')
+    expect(result.style.length).toBeGreaterThan(0)
   })
 
   it('returns PromptGenerationResult contract: prompt, style, lighting, composition', async () => {
-    const result = await callSimulated('test input', null, null)
+    const result = await callSimulated('test input', null)
     expect(result).toHaveProperty('prompt')
     expect(result).toHaveProperty('style')
     expect(result).toHaveProperty('lighting')
@@ -57,7 +57,7 @@ describe('case 2 — identity parcial (só foundation)', () => {
       schema_version: 1,
       foundation: { purpose: 'Criação de arte minimalista para marcas premium' },
     }
-    const result = await callSimulated('logo concept', null, null, 'default', identity)
+    const result = await callSimulated('logo concept', null, 'default', identity)
     expect(result.prompt).toContain('arte minimalista para marcas premium')
   })
 
@@ -66,7 +66,7 @@ describe('case 2 — identity parcial (só foundation)', () => {
       schema_version: 1,
       foundation: { purpose: 'Somente propósito' },
     }
-    const result = await callSimulated('input', null, null, 'default', identity)
+    const result = await callSimulated('input', null, 'default', identity)
     expect(result.prompt).not.toContain('Audiência')
   })
 })
@@ -86,7 +86,7 @@ describe('case 3 — identity completa: todas as dimensões no prompt', () => {
       governance: { principles: ['Originalidade radical'], restrictions: ['Sem referências comerciais'] },
       practice: { generation_preferences: ['Composição fragmentada'] },
     }
-    const result = await callSimulated('imagem abstrata', null, null, 'default', identity)
+    const result = await callSimulated('imagem abstrata', null, 'default', identity)
     expect(result.prompt).toContain('Arte conceitual abstrata')
     expect(result.prompt).toContain('Colecionadores europeus')
     expect(result.prompt).toContain('Paleta monocromática')
@@ -110,7 +110,6 @@ describe('case 4 — context e purpose aparecem separados no compiled context', 
     const result = await callSimulated(
       'foto para campanha',
       'Contexto geral do projeto diferente do propósito',
-      null,
       'default',
       identity,
     )
@@ -119,52 +118,52 @@ describe('case 4 — context e purpose aparecem separados no compiled context', 
   })
 })
 
-// ─── Case 5: visual_identity prevalece sobre style_profile ───────────────────
+// ─── Case 5: visual_identity usada quando presente ───────────────────────────
 
-describe('case 5 — visual_identity prevalece sobre style_profile', () => {
+describe('case 5 — visual_identity é a fonte canônica de identidade visual', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('uses visual_identity when both visual_identity and style_profile are present', async () => {
+  it('uses visual_identity as style when identity has it', async () => {
     const identity: ProjectIdentity = {
       schema_version: 1,
       expression: { visual_identity: 'Estética dark neo-noir' },
     }
-    const result = await callSimulated('cena urbana', null, 'Perfil de estilo legado', 'default', identity)
+    const result = await callSimulated('cena urbana', null, 'default', identity)
     expect(result.style).toBe('Estética dark neo-noir')
     expect(result.prompt).toContain('Estética dark neo-noir')
-    expect(result.prompt).not.toContain('Perfil de estilo legado')
   })
 
-  it('does not include style_profile text when visual_identity is present', async () => {
+  it('falls back to detectStyle when identity has no visual_identity', async () => {
     const identity: ProjectIdentity = {
       schema_version: 1,
-      expression: { visual_identity: 'Visual preferido' },
+      foundation: { purpose: 'Purpose sem visual' },
     }
-    const result = await callSimulated('input', null, 'style_profile_que_nao_deve_aparecer', 'default', identity)
-    expect(result.prompt).not.toContain('style_profile_que_nao_deve_aparecer')
+    const result = await callSimulated('cyberpunk city', null, 'default', identity)
+    expect(typeof result.style).toBe('string')
+    expect(result.style.length).toBeGreaterThan(0)
   })
 })
 
-// ─── Case 6: style_profile como fallback quando visual_identity ausente ───────
+// ─── Case 6 (M11-G): sem style_profile — identity null usa detectStyle ────────
 
-describe('case 6 — style_profile usado quando visual_identity ausente', () => {
+describe('case 6 (M11-G) — identity null: style derivado de detectStyle, não de style_profile legado', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('falls back to style_profile when identity has no visual_identity', async () => {
-    const identity: ProjectIdentity = {
-      schema_version: 1,
-      foundation: { purpose: 'Só tem propósito, sem visual_identity' },
-    }
-    const result = await callSimulated('retrato', null, 'Fotografia documental', 'default', identity)
-    expect(result.style).toBe('Fotografia documental')
-    expect(result.prompt).toContain('Fotografia documental')
+  it('identity null uses detectStyle based on userInput keywords', async () => {
+    const result = await callSimulated('cyberpunk city', null, 'default', null)
+    expect(result.style).toContain('cyberpunk')
   })
 
-  it('falls back to style_profile when identity is null', async () => {
-    const result = await callSimulated('paisagem', null, 'Aquarela suave', 'default', null)
-    expect(result.style).toBe('Aquarela suave')
+  it('identity null with context: context still appears in prompt', async () => {
+    const result = await callSimulated('paisagem', 'Contexto puro sem identity', 'default', null)
+    expect(result.prompt).toContain('Contexto puro sem identity')
+  })
+
+  it('no Identidade Visual block when identity is null', async () => {
+    const result = await callSimulated('cena simples', null, 'default', null)
+    expect(result.prompt).not.toContain('Identidade Visual')
   })
 })
 
@@ -177,11 +176,9 @@ describe('case 7 — principles entram como orientações positivas', () => {
   it('includes governance principles in the prompt', async () => {
     const identity: ProjectIdentity = {
       schema_version: 1,
-      // Note: avoid words with Portuguese vocab substrings (e.g. "cidade") to prevent
-      // translateToEnglish partial matches in the existing utility function.
       governance: { principles: ['Originalidade radical', 'Minimalismo intencional'] },
     }
-    const result = await callSimulated('imagem', null, null, 'default', identity)
+    const result = await callSimulated('imagem', null, 'default', identity)
     expect(result.prompt).toContain('Originalidade radical')
     expect(result.prompt).toContain('Minimalismo intencional')
   })
@@ -198,7 +195,7 @@ describe('case 8 — restrictions entram como limites explícitos', () => {
       schema_version: 1,
       governance: { restrictions: ['Sem logos de terceiros', 'Sem filtros excessivos'] },
     }
-    const result = await callSimulated('produto', null, null, 'default', identity)
+    const result = await callSimulated('produto', null, 'default', identity)
     expect(result.prompt).toContain('Sem logos de terceiros')
     expect(result.prompt).toContain('Sem filtros excessivos')
   })
@@ -215,7 +212,7 @@ describe('case 9 — generation_preferences entram como preferências', () => {
       schema_version: 1,
       practice: { generation_preferences: ['Luz natural', 'Enquadramento amplo'] },
     }
-    const result = await callSimulated('cena externa', null, null, 'default', identity)
+    const result = await callSimulated('cena externa', null, 'default', identity)
     expect(result.prompt).toContain('Luz natural')
     expect(result.prompt).toContain('Enquadramento amplo')
   })
@@ -233,7 +230,7 @@ describe('case 10 — schema_version nunca aparece no prompt', () => {
       foundation: { purpose: 'Projeto com identidade completa' },
       expression: { visual_identity: 'Visual premium' },
     }
-    const result = await callSimulated('input', 'contexto', 'style', 'default', identity)
+    const result = await callSimulated('input', 'contexto', 'default', identity)
     expect(result.prompt).not.toContain('schema_version')
     expect(result.prompt).not.toContain('"schema_version"')
   })
@@ -251,8 +248,7 @@ describe('case 11 — JSON bruto nunca aparece no prompt', () => {
       foundation: { purpose: 'Test' },
       governance: { principles: ['P1'], restrictions: ['R1'] },
     }
-    const result = await callSimulated('test', null, null, 'default', identity)
-    // Raw JSON would contain ": {" or "}: " patterns from JSONB
+    const result = await callSimulated('test', null, 'default', identity)
     expect(result.prompt).not.toMatch(/"\w+":\s*\{/)
     expect(result.prompt).not.toContain('"schema_version": 1')
     expect(result.prompt).not.toContain('JSON')
@@ -281,24 +277,22 @@ describe('cases 12 & 13 — identity inválida: normalização lança erro, não
   })
 })
 
-// ─── Case 14: identity null preserva comportamento legado ────────────────────
+// ─── Case 14: identity null — context continua funcionando ───────────────────
 
-describe('case 14 — identity null: comportamento legado preservado', () => {
+describe('case 14 — identity null: context continua sendo usado', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('uses context and style_profile when identity is null (legacy path)', async () => {
-    const result = await callSimulated('foto', 'Contexto legado', 'Estilo legado', 'default', null)
+  it('uses context when identity is null', async () => {
+    const result = await callSimulated('foto', 'Contexto legado', 'default', null)
     expect(result.prompt).toContain('Contexto legado')
-    expect(result.style).toBe('Estilo legado')
   })
 
   it('behaves identically whether identity is null or not passed (default)', async () => {
-    const p1 = generateImagePrompt('foto', 'ctx', 'style', undefined, 'default', null)
-    const p2 = generateImagePrompt('foto', 'ctx', 'style', undefined, 'default')
+    const p1 = generateImagePrompt('foto', 'ctx', undefined, 'default', null)
+    const p2 = generateImagePrompt('foto', 'ctx', undefined, 'default')
     await vi.runAllTimersAsync()
     const [r1, r2] = await Promise.all([p1, p2])
-    // Both should have same style (style_profile used as fallback in both cases)
     expect(r1.style).toBe(r2.style)
   })
 })
@@ -310,18 +304,18 @@ describe('case 15 — evaluation_mode inalterado', () => {
   afterEach(() => vi.useRealTimers())
 
   it('conceptual mode includes symbolic guidance regardless of identity', async () => {
-    const result = await callSimulated('cena abstrata', null, null, 'conceptual', null)
+    const result = await callSimulated('cena abstrata', null, 'conceptual', null)
     expect(result.prompt).toContain('symbolic')
   })
 
   it('commercial mode includes impact guidance', async () => {
-    const result = await callSimulated('produto', null, null, 'commercial', null)
+    const result = await callSimulated('produto', null, 'commercial', null)
     expect(result.prompt.toLowerCase()).toMatch(/commercial|impact|visual/)
   })
 
   it('evaluation_mode is unaffected by presence of identity', async () => {
     const identity: ProjectIdentity = { schema_version: 1, foundation: { purpose: 'Conceptual project' } }
-    const resultConceptual = await callSimulated('imagem', null, null, 'conceptual', identity)
+    const resultConceptual = await callSimulated('imagem', null, 'conceptual', identity)
     expect(resultConceptual.prompt).toContain('symbolic')
   })
 })
@@ -338,7 +332,7 @@ describe('case 17 — output contract unchanged', () => {
       foundation: { purpose: 'Test' },
       expression: { visual_identity: 'Dark aesthetic' },
     }
-    const result = await callSimulated('portrait', 'ctx', 'style', 'aesthetic', identity)
+    const result = await callSimulated('portrait', 'ctx', 'aesthetic', identity)
     expect(typeof result.prompt).toBe('string')
     expect(typeof result.style).toBe('string')
     expect(typeof result.lighting).toBe('string')
@@ -362,12 +356,17 @@ describe('case 18 — simulated fallback works with all identity states', () => 
       governance: { principles: ['P1'], restrictions: ['R1'] },
       practice: { generation_preferences: ['G1'] },
     }
-    const result = await callSimulated('input', null, null, 'default', identity)
+    const result = await callSimulated('input', null, 'default', identity)
     expect(result.prompt.length).toBeGreaterThan(0)
   })
 
   it('simulated path succeeds with null identity', async () => {
-    const result = await callSimulated('input', 'ctx', 'style', 'default', null)
+    const result = await callSimulated('input', 'ctx', 'default', null)
+    expect(result.prompt.length).toBeGreaterThan(0)
+  })
+
+  it('simulated path succeeds with no context and no identity', async () => {
+    const result = await callSimulated('input', null, 'default', null)
     expect(result.prompt.length).toBeGreaterThan(0)
   })
 })
@@ -385,7 +384,7 @@ describe('case 19 — identity object not mutated after generateImagePrompt', ()
       governance: { principles: ['P1', 'P2'] },
     }
     const snapshot = JSON.parse(JSON.stringify(identity))
-    await callSimulated('input', null, null, 'default', identity)
+    await callSimulated('input', null, 'default', identity)
     expect(identity).toEqual(snapshot)
   })
 })
@@ -399,13 +398,12 @@ describe('case 20 — compiled context is deterministic', () => {
       foundation: { purpose: 'Arte minimalista' },
       expression: { visual_identity: 'Dark aesthetic' },
     }
-    const source = { context: 'Contexto fixo', style_profile: 'Estilo fixo', identity }
+    const source = { context: 'Contexto fixo', identity }
     const r1 = buildImageGenerationContext(source)
     const r2 = buildImageGenerationContext(source)
     expect(r1).toBe(r2)
     expect(r1).toContain('Arte minimalista')
     expect(r1).toContain('Dark aesthetic')
-    expect(r1).not.toContain('Estilo fixo') // visual_identity takes precedence
   })
 })
 
@@ -427,7 +425,7 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
       foundation: { purpose: 'Conteúdo visual para marcas independentes' },
     }
 
-    await generateImagePrompt('portrait shot', 'legacy context', 'legacy style', 'fake-key', 'default', identity)
+    await generateImagePrompt('portrait shot', 'legacy context', 'fake-key', 'default', identity)
 
     expect(mockFetch).toHaveBeenCalledOnce()
     const callBody = JSON.parse(mockFetch.mock.calls[0][1]!.body as string)
@@ -441,7 +439,7 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
     expect(userMsg).not.toContain('schema_version')
   })
 
-  it('sends Not specified when no context, style_profile, or identity', async () => {
+  it('sends Not specified when no context or identity', async () => {
     const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({ choices: [{ message: { content: 'a prompt' } }] }),
@@ -449,7 +447,7 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
       ),
     )
 
-    await generateImagePrompt('simple input', null, null, 'fake-key', 'default', null)
+    await generateImagePrompt('simple input', null, 'fake-key', 'default', null)
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1]!.body as string)
     const userMsg: string = callBody.messages.find((m: { role: string }) => m.role === 'user')?.content ?? ''
@@ -457,7 +455,7 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
     expect(userMsg).toContain('PROJECT CONTEXT AND IDENTITY:\nNot specified')
   })
 
-  it('visual_identity is used as style display field, not style_profile', async () => {
+  it('visual_identity is used as style display field', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({ choices: [{ message: { content: 'match lighting composition and more text here' } }] }),
@@ -470,8 +468,20 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
       expression: { visual_identity: 'Estetica preferida da identidade' },
     }
 
-    const result = await generateImagePrompt('input', null, 'style legado', 'fake-key', 'default', identity)
+    const result = await generateImagePrompt('input', null, 'fake-key', 'default', identity)
     expect(result.style).toBe('Estetica preferida da identidade')
+  })
+
+  it('detectStyle is used when identity has no visual_identity (OpenAI path)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'a generated prompt' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const result = await generateImagePrompt('cyberpunk city', null, 'fake-key', 'default', null)
+    expect(result.style).toContain('cyberpunk')
   })
 })
 
@@ -480,7 +490,6 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
 describe('metadata refinement — OpenAI path extracts or returns null, never random fallback', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  // Test 1: lighting keyword present → chip extracted
   it('test 1 — extracts lighting chip when model output contains "lighting"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -488,11 +497,10 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const result = await generateImagePrompt('portrait', null, null, 'fake-key')
+    const result = await generateImagePrompt('portrait', null, 'fake-key')
     expect(result.lighting).toBe('lighting with diffused fill')
   })
 
-  // Test 2: no lighting keyword → null (no random fallback)
   it('test 2 — returns null lighting when model output has no "lighting" keyword', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -500,11 +508,10 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const result = await generateImagePrompt('circle', null, null, 'fake-key')
+    const result = await generateImagePrompt('circle', null, 'fake-key')
     expect(result.lighting).toBeNull()
   })
 
-  // Test 3: composition keyword present → chip extracted
   it('test 3 — extracts composition chip when model output contains "composition"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -512,11 +519,10 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const result = await generateImagePrompt('mountain', null, null, 'fake-key')
+    const result = await generateImagePrompt('mountain', null, 'fake-key')
     expect(result.composition).toBe('composition for the mountain scene')
   })
 
-  // Test 4: no composition keyword → null (no random fallback)
   it('test 4 — returns null composition when model output has no "composition" keyword', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -524,11 +530,10 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const result = await generateImagePrompt('coffee', null, null, 'fake-key')
+    const result = await generateImagePrompt('coffee', null, 'fake-key')
     expect(result.composition).toBeNull()
   })
 
-  // Test 5: no random fallback — consistent null across multiple calls without keywords
   it('test 5 — null is deterministic: no random array value leaks into OpenAI path', async () => {
     const promptWithNoKeywords = 'minimalist product shot on white'
     const results = await Promise.all(
@@ -539,7 +544,7 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
         )
-        return generateImagePrompt('product', null, null, 'fake-key')
+        return generateImagePrompt('product', null, 'fake-key')
       }),
     )
     for (const r of results) {
@@ -548,20 +553,16 @@ describe('metadata refinement — OpenAI path extracts or returns null, never ra
     }
   })
 
-  // Test 6: null values flow correctly — UI guard is enforced by type contract
-  it('test 6 — null lighting and composition are valid PromptGenerationResult values (UI omits these chips)', async () => {
+  it('test 6 — null lighting and composition are valid PromptGenerationResult values', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({ choices: [{ message: { content: 'dark moody scene' } }] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const result = await generateImagePrompt('scene', null, null, 'fake-key')
-    // TypeScript guarantees these are string | null; the PromptSection renders
-    // chips conditionally: {promptDetails.lighting !== null && <Badge>...}
+    const result = await generateImagePrompt('scene', null, 'fake-key')
     expect(result).toHaveProperty('lighting')
     expect(result).toHaveProperty('composition')
-    // If no keyword found, both are null — no hardcoded string leaks through
     if (result.lighting !== null) {
       expect(result.prompt).toMatch(/lighting/i)
     }
@@ -575,44 +576,32 @@ describe('metadata refinement — simulated path retains random values embedded 
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  // Test 7: simulated lighting is always a non-null string
   it('test 7 — simulated path always produces non-null lighting (embedded in prompt)', async () => {
-    const result = await callSimulated('landscape', null, null)
+    const result = await callSimulated('landscape', null)
     expect(result.lighting).not.toBeNull()
     expect(typeof result.lighting).toBe('string')
     expect((result.lighting as string).length).toBeGreaterThan(0)
   })
 
-  // Test 8: simulated lighting and composition values appear in the prompt text
   it('test 8 — simulated lighting and composition values are embedded in result.prompt', async () => {
-    const result = await callSimulated('forest scene', null, null)
-    // Both values must appear in the prompt since they're part of enhancedPrompt
+    const result = await callSimulated('forest scene', null)
     expect(result.prompt).toContain(result.lighting as string)
     expect(result.prompt).toContain(result.composition as string)
   })
 
-  // Test 9: style precedence visual_identity → style_profile → detectStyle
-  it('test 9 — style precedence: visual_identity > style_profile > detectStyle (simulated)', async () => {
-    const withVisual = await callSimulated('shot', 'ctx', 'profileA', 'default', {
+  it('test 9 — style precedence: visual_identity > detectStyle (simulated)', async () => {
+    const withVisual = await callSimulated('shot', 'ctx', 'default', {
       schema_version: 1,
       expression: { visual_identity: 'Neo-noir' },
     })
     expect(withVisual.style).toBe('Neo-noir')
 
-    const withProfile = await callSimulated('shot', 'ctx', 'profileB', 'default', {
-      schema_version: 1,
-      foundation: { purpose: 'no visual' },
-    })
-    expect(withProfile.style).toBe('profileB')
-
-    const withDetect = await callSimulated('cyberpunk city', null, null, 'default', null)
-    // 'cyberpunk' is in styleKeywords — detect should return the mapped style
+    const withDetect = await callSimulated('cyberpunk city', null, 'default', null)
     expect(withDetect.style).toContain('cyberpunk')
   })
 
-  // Test 10: prompt contract (prompt string) unchanged by metadata refinement
   it('test 10 — prompt string is unaffected by metadata chip changes; contract intact', async () => {
-    const result = await callSimulated('product photo', 'project context', 'dark minimal', 'default', {
+    const result = await callSimulated('product photo', 'project context', 'default', {
       schema_version: 1,
       foundation: { purpose: 'Brand identity' },
     })

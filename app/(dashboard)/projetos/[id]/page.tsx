@@ -37,7 +37,6 @@ import {
   Calendar,
   Edit2,
   Trash2,
-  Palette,
   Copy,
   Check,
   Layers,
@@ -388,36 +387,6 @@ export default function ProjectDetailPage() {
                   </div>
                   <div className="rounded-lg border border-border/50 bg-background/50 p-4">
                     <p className="whitespace-pre-wrap text-sm text-foreground">{project.context}</p>
-                  </div>
-                </div>
-              )}
-              {project.style_profile && (
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Palette className="h-4 w-4" />
-                      Perfil de Estilo
-                    </h3>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        handleCopySection('style_profile', project.style_profile || '')
-                      }
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      aria-label="Copiar perfil de estilo"
-                    >
-                      {copiedSection === 'style_profile' ? (
-                        <Check className="h-4 w-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-background/50 p-4">
-                    <p className="whitespace-pre-wrap text-sm text-foreground">
-                      {project.style_profile}
-                    </p>
                   </div>
                 </div>
               )}

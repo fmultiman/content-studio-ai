@@ -1,10 +1,12 @@
 /**
- * M11-E — Image Evaluator + Project Identity integration tests
+ * M11-E/M11-G — Image Evaluator + Project Identity integration tests
  *
  * Coverage strategy:
  * - Cases 1–4, 8–16, 34: pure buildImageEvaluationContext tests (no mocks needed)
  * - Case 5: normalizeProjectIdentity throws on invalid input (client-side block)
  * - Cases 6–7, 17–33: route handler tests (mocked supabase + fetch)
+ *
+ * M11-G: style_profile removed from all formatters. No fallback from style_profile.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -81,27 +83,27 @@ function setupAuthSuccess() {
 
 // ─── Part 1: buildImageEvaluationContext (pure function tests) ─────────────────
 
-describe('case 1 — sem identity: context e style_profile entram no bloco compilado', () => {
+describe('case 1 — sem identity: context entra no bloco compilado (M11-G)', () => {
   it('includes context in compiled block', () => {
-    const result = buildImageEvaluationContext({ context: 'Contexto legado', style_profile: null })
+    const result = buildImageEvaluationContext({ context: 'Contexto legado' })
     expect(result).toContain('Contexto legado')
   })
 
-  it('includes style_profile as visual identity fallback', () => {
-    const result = buildImageEvaluationContext({ context: null, style_profile: 'Minimalista escuro' })
-    expect(result).toContain('Minimalista escuro')
+  it('returns empty string when no inputs', () => {
+    const result = buildImageEvaluationContext({})
+    expect(result).toBe('')
   })
 
-  it('returns empty string when no inputs', () => {
-    const result = buildImageEvaluationContext({ context: null, style_profile: null })
-    expect(result).toBe('')
+  it('context only — no Identidade Visual block without visual_identity', () => {
+    const result = buildImageEvaluationContext({ context: 'Só contexto' })
+    expect(result).not.toContain('Identidade Visual')
   })
 })
 
-describe('case 2 — identity null: comportamento igual ao sem identity', () => {
+describe('case 2 — identity null: compilação funciona sem erros', () => {
   it('null identity does not break compilation', () => {
-    const a = buildImageEvaluationContext({ context: 'CTX', style_profile: 'S', identity: null })
-    const b = buildImageEvaluationContext({ context: 'CTX', style_profile: 'S' })
+    const a = buildImageEvaluationContext({ context: 'CTX', identity: null })
+    const b = buildImageEvaluationContext({ context: 'CTX' })
     expect(a).toBe(b)
   })
 })
@@ -113,12 +115,12 @@ describe('case 3 — identity parcial: apenas dimensões presentes entram', () =
   }
 
   it('includes only the present zone (foundation.purpose)', () => {
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity: partialIdentity })
+    const result = buildImageEvaluationContext({ context: null, identity: partialIdentity })
     expect(result).toContain('Arte para marcas premium')
   })
 
   it('does not include absent zones', () => {
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity: partialIdentity })
+    const result = buildImageEvaluationContext({ context: null, identity: partialIdentity })
     expect(result).not.toContain('Audiência')
     expect(result).not.toContain('Restrições')
     expect(result).not.toContain('Princípios')
@@ -142,27 +144,27 @@ describe('case 4 — identity completa: todas as dimensões exceto voice', () =>
   }
 
   it('includes purpose', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Conteúdo aspiracional')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Conteúdo aspiracional')
   })
 
   it('includes audience', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Jovens criativos 18-35')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Jovens criativos 18-35')
   })
 
   it('includes visual_identity', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Monocromático com acentos dourados')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Monocromático com acentos dourados')
   })
 
   it('includes principles', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Autenticidade radical')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Autenticidade radical')
   })
 
   it('includes restrictions', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Sem rostos visíveis')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Sem rostos visíveis')
   })
 
   it('includes generation_preferences', () => {
-    expect(buildImageEvaluationContext({ context: null, style_profile: null, identity: fullIdentity })).toContain('Alta profundidade de campo')
+    expect(buildImageEvaluationContext({ context: null, identity: fullIdentity })).toContain('Alta profundidade de campo')
   })
 })
 
@@ -189,45 +191,34 @@ describe('case 8 — context e purpose aparecem separados', () => {
   it('general context and identity purpose are both present and distinct', () => {
     const result = buildImageEvaluationContext({
       context: 'Contexto geral do projeto X',
-      style_profile: null,
       identity,
     })
     expect(result).toContain('Contexto geral do projeto X')
     expect(result).toContain('Inspirar criadores independentes')
-    // They appear as separate labeled blocks
     expect(result).toContain('**Contexto do Projeto:**')
     expect(result).toContain('**Propósito:**')
   })
 })
 
-describe('case 9 — visual_identity prevalece sobre style_profile', () => {
-  it('uses visual_identity when both are present', () => {
+describe('case 9 (M11-G) — visual_identity é a fonte canônica de identidade visual', () => {
+  it('uses visual_identity when present in identity', () => {
     const identity: ProjectIdentity = {
       schema_version: 1,
       expression: { visual_identity: 'Estética raw e granulada' },
     }
-    const result = buildImageEvaluationContext({
-      context: null,
-      style_profile: 'Minimalista clean',
-      identity,
-    })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).toContain('Estética raw e granulada')
-    expect(result).not.toContain('Minimalista clean')
+    expect(result).toContain('Identidade Visual')
   })
-})
 
-describe('case 10 — fallback de style_profile quando visual_identity ausente', () => {
-  it('uses style_profile when identity has no visual_identity', () => {
+  it('no Identidade Visual block when visual_identity absent', () => {
     const identity: ProjectIdentity = {
       schema_version: 1,
       foundation: { purpose: 'Propósito sem identidade visual' },
     }
-    const result = buildImageEvaluationContext({
-      context: null,
-      style_profile: 'Cinematográfico dourado',
-      identity,
-    })
-    expect(result).toContain('Cinematográfico dourado')
+    const result = buildImageEvaluationContext({ context: null, identity })
+    expect(result).not.toContain('Identidade Visual')
+    expect(result).toContain('Propósito')
   })
 })
 
@@ -240,7 +231,7 @@ describe('case 11 — voice NÃO entra no contexto visual do avaliador', () => {
         voice: 'Tom poético e melancólico',
       },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).toContain('Tons terrosos')
     expect(result).not.toContain('Tom poético e melancólico')
     expect(result).not.toContain('Voz e Tom')
@@ -253,7 +244,7 @@ describe('case 12 — principles entram como orientações positivas', () => {
       schema_version: 1,
       governance: { principles: ['Beleza sem esforço', 'Humanidade acima da técnica'] },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).toContain('**Princípios:**')
     expect(result).toContain('- Beleza sem esforço')
     expect(result).toContain('- Humanidade acima da técnica')
@@ -266,7 +257,7 @@ describe('case 13 — restrictions entram como limites com label enfatizado', ()
       schema_version: 1,
       governance: { restrictions: ['Sem logos visíveis', 'Sem textos sobrepostos'] },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).toContain('Restrições (verificar violações no score)')
     expect(result).toContain('- Sem logos visíveis')
     expect(result).toContain('- Sem textos sobrepostos')
@@ -279,7 +270,7 @@ describe('case 14 — generation_preferences entram como preferências (não reg
       schema_version: 1,
       practice: { generation_preferences: ['Foco em texturas orgânicas'] },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).toContain('Preferências de Geração (preferência, não regra absoluta)')
     expect(result).toContain('- Foco em texturas orgânicas')
   })
@@ -291,7 +282,7 @@ describe('case 15 — schema_version não aparece no contexto compilado', () => 
       schema_version: 1,
       foundation: { purpose: 'Algum propósito' },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).not.toContain('schema_version')
     expect(result).not.toContain('"schema_version"')
   })
@@ -307,28 +298,26 @@ describe('case 16 — JSON bruto não aparece no contexto compilado', () => {
         restrictions: ['Restrição B'],
       },
     }
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity })
-    // No JSON curly braces from serialization
+    const result = buildImageEvaluationContext({ context: null, identity })
     expect(result).not.toMatch(/\{.*"schema_version"/)
     expect(result).not.toMatch(/"foundation":\s*\{/)
   })
 })
 
-describe('case 34 — comportamento legado preservado (Project sem identity)', () => {
-  it('only context and style_profile appear when identity is absent', () => {
+describe('case 34 (M11-G) — Project sem identity: só context aparece', () => {
+  it('only context appears when identity is absent', () => {
     const result = buildImageEvaluationContext({
       context: 'Contexto de marca legada',
-      style_profile: 'Visual editorial clássico',
       identity: null,
     })
     expect(result).toContain('Contexto de marca legada')
-    expect(result).toContain('Visual editorial clássico')
     expect(result).not.toContain('Propósito')
     expect(result).not.toContain('Restrições')
+    expect(result).not.toContain('Identidade Visual')
   })
 
   it('returns empty string when all inputs are absent', () => {
-    const result = buildImageEvaluationContext({ context: null, style_profile: null, identity: null })
+    const result = buildImageEvaluationContext({ context: null, identity: null })
     expect(result).toBe('')
   })
 })
@@ -461,7 +450,7 @@ describe('route handler — cases 6, 7, 17–33', () => {
     expect(data.approved).toBe(true)
   })
 
-  // ── Case 26: threshold 75 — approved=true when score >= 75 ──────────────────
+  // ── Case 26: threshold 75 ────────────────────────────────────────────────────
   it('case 26 — threshold 75: model score=74 → approved=false', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(openAISuccess({ score: 74, approved: false }))
     const req = makeRequest(makeBody())
@@ -472,7 +461,6 @@ describe('route handler — cases 6, 7, 17–33', () => {
   })
 
   it('case 26b — threshold 75: model score=75 without approved field → approved derived as true', async () => {
-    // Model returns score=75 but no approved field — route derives approved from score
     const modelOutput = { score: 75, feedback: 'OK', improvements: [], refinedPrompt: 'same' }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify(modelOutput) } }],
@@ -499,7 +487,6 @@ describe('route handler — cases 6, 7, 17–33', () => {
     const req = makeRequest(makeBody({ identity }))
     const res = await POST(req)
     const data = await res.json()
-    // Score should come through as-is — no hard cap
     expect(data.score).toBe(85)
   })
 
@@ -532,7 +519,7 @@ describe('route handler — cases 6, 7, 17–33', () => {
         restrictions: ['R1'],
       },
     }
-    const source = { context: 'CTX', style_profile: 'S', identity }
+    const source = { context: 'CTX', identity }
     const originalPrinciples = [...(identity.governance?.principles ?? [])]
     const originalRestrictions = [...(identity.governance?.restrictions ?? [])]
     buildImageEvaluationContext(source)
@@ -557,12 +544,11 @@ describe('route handler — cases 6, 7, 17–33', () => {
     expect(res.status).toBe(200)
   })
 
-  // ── Context compilation is used in the user message ─────────────────────────
-  it('evaluation context replaces manual context/style_profile blocks', async () => {
+  // ── Context compilation is used in the user message (M11-G: no style_profile) ─
+  it('evaluation context uses compiled block — no style_profile in payload', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(openAISuccess())
     const req = makeRequest(makeBody({
       context: 'Contexto do projeto teste',
-      styleProfile: 'Visual minimalista',
     }))
     await POST(req)
 
@@ -586,7 +572,6 @@ describe('route handler — cases 6, 7, 17–33', () => {
     expect(sysMsg).toContain('Restricoes')
     expect(sysMsg).toContain('approved = false')
     expect(sysMsg).not.toContain('score <= 40')
-    // Confirms instruction forbids universal ceiling (present as negative instruction)
     expect(sysMsg).toContain('Nao usar teto numerico')
   })
 

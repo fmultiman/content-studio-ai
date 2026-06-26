@@ -48,7 +48,6 @@ export async function POST(request: Request) {
       userInput,
       generatedPrompt,
       imageUrl,
-      styleProfile,
       context,
       evaluation_mode,
       evaluationMode,
@@ -97,7 +96,6 @@ export async function POST(request: Request) {
 
     const compiledEvaluationContext = buildImageEvaluationContext({
       context,
-      style_profile: styleProfile,
       identity: normalizedIdentity,
     })
 

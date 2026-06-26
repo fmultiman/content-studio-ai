@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     if (projectId) {
       const { data: project } = await supabase
         .from('projects')
-        .select('name, description, context, style_profile')
+        .select('name, description, context')
         .eq('id', projectId)
         .eq('user_id', user.id)
         .single()
@@ -52,7 +52,6 @@ export async function POST(request: Request) {
           `Projeto: ${project.name}`,
           project.description ? `Descricao do projeto: ${project.description}` : '',
           project.context ? `Contexto para IA do projeto: ${project.context}` : '',
-          project.style_profile ? `Perfil de estilo: ${project.style_profile}` : '',
         ].filter(Boolean).join('\n')
       }
     }

@@ -570,7 +570,6 @@ function ImagesPageContent() {
     setIsEvaluating(true)
 
     try {
-      // Get project context, style profile, evaluation mode, and identity
       const selectedProjectData = projects.find(p => p.id === selectedProject)
 
       let projectIdentity: ProjectIdentity | null = null
@@ -599,7 +598,6 @@ function ImagesPageContent() {
           generatedPrompt,
           imageUrl,
           projectId: selectedProject,
-          styleProfile: selectedProjectData?.style_profile || null,
           context: selectedProjectData?.context || null,
           evaluation_mode: selectedProjectData?.evaluation_mode || 'default',
           identity: projectIdentity,
@@ -963,9 +961,8 @@ function ImagesPageContent() {
     setIsGeneratingPrompt(true)
 
     try {
-      // Get project context, style profile, and identity if a project is selected
+      // Get project context and identity if a project is selected
       let projectContext: string | null = null
-      let styleProfile: string | null = null
       let evaluationMode: 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental' = 'default'
       let projectIdentity: ProjectIdentity | null = null
 
@@ -973,7 +970,6 @@ function ImagesPageContent() {
         const project = projects.find(p => p.id === selectedProject)
         if (project) {
           projectContext = project.context
-          styleProfile = project.style_profile
           evaluationMode = project.evaluation_mode || 'default'
 
           // Normalize identity — invalid identity blocks generation to avoid silent data loss
@@ -996,7 +992,6 @@ function ImagesPageContent() {
       const result = await generateImagePrompt(
         userInput,
         projectContext,
-        styleProfile,
         openaiApiKey || undefined,
         evaluationMode,
         projectIdentity,
