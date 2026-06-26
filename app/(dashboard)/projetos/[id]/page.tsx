@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dialog'
 import { ProjectForm } from '@/components/projects/project-form'
 import { ProductionForm } from '@/components/productions/production-form'
+import { ProjectIdentityDisplay } from '@/components/projects/project-identity-display'
+import { ProjectIdentityForm } from '@/components/projects/project-identity-form'
 import {
   ArrowLeft,
   Loader2,
@@ -43,6 +45,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production } from '@/lib/types'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -72,6 +76,9 @@ export default function ProjectDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showProductionsBlockDialog, setShowProductionsBlockDialog] = useState(false)
+
+  // Identity form state
+  const [showIdentityForm, setShowIdentityForm] = useState(false)
 
   // Production form state
   const [showProductionForm, setShowProductionForm] = useState(false)
@@ -170,6 +177,10 @@ export default function ProjectDetailPage() {
     }
   }
 
+  const handleIdentitySuccess = (updated: ProjectIdentity | null) => {
+    setProject((prev) => (prev ? { ...prev, identity: updated } : prev))
+  }
+
   const handleEditSuccess = async () => {
     setShowEditForm(false)
     const supabase = createClient()
@@ -261,6 +272,14 @@ export default function ProjectDetailPage() {
         </div>
       </>
     )
+  }
+
+  let resolvedIdentity: ProjectIdentity | null = null
+  let identityReadError: string | null = null
+  try {
+    resolvedIdentity = normalizeProjectIdentity(project.identity)
+  } catch {
+    identityReadError = 'A identidade salva não pôde ser lida. Os dados foram preservados no banco.'
   }
 
   const formatDate = (dateString: string) =>
@@ -405,6 +424,14 @@ export default function ProjectDetailPage() {
             </CardContent>
           </Card>
 
+          {/* Project Identity Section */}
+          <ProjectIdentityDisplay
+            identity={resolvedIdentity}
+            readError={identityReadError}
+            onStructure={() => setShowIdentityForm(true)}
+            onEdit={() => setShowIdentityForm(true)}
+          />
+
           {/* Productions Section */}
           <div ref={productionsSectionRef} className="scroll-mt-24 space-y-4">
             <div className="flex items-center justify-between">
@@ -516,6 +543,16 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Project Identity Form Modal */}
+      <ProjectIdentityForm
+        key={showIdentityForm ? 'identity-open' : 'identity-closed'}
+        open={showIdentityForm}
+        onOpenChange={setShowIdentityForm}
+        projectId={projectId}
+        identity={resolvedIdentity}
+        onSuccess={handleIdentitySuccess}
+      />
 
       {/* Edit Project Modal */}
       <ProjectForm
