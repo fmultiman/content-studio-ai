@@ -381,11 +381,34 @@ Solução:
 **Commits:**
 - `283a5ec` — `feat: use Project Identity in image prompt generation — M11-D`
 - `4d04718` — `test: cover Project Identity prompt generation — M11-D`
-- `(pending)` — `fix: remove random chip fallback in OpenAI prompt path`
-- `(pending)` — `docs: record M11-D metadata refinement`
+- `791944f` — `fix: remove random chip fallback in OpenAI prompt path`
+- `7654eb5` — `docs: record M11-D metadata refinement`
+
+**Checkpoint humano final (2026-06-26) — Projeto teste `6d09d50d`:**
+
+| Verificação | Resultado |
+|-------------|-----------|
+| **Caso A — sem identity:** geração continuou funcionando | ✅ |
+| **Caso A:** context e style_profile legados ativos | ✅ |
+| **Caso A:** nenhuma exigência de identity apresentada | ✅ |
+| **Caso A:** compatibilidade com fluxo anterior | ✅ |
+| **Caso B — identity parcial:** prompt incorporou identidade estruturada | ✅ |
+| **Caso B:** propósito e contexto geral semanticamente separados | ✅ |
+| **Caso B:** visual_identity prevaleceu sobre style_profile | ✅ |
+| **Caso B:** restrições e preferências com papéis distintos | ✅ |
+| **Caso B:** sem JSON bruto, sem schema_version | ✅ |
+| **Caso B:** evaluation_mode funcionando | ✅ |
+| **Caso B:** estrutura de resposta do Prompt Generator preservada | ✅ |
+| **Chips:** lighting/composition só exibidos quando extraídos do prompt | ✅ |
+| **Chips:** "golden hour sunlight with warm tones" incoerente deixou de aparecer | ✅ |
+| **Chips:** style e composition exibidos coerentes com o prompt | ✅ |
+| **Chips:** caminho simulado inalterado | ✅ |
+| Cleanup: Projeto teste.identity = NULL | ✅ |
+
+**Checkpoint humano:** APROVADO — 2026-06-26
 
 **Pontos de parada obrigatória:**
-- STOP: aprovação humana antes de M11-E (Image Evaluator)
+- ✅ Checkpoint humano final concluído e aprovado
 
 **Dependências:** M11-C concluído e aprovado
 
