@@ -215,3 +215,38 @@ describe('buildImageEvaluationContext', () => {
     expect(restrictionsIdx).toBeLessThan(prefIdx)
   })
 })
+
+// ─── Determinism and immutability ─────────────────────────────────────────────
+
+describe('formatter determinism and immutability', () => {
+  it('buildImageGenerationContext returns the same output for the same input', () => {
+    const source: ProjectContextSource = { context: 'ctx', identity: fullIdentity }
+    expect(buildImageGenerationContext(source)).toBe(buildImageGenerationContext(source))
+  })
+
+  it('buildImageEvaluationContext returns the same output for the same input', () => {
+    const source: ProjectContextSource = { context: 'ctx', identity: fullIdentity }
+    expect(buildImageEvaluationContext(source)).toBe(buildImageEvaluationContext(source))
+  })
+
+  it('buildImageGenerationContext does not mutate the source object', () => {
+    const source: ProjectContextSource = {
+      context: 'ctx',
+      style_profile: 'legado',
+      identity: fullIdentity,
+    }
+    const contextBefore = source.context
+    const profileBefore = source.style_profile
+    buildImageGenerationContext(source)
+    expect(source.context).toBe(contextBefore)
+    expect(source.style_profile).toBe(profileBefore)
+    expect(source.identity).toBe(fullIdentity)
+  })
+
+  it('buildImageEvaluationContext does not mutate the source object', () => {
+    const source: ProjectContextSource = { context: 'ctx', identity: fullIdentity }
+    buildImageEvaluationContext(source)
+    expect(source.context).toBe('ctx')
+    expect(source.identity).toBe(fullIdentity)
+  })
+})

@@ -150,4 +150,15 @@ describe('normalizeProjectIdentity — valid with content', () => {
       }),
     ).toThrow(ProjectIdentityParseError)
   })
+
+  it('does not mutate the input object', () => {
+    const input = {
+      schema_version: 1 as const,
+      foundation: { purpose: 'Original.' },
+    }
+    const purposeBefore = input.foundation.purpose
+    normalizeProjectIdentity(input)
+    expect(input.foundation.purpose).toBe(purposeBefore)
+    expect(input.schema_version).toBe(1)
+  })
 })
