@@ -5,7 +5,7 @@
 > Plano de implementação de Project Identity V1.
 > Produzido a partir do discovery técnico completo documentado em
 > `PROJECT_IDENTITY_V1_IMPLEMENTATION_DISCOVERY.md`.
-> Nenhuma implementação foi realizada aqui.
+> **M11-A executado em 2026-06-25 — contrato executável implementado e testado.**
 
 ---
 
@@ -20,45 +20,46 @@ Antes de iniciar M11-A, as seguintes condições devem ser verdadeiras:
 | `eslint`: 0 erros, 50 warnings | VERDADEIRO (baseline M10-C) |
 | `pnpm build`: PASS | VERDADEIRO (baseline M10-C) |
 | Documentos de discovery lidos e aprovados | VERDADEIRO (esta branch) |
-| D-BLOCKER-1 respondido (shape do JSONB aprovado) | **PENDENTE — decisão humana** |
-| D-BLOCKER-2 respondido (comportamento UI pós-identity) | **PENDENTE — decisão humana** |
+| D-BLOCKER-1 respondido (shape do JSONB aprovado) | VERDADEIRO (decisão 2026-06-25) |
+| D-BLOCKER-2 respondido (comportamento UI pós-identity) | PENDENTE — decidir em M11-C |
 
 ---
 
 ## Marcos
 
-### M11-A — Contrato Executável
+### M11-A — Contrato Executável ✅ CONCLUÍDO (2026-06-25)
 
 **Objetivo:** Criar o schema Zod, a função de normalização e os formatters de contexto para os agentes. Shape e policy já estão aprovados (ver DISCOVERY seção 14–16). Nenhum código de produção alterado neste marco.
 
-**Arquivos criados (não modificados, sem consumidores ainda):**
+**Status:** IMPLEMENTADO E TESTADO. Branch: `discovery/project-identity-v1-implementation`.
 
-| Arquivo | Conteúdo |
-|---------|---------|
-| `lib/schemas/project-identity.ts` | `ProjectIdentitySchema` (Zod) + `ProjectIdentity` type inferido |
-| `lib/project-identity-normalizer.ts` | `normalizeProjectIdentity(input): ProjectIdentity \| null` |
-| `lib/context-compiler.ts` | `buildImageGenerationContext(project)`, `buildImageEvaluationContext(project)` |
+**Arquivos criados:**
 
-**Funções de M11-A:**
+| Arquivo | Conteúdo | Status |
+|---------|---------|--------|
+| `lib/schemas/project-identity.ts` | `ProjectIdentitySchema` (Zod) + `ProjectIdentity` type inferido + constantes de limite | ✅ |
+| `lib/project-identity-normalizer.ts` | `parseProjectIdentity` (strict) + `normalizeProjectIdentity` (API pública) + `ProjectIdentityParseError` | ✅ |
+| `lib/context-compiler.ts` | `ProjectContextSource` interface + `buildImageGenerationContext` + `buildImageEvaluationContext` | ✅ |
+| `lib/schemas/__tests__/project-identity.test.ts` | 28 testes do schema Zod | ✅ |
+| `lib/__tests__/project-identity-normalizer.test.ts` | 19 testes do normalizer | ✅ |
+| `lib/__tests__/context-compiler.test.ts` | 20 testes dos formatters | ✅ |
+| `vitest.config.ts` | Config Vitest (lib/**/*.test.ts, node environment) | ✅ |
 
-```typescript
-// lib/project-identity-normalizer.ts
-normalizeProjectIdentity(input: unknown): ProjectIdentity | null
-// valida via Zod, aplica trim/dedup, retorna null se sem conteúdo além de schema_version
+**Infraestrutura de testes adicionada:** `vitest ^4.1.9` (devDependency), `"test": "vitest run"` nos scripts.
 
-// lib/context-compiler.ts
-buildImageGenerationContext(project: Project): string
-// inclui: context geral, foundation.purpose, expression.visual_identity,
-//         expression.voice, governance.principles, governance.restrictions,
-//         practice.generation_preferences
-// NUNCA usa || entre context e purpose — inclui ambos quando disponíveis
+**Resultados da validação:**
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (todos pré-existentes, nenhum em lib/)
+- `pnpm test`: **67 tests passed (3 test files)**
+- `normalizeProjectIdentity({schema_version: 1})` → `null` ✅
+- `buildImageGenerationContext` inclui `context` e `purpose` separadamente ✅
+- `visual_identity` preferida sobre `style_profile` (sem concatenação) ✅
+- `voice` ausente do evaluation context ✅
 
-buildImageEvaluationContext(project: Project): string
-// inclui: context geral, foundation.purpose, audience, governance.principles,
-//         governance.restrictions como bloco separado de peso máximo
-```
-
-**Não criar um compiler universal para todos os domínios.** Os dois formatters acima são explícitos e pequenos. EditorialContent e ChannelPiece terão seus próprios formatters quando necessário (V2).
+**D-M11A-1 (limites de caracteres) — confirmado:**
+- `IDENTITY_TEXT_MAX_CHARS = 3000`
+- `IDENTITY_ARRAY_ITEM_MAX_CHARS = 500`
+- `IDENTITY_ARRAY_MAX_ITEMS = 20`
 
 **Migration SQL:** Nenhuma.
 
@@ -68,22 +69,8 @@ buildImageEvaluationContext(project: Project): string
 
 **Compatibilidade e rollback:** Total. Arquivos novos sem consumidores. Rollback = deletar os arquivos.
 
-**Testes necessários:**
-- Unit tests para `normalizeProjectIdentity()`: identity null → null; identity com só schema_version → null; identity parcial → retorna; campos extras → rejeita (strict); string vazia após trim → rejeitada; array com duplicatas → deduplicado
-- Unit tests para `buildImageGenerationContext()`: project sem identity → inclui apenas context/style_profile; project com identity parcial → inclui os campos disponíveis; project com context E purpose → inclui ambos separadamente (não usa ||); project com restrictions → restrições em bloco próprio
-- Unit tests para `buildImageEvaluationContext()`: idem, com ênfase em governance
-
-**Critério de aceite:**
-- `ProjectIdentitySchema` valida e normaliza corretamente
-- `ProjectIdentity` type inferido do Zod — sem interfaces duplicadas
-- `normalizeProjectIdentity({schema_version: 1})` retorna `null`
-- `buildImageGenerationContext` inclui `context` e `purpose` separadamente quando ambos existem
-- Todos os unit tests passam
-- `tsc --noEmit`: 0 erros
-- D-M11A-1 (limites de caracteres) confirmado durante a implementação
-
 **Pontos de parada obrigatória:**
-- STOP: aprovação dos testes unitários antes de avançar para M11-B
+- STOP: aprovação humana antes de avançar para M11-B
 
 **Dependências:** Nenhuma (D-BLOCKER-1 já resolvido)
 
