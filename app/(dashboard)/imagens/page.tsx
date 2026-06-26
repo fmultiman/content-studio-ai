@@ -50,8 +50,8 @@ function ImagesPageContent() {
   const [generatedPromptPt, setGeneratedPromptPt] = useState('')
   const [promptDetails, setPromptDetails] = useState<{
     style: string
-    lighting: string
-    composition: string
+    lighting: string | null
+    composition: string | null
   } | null>(null)
   
   // Image state

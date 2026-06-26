@@ -11,8 +11,10 @@ import { buildImageGenerationContext } from './context-compiler'
 export interface PromptGenerationResult {
   prompt: string
   style: string
-  lighting: string
-  composition: string
+  /** null when the model output contains no extractable lighting reference (OpenAI path only). */
+  lighting: string | null
+  /** null when the model output contains no extractable composition reference (OpenAI path only). */
+  composition: string | null
 }
 
 type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
@@ -281,10 +283,11 @@ ${evaluationMode}`
 
     if (!generatedPrompt) return null
 
-    // Extract details for display — prefer identity.expression.visual_identity, then style_profile
+    // Extract details for display — prefer identity.expression.visual_identity, then style_profile.
+    // lighting and composition are extracted from the actual model output only; no random fallback.
     const style = identity?.expression?.visual_identity || styleProfile || detectStyle(userInput)
-    const lighting = generatedPrompt.match(/lighting[^,.]*/i)?.[0] || getRandomElement(lightingOptions)
-    const composition = generatedPrompt.match(/composition[^,.]*/i)?.[0] || getRandomElement(compositionOptions)
+    const lighting = generatedPrompt.match(/lighting[^,.]*/i)?.[0] ?? null
+    const composition = generatedPrompt.match(/composition[^,.]*/i)?.[0] ?? null
 
     return {
       prompt: generatedPrompt,

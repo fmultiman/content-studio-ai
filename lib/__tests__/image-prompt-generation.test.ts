@@ -474,3 +474,151 @@ describe('OpenAI path — userMessage format with mocked fetch', () => {
     expect(result.style).toBe('Estetica preferida da identidade')
   })
 })
+
+// ─── Metadata Refinement — chips backed by model output only (M11-D closure) ──
+
+describe('metadata refinement — OpenAI path extracts or returns null, never random fallback', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  // Test 1: lighting keyword present → chip extracted
+  it('test 1 — extracts lighting chip when model output contains "lighting"', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'a studio with soft rim lighting with diffused fill, centered framing' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const result = await generateImagePrompt('portrait', null, null, 'fake-key')
+    expect(result.lighting).toBe('lighting with diffused fill')
+  })
+
+  // Test 2: no lighting keyword → null (no random fallback)
+  it('test 2 — returns null lighting when model output has no "lighting" keyword', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'a red circle on a white background' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const result = await generateImagePrompt('circle', null, null, 'fake-key')
+    expect(result.lighting).toBeNull()
+  })
+
+  // Test 3: composition keyword present → chip extracted
+  it('test 3 — extracts composition chip when model output contains "composition"', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'wide-angle composition for the mountain scene' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const result = await generateImagePrompt('mountain', null, null, 'fake-key')
+    expect(result.composition).toBe('composition for the mountain scene')
+  })
+
+  // Test 4: no composition keyword → null (no random fallback)
+  it('test 4 — returns null composition when model output has no "composition" keyword', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'a flat lay of coffee beans on burlap' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const result = await generateImagePrompt('coffee', null, null, 'fake-key')
+    expect(result.composition).toBeNull()
+  })
+
+  // Test 5: no random fallback — consistent null across multiple calls without keywords
+  it('test 5 — null is deterministic: no random array value leaks into OpenAI path', async () => {
+    const promptWithNoKeywords = 'minimalist product shot on white'
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: promptWithNoKeywords } }] }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+        return generateImagePrompt('product', null, null, 'fake-key')
+      }),
+    )
+    for (const r of results) {
+      expect(r.lighting).toBeNull()
+      expect(r.composition).toBeNull()
+    }
+  })
+
+  // Test 6: null values flow correctly — UI guard is enforced by type contract
+  it('test 6 — null lighting and composition are valid PromptGenerationResult values (UI omits these chips)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'dark moody scene' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const result = await generateImagePrompt('scene', null, null, 'fake-key')
+    // TypeScript guarantees these are string | null; the PromptSection renders
+    // chips conditionally: {promptDetails.lighting !== null && <Badge>...}
+    expect(result).toHaveProperty('lighting')
+    expect(result).toHaveProperty('composition')
+    // If no keyword found, both are null — no hardcoded string leaks through
+    if (result.lighting !== null) {
+      expect(result.prompt).toMatch(/lighting/i)
+    }
+    if (result.composition !== null) {
+      expect(result.prompt).toMatch(/composition/i)
+    }
+  })
+})
+
+describe('metadata refinement — simulated path retains random values embedded in prompt', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  // Test 7: simulated lighting is always a non-null string
+  it('test 7 — simulated path always produces non-null lighting (embedded in prompt)', async () => {
+    const result = await callSimulated('landscape', null, null)
+    expect(result.lighting).not.toBeNull()
+    expect(typeof result.lighting).toBe('string')
+    expect((result.lighting as string).length).toBeGreaterThan(0)
+  })
+
+  // Test 8: simulated lighting and composition values appear in the prompt text
+  it('test 8 — simulated lighting and composition values are embedded in result.prompt', async () => {
+    const result = await callSimulated('forest scene', null, null)
+    // Both values must appear in the prompt since they're part of enhancedPrompt
+    expect(result.prompt).toContain(result.lighting as string)
+    expect(result.prompt).toContain(result.composition as string)
+  })
+
+  // Test 9: style precedence visual_identity → style_profile → detectStyle
+  it('test 9 — style precedence: visual_identity > style_profile > detectStyle (simulated)', async () => {
+    const withVisual = await callSimulated('shot', 'ctx', 'profileA', 'default', {
+      schema_version: 1,
+      expression: { visual_identity: 'Neo-noir' },
+    })
+    expect(withVisual.style).toBe('Neo-noir')
+
+    const withProfile = await callSimulated('shot', 'ctx', 'profileB', 'default', {
+      schema_version: 1,
+      foundation: { purpose: 'no visual' },
+    })
+    expect(withProfile.style).toBe('profileB')
+
+    const withDetect = await callSimulated('cyberpunk city', null, null, 'default', null)
+    // 'cyberpunk' is in styleKeywords — detect should return the mapped style
+    expect(withDetect.style).toContain('cyberpunk')
+  })
+
+  // Test 10: prompt contract (prompt string) unchanged by metadata refinement
+  it('test 10 — prompt string is unaffected by metadata chip changes; contract intact', async () => {
+    const result = await callSimulated('product photo', 'project context', 'dark minimal', 'default', {
+      schema_version: 1,
+      foundation: { purpose: 'Brand identity' },
+    })
+    expect(typeof result.prompt).toBe('string')
+    expect(result.prompt.length).toBeGreaterThan(0)
+    expect(result.prompt).toContain('Brand identity')
+    expect(result.prompt).toContain('project context')
+  })
+})
