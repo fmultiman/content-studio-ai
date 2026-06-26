@@ -1003,3 +1003,119 @@ O risco técnico global da V1 é BAIXO:
 A V1 entrega Project Identity estruturada, governa `style_profile` até sua remoção limpa,
 e preserva `context` como narrativa geral permanente. A única operação irreversível (M11-H)
 está isolada no último marco, com checkpoint obrigatório.
+
+---
+
+## Release Readiness — Auditoria Final (2026-06-26)
+
+### 1. Auditoria dos 6 Projects pré-DROP
+
+A migração M11-F documentou 3 projects (Alquimia, Content Agent, Projeto teste). Durante as sessões de auditoria UX em 2026-06-26 foram criados 3 projects adicionais. O banco tinha 6 projects no momento do DROP COLUMN.
+
+| # | id (prefixo) | nome | style_profile pré-DROP | identity pré-DROP | decisão / evidência |
+|---|-------------|------|----------------------|------------------|---------------------|
+| 1 | `0b04df8b` | Alquimia Cibernética | `HAS_VALUE` — 11 tags documentadas em `PROJECT_IDENTITY_V1_IMPLEMENTATION_DISCOVERY.md §12` | `HAS_IDENTITY` schema_v1 | **MIGRADO** em M11-F: conteúdo inteiramente decomposto nas 5 zonas — sem perda |
+| 2 | `d0d008c3` | Content Agent | `HAS_VALUE` — conteúdo exato não registrado; classificado como dado de teste ("teste para o frontend") | NULL | **KEEP NULL** (M11-F): context é teste de frontend; sem evidência para nenhuma zona. Perda de style_profile era aceitável |
+| 3 | `6d09d50d` | Projeto teste | `HAS_VALUE` — conteúdo exato não registrado; dados experimentais do smoke M11-E | NULL | **CLEANUP → NULL** (M11-F): dados experimentais, não representam dados reais permanentes |
+| 4 | `d6d2fc44` | Auditoria UX 2026-06-26T08-01-11 | `HAS_VALUE` — criado durante sessão de auditoria pós-M11-F; conteúdo não registrado | `HAS_IDENTITY` schema_v1 | Projeto de auditoria de teste; identity era o campo canônico; style_profile era dado de teste da sessão |
+| 5 | `d8158926` | Auditoria UX Reconciliação 2026-06-26 09-15 | `NULL` | `HAS_IDENTITY` schema_v1 | **SEM PERDA** — style_profile já era null; identity canônica |
+| 6 | `d493bd40` | Novo Identity | `HAS_VALUE` — criado durante sessão de teste pós-M11-F; conteúdo não registrado | `HAS_IDENTITY` schema_v1 | Projeto de teste; identity era o campo canônico |
+
+**Dados potencialmente perdidos:** Projects 2, 3, 4, 6 tinham `style_profile` com conteúdo cujos valores exatos não foram registrados. Todos eram dados de teste ou de sessão de auditoria — sem conteúdo de produção real. Project 1 (Alquimia) teve conteúdo inteiramente preservado via decomposição M11-F. Project 5 não tinha conteúdo.
+
+**NÃO FOI POSSÍVEL CONFIRMAR** o valor exato de `style_profile` dos Projects 2, 3, 4 e 6: a coluna foi removida e o rollback estrutural não recupera dados. Essa incerteza é aceitável dado que eram dados de teste sem valor de produção.
+
+---
+
+### 2. Estado atual do banco (pós-DROP)
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `projects.style_profile` | **INEXISTENTE** ✅ |
+| `projects.identity` | jsonb, nullable, **preservada** ✅ |
+| `projects.context` | text, nullable, **preservado** ✅ |
+| `projects.evaluation_mode` | text, NOT NULL, **preservado** ✅ |
+| 6 projects acessíveis | ✅ |
+
+**Alquimia Cibernética — identity validada via Zod (2026-06-26):**
+- `ProjectIdentitySchema.safeParse()` → **success: true** ✅
+- `schema_version: 1` ✅
+- Zonas: foundation, relationship, expression, governance, practice ✅
+- 4 principles, 5 restrictions, 6 generation_preferences ✅
+- `normalizeProjectIdentity()` → **non-null** ✅
+
+---
+
+### 3. Smokes humanos
+
+| Smoke | Status |
+|-------|--------|
+| Alquimia — página abre, identidade visível, geração funciona, avaliação funciona | **PENDENTE** — a ser executado pelo usuário após merge |
+| Project sem identity (Content Agent/Projeto teste) — página não quebra, context ativo, geração sem erro | **PENDENTE** — a ser executado pelo usuário após merge |
+
+---
+
+### 4. Smoke das rotas alteradas em M11-H
+
+**`app/api/videos/generate-scene-prompt/route.ts`** — auditoria estática:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| SELECT não inclui `style_profile` | `.select('context')` ✅ |
+| Sem variável `styleProfile` | ✅ removida |
+| Prompt não tem separador vazio ou undefined | `${projectContext \|\| 'Not specified'}` ✅ |
+| System prompt sem "adherence to style profile" | ✅ removido |
+| Contrato de resposta `{ prompt }` | ✅ inalterado |
+
+**`app/api/channel-pieces/generate-body/route.ts`** — auditoria estática:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| SELECT não inclui `style_profile` | `.select('name, description, context')` ✅ |
+| `projectParts` sem concatenação de style_profile | ✅ removida |
+| `.filter(Boolean).join('\n')` — sem strings vazias órfãs | ✅ |
+| Contrato de resposta `{ generatedBody, model }` | ✅ inalterado |
+
+**Limitação futura documentada:** Nenhuma dessas rotas recebe Project Identity V1 — isso é decisão de produto, fora do escopo V1 explicitamente.
+
+---
+
+### 5. Busca global final (`.ts/.tsx`)
+
+Resultados restantes — todos **permitidos**:
+
+| Ocorrência | Arquivo | Classificação |
+|-----------|---------|---------------|
+| `// M11-G: style_profile removed...` | `image-evaluator-identity.test.ts` | comentário de teste |
+| `not.toContain('style_profile:')` | `image-evaluator-identity.test.ts`, `image-prompt-generation.test.ts` | assertion sobre ausência |
+| `'style_profile' in input` → false | `project-identity-form-helpers.test.ts` | assertion sobre ausência |
+| `case 6 (M11-G) — style_profile legado` | `image-prompt-generation.test.ts` | describe label histórico |
+| `No style_profile fallback — M11-G` | `context-compiler.test.ts` | describe label histórico |
+| `Never includes style_profile` | `project-identity-form-helpers.ts` | JSDoc doc |
+
+**Proibidas**: ZERO ocorrências em queries, UI, payloads, agentes, formatters, tipos, fixtures operacionais.
+
+---
+
+### 6. Validação final
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `pnpm test` | ✅ 193/193 (segundo run — teste 8 tem flakiness pré-existente por Math.random() não seeded; não é regressão de M11-H) |
+| `pnpm typecheck` | ✅ 0 erros |
+| `pnpm lint` | ✅ 0 erros, 50 warnings (pré-existentes) |
+| `pnpm build` | ✅ PASS — compiled in 25s |
+| `pnpm validate` | ✅ PASS |
+
+**Nota flakiness test 8:** `image-prompt-generation.test.ts > test 8 — simulated lighting and composition values are embedded in result.prompt` usa `Math.random()` sem seed. Em run 1 desta sessão falhou (1/193); em run 2 passou (193/193). Comportamento pré-existente, não introduzido por M11-H. Nenhum arquivo tocado por M11-H toca `ai-simulator.ts`.
+
+---
+
+### 7. Riscos e pendências
+
+| Risco | Severidade | Mitigação |
+|-------|-----------|-----------|
+| Test 8 flaky (Math.random() não seeded) | BAIXO | Pré-existente; não bloqueia release |
+| Smoke humanos pendentes | MÉDIO | A executar após merge; qualquer erro reportado em issue |
+| Content Agent e Projeto teste sem identity | INFORMATIVO | Dados de teste; `context` continua ativo para geração |
+| Videos e ChannelPiece sem Project Identity V1 | INFORMATIVO | Decisão de produto — escopo V1 não inclui esses fluxos |
