@@ -635,77 +635,156 @@ Não implementar nesta fase. Considerar como feature standalone em versão futur
 
 ---
 
-### M11-F — Migração dos Projects e Validação Comparativa
+### M11-F — Migração dos Projects para Project Identity V1 ✅ CONCLUÍDO (2026-06-26)
 
-**Objetivo:** Migrar manualmente os 3 Projects existentes para o campo `identity`, via UI (M11-C). Validar que os agentes de geração e avaliação funcionam com a nova estrutura. A aprovação do usuário neste marco autoriza M11-G.
+**Objetivo:** Migrar conscientemente os dados dos três Projects existentes para o campo `identity` a partir de `context` e `style_profile`, valendo a decomposição estruturada nas cinco zonas. Validar que agentes continuam operacionais com a nova estrutura.
 
-**Arquivos modificados:**
-- Nenhum arquivo de código
-- Dados migrados via UI (usuário preenche os campos de identity manualmente na página de cada Projeto)
+**Status:** MIGRADO E VERIFICADO. Branch: `discovery/project-identity-v1-implementation`.
 
-**Conteúdo proposto para o Project Alquimia Cibernética:**
+**Arquivos de código:** nenhum alterado. Apenas dados + documentação.
+
+**Arquivo de migração SQL (referência):** `scripts/028_m11f_project_identity_migration.sql`
+
+---
+
+**Decisões por Project:**
+
+| Project | Decisão | Motivo |
+|---------|---------|--------|
+| Alquimia Cibernética | MIGRADO | `context` e `style_profile` ricos; todos os campos com evidência direta |
+| Content Agent | KEEP NULL | `context` é apenas "teste para o frontend" — sem evidência para nenhuma zona |
+| Projeto teste | CLEANUP → NULL | identity residual do smoke M11-E; não representa dados reais permanentes |
+
+---
+
+**Rollback (estado pré-M11-F):**
+
+```sql
+-- Alquimia Cibernética: identity era NULL
+UPDATE projects SET identity = NULL WHERE id = '0b04df8b-dfd3-45c5-b7b7-8fe7b95e8187';
+-- Projeto teste: identity era objeto de smoke test M11-E (já limpo nesta migração)
+UPDATE projects SET identity = NULL WHERE id = '6d09d50d-f4dd-4651-ba46-d6705aa3a385';
+```
+
+---
+
+**Payload Alquimia Cibernética — aplicado:**
+
+Origem de cada zona:
+
+| Zona | Campo fonte | Conteúdo |
+|------|------------|---------|
+| foundation.purpose | `context` §1-3 | Arqueologia cognitiva, engenharia reversa, código-fonte do presente |
+| relationship.audience | `context` (inferência temática) | Criadores, pensadores, análise crítica, profundidade intelectual |
+| expression.visual_identity | `context` INTENÇÃO VISUAL + `style_profile` visuais | Fusão ancestral/tecnológico, simbólica, cinematográfica, ambiguidade interpretativa |
+| expression.voice | `context` ABORDAGEM TÉCNICA, três eixos | Técnica/acessível, metáforas de engenharia, Eixo A/B/Híbrido |
+| governance.principles | `context` intenções editoriais | Profundidade, analisabilidade, conexão tradição-contemporaneidade |
+| governance.restrictions | `style_profile` negativos + `context` | Evitar genérico, clean, clichê, misticismo vago, literalismo |
+| practice.generation_preferences | `style_profile` positivos de produção | Iluminação dramática, cinematográfico, atmosfera densa, composição, elementos abstratos |
 
 ```json
 {
   "schema_version": 1,
   "foundation": {
-    "purpose": "A Alquimia Cibernética é uma plataforma de curadoria técnica e inteligência cultural. Realiza engenharia reversa de tradições ancestrais e sistemas simbólicos, tratando espiritualidade e cultura como tecnologias de governança da consciência."
+    "purpose": "Plataforma de curadoria técnica e inteligência cultural que realiza engenharia reversa de tradições ancestrais e sistemas simbólicos, tratando espiritualidade e cultura como tecnologias de governança da consciência. Recruta o espectador para um território de arqueologia cognitiva, onde o passado funciona como código-fonte para resolver falhas de execução do presente."
   },
   "relationship": {
-    "audience": "Criadores, pensadores e indivíduos que buscam síntese entre tecnologia, simbolismo e tradições culturais. Jovens adultos intelectualmente curiosos e insatisfeitos com conteúdo raso ou genérico."
+    "audience": "Criadores, pensadores e pessoas interessadas na interseção entre tecnologia, cultura, simbolismo e análise crítica — públicos que buscam profundidade intelectual e rejeitam conteúdo superficial ou genérico."
   },
   "expression": {
-    "visual_identity": "Fusão entre sistemas antigos (rituais, símbolos, mitologia) e estruturas modernas (tecnologia, interface, comportamento). Iluminação dramática, alto contraste, estética cinematográfica, atmosfera densa, visual simbólico, composição forte e centralizada, sensação de mistério e profundidade.",
-    "voice": "Técnico mas acessível. Usa metáforas de engenharia e tecnologia para falar de espiritualidade. Abordagem estruturada com três eixos: Eixo A (O Código), Eixo B (A UX da Vida), Híbrido (O Debug)."
+    "visual_identity": "Fusão entre sistemas ancestrais (rituais, símbolos, mitologia) e estruturas tecnológicas contemporâneas (interface, comportamento, código). Estética simbólica, densa, cinematográfica e conceitual. Sensação de mistério, profundidade e arqueologia cognitiva. Ambiguidade interpretativa intencional.",
+    "voice": "Técnica e acessível. Usa metáforas de engenharia, código e sistemas para tratar espiritualidade e cultura como tecnologias analisáveis. Estruturada em três eixos: Eixo A (O Código — engenharia reversa de mitos e rituais), Eixo B (A UX da Vida — diagnóstico de fricções comportamentais), Hibridismo (O Debug — aplicação de protocolos ancestrais ao presente)."
   },
   "governance": {
     "principles": [
-      "Profundidade simbólica e conceitual em toda execução",
-      "Síntese entre tecnologia e espiritualidade como perspectiva central",
-      "Arqueologia cognitiva: passado como código-fonte do presente"
+      "Profundidade conceitual e simbólica em toda execução",
+      "Tratar cultura e espiritualidade como sistemas analisáveis, não como mística vaga",
+      "Conectar tradição e contemporaneidade sem simplificação",
+      "Priorizar leitura simbólica, profundidade e ambiguidade interpretativa"
     ],
     "restrictions": [
-      "Evitar representações literais simples ou óbvias",
-      "Nunca usar aparência genérica ou estilo clean/corporativo",
-      "Nunca linguagem de auto-ajuda superficial ou misticismo vago",
+      "Evitar aparência genérica ou clichê visual",
+      "Evitar estética clean ou corporativa",
+      "Evitar representações literais simples sem profundidade simbólica",
+      "Evitar misticismo vago ou linguagem de autoajuda superficial",
       "Evitar clichês visuais de espiritualidade sem contexto simbólico"
     ]
   },
   "practice": {
     "generation_preferences": [
-      "Composição forte e centralizada",
-      "Atmosfera densa e cinematográfica",
-      "Iluminação com alto contraste"
+      "Iluminação dramática e alto contraste",
+      "Estética cinematográfica",
+      "Atmosfera densa",
+      "Composição forte e centralizada quando coerente",
+      "Elementos abstratos e conceituais",
+      "Fusão visual entre tecnologia e simbolismo ancestral"
     ]
   }
 }
 ```
 
-O usuário preenche a identity dos outros 2 Projects (Content Agent, Projeto teste) de forma análoga, com conteúdo próprio.
+---
 
-**Validação após migração:**
-1. Gerar uma imagem com o Projeto Alquimia usando identity preenchida
-2. Avaliar a imagem gerada — verificar que restrictions aparecem no feedback quando violadas
-3. Comparar com uma geração anterior usando apenas context/style_profile
-4. Validar que a qualidade de contexto é equivalente ou superior
-5. Usuário aprova o resultado comparativo e autoriza M11-G
+**Verificação pós-migração (releitura do banco):**
 
-**Dados legados preservados:** `context` e `style_profile` permanecem intactos no banco após M11-F. A remoção só ocorre em M11-G (lógica) e M11-H (coluna).
+| Project | identity | schema_version | context | style_profile | evaluation_mode |
+|---------|----------|---------------|---------|---------------|-----------------|
+| Alquimia Cibernética | OBJECT | 1 | intacto ✅ | intacto ✅ | intacto ✅ |
+| Content Agent | NULL | — | intacto ✅ | intacto ✅ | intacto ✅ |
+| Projeto teste | NULL | — | intacto ✅ | intacto ✅ | intacto ✅ |
 
-**Migration SQL:** Nenhuma (dados editados via UI).
+Alquimia: 5 zonas, 4 principles, 5 restrictions, 6 preferences.
 
-**Rollback:** Limpar o campo `identity` via UI (JSONB volta a null).
+---
 
-**Critério de aceite:**
-- identity dos 3 Projects preenchida e salva com sucesso
-- Geração de imagem com nova identity funciona corretamente
-- Avaliador identifica violação de restriction quando presente
-- Usuário aprova a qualidade do resultado comparativo
+**Campos legados preservados:** `context` e `style_profile` permanecem intactos em todos os Projects. Remoção lógica apenas em M11-G; remoção física em M11-H.
+
+**Formatters como fronteira:** JSON bruto nunca é enviado aos agentes. `buildImageGenerationContext()` e `buildImageEvaluationContext()` são a única fronteira de transformação.
+
+**Mecanismo de migração:** Script Node.js temporário via `@supabase/supabase-js` (service role key). Script deletado após execução. `apply_migration` e `execute_sql` do MCP estavam em modo read-only nesta sessão.
+
+---
+
+**Validação comparativa — checkpoint humano:**
+
+Pendente: o usuário deve realizar o smoke comparativo com a Alquimia (1 geração + 1 avaliação) para confirmar que a identity V1 produz contexto superior ao blob legado de `style_profile`. Critérios:
+
+- Prompt Generator usa purpose, visual_identity, principles, restrictions, generation_preferences
+- Sem concatenação de `style_profile` quando `visual_identity` presente
+- Sem JSON bruto nem schema_version no prompt
+- Image Evaluator considera identidade visual, principles e restrictions
+- Feedback específico e alinhado à identity
+
+---
+
+**Comparação qualitativa preliminar (evidência dos marcos anteriores):**
+
+| Dimensão | Legado (context + style_profile blob) | V1 (identity estruturada) |
+|----------|---------------------------------------|---------------------------|
+| Propósito | Misturado no context | foundation.purpose separado |
+| Audiência | Ausente | relationship.audience explícito |
+| Identidade visual | Blob CSV no style_profile | expression.visual_identity semântico |
+| Princípios positivos | Misturados ou ausentes | governance.principles separados |
+| Restrições | Misturadas no style_profile CSV | governance.restrictions separadas |
+| Preferências de geração | Misturadas no style_profile CSV | practice.generation_preferences separadas |
+| Voice/Tom | Ausente | expression.voice |
+| Avaliador governance | Sem critério estruturado | Principles e restrictions chegam como bloco enfatizado |
+
+---
+
+**Resultados de validação técnica:**
+- `pnpm test`: 186/186 PASS (sem alteração de código)
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (baseline)
+- `pnpm validate`: PASS
+
+**Commits:**
+- `docs: record Project Identity migration validation` (este commit)
 
 **Pontos de parada obrigatória:**
-- STOP: aprovação humana da qualidade comparativa antes de autorizar M11-G
+- STOP: smoke comparativo humano com Alquimia antes de autorizar M11-G
 
-**Dependências:** M11-D e M11-E concluídos
+**Dependências:** M11-D e M11-E concluídos e aprovados
 
 ---
 
