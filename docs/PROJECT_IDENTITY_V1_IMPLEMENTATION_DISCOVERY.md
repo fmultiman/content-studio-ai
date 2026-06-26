@@ -412,62 +412,88 @@ Interface tipada com `Partial<>` nas zonas. O compilador TypeScript garante que 
 
 ---
 
-## 14. Shape Recomendado da V1
+## 14. Shape Final Aprovado da V1
+
+**Decisão registrada (2026-06-25 — D-BLOCKER-1 RESOLVIDO).**
+
+### 14.1 Contrato TypeScript (inferido do Zod — ver seção 15)
 
 ```typescript
-// lib/types.ts
+// shape aprovado — inferido de ProjectIdentitySchema em lib/schemas/project-identity.ts
 
-export interface ProjectIdentityFoundation {
-  purpose?: string // por que este project existe; o que o torna distinto
-}
+interface ProjectIdentity {
+  schema_version: 1           // versão do contrato JSON, não histórico de identidade
 
-export interface ProjectIdentityRelationship {
-  audience?: string // público principal; para quem o project existe
-}
+  foundation?: {
+    purpose?: string          // por que este project existe; o que o torna distinto
+  }
 
-export interface ProjectIdentityExpression {
-  visual_direction?: string // identidade visual: direção estética, referências, atmosfera
-  voice?: string            // linguagem verbal: tom, registro, vocabulário, ritmo
-}
+  relationship?: {
+    audience?: string         // público principal; para quem o project existe
+  }
 
-export interface ProjectIdentityGovernance {
-  restrictions?: string[] // o que o project nunca pode fazer; restrições locked
-}
+  expression?: {
+    visual_identity?: string  // identidade visual do Project: direção estética, referências, atmosfera
+    voice?: string            // linguagem verbal: tom, registro, vocabulário, ritmo
+  }
 
-export interface ProjectIdentity {
-  foundation?: ProjectIdentityFoundation
-  relationship?: ProjectIdentityRelationship
-  expression?: ProjectIdentityExpression
-  governance?: ProjectIdentityGovernance
-}
+  governance?: {
+    principles?: string[]     // princípios norteadores (positivos); o que o project defende
+    restrictions?: string[]   // o que o project nunca pode fazer; restrições locked
+  }
 
-// Adicionado ao Project existente:
-export interface Project {
-  // ... campos existentes mantidos ...
-  identity?: ProjectIdentity | null // NOVO — JSONB nullable
+  practice?: {
+    generation_preferences?: string[] // preferências operacionais de geração e execução
+  }
 }
 ```
 
-**Exemplo JSON de um Project com identity preenchida:**
+**`schema_version` é obrigatório e fixo em `1`.** Representa a versão do contrato JSON, não o histórico de edições da identidade.
+
+Todos os demais campos são opcionais.
+
+### 14.2 Justificativas das decisões de nomenclatura
+
+| Campo | Justificativa |
+|-------|--------------|
+| `visual_identity` (não `visual_direction`) | `visual_direction` fica reservado para futura adaptação contextual na Production; `visual_identity` pertence ao Project como definição permanente |
+| `principles[]` separado de `restrictions[]` | Funções diferentes: `principles` são direções afirmativas (o que o project faz e defende); `restrictions` são negações locked (o que nunca pode aparecer). Confundi-los no prompt prejudica os agentes |
+| `practice.generation_preferences[]` | Necessário para decompor o `style_profile` corretamente; `evaluation_mode` representa a régua de qualidade, não preferências de execução |
+| `schema_version: 1` | Permite que futuras versões do contrato (V2, V3) sejam detectadas sem ambiguidade |
+
+### 14.3 Exemplo JSON completo (Alquimia Cibernética)
 
 ```json
 {
+  "schema_version": 1,
   "foundation": {
-    "purpose": "A Alquimia Cibernética é uma plataforma de curadoria técnica e inteligência cultural. Realiza engenharia reversa de tradições ancestrais tratando espiritualidade como tecnologia de governança da consciência."
+    "purpose": "A Alquimia Cibernética é uma plataforma de curadoria técnica e inteligência cultural. Realiza engenharia reversa de tradições ancestrais e sistemas simbólicos, tratando espiritualidade e cultura como tecnologias de governança da consciência."
   },
   "relationship": {
-    "audience": "Criadores e pensadores que buscam síntese entre tecnologia, simbolismo e cultura. Jovens adultos intelectualmente curiosos, insatisfeitos com conteúdo raso."
+    "audience": "Criadores, pensadores e indivíduos que buscam síntese entre tecnologia, simbolismo e tradições culturais. Jovens adultos intelectualmente curiosos e insatisfeitos com conteúdo raso ou genérico."
   },
   "expression": {
-    "visual_direction": "Fusão entre sistemas antigos e estruturas modernas. Iluminação dramática, alto contraste, estética cinematográfica, atmosfera densa, visual simbólico, composição forte e centralizada, sensação de mistério e profundidade.",
-    "voice": "Técnico mas acessível. Usa metáforas de engenharia e tecnologia para falar de espiritualidade. Evita linguagem de auto-ajuda e misticismo vago."
+    "visual_identity": "Fusão entre sistemas antigos (rituais, símbolos, mitologia) e estruturas modernas (tecnologia, interface, comportamento). Iluminação dramática, alto contraste, estética cinematográfica, atmosfera densa, visual simbólico, composição forte e centralizada, sensação de mistério e profundidade.",
+    "voice": "Técnico mas acessível. Usa metáforas de engenharia e tecnologia para falar de espiritualidade. Abordagem estruturada com três eixos: Eixo A (O Código), Eixo B (A UX da Vida), Híbrido (O Debug)."
   },
   "governance": {
+    "principles": [
+      "Profundidade simbólica e conceitual em toda execução",
+      "Síntese entre tecnologia e espiritualidade como perspectiva central",
+      "Arqueologia cognitiva: passado como código-fonte do presente"
+    ],
     "restrictions": [
-      "Nunca representações literais simples ou óbvias",
-      "Evitar aparência genérica ou estilo clean/corporativo",
-      "Nunca linguagem de auto-ajuda superficial",
-      "Evitar clichês visuais de espiritualidade (figuras meditando sem contexto)"
+      "Evitar representações literais simples ou óbvias",
+      "Nunca usar aparência genérica ou estilo clean/corporativo",
+      "Nunca linguagem de auto-ajuda superficial ou misticismo vago",
+      "Evitar clichês visuais de espiritualidade sem contexto simbólico"
+    ]
+  },
+  "practice": {
+    "generation_preferences": [
+      "Composição forte e centralizada",
+      "Atmosfera densa e cinematográfica",
+      "Evitar estética clean ou espaço em branco excessivo"
     ]
   }
 }
@@ -479,38 +505,77 @@ export interface Project {
 
 **Biblioteca:** Zod (já usada no projeto conforme padrão de API routes)
 
+**Princípio:** o TypeScript type é inferido do schema Zod. Não existem interfaces duplicadas.
+
+### 15.1 Schema Zod (proposta para M11-A)
+
 ```typescript
-// lib/schemas/project-identity.ts (novo arquivo)
+// lib/schemas/project-identity.ts (novo arquivo — criado em M11-A)
 import { z } from 'zod'
 
-export const ProjectIdentityFoundationSchema = z.object({
-  purpose: z.string().optional(),
-})
+// Helper: string opcional com .trim(), rejeição de string vazia
+const optionalText = z.string().trim().min(1).optional()
 
-export const ProjectIdentityRelationshipSchema = z.object({
-  audience: z.string().optional(),
-})
+// Helper: array de strings com .trim(), remoção de itens vazios, deduplicação
+const optionalStringArray = z
+  .array(z.string().trim().min(1))
+  .transform((arr) => [...new Set(arr)])
+  .optional()
 
-export const ProjectIdentityExpressionSchema = z.object({
-  visual_direction: z.string().optional(),
-  voice: z.string().optional(),
-})
+export const ProjectIdentitySchema = z
+  .object({
+    schema_version: z.literal(1),
 
-export const ProjectIdentityGovernanceSchema = z.object({
-  restrictions: z.array(z.string()).optional(),
-})
+    foundation: z
+      .object({ purpose: optionalText })
+      .strict()
+      .optional(),
 
-export const ProjectIdentitySchema = z.object({
-  foundation: ProjectIdentityFoundationSchema.optional(),
-  relationship: ProjectIdentityRelationshipSchema.optional(),
-  expression: ProjectIdentityExpressionSchema.optional(),
-  governance: ProjectIdentityGovernanceSchema.optional(),
-})
+    relationship: z
+      .object({ audience: optionalText })
+      .strict()
+      .optional(),
 
+    expression: z
+      .object({
+        visual_identity: optionalText,
+        voice: optionalText,
+      })
+      .strict()
+      .optional(),
+
+    governance: z
+      .object({
+        principles: optionalStringArray,
+        restrictions: optionalStringArray,
+      })
+      .strict()
+      .optional(),
+
+    practice: z
+      .object({ generation_preferences: optionalStringArray })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+// O TypeScript type é inferido — não há interfaces duplicadas
 export type ProjectIdentity = z.infer<typeof ProjectIdentitySchema>
 ```
 
-**Validação no cliente:** antes de enviar PATCH para Supabase.  
+### 15.2 Comportamentos de validação
+
+| Comportamento | Implementação |
+|--------------|---------------|
+| `.trim()` em strings | Strings com só espaços são tratadas como vazia (`min(1)` rejeita) |
+| String vazia rejeitada | `min(1)` após trim — `""` e `"   "` falham |
+| Items vazios em arrays | Cada string do array passa por `trim().min(1)` — itens vazios são rejeitados |
+| Deduplicação de arrays | `transform((arr) => [...new Set(arr)])` |
+| Campos desconhecidos | `.strict()` em cada objeto — chaves extras rejeitadas |
+| `schema_version` diferente de 1 | `z.literal(1)` — qualquer outro valor rejeita |
+| Limite de tamanho | A ser definido em M11-A: sugestão `max(2000)` para campos de texto, `max(20)` para arrays |
+
+**Validação no cliente:** antes de enviar PATCH para Supabase (em M11-C).  
 **Sem validação no banco:** não há CHECK constraint na V1.  
 **Serialização:** o cliente Supabase serializa automaticamente o objeto JavaScript como JSONB.
 
@@ -518,45 +583,56 @@ export type ProjectIdentity = z.infer<typeof ProjectIdentitySchema>
 
 ## 16. Política de Ausência e Default
 
-| Estado da identity | Comportamento dos agentes |
-|-------------------|--------------------------|
-| `identity = null` | Agentes usam `context` e `style_profile` (legados) — comportamento atual preservado |
-| `identity = {}` | Idem — identity vazia é tratada como ausente |
-| `identity` com alguns campos | Compilador usa o que existe, omite o que está ausente; fallback para legados quando relevante |
-| `identity` completa | Compilador usa identity; `context` e `style_profile` continuam disponíveis como contexto geral livre |
+### 16.1 Regra de normalização
 
-**Regra de fallback explícita (para implementação):**
+A aplicação **nunca persiste `{}`** no campo `identity`. Quando o último campo é removido, a aplicação persiste `NULL`.
 
 ```typescript
-function buildImageContext(project: Project): string {
-  const parts: string[] = []
-
-  const identity = project.identity
-
-  // Propósito: identity.foundation.purpose > project.context
-  const purpose = identity?.foundation?.purpose || project.context
-  if (purpose) parts.push(`Propósito do projeto: ${purpose}`)
-
-  // Direção visual: identity.expression.visual_direction > project.style_profile
-  const visualDir = identity?.expression?.visual_direction || project.style_profile
-  if (visualDir) parts.push(`Direção visual: ${visualDir}`)
-
-  // Audiência: apenas identity (não existe fallback legado)
-  const audience = identity?.relationship?.audience
-  if (audience) parts.push(`Público: ${audience}`)
-
-  // Voz: apenas identity (não existe fallback legado)
-  const voice = identity?.expression?.voice
-  if (voice) parts.push(`Voz e linguagem: ${voice}`)
-
-  // Restrições: apenas identity (não existe fallback legado estruturado)
-  const restrictions = identity?.governance?.restrictions
-  if (restrictions?.length) {
-    parts.push(`Restrições absolutas:\n${restrictions.map(r => `- ${r}`).join('\n')}`)
-  }
-
-  return parts.join('\n\n')
+// lib/project-identity-normalizer.ts (criado em M11-A)
+function normalizeProjectIdentity(input: ProjectIdentity): ProjectIdentity | null {
+  // valida e limpa via Zod (trim, strict, dedup)
+  const parsed = ProjectIdentitySchema.parse(input)
+  // se nenhum campo além de schema_version está preenchido → NULL
+  const hasContent = Object.entries(parsed).some(([k, v]) => k !== 'schema_version' && v !== undefined)
+  return hasContent ? parsed : null
 }
+```
+
+### 16.2 Tabela de estados e comportamento
+
+| Estado da identity | Comportamento dos agentes |
+|-------------------|--------------------------|
+| `identity = null` | Agentes usam `context` e `style_profile` (transitoriamente) — comportamento M10-C preservado |
+| `identity = {}` (tolerado na leitura) | Tratado como null; nunca produzido pela aplicação |
+| `identity` com alguns campos | Compilador inclui os campos disponíveis; campos ausentes simplesmente não aparecem no contexto compilado |
+| `identity` completa | Compilador usa identity estruturada; `context` continua disponível como contexto narrativo geral |
+
+### 16.3 Semântica de `context` vs `foundation.purpose`
+
+`context` e `foundation.purpose` **não são substitutos semânticos**. O formatter deve incluir ambos quando disponíveis:
+
+```typescript
+// CORRETO — ambos são incluídos separadamente
+if (project.context) {
+  parts.push(`Contexto geral do projeto:\n${project.context}`)
+}
+if (identity?.foundation?.purpose) {
+  parts.push(`Propósito:\n${identity.foundation.purpose}`)
+}
+
+// ERRADO — não usar como substitutos
+// const purpose = identity?.foundation?.purpose || project.context  ← NUNCA
+```
+
+**Razão:** `context` é narrativa geral livre (pode incluir histórico, eixos de trabalho, abordagem técnica). `foundation.purpose` é a declaração canônica e estruturada do propósito. O LLM se beneficia de ambos na maioria dos casos.
+
+De forma análoga, `style_profile` e `expression.visual_identity` têm formatos e semânticas distintos — não usar como `||`.
+
+### 16.4 Default no banco
+
+- Coluna: `identity JSONB DEFAULT NULL`
+- Projects novos: `identity = null`
+- Projects existentes pós-migration: `identity = null` (sem migração automática)
 ```
 
 ---
@@ -567,55 +643,89 @@ function buildImageContext(project: Project): string {
 
 | Zona | Campo | Política implícita V1 | Comportamento |
 |------|-------|----------------------|---------------|
-| Foundation | `purpose` | locked | Enviado ao avaliador como critério inviolável |
-| Relationship | `audience` | adaptable | Enviado como contexto; Production pode refinar |
-| Expression | `visual_direction` | adaptable | Gerador usa como base; Production pode adaptar |
+| Foundation | `purpose` | locked | Enviado ao avaliador como critério de aderência conceitual |
+| Relationship | `audience` | adaptable | Enviado como contexto; Production pode refinar com sua intention |
+| Expression | `visual_identity` | adaptable | Gerador usa como base; `visual_direction` na Production (futuro) pode adaptar |
 | Expression | `voice` | adaptable | Feed Generator usa como base |
-| Governance | `restrictions` | locked | Enviado ao avaliador como restrições rígidas; nunca ignorado |
+| Governance | `principles[]` | adaptable | Contexto afirmativo; incluído no gerador e avaliador |
+| Governance | `restrictions[]` | locked | Incluído como restrições; avaliador identifica violações e considera no score |
+| Practice | `generation_preferences[]` | adaptable | Gerador de imagem usa como preferências de execução |
 
 **V2:** adicionar campo `_policy: 'locked' | 'adaptable' | 'default'` por campo da identity.
 
 ---
 
-## 18. Plano de Migração da Alquimia (style_profile → identity)
+## 18. Plano de Migração dos Projects (style_profile → identity)
 
-O projeto "Alquimia Cibernética" é o único com dados ricos em `context` e `style_profile`.
+Acontece em M11-F. O projeto "Alquimia Cibernética" é o principal caso de dados ricos. Os outros dois Projects possuem dados mais simples.
 
-**Migração proposta (manual, assistida por IA, não automatizada):**
+**Migração proposta (manual, via UI, não automatizada):**
 
 | Campo legado | Conteúdo atual | Destino no identity |
 |-------------|---------------|---------------------|
-| `context` (primeira parte) | Definição da plataforma + propósito | `identity.foundation.purpose` |
-| `context` (eixos A, B, Híbrido) | Abordagem técnica — princípios | Pode ir para `foundation.purpose` expandido ou ser mantido em `context` como contexto geral livre |
-| `context` (INTENÇÃO VISUAL) | "Imagens devem representar a fusão..." | `identity.expression.visual_direction` (parte do conteúdo) |
-| `style_profile` (positivos) | iluminação dramática, alto contraste, etc. | `identity.expression.visual_direction` (combinado com contexto visual) |
-| `style_profile` (negativos) | "evitar aparência genérica", "evitar estilo clean" | `identity.governance.restrictions` |
+| `context` | Narrativa completa da plataforma — definição, eixos, intenção visual | **Permanece em `context`** como contexto narrativo geral; partes selecionadas também preenchem `foundation.purpose` |
+| `style_profile` (positivos de execução) | iluminação dramática, alto contraste, composição centralizada | `expression.visual_identity` + `practice.generation_preferences` |
+| `style_profile` (princípios afirmativos) | fusão entre tecnologia e espiritualidade, visual simbólico | `governance.principles[]` |
+| `style_profile` (negativos / restrições) | "evitar aparência genérica", "evitar estilo clean" | `governance.restrictions[]` |
 
-**Procedimento:**
-1. O usuário edita a página do Projeto Alquimia
-2. A nova UI de identity sugere o preenchimento progressivo
-3. O usuário preenche manualmente os campos ou usa assistência de IA (V2)
-4. Os campos legados permanecem intactos durante o período de transição
-5. Após validação, o usuário pode limpar `context` e `style_profile` (Marco M11-F)
+**Mapeamento detalhado do style_profile da Alquimia:**
 
-**Não há script automatizado de migração.** O risco de interpretação incorreta do context existente é alto para automatizar.
+```
+→ expression.visual_identity:
+    "Fusão entre sistemas antigos e estruturas modernas.
+     Iluminação dramática, alto contraste, estética cinematográfica,
+     atmosfera densa, composição forte e centralizada."
+
+→ governance.principles:
+    ["Visual simbólico como linguagem central",
+     "Sensação de mistério e profundidade em toda execução",
+     "Síntese entre tecnologia e espiritualidade"]
+
+→ governance.restrictions:
+    ["Evitar aparência genérica ou estilo clean/corporativo",
+     "Evitar clichês visuais de espiritualidade sem contexto"]
+
+→ practice.generation_preferences:
+    ["Composição forte e centralizada",
+     "Atmosfera densa e cinematográfica",
+     "Iluminação com alto contraste"]
+```
+
+**Procedimento em M11-F:**
+1. Usuário edita o Projeto Alquimia via nova UI de identity (M11-C)
+2. Preenche os campos manualmente com base no mapeamento proposto acima
+3. Após save, gera uma imagem e compara qualidade com geração anterior (context+style_profile)
+4. Após validação comparativa e aprovação, M11-G remove `style_profile` dos consumidores
+
+**Não há script automatizado de migração.** O risco de interpretação incorreta do context é alto para automatizar. A migração é um ato editorial do usuário.
 
 ---
 
 ## 19. Plano de Aposentadoria de style_profile
 
-**Fase 1 (V1 — M11-D/E):** `style_profile` continua funcionando como fallback. Novos agentes preferem `identity.expression.visual_direction` quando disponível.
+`style_profile` **não será legado permanente**. A política aprovada define uma sequência de remoção dentro da V1, terminando em DROP COLUMN.
 
-**Fase 2 (após validação da V1):**
-- UI marca `style_profile` como "campo legado — migre para Identidade do Projeto"
-- Documentação interna registra o campo como deprecated
+| Fase | Marco | Ação |
+|------|-------|------|
+| Fallback transitório | M11-D/E | Agentes preferem campos de `identity` quando disponíveis; `style_profile` usado como fallback enquanto `identity` ainda não está preenchida |
+| Migração | M11-F | Usuário preenche `identity` a partir do conteúdo atual do `style_profile`; validação comparativa de geração |
+| Remoção lógica | M11-G | Remover `style_profile` da UI (ProjectForm e ProjectDetailPage), dos consumidores de IA (Prompt Generator, Image Evaluator, Feed Generator) e dos tipos operacionais (`CreateProjectForm`). O campo continua no banco e no `Project` type |
+| DROP COLUMN | M11-H | `ALTER TABLE projects DROP COLUMN style_profile` após auditoria final; remover do type `Project` |
 
-**Fase 3 (V2+):**
-- Novos Projects não exibem `style_profile` no formulário
-- Projects existentes mantêm o campo para compatibilidade
-- Projects migrados com `identity` preenchida têm `style_profile` ignorado pelos agentes
+**Por que remover sem exigir "100% dos Projects ativos por período longo":**  
+O banco atual possui apenas Projects iniciais/de teste. A migração pode ser concluída nesta fase com auditoria explícita — não há base de usuários legada que exija período de observação estendido.
 
-**Sem ALTER TABLE DROP COLUMN na V1 nem na V2 imediata.** Remoção da coluna é operação de risco e só faz sentido quando 100% dos projetos ativos tiverem `identity` preenchida.
+**`context` permanece.** Diferente do `style_profile`, o `context` tem semântica própria como narrativa geral livre. Ele não é substituído pela `identity`, mas complementado por ela. Não há plano de remoção de `context` nesta fase.
+
+**O que é decomposto de `style_profile` para `identity`:**
+
+```
+style_profile
+├── direções de execução visual  →  expression.visual_identity
+│                                →  practice.generation_preferences
+├── princípios afirmativos       →  governance.principles[]
+└── negações / restrições        →  governance.restrictions[]
+```
 
 ---
 
@@ -623,20 +733,20 @@ O projeto "Alquimia Cibernética" é o único com dados ricos em `context` e `st
 
 **Estado atual:** `Production` não tem campo `evaluation_mode`. O agente sempre usa o valor do Project.
 
-**Decisão recomendada (D2 em PRODUCTION_DECISIONS.md):**
+**Decisão aprovada (2026-06-25):** O override de `evaluation_mode` na Production **não entra na V1**. Fica para M12 ou rodada posterior de UX.
+
+Na V1:
 ```
-evaluation_mode resolvido = Production.evaluation_mode || Project.evaluation_mode || 'default'
+evaluation_mode efetivo = Project.evaluation_mode || 'default'
 ```
 
-**Para a V1 de Project Identity:**
+O comportamento atual (sempre usar o do Project) é semanticamente correto para o escopo da V1.
 
-A pergunta é: o `evaluation_mode` override na Production entra no M11-G (dentro do escopo) ou é deixado para uma fase posterior?
-
-**Posição:** M11-G é **opcional e adiável**. O override de evaluation_mode na Production é independente de Project Identity. Identity define o que o projeto é; evaluation_mode define como avaliar a execução. São dimensões separadas.
-
-**Recomendação:** Avaliar durante M11-A se o esforço de adicionar `evaluation_mode nullable` em `productions` (migration + tipo + API + UI) cabe no escopo da V1. Se sim, entra como M11-G. Se não, vai para M12.
-
-**Impacto de adiar:** Zero breaking change. Os agentes já resolvem `evaluationMode` no momento da chamada; adicionar o override apenas acrescenta um fallback na cadeia de resolução.
+**Impacto de adiar:** Zero breaking change. Quando o override for implementado (M12), a cadeia de resolução será:
+```
+evaluation_mode efetivo = Production.evaluation_mode || Project.evaluation_mode || 'default'
+```
+Essa mudança pode ser feita de forma não-destrutiva quando o momento chegar.
 
 ---
 
@@ -715,37 +825,43 @@ not_started | draft | in_review | approved | needs_review | archived
 
 ---
 
-## 24. Decisões Humanas Restantes (Bloqueantes ou Não)
+## 24. Decisões Registradas
 
-### BLOQUEANTES (necessárias antes de M11-B)
+### RESOLVIDAS (2026-06-25)
 
-**D-BLOCKER-1: Confirmar shape do JSONB**
-A interface `ProjectIdentity` proposta neste documento (4 zonas, 5 campos) está aprovada?
-- Alternativa: reduzir para 3 campos simples (`purpose`, `visual_direction`, `restrictions`)
-- Impacto: mudança no shape muda a migration, os tipos e a UI
+**D-BLOCKER-1: Shape do JSONB — APROVADO COM ALTERAÇÕES**
+Shape final: 5 zonas, 7 campos + `schema_version: 1`.
+`visual_identity` (não `visual_direction`). `principles[]` e `restrictions[]` separados. `practice.generation_preferences[]` incluído.
+Ver seção 14 para o shape completo e justificativas.
 
-**D-BLOCKER-2: `context` e `style_profile` passam a ser opcionais na UI após identity preenchida?**
-Ou continuam exibidos para todos os projetos independentemente?
-- Opção A: sempre exibidos (mais simples, sem mudança de comportamento de UI)
-- Opção B: colapsados/ocultos quando identity está preenchida (menos poluição visual)
-- Impacto: mudança de comportamento da ProjectDetailPage
+**D-BLOCKER-2: Comportamento de `context` e `style_profile` na UI após identity preenchida**
+Decisão: ambos permanecem visíveis na UI durante M11-C e M11-D. A remoção da UI é parte de M11-G, não M11-C. Nenhum comportamento condicional de ocultação na V1 inicial.
 
-### NÃO BLOQUEANTES (adiáveis para M11-C ou posterior)
-
-**D-OPT-1: evaluation_mode override na Production (M11-G)**
-Entra na V1 ou vai para M12? Não impede nenhum outro marco.
+**D-OPT-1: evaluation_mode override na Production**
+Decidido: **fora da V1**. Vai para M12 ou rodada de UX posterior. Ver seção 20.
 
 **D-OPT-2: Wizard interativo (Identity Builder conversacional)**
-Confirmado como V2 pela RECONCILIATION e RECOMMENDATION. Não adiável acidentalmente.
+Confirmado como V2.
 
 **D-OPT-3: Estados de identity (not_started/draft/approved)**
-Confirmado como PREMATURO para V1 (ver seção 22).
+Confirmado como PREMATURO — não implementar na V1. Ver seção 22.
 
 **D-OPT-4: Políticas granulares de herança (locked/adaptable por campo)**
 Confirmado como V2.
 
 **D-OPT-5: Versionamento de identity**
-Confirmado como V2+.
+Confirmado como V2+. `schema_version` na V1 só detecta versão do contrato, não implementa histórico.
+
+### PENDENTES (para decidir em M11-A ou M11-C)
+
+**D-M11A-1: Limites de caracteres nos campos de texto**
+Sugestão: `max(2000)` para texto livre, `max(500)` por item de array, `max(20)` itens por array.
+Confirmar durante M11-A antes de implementar o schema Zod.
+
+**D-M11C-1: UX de edição de identity — inline ou modal?**
+Opção A: campos inline expansíveis na página do Projeto.
+Opção B: modal dedicado "Editar Identidade" com todos os campos.
+Decidir durante M11-C.
 
 ---
 
