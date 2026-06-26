@@ -1,13 +1,15 @@
 // Database types for Content Agent Studio
 
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+
 export interface Project {
   id: string
   user_id: string
   name: string
   description: string | null
   context: string | null
-  style_profile: string | null
   evaluation_mode: EvaluationMode
+  identity: ProjectIdentity | null
   status: 'active' | 'archived'
   created_at: string
   updated_at: string

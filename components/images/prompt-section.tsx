@@ -25,8 +25,8 @@ interface PromptSectionProps {
   isTranslatingPrompt?: boolean
   promptDetails: {
     style: string
-    lighting: string
-    composition: string
+    lighting: string | null
+    composition: string | null
   } | null
   onCreateImage: (model: ImageModel) => void
   isCreatingImage: boolean
@@ -107,18 +107,22 @@ export function PromptSection({
       </div>
 
       <div className="space-y-6">
-        {/* Prompt Details Badges */}
+        {/* Prompt Details Badges — only render chips backed by real data */}
         {promptDetails && (
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary" className="bg-violet-500/20 text-violet-300">
               {promptDetails.style}
             </Badge>
-            <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-300">
-              {promptDetails.lighting}
-            </Badge>
-            <Badge variant="secondary" className="bg-pink-500/20 text-pink-300">
-              {promptDetails.composition}
-            </Badge>
+            {promptDetails.lighting !== null && (
+              <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-300">
+                {promptDetails.lighting}
+              </Badge>
+            )}
+            {promptDetails.composition !== null && (
+              <Badge variant="secondary" className="bg-pink-500/20 text-pink-300">
+                {promptDetails.composition}
+              </Badge>
+            )}
           </div>
         )}
 

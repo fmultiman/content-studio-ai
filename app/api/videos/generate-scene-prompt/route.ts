@@ -48,17 +48,15 @@ export async function POST(request: Request) {
     }
 
     let projectContext: string | null = null
-    let styleProfile: string | null = null
 
     if (projectId) {
       const { data: project } = await supabase
         .from('projects')
-        .select('context, style_profile')
+        .select('context')
         .eq('id', projectId)
         .single()
 
       projectContext = project?.context || null
-      styleProfile = project?.style_profile || null
     }
 
     const systemPrompt = `You are an expert prompt engineer for AI video and image generation.
@@ -70,7 +68,6 @@ Focus on:
 - camera movement and framing
 - lighting, mood, color, and composition
 - continuity with the project context
-- adherence to the style profile
 - professional video language, without explaining your choices
 
 Do not include markdown, labels, JSON, or commentary.`
@@ -86,10 +83,7 @@ Scene description in Portuguese:
 ${description}
 
 Project context:
-${projectContext || 'Not specified'}
-
-Style profile:
-${styleProfile || 'Not specified'}`
+${projectContext || 'Not specified'}`
 
     const response = await fetch(OPENAI_CHAT_URL, {
       method: 'POST',

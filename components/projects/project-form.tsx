@@ -21,13 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, HelpCircle } from 'lucide-react'
-import { TagInput } from '@/components/ui/tag-input'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { EvaluationMode, Project } from '@/lib/types'
 
@@ -47,7 +41,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
     name: '',
     description: '',
     context: '',
-    style_profile: '',
     evaluation_mode: 'default' as EvaluationMode,
   })
 
@@ -60,7 +53,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         name: project.name || '',
         description: project.description || '',
         context: project.context || '',
-        style_profile: project.style_profile || '',
         evaluation_mode: project.evaluation_mode || 'default',
       })
     } else {
@@ -68,7 +60,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         name: '',
         description: '',
         context: '',
-        style_profile: '',
         evaluation_mode: 'default',
       })
     }
@@ -96,7 +87,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             name: formData.name,
             description: formData.description || null,
             context: formData.context || null,
-            style_profile: formData.style_profile || null,
             evaluation_mode: formData.evaluation_mode,
           })
           .eq('id', project.id)
@@ -116,7 +106,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             name: formData.name,
             description: formData.description || null,
             context: formData.context || null,
-            style_profile: formData.style_profile || null,
             evaluation_mode: formData.evaluation_mode,
           })
           .select('id')
@@ -145,7 +134,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         })
       }
 
-      setFormData({ name: '', description: '', context: '', style_profile: '', evaluation_mode: 'default' })
+      setFormData({ name: '', description: '', context: '', evaluation_mode: 'default' })
       onOpenChange(false)
       onSuccess?.()
       router.refresh()
@@ -206,64 +195,6 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             />
             <p className="text-xs text-muted-foreground">
               Este contexto será usado para melhorar a geração de prompts.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="style_profile">Perfil de Estilo</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <HelpCircle className="h-4 w-4" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" side="top">
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Como preencher o Perfil de Estilo</p>
-                    <p className="text-sm text-muted-foreground">
-                      Descreva como as imagens devem parecer.
-                    </p>
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground">Exemplos:</p>
-                      <ul className="list-inside list-disc text-xs text-muted-foreground">
-                        <li>iluminação dramática</li>
-                        <li>contraste forte</li>
-                        <li>estilo cinematográfico</li>
-                        <li>evitar visual clean</li>
-                      </ul>
-                    </div>
-                    <p className="text-xs text-cyan-400">
-                      Dica: Pense em luz, cor, composição e sensação.
-                    </p>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <TagInput
-              value={formData.style_profile}
-              onChange={(value) => setFormData({ ...formData, style_profile: value })}
-              placeholder="Digite termos de estilo e pressione Enter..."
-              suggestions={[
-                'iluminação dramática',
-                'realista',
-                'cinematográfico',
-                'alto contraste',
-                'minimalista',
-                'cyberpunk',
-                'espiritual',
-                'tecnológico',
-                'escuro',
-                'cores vibrantes',
-                'foco central',
-                'simetria',
-              ]}
-            />
-            <p className="text-xs text-muted-foreground">
-              O perfil de estilo será aplicado automaticamente às gerações deste projeto.
             </p>
           </div>
 

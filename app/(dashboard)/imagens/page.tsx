@@ -8,6 +8,8 @@ import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
 import { generateImagePrompt, regeneratePrompt } from '@/lib/ai-simulator'
+import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FileText, ChevronRight, Loader2, ArrowLeft } from 'lucide-react'
@@ -48,8 +50,8 @@ function ImagesPageContent() {
   const [generatedPromptPt, setGeneratedPromptPt] = useState('')
   const [promptDetails, setPromptDetails] = useState<{
     style: string
-    lighting: string
-    composition: string
+    lighting: string | null
+    composition: string | null
   } | null>(null)
   
   // Image state
@@ -568,9 +570,26 @@ function ImagesPageContent() {
     setIsEvaluating(true)
 
     try {
-      // Get project context and style profile
       const selectedProjectData = projects.find(p => p.id === selectedProject)
-      
+
+      let projectIdentity: ProjectIdentity | null = null
+      if (selectedProjectData) {
+        try {
+          projectIdentity = normalizeProjectIdentity(selectedProjectData.identity)
+        } catch (err) {
+          const detail = err instanceof ProjectIdentityParseError
+            ? 'Os dados estruturados não correspondem ao schema V1.'
+            : 'Erro inesperado ao ler a identidade.'
+          toast({
+            title: 'Identidade do Project inválida',
+            description: `${detail} Acesse o Project e corrija a configuração de identidade antes de avaliar.`,
+            variant: 'destructive',
+          })
+          setIsEvaluating(false)
+          return
+        }
+      }
+
       const response = await fetch('/api/evaluate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -579,9 +598,9 @@ function ImagesPageContent() {
           generatedPrompt,
           imageUrl,
           projectId: selectedProject,
-          styleProfile: selectedProjectData?.style_profile || null,
           context: selectedProjectData?.context || null,
           evaluation_mode: selectedProjectData?.evaluation_mode || 'default',
+          identity: projectIdentity,
           attempt: currentAttempt,
         }),
       })
@@ -942,26 +961,40 @@ function ImagesPageContent() {
     setIsGeneratingPrompt(true)
 
     try {
-      // Get project context and style profile if selected
+      // Get project context and identity if a project is selected
       let projectContext: string | null = null
-      let styleProfile: string | null = null
       let evaluationMode: 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental' = 'default'
-      
+      let projectIdentity: ProjectIdentity | null = null
+
       if (selectedProject) {
         const project = projects.find(p => p.id === selectedProject)
         if (project) {
           projectContext = project.context
-          styleProfile = project.style_profile
           evaluationMode = project.evaluation_mode || 'default'
+
+          // Normalize identity — invalid identity blocks generation to avoid silent data loss
+          try {
+            projectIdentity = normalizeProjectIdentity(project.identity)
+          } catch (err) {
+            const detail = err instanceof ProjectIdentityParseError
+              ? 'Os dados estruturados não correspondem ao schema V1.'
+              : 'Erro inesperado ao ler a identidade.'
+            toast({
+              title: 'Identidade do Project inválida',
+              description: `${detail} Acesse o Project e corrija a configuração de identidade antes de gerar prompts.`,
+              variant: 'destructive',
+            })
+            return
+          }
         }
       }
 
       const result = await generateImagePrompt(
         userInput,
         projectContext,
-        styleProfile,
         openaiApiKey || undefined,
         evaluationMode,
+        projectIdentity,
       )
       
       updateGeneratedPrompt(result.prompt)

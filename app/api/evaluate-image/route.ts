@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
+import { buildImageEvaluationContext } from '@/lib/context-compiler'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_EVALUATION_MODEL = 'gpt-4o-mini'
@@ -45,11 +48,11 @@ export async function POST(request: Request) {
       userInput,
       generatedPrompt,
       imageUrl,
-      styleProfile,
       context,
       evaluation_mode,
       evaluationMode,
       attempt = 1,
+      identity: rawIdentity = null,
     } = await request.json()
     const normalizedEvaluationMode = normalizeEvaluationMode(evaluation_mode || evaluationMode)
 
@@ -58,6 +61,22 @@ export async function POST(request: Request) {
         { error: 'Prompt e URL da imagem sao obrigatorios' },
         { status: 400 },
       )
+    }
+
+    // Validate identity server-side — never trust the client alone
+    let normalizedIdentity: ProjectIdentity | null = null
+    if (rawIdentity !== null && rawIdentity !== undefined) {
+      try {
+        normalizedIdentity = normalizeProjectIdentity(rawIdentity)
+      } catch (err) {
+        const detail = err instanceof ProjectIdentityParseError
+          ? 'estrutura incompatível com schema V1'
+          : 'erro inesperado na validação'
+        return NextResponse.json(
+          { error: `Identity inválida: ${detail}.` },
+          { status: 400 },
+        )
+      }
     }
 
     const { data: settings } = await supabase
@@ -75,17 +94,21 @@ export async function POST(request: Request) {
       )
     }
 
+    const compiledEvaluationContext = buildImageEvaluationContext({
+      context,
+      identity: normalizedIdentity,
+    })
+
     const systemPrompt = `Voce e um avaliador de qualidade visual, conceitual e simbolica para imagens geradas por IA.
 
-Seu objetivo e analisar se a imagem atende a intencao original do usuario, ao contexto do projeto e ao style profile definido.
+Seu objetivo e analisar se a imagem atende a intencao original do usuario, ao contexto do projeto e a identidade do projeto.
 
 INPUTS:
 
 - userInput
 - generatedPrompt
 - imageUrl
-- context
-- style_profile
+- project context and identity (compiled)
 - evaluation_mode
 
 PRIORIDADE BASE:
@@ -96,7 +119,7 @@ Sempre avaliar primeiro:
 - clareza da intencao
 
 Depois avaliar:
-- aderencia ao style_profile
+- aderencia a identidade visual
 - composicao visual
 - iluminacao e contraste
 - qualidade estetica
@@ -108,6 +131,24 @@ Identificar e penalizar:
 - interpretacoes superficiais
 - estetica sem significado
 - falta de intencao clara
+
+IDENTIDADE DO PROJECT:
+
+Quando o contexto compilado incluir principios e restricoes da identidade do projeto:
+
+Principios (direcoes positivas que a imagem deve buscar):
+- Identificar se a imagem atende os principios declarados
+- Um principio nao atendido deve ser refletido no score e mencionado no feedback
+
+Restricoes (limites que a imagem nao deve violar):
+- Identificar violacoes de restricoes explicando concretamente a incompatibilidade
+- Refletir a gravidade no score
+- Marcar approved = false quando a violacao for material
+- Mencionar a correcao em improvements
+- Produzir refinedPrompt que corrija a violacao
+
+Nao aplicar reprovacao automatica para toda restricao trivial ou interpretativa.
+Nao usar teto numerico universal de score.
 
 COMPORTAMENTO POR evaluation_mode:
 
@@ -148,7 +189,7 @@ REFINED PROMPT:
 O novo prompt deve:
 
 - corrigir os problemas identificados
-- melhorar alinhamento com contexto
+- melhorar alinhamento com contexto e identidade
 - reduzir cliches
 - aumentar clareza e intencao
 - adaptar o estilo ao evaluation_mode
@@ -173,11 +214,8 @@ ${generatedPrompt}
 imageUrl:
 ${imageUrl}
 
-context:
-${context || 'Nao especificado'}
-
-style_profile:
-${styleProfile || 'Nao especificado'}
+PROJECT CONTEXT AND IDENTITY:
+${compiledEvaluationContext || 'Nao especificado'}
 
 evaluation_mode:
 ${normalizedEvaluationMode}

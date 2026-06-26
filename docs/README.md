@@ -10,6 +10,14 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 
 ## Ordem recomendada de leitura
 
+### Estudos de UX
+
+- [UX Baseline Audit - Pre-Reconciliation](./product/ux/ux-baseline-audit-pre-reconciliation.md)  
+  Fotografia prática da experiência antes da reconciliação atual de Project Identity / Production.
+
+- [UX Reconciliation Audit - Post Project Identity](./product/ux/ux-reconciliation-audit-post-project-identity.md)  
+  Segunda auditoria pratica confrontando produto percebido, Project Identity, Production workspace e experiencia real no browser.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

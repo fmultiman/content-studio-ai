@@ -1,0 +1,37 @@
+-- 027_add_project_identity.sql
+-- Adds identity JSONB NULL to projects for Project Identity V1 (M11-B).
+--
+-- Purpose: persist structured Project Identity data in a JSONB column.
+--   identity IS NULL      → project has no identity configured (default, valid state).
+--   identity IS NOT NULL  → structured JSONB validated by ProjectIdentitySchema (Zod).
+--
+-- Shape (schema_version: 1):
+--   {
+--     "schema_version": 1,
+--     "foundation":   { "purpose": "..." },
+--     "relationship": { "audience": "..." },
+--     "expression":   { "visual_identity": "...", "voice": "..." },
+--     "governance":   { "principles": [...], "restrictions": [...] },
+--     "practice":     { "generation_preferences": [...] }
+--   }
+--
+-- Design decisions:
+--   - No NOT NULL: projects without identity are valid; null = absence, not error.
+--   - No DEFAULT {} : the application contract prohibits persisting empty objects;
+--     normalizeProjectIdentity({}) returns null. DB default stays NULL.
+--   - No CHECK constraint: semantic validation (schema_version, field limits) is
+--     enforced at the application layer by ProjectIdentitySchema (Zod). A DB CHECK
+--     on JSONB shape would duplicate Zod and add DDL fragility.
+--   - No index: identity is not used in WHERE/ORDER BY in V1.
+--   - No backfill: existing projects correctly remain with identity = NULL.
+--   - context and style_profile are untouched.
+--   - Idempotent: ADD COLUMN IF NOT EXISTS.
+--
+-- RLS: existing policies (SELECT/INSERT/UPDATE/DELETE with auth.uid() = user_id)
+--   cover all columns in the table automatically. No new policy needed.
+--
+-- ─── Rollback ────────────────────────────────────────────────────────────────
+--   ALTER TABLE projects DROP COLUMN IF EXISTS identity;
+
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS identity JSONB DEFAULT NULL;

@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dialog'
 import { ProjectForm } from '@/components/projects/project-form'
 import { ProductionForm } from '@/components/productions/production-form'
+import { ProjectIdentityDisplay } from '@/components/projects/project-identity-display'
+import { ProjectIdentityForm } from '@/components/projects/project-identity-form'
 import {
   ArrowLeft,
   Loader2,
@@ -35,7 +37,6 @@ import {
   Calendar,
   Edit2,
   Trash2,
-  Palette,
   Copy,
   Check,
   Layers,
@@ -43,6 +44,8 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production } from '@/lib/types'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 
 const PRODUCTION_TYPE_LABELS: Record<string, string> = {
   editorial: 'Editorial',
@@ -72,6 +75,9 @@ export default function ProjectDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showProductionsBlockDialog, setShowProductionsBlockDialog] = useState(false)
+
+  // Identity form state
+  const [showIdentityForm, setShowIdentityForm] = useState(false)
 
   // Production form state
   const [showProductionForm, setShowProductionForm] = useState(false)
@@ -170,6 +176,10 @@ export default function ProjectDetailPage() {
     }
   }
 
+  const handleIdentitySuccess = (updated: ProjectIdentity | null) => {
+    setProject((prev) => (prev ? { ...prev, identity: updated } : prev))
+  }
+
   const handleEditSuccess = async () => {
     setShowEditForm(false)
     const supabase = createClient()
@@ -261,6 +271,14 @@ export default function ProjectDetailPage() {
         </div>
       </>
     )
+  }
+
+  let resolvedIdentity: ProjectIdentity | null = null
+  let identityReadError: string | null = null
+  try {
+    resolvedIdentity = normalizeProjectIdentity(project.identity)
+  } catch {
+    identityReadError = 'A identidade salva não pôde ser lida. Os dados foram preservados no banco.'
   }
 
   const formatDate = (dateString: string) =>
@@ -372,38 +390,16 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
               )}
-              {project.style_profile && (
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Palette className="h-4 w-4" />
-                      Perfil de Estilo
-                    </h3>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        handleCopySection('style_profile', project.style_profile || '')
-                      }
-                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      aria-label="Copiar perfil de estilo"
-                    >
-                      {copiedSection === 'style_profile' ? (
-                        <Check className="h-4 w-4 text-emerald-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <div className="rounded-lg border border-border/50 bg-background/50 p-4">
-                    <p className="whitespace-pre-wrap text-sm text-foreground">
-                      {project.style_profile}
-                    </p>
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
+
+          {/* Project Identity Section */}
+          <ProjectIdentityDisplay
+            identity={resolvedIdentity}
+            readError={identityReadError}
+            onStructure={() => setShowIdentityForm(true)}
+            onEdit={() => setShowIdentityForm(true)}
+          />
 
           {/* Productions Section */}
           <div ref={productionsSectionRef} className="scroll-mt-24 space-y-4">
@@ -516,6 +512,16 @@ export default function ProjectDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Project Identity Form Modal */}
+      <ProjectIdentityForm
+        key={showIdentityForm ? 'identity-open' : 'identity-closed'}
+        open={showIdentityForm}
+        onOpenChange={setShowIdentityForm}
+        projectId={projectId}
+        identity={resolvedIdentity}
+        onSuccess={handleIdentitySuccess}
+      />
 
       {/* Edit Project Modal */}
       <ProjectForm
