@@ -141,7 +141,7 @@ export async function POST(request: Request) {
     // Load project context
     const { data: project } = await supabase
       .from('projects')
-      .select('name, description, context, style_profile')
+      .select('name, description, context')
       .eq('id', ec.project_id)
       .eq('user_id', user.id)
       .single()
@@ -190,7 +190,6 @@ export async function POST(request: Request) {
           `Projeto: ${project.name}`,
           project.description ? `Descrição do projeto: ${project.description}` : '',
           project.context ? `Contexto de IA do projeto: ${project.context}` : '',
-          project.style_profile ? `Perfil de estilo: ${project.style_profile}` : '',
         ]
           .filter(Boolean)
           .join('\n')

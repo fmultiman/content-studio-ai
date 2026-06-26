@@ -8,7 +8,6 @@ export interface Project {
   name: string
   description: string | null
   context: string | null
-  style_profile: string | null
   evaluation_mode: EvaluationMode
   identity: ProjectIdentity | null
   status: 'active' | 'archived'
