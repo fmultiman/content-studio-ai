@@ -570,9 +570,27 @@ function ImagesPageContent() {
     setIsEvaluating(true)
 
     try {
-      // Get project context and style profile
+      // Get project context, style profile, evaluation mode, and identity
       const selectedProjectData = projects.find(p => p.id === selectedProject)
-      
+
+      let projectIdentity: ProjectIdentity | null = null
+      if (selectedProjectData) {
+        try {
+          projectIdentity = normalizeProjectIdentity(selectedProjectData.identity)
+        } catch (err) {
+          const detail = err instanceof ProjectIdentityParseError
+            ? 'Os dados estruturados não correspondem ao schema V1.'
+            : 'Erro inesperado ao ler a identidade.'
+          toast({
+            title: 'Identidade do Project inválida',
+            description: `${detail} Acesse o Project e corrija a configuração de identidade antes de avaliar.`,
+            variant: 'destructive',
+          })
+          setIsEvaluating(false)
+          return
+        }
+      }
+
       const response = await fetch('/api/evaluate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -584,6 +602,7 @@ function ImagesPageContent() {
           styleProfile: selectedProjectData?.style_profile || null,
           context: selectedProjectData?.context || null,
           evaluation_mode: selectedProjectData?.evaluation_mode || 'default',
+          identity: projectIdentity,
           attempt: currentAttempt,
         }),
       })
