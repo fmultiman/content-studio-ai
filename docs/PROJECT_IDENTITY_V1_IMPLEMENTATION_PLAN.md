@@ -272,47 +272,111 @@ Estado com erro de leitura (JSONB corrompido):
 
 ---
 
-### M11-D — Consumo na Geração de Imagem
+### M11-D — Consumo na Geração de Imagem ✅ CONCLUÍDO (2026-06-26)
 
-**Objetivo:** Os agentes de geração (Prompt Generator) e avaliação (Image Evaluator) passam a consumir `identity` quando disponível, com fallback para os campos legados.
+**Objetivo:** O Prompt Generator de imagens passa a consumir Project Identity V1 via `buildImageGenerationContext()`. Image Evaluator não alterado nesta rodada.
+
+**Status:** IMPLEMENTADO E TESTADO. Branch: `discovery/project-identity-v1-implementation`.
 
 **Arquivos modificados:**
-- `lib/ai-simulator.ts` — função `generateImagePrompt` e `generateWithOpenAI` recebem `identity?: ProjectIdentity | null` e usam `buildIdentityContext()` para montar o contexto
-- `app/api/evaluate-image/route.ts` — recebe `identity` no body e usa `buildEvaluatorContext()` para montar o system prompt com restrições locked
-- `app/(dashboard)/imagens/page.tsx` — inclui `project.identity` nas chamadas para os dois agentes
 
-**Mudanças no contrato de `generateImagePrompt`:**
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `lib/ai-simulator.ts` | M | `generateImagePrompt`, `generateWithOpenAI`, `generateSimulated` recebem `identity: ProjectIdentity \| null = null`; compilação via `buildImageGenerationContext`; `intelligentGenerationLoop` passa `null` |
+| `app/(dashboard)/imagens/page.tsx` | M | `handleGeneratePrompt` normaliza identity via `normalizeProjectIdentity`; identity inválida bloqueia geração com toast; identity normalizada passada ao Prompt Generator |
+| `lib/__tests__/image-prompt-generation.test.ts` | A (novo) | 33 testes cobrindo todos os 20 casos do spec |
+
+**Nova assinatura de `generateImagePrompt`:**
 
 ```typescript
-// Antes:
-generateImagePrompt(
+export async function generateImagePrompt(
   userInput: string,
-  projectContext: string | null,
-  styleProfile: string | null,
-  previousAttempts: GenerationAttempt[],
-  evaluationMode: EvaluationMode
-)
-
-// Depois:
-generateImagePrompt(
-  userInput: string,
-  projectContext: string | null,     // mantido (fallback)
-  styleProfile: string | null,       // mantido (fallback)
-  previousAttempts: GenerationAttempt[],
-  evaluationMode: EvaluationMode,
-  identity?: ProjectIdentity | null  // NOVO — preferido quando disponível
-)
+  projectContext?: string | null,
+  styleProfile?: string | null,
+  apiKey?: string,
+  evaluationMode: EvaluationMode = 'default',
+  identity: ProjectIdentity | null = null,   // NOVO — 6º parâmetro, default null
+): Promise<PromptGenerationResult>
 ```
 
-**Lógica de compilação (usando `buildIdentityContext()` de M11-A):**
+**Fronteira de validação (imagens/page.tsx):**
+
 ```typescript
-const compiledContext = buildIdentityContext({
-  context: projectContext,
-  style_profile: styleProfile,
-  identity: identity
-})
-// compiledContext substitui a concatenação manual atual de projectContext + styleProfile
+try {
+  projectIdentity = normalizeProjectIdentity(project.identity)
+} catch (err) {
+  // Bloqueia geração, exibe toast descritivo, preserva userInput
+  toast({ title: 'Identidade do Project inválida', ... , variant: 'destructive' })
+  return
+}
 ```
+
+**Contexto compilado (generateWithOpenAI — userMessage):**
+
+```text
+INPUTS RECEBIDOS
+
+userInput:
+${userInput}
+
+PROJECT CONTEXT AND IDENTITY:
+${compiledContext || 'Not specified'}
+
+evaluation_mode:
+${evaluationMode}
+```
+
+O campo `PROJECT CONTEXT AND IDENTITY` substitui os campos separados `context:` e `style_profile:`.
+
+**Contexto compilado (generateSimulated):**
+- Usa `buildImageGenerationContext` no `contextClause`
+- `style` preferido: `visual_identity → style_profile → detectStyle(userInput)`
+
+**Fallback transitório:**
+
+| Cenário | Comportamento |
+|---------|---------------|
+| identity null + context + style_profile | context incluído; style_profile usado como visual |
+| identity sem visual_identity | style_profile usado como fallback visual |
+| identity com visual_identity | visual_identity usada; style_profile ignorado |
+| identity parcial | somente dimensões existentes entram |
+| identity inválida | geração bloqueada, toast, sem chamada ao modelo |
+| evaluation_mode | inalterado |
+| previousAttempts | inalterados (rastreados em estado da página, não passados ao generator) |
+
+**Image Evaluator:** absolutamente inalterado — `app/api/evaluate-image/route.ts` não modificado. Integração de identity no Evaluator fica para M11-E.
+
+**Limite conhecido:** `intelligentGenerationLoop` é placeholder futuro; passa `null` para identity por não ter acesso ao Project.
+
+**Fallback simulado:** `generateSimulated` recebe identity e usa contexto compilado no `contextClause`. Não finge compreensão completa — o conteúdo da identidade aparece na string de contexto conforme formatado pelo compiler.
+
+**Testes adicionados (33/33 PASS):**
+- Casos 1-11: context+style_profile preservation, identity parcial/completa, context vs purpose, visual_identity precedence, style_profile fallback, principles/restrictions/preferences, schema_version absent, no raw JSON
+- Casos 12-13: normalizeProjectIdentity throws para input inválido (prova que a página bloqueia antes de chamar o generator)
+- Caso 14: identity null → comportamento legado
+- Casos 15-20: evaluation_mode unchanged, output contract, simulated fallback, no mutation, determinism
+- Mocked OpenAI path: formato do userMessage, `Not specified` quando vazio, visual_identity no field `style`
+
+**Notas sobre translateToEnglish:** a função existente usa substituições sem word boundary (ex: "cidade" → "city" substitui substrings). Os testes de princípios usam textos que evitam colisão com o dicionário de tradução existente. Esse comportamento é pré-existente e fora do escopo de M11-D.
+
+**Resultados de validação:**
+- `pnpm test`: **129/129 PASS** (96 anteriores + 33 novos)
+- `pnpm typecheck`: 0 erros
+- `pnpm lint`: 0 erros, 50 warnings (baseline)
+- `pnpm build`: PASS
+
+**Commits:**
+- `283a5ec` — `feat: use Project Identity in image prompt generation — M11-D`
+- `4d04718` — `test: cover Project Identity prompt generation — M11-D`
+
+**Pontos de parada obrigatória:**
+- STOP: aprovação humana antes de M11-E (Image Evaluator)
+
+**Dependências:** M11-C concluído e aprovado
+
+---
+
+### M11-E — Consumo no Image Evaluator
 
 **Mudanças no contrato de `/api/evaluate-image`:**
 
