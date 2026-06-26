@@ -246,8 +246,27 @@ Estado com erro de leitura (JSONB corrompido):
 - `41bae04` — `feat: add progressive Project Identity UI — M11-C`
 - `a6e4df5` — `test: cover Project Identity editing behavior — M11-C`
 
+**Smoke visual humano (2026-06-26) — Projeto teste `6d09d50d`:**
+
+| Verificação | Resultado |
+|-------------|-----------|
+| Seção posicionada entre Project card e Productions | ✅ |
+| Estado vazio compreensível e não bloqueante | ✅ |
+| Modal abre e fecha corretamente | ✅ |
+| Cinco zonas bem organizadas no dialog | ✅ |
+| Rolagem e ações acessíveis | ✅ |
+| Identity parcial salva corretamente | ✅ |
+| Resumo do card atualizado após salvar | ✅ |
+| Edição preserva campos não modificados | ✅ |
+| Arrays (princípios, restrições, preferências) funcionam um por linha | ✅ |
+| Remoção do último conteúdo retorna `identity` para `NULL` | ✅ |
+| `context`, `style_profile`, `evaluation_mode` e Productions intactos | ✅ |
+| Cleanup: `Projeto teste.identity = NULL` ao encerrar | ✅ |
+
+**Checkpoint humano:** APROVADO — 2026-06-26
+
 **Pontos de parada obrigatória:**
-- STOP: smoke test manual no ambiente de produção antes de M11-D
+- ✅ Smoke test manual concluído e aprovado
 
 **Dependências:** M11-B concluído e aprovado
 
