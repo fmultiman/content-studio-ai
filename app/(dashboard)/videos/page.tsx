@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { SceneCard } from '@/components/videos/scene-card'
 import { StoryboardModal } from '@/components/videos/storyboard-modal'
+import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,7 +21,10 @@ import {
 import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, VideoScene, VideoDraft } from '@/lib/types'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
+import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import { draftLoadingMessage } from '@/lib/ux-production-hardening'
 
 function VideosPageContent() {
@@ -430,6 +434,32 @@ function VideosPageContent() {
   }
 
   const requestedDraftId = searchParams.get('draft')
+  const selectedProjectData = selectedProject
+    ? projects.find((project) => project.id === selectedProject) ?? null
+    : null
+  let videoIdentity: ProjectIdentity | null = null
+  let videoIdentityReadError = false
+
+  try {
+    videoIdentity = normalizeProjectIdentity(selectedProjectData?.identity ?? null)
+  } catch {
+    videoIdentityReadError = true
+  }
+
+  const videoIdentitySummary = resolveInheritedIdentitySummary({
+    identity: videoIdentity,
+    projectName: selectedProjectData?.name,
+    hasLegacyContext: !!selectedProjectData?.context?.trim(),
+    readError: videoIdentityReadError,
+    isLoading: !isDataReady,
+  })
+  const projectIdentityHref = selectedProjectData
+    ? `/projetos/${selectedProjectData.id}#project-identity`
+    : undefined
+  const productionHref =
+    productionId && (productionProjectId || selectedProject)
+      ? `/projetos/${productionProjectId || selectedProject}/producoes/${productionId}`
+      : undefined
 
   return (
     <>
@@ -535,6 +565,16 @@ function VideosPageContent() {
             </div>
           ) : (
           <>
+          {selectedProjectData && (
+            <WorkspaceIdentityContext
+              surface="video"
+              summary={videoIdentitySummary}
+              productionTitle={productionTitle}
+              projectHref={projectIdentityHref}
+              productionHref={productionHref}
+            />
+          )}
+
           {/* Video Settings */}
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardHeader>

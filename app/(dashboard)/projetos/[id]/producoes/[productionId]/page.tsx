@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
@@ -47,7 +47,14 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import {
+  InheritedIdentityIndicator,
+  InheritedIdentitySummaryCard,
+} from '@/components/projects/inherited-project-identity'
+import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import {
   PRODUCTION_TABS_GRID_CLASS,
   productionWorkspaceLoadingMessage,
@@ -125,6 +132,7 @@ export default function ProductionDetailPage() {
   // Unlink state
   const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video'; id: string; name: string } | null>(null)
   const [isUnlinking, setIsUnlinking] = useState(false)
+  const identitySummaryRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
@@ -343,6 +351,22 @@ export default function ProductionDetailPage() {
     intention: production.intention,
     projectName: project.name,
   })
+  let resolvedIdentity: ProjectIdentity | null = null
+  let identityReadError = false
+
+  try {
+    resolvedIdentity = normalizeProjectIdentity(project.identity)
+  } catch {
+    identityReadError = true
+  }
+
+  const inheritedIdentitySummary = resolveInheritedIdentitySummary({
+    identity: resolvedIdentity,
+    projectName: project.name,
+    hasLegacyContext: !!project.context?.trim(),
+    readError: identityReadError,
+  })
+  const projectIdentityHref = `/projetos/${projectId}#project-identity`
 
   return (
     <>
@@ -421,9 +445,28 @@ export default function ProductionDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border border-border/50 bg-background/50 p-4">
-                <h3 className="mb-2 text-sm font-medium text-muted-foreground">Intenção</h3>
-                <p className="whitespace-pre-wrap text-foreground">{productionDisplay.intention}</p>
+              <div className="space-y-3">
+                <InheritedIdentityIndicator
+                  summary={inheritedIdentitySummary}
+                  action={
+                    inheritedIdentitySummary.kind === 'empty' ||
+                    inheritedIdentitySummary.kind === 'legacy' ||
+                    inheritedIdentitySummary.kind === 'invalid'
+                      ? { label: inheritedIdentitySummary.actionLabel, href: projectIdentityHref }
+                      : {
+                          label: 'Ver identidade',
+                          onClick: () =>
+                            identitySummaryRef.current?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'start',
+                            }),
+                        }
+                  }
+                />
+                <div className="rounded-lg border border-border/50 bg-background/50 p-4">
+                  <h3 className="mb-2 text-sm font-medium text-muted-foreground">Intenção</h3>
+                  <p className="whitespace-pre-wrap text-foreground">{productionDisplay.intention}</p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -452,6 +495,14 @@ export default function ProductionDetailPage() {
             {/* Visão Geral */}
             <TabsContent value="overview" className="mt-4">
               <div className="space-y-4">
+                <div ref={identitySummaryRef}>
+                  <InheritedIdentitySummaryCard
+                    summary={inheritedIdentitySummary}
+                    projectHref={projectIdentityHref}
+                    action={{ label: inheritedIdentitySummary.actionLabel }}
+                  />
+                </div>
+
                 <Card className="border-border/50 bg-card/30">
                   <CardContent className="p-4">
                     <h3 className="mb-3 font-medium">Resumo desta Produção</h3>

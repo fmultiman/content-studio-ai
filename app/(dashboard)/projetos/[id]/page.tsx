@@ -395,12 +395,14 @@ export default function ProjectDetailPage() {
           </Card>
 
           {/* Project Identity Section */}
-          <ProjectIdentityDisplay
-            identity={resolvedIdentity}
-            readError={identityReadError}
-            onStructure={() => setShowIdentityForm(true)}
-            onEdit={() => setShowIdentityForm(true)}
-          />
+          <section id="project-identity" className="scroll-mt-24">
+            <ProjectIdentityDisplay
+              identity={resolvedIdentity}
+              readError={identityReadError}
+              onStructure={() => setShowIdentityForm(true)}
+              onEdit={() => setShowIdentityForm(true)}
+            />
+          </section>
 
           {/* Productions Section */}
           <div ref={productionsSectionRef} className="scroll-mt-24 space-y-4">
