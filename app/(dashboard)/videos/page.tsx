@@ -21,6 +21,7 @@ import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft
 import { useToast } from '@/hooks/use-toast'
 import type { Project, VideoScene, VideoDraft } from '@/lib/types'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import { draftLoadingMessage } from '@/lib/ux-production-hardening'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -320,7 +321,7 @@ function VideosPageContent() {
         toast({
           title: currentDraftId ? 'Rascunho atualizado!' : 'Rascunho salvo!',
           description: currentDraftId
-            ? 'As alteracoes foram salvas.'
+            ? 'As alterações foram salvas.'
             : 'Voce pode continuar editando mais tarde.',
         })
       }
@@ -428,6 +429,8 @@ function VideosPageContent() {
     }, 100)
   }
 
+  const requestedDraftId = searchParams.get('draft')
+
   return (
     <>
       <Header title="Geração de Vídeos" />
@@ -513,7 +516,14 @@ function VideosPageContent() {
             </Card>
           )}
 
-          {isDataReady && !productionId ? (
+          {loadError ? null : !isDataReady ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-border/50 bg-card/30 p-12 text-center">
+              <Loader2 className="mb-3 h-8 w-8 animate-spin text-muted-foreground" />
+              <h3 className="text-lg font-semibold text-foreground">
+                {draftLoadingMessage('video', !!requestedDraftId)}
+              </h3>
+            </div>
+          ) : !productionId ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
               <h3 className="text-lg font-semibold text-foreground">Production obrigatória</h3>
               <p className="mt-2 max-w-sm text-sm text-muted-foreground">
@@ -563,7 +573,7 @@ function VideosPageContent() {
                     className="gap-2"
                   >
                     <Plus className="h-4 w-4" />
-                    Novo VÃ­deo
+                    Novo Vídeo
                   </Button>
                   <Button
                     onClick={handleGenerateVideo}

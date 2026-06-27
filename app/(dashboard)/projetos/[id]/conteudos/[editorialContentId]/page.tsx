@@ -47,8 +47,9 @@ import type {
   PublicationChannel,
   PublicationFormat,
 } from '@/lib/types'
-import { Edit2, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, Edit2, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react'
 import { ChannelPieceMediaSection } from '@/components/publication/channel-piece-media-section'
+import { productionReturnPath } from '@/lib/ux-production-hardening'
 
 // ---------------------------------------------------------------------------
 // Labels
@@ -492,9 +493,12 @@ export default function EditorialContentDetailPage() {
   if (isLoading) {
     return (
       <>
-        <Header title="Carregando..." />
-        <div className="flex flex-1 items-center justify-center">
+        <Header title="Carregando conteúdo..." />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Carregando conteúdo editorial...
+          </p>
         </div>
       </>
     )
@@ -524,6 +528,11 @@ export default function EditorialContentDetailPage() {
   // Render
   // ---------------------------------------------------------------------------
 
+  const linkedProductionPath = productionReturnPath(ec.project_id, ec.production_id)
+  const linkedProduction = ec.production_id
+    ? productions.find((production) => production.id === ec.production_id)
+    : null
+
   return (
     <>
       <Header title={ec.title} />
@@ -541,8 +550,33 @@ export default function EditorialContentDetailPage() {
               Conteúdos
             </Button>
             <span>/</span>
+            {linkedProductionPath && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-1 py-0 hover:text-foreground"
+                  onClick={() => router.push(linkedProductionPath)}
+                >
+                  {linkedProduction?.title || 'Produção'}
+                </Button>
+                <span>/</span>
+              </>
+            )}
             <span className="truncate font-medium text-foreground">{ec.title}</span>
           </nav>
+
+          {linkedProductionPath && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => router.push(linkedProductionPath)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar para a Produção
+            </Button>
+          )}
 
           {/* EC Edit Form */}
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
