@@ -1,6 +1,6 @@
 # UX-H3 Discovery - Global Navigation Reconciliation
 
-Data: 2026-06-27  
+Data: 2026-06-27
 Branch: `discovery/ux-global-navigation-reconciliation`  
 Escopo: auditoria, contrato conceitual e plano incremental. Nenhuma implementacao de UI, API, banco ou schema foi feita nesta rodada.
 
@@ -222,6 +222,92 @@ Evidencia util ainda extraida:
 - rota autenticada redireciona corretamente para login quando nao ha sessao;
 - a auditoria de usuario recorrente foi reconstruida por codigo e documentos atuais;
 - o fluxo de usuario novo foi avaliado pelos estados vazios, CTAs e gates implementados, sem criar dados artificiais.
+
+## 5.1. Validacao pratica autenticada
+
+Data: 2026-06-27
+Ambiente: browser embutido autenticado em `http://localhost:3000/dashboard`, conta com 2 Projects, 1 Production principal, 2 ImageDrafts recentes, 1 VideoDraft, 2 conteudos editoriais e 0 imagens geradas na Galeria. Nenhum dado foi criado, editado ou removido.
+
+### Fluxos testados
+
+- Dashboard autenticado.
+- Sidebar em desktop e viewport estreito.
+- Lista de Projects.
+- Detalhe de Project com Project Identity e Productions.
+- Detalhe de Production.
+- Entrada global por `/imagens`.
+- Entrada global por `/videos`.
+- Entrada contextual por botoes `Criar Imagem` e `Criar Video` dentro da Production.
+- Hub global `/conteudos`.
+- Detalhe de EditorialContent vinculado a Production.
+- Galeria.
+- Arquivos.
+- `/projetos?new=true`, sem submeter o formulario.
+
+### Confirmado no browser
+
+- O Dashboard prioriza contadores e acoes rapidas, nao continuidade. Acima da dobra aparecem saudacao, metricas, `Acoes Rapidas` e `Atividade Recente`.
+- `Atividade Recente` nao possui dados reais no cenario testado; mostra `Suas criacoes recentes aparecerao aqui`.
+- As acoes globais `Gerar Imagem` e `Gerar Video` levam a `/imagens` e `/videos`, paginas que exigem contexto de Production para criar ou salvar.
+- A sidebar e plana em desktop e em viewport estreito: Dashboard, Projetos, Imagens, Videos, Conteudos, Arquivos, Galeria e Configuracoes aparecem como pares equivalentes.
+- O estado ativo da sidebar funciona visualmente por rota.
+- A lista de Projects e o caminho Project -> Production sao o caminho real para retomar o trabalho.
+- A Production mostra contadores e acoes contextuais: `Imagens (1)`, `Videos (1)`, `Conteudos editoriais (1)`, `Criar Imagem`, `Criar Video` e `Publicacao rapida`.
+- As acoes contextuais da Production levam para URLs com `project` e `production`, por exemplo `/imagens?project=...&production=...` e `/videos?project=...&production=...`.
+- Imagens globais mostram rascunhos recentes, mas a area de criacao permanece bloqueada por `Production obrigatoria` quando a entrada nao tem Production.
+- Videos globais repetem o mesmo padrao de Imagens: rascunhos recentes, `Ver todos` e gate de `Production obrigatoria`.
+- Imagem contextual mostra o strip `Project`, `Production` e `Identidade: Aplicada a geracao e avaliacao`.
+- Video contextual mostra o strip `Project`, `Production` e `Identidade: Disponivel como referencia`.
+- Conteudos global funciona como hub editorial: mostra filtros, `Criacao rapida`, `Novo conteudo`, lista de conteudos e status.
+- Detalhe editorial vinculado mostra `Voltar para a Production` e `Identidade: Disponivel como referencia editorial`.
+- `/projetos?new=true` abre o modal `Novo Projeto` sem deixar a pagina vazia.
+- Arquivos se comunica como biblioteca global: `Biblioteca geral de arquivos pesados no MinIO, organizada por projeto e pasta`, com filtros de Project, pasta, tipo, lixeira, upload e nova pasta.
+
+### Parcialmente confirmado
+
+- A Galeria foi confirmada como superficie de outputs, mas a conta testada possui 0 imagens geradas. A UI mostra `Todas (0)`, `Aprovadas (0)` e `Rascunhos (0)`, alem da copy `Todos os resultados gerados, aprovados e ainda em rascunho`.
+- A diferenca real entre Galeria e Imagens ficou clara por comportamento: Imagens mostra `ImageDrafts` e gate de Production; Galeria mostra contadores/filtros de resultados gerados. Como nao havia outputs, nao foi possivel validar cards preenchidos de Galeria no browser.
+- O fluxo de usuario sem contexto operacional foi simulado sem apagar dados nem criar outra conta. O modal de novo Project foi validado; a criacao real de Project/Production nao foi executada para nao poluir dados.
+
+### Divergencias novas
+
+#### Titulo da Production ainda aparece concatenado
+
+Hipotese anterior: UX-H1 havia estabilizado a separacao visual entre titulo e intencao da Production, restando apenas risco historico/documental.
+
+Evidencia no browser: a API autenticada de leitura de Productions retornou `title` com valor concatenado: `Criar uma campanha multimodal para apresentar o Portal NorteCampanha multimodal Portal Norte`. O mesmo texto apareceu no card de Production dentro do Project, no header da Production, no breadcrumb e nos strips contextuais de Imagem/Video.
+
+Decisao revisada: para UX-H3, a recomendacao de retomada continua valida, mas cards de retomada e strips devem depender de um titulo resolvido/seguro. A persistencia ou migracao do titulo concatenado nao deve ser resolvida dentro do discovery UX-H3, mas deve ser registrada como risco para qualquer dashboard de retomada.
+
+#### Conteudos global mostra Production generica
+
+Hipotese anterior: Conteudos global e um hub mais coerente, mas poderia ocultar o titulo da Production no modo global.
+
+Evidencia no browser: a lista global exibiu `Auditoria UX Reconciliação 2026-06-26 09-15 · Produção · 26/06/2026`, sem titulo especifico da Production. O detalhe editorial mostrou breadcrumb `Conteudos / Produção / Lançamento editorial Portal Norte`.
+
+Decisao revisada: a conclusao permanece, mas a prioridade aumenta. Conteudos global deve resolver e exibir o titulo da Production quando `production_id` existir, ou usar microcopy explicitamente generica quando o titulo ainda nao estiver carregado.
+
+#### Sidebar em viewport estreito
+
+Hipotese anterior: a sidebar plana poderia causar ambiguidade, mas a validacao mobile ainda estava pendente.
+
+Evidencia no browser: em viewport estreito, a mesma sidebar completa continuou presente com todos os itens visiveis e sem agrupamento. O comportamento nao quebrou a navegacao, mas manteve a ambiguidade de papeis e pode competir por espaco horizontal.
+
+Decisao revisada: UX-H3D deve incluir validacao responsiva explicita, nao apenas troca de labels/agrupamento.
+
+### Nao reproduzido ou nao testavel nesta rodada
+
+- Nao foi possivel validar Galeria com cards preenchidos, pois a conta tinha 0 outputs em `images`.
+- Nao foi criado Project novo nem Production nova, para evitar alterar dados reais.
+- Nao foi testada criacao/salvamento de novos drafts; somente os caminhos ate as telas contextuais foram verificados.
+- Nao foi testado upload em Arquivos, para evitar transmissao de arquivos.
+
+### Impacto sobre a solucao recomendada
+
+A solucao incremental continua a mesma, com dois ajustes de prioridade:
+
+1. UX-H3A deve tratar titulo de Production como dado potencialmente legado/ruidoso ao montar cards de retomada. O dashboard de retomada nao deve reutilizar diretamente `production.title` sem a mesma estrategia defensiva ja esperada para header/breadcrumb.
+2. UX-H3B/UX-H3C devem diferenciar com mais forca `draft de trabalho`, `output gerado nao aprovado` e `arquivo enviado`, porque o browser confirmou que Imagens, Galeria e Arquivos usam superficies e entidades diferentes.
 
 ## 6. Modelo mental atual
 
