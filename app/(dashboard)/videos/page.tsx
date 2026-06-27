@@ -8,8 +8,10 @@ import { SceneCard } from '@/components/videos/scene-card'
 import { StoryboardModal } from '@/components/videos/storyboard-modal'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -18,14 +20,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, VideoScene, VideoDraft } from '@/lib/types'
+import type { Project, Production, VideoScene, VideoDraft } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import { draftLoadingMessage } from '@/lib/ux-production-hardening'
+import {
+  buildVideoDraftHubCards,
+  filterDraftHubCards,
+  getDraftHubEmptyState,
+  getDraftHubProductionLabel,
+  getProductionsForProject,
+} from '@/lib/draft-hub'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -33,6 +42,7 @@ function VideosPageContent() {
   const searchParams = useSearchParams()
   
   const [projects, setProjects] = useState<Project[]>([])
+  const [productions, setProductions] = useState<Production[]>([])
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
   const [productionId, setProductionId] = useState<string | null>(null)
   const [productionTitle, setProductionTitle] = useState<string | null>(null)
@@ -51,6 +61,13 @@ function VideosPageContent() {
   const [retryKey, setRetryKey] = useState(0)
   const [showStoryboard, setShowStoryboard] = useState(false)
   const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
+  const [hubProjectFilter, setHubProjectFilter] = useState('all')
+  const [hubProductionFilter, setHubProductionFilter] = useState('all')
+  const [hubStatusFilter, setHubStatusFilter] = useState('all')
+  const [hubSearch, setHubSearch] = useState('')
+  const [hubCreateProjectId, setHubCreateProjectId] = useState('')
+  const [hubCreateProductionId, setHubCreateProductionId] = useState('')
+  const [hubViewMode, setHubViewMode] = useViewModePreference('video-draft-hub-view', 'list')
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Fetch projects and drafts on mount
@@ -75,9 +92,16 @@ function VideosPageContent() {
           .order('created_at', { ascending: false })
 
         if (!cancelled && projectsData) setProjects(projectsData)
+
+        const { data: productionsData } = await supabase
+          .from('productions')
+          .select('*')
+          .order('updated_at', { ascending: false })
+
+        if (!cancelled && productionsData) setProductions(productionsData)
         if (!cancelled) setIsLoadingProjects(false)
 
-        const draftsResponse = await fetch('/api/video-drafts?limit=5')
+        const draftsResponse = await fetch('/api/video-drafts?limit=50')
         const draftsData = await draftsResponse.json()
 
         if (!cancelled) {
@@ -460,10 +484,330 @@ function VideosPageContent() {
     productionId && (productionProjectId || selectedProject)
       ? `/projetos/${productionProjectId || selectedProject}/producoes/${productionId}`
       : undefined
+  const hubCards = buildVideoDraftHubCards({ drafts, projects, productions })
+  const hubFilteredProductions = hubProjectFilter === 'all'
+    ? productions
+    : productions.filter((production) => production.project_id === hubProjectFilter)
+  const filteredHubCards = filterDraftHubCards(hubCards, {
+    projectId: hubProjectFilter,
+    productionId: hubProductionFilter,
+    status: hubStatusFilter,
+    search: hubSearch,
+  })
+  const hasHubFilters = hubProjectFilter !== 'all' || hubProductionFilter !== 'all' || hubStatusFilter !== 'all' || !!hubSearch.trim()
+  const hubEmptyState = getDraftHubEmptyState({
+    kind: 'video',
+    projectCount: projects.length,
+    productionCount: productions.length,
+    totalDraftCount: hubCards.length,
+    filteredDraftCount: filteredHubCards.length,
+    hasFilters: hasHubFilters,
+    hasError: !!loadError,
+  })
+  const hubCreateProductions = getProductionsForProject(productions, hubCreateProjectId)
+  const openVideoWorkspace = () => {
+    if (!hubCreateProjectId || !hubCreateProductionId) return
+    router.push(`/videos?project=${hubCreateProjectId}&production=${hubCreateProductionId}`)
+  }
+  const clearHubFilters = () => {
+    setHubProjectFilter('all')
+    setHubProductionFilter('all')
+    setHubStatusFilter('all')
+    setHubSearch('')
+  }
+  const renderVideoHub = () => (
+    <div className="space-y-6">
+      <section className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Video className="h-5 w-5 text-pink-300" />
+              <p className="text-sm font-medium text-foreground">Criação contextual</p>
+            </div>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Crie um novo vídeo dentro de uma Production ou retome um rascunho existente.
+            </p>
+          </div>
+          <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
+            <h2 className="text-base font-semibold text-foreground">Criar novo vídeo</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Escolha o Project e a Production para abrir o workspace contextual.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A identidade do Project estará disponível como referência na Production.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="space-y-2">
+                <Label htmlFor="video-hub-project">Project</Label>
+                <Select
+                  value={hubCreateProjectId}
+                  onValueChange={(value) => {
+                    setHubCreateProjectId(value)
+                    setHubCreateProductionId('')
+                  }}
+                >
+                  <SelectTrigger id="video-hub-project" className="bg-background/50">
+                    <SelectValue placeholder="Selecione um Project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="video-hub-production">Production</Label>
+                <Select
+                  value={hubCreateProductionId}
+                  onValueChange={setHubCreateProductionId}
+                  disabled={!hubCreateProjectId || hubCreateProductions.length === 0}
+                >
+                  <SelectTrigger id="video-hub-production" className="bg-background/50">
+                    <SelectValue placeholder="Selecione uma Production" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {hubCreateProductions.map((production) => (
+                      <SelectItem key={production.id} value={production.id}>
+                        {getDraftHubProductionLabel(production, projects)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {hubCreateProjectId && hubCreateProductions.length === 0 && (
+              <p className="mt-3 text-xs text-amber-200">
+                Este Project ainda nao possui Production. Crie uma Production antes de iniciar um video.
+              </p>
+            )}
+            <Button
+              className="mt-4 w-full"
+              onClick={openVideoWorkspace}
+              disabled={!hubCreateProjectId || !hubCreateProductionId}
+            >
+              Criar na Production
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="video-draft-filters">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="video-draft-filters" className="text-lg font-semibold text-foreground">
+              Rascunhos recentes
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Retome trabalhos no Project e na Production corretos.
+            </p>
+          </div>
+          <ViewModeToggle value={hubViewMode} onValueChange={setHubViewMode} />
+        </div>
+
+        <div className="grid gap-3 rounded-xl border border-border/50 bg-card/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-2">
+            <Label htmlFor="video-filter-search">Buscar</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="video-filter-search"
+                value={hubSearch}
+                onChange={(event) => setHubSearch(event.target.value)}
+                placeholder="Titulo, Project ou Production"
+                className="bg-background/50 pl-9"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="video-filter-project">Project</Label>
+            <Select
+              value={hubProjectFilter}
+              onValueChange={(value) => {
+                setHubProjectFilter(value)
+                setHubProductionFilter('all')
+              }}
+            >
+              <SelectTrigger id="video-filter-project" className="bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os Projects</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="video-filter-production">Production</Label>
+            <Select value={hubProductionFilter} onValueChange={setHubProductionFilter}>
+              <SelectTrigger id="video-filter-production" className="bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as Productions</SelectItem>
+                {hubFilteredProductions.map((production) => (
+                  <SelectItem key={production.id} value={production.id}>
+                    {getDraftHubProductionLabel(production, projects)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="video-filter-status">Status</Label>
+            <Select value={hubStatusFilter} onValueChange={setHubStatusFilter}>
+              <SelectTrigger id="video-filter-status" className="bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
+                <SelectItem value="Rascunho">Rascunho</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {hubEmptyState ? (
+          <div className="rounded-xl border border-dashed border-border/50 bg-card/30 p-10 text-center">
+            <h3 className="text-lg font-semibold text-foreground">{hubEmptyState.title}</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+              {hubEmptyState.description}
+            </p>
+            {hubEmptyState.kind === 'no-filter-results' ? (
+              <Button className="mt-4" variant="outline" onClick={clearHubFilters}>
+                Limpar filtros
+              </Button>
+            ) : hubEmptyState.href && hubEmptyState.actionLabel ? (
+              <Button className="mt-4" onClick={() => router.push(hubEmptyState.href!)}>
+                {hubEmptyState.actionLabel}
+              </Button>
+            ) : null}
+          </div>
+        ) : hubViewMode === 'list' ? (
+          <div className="overflow-hidden rounded-xl border border-border/50 bg-card/30">
+            <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] gap-3 border-b border-border/50 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
+              <span>Titulo</span>
+              <span>Project</span>
+              <span>Production</span>
+              <span>Status</span>
+              <span>Atualizado</span>
+              <span>Acoes</span>
+            </div>
+            <div role="list" className="divide-y divide-border/50">
+              {filteredHubCards.map((draft) => (
+                <div
+                  key={draft.id}
+                  role="listitem"
+                  className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
+                      <span className="truncate font-medium text-foreground" title={draft.title}>
+                        {draft.title}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground md:hidden">
+                      Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs text-muted-foreground md:hidden">Project: </span>
+                    <span className="truncate text-sm text-foreground" title={draft.projectName}>
+                      {draft.projectName}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs text-muted-foreground md:hidden">Production: </span>
+                    <span className="truncate text-sm text-foreground" title={draft.productionName || 'Sem Production associada'}>
+                      {draft.productionName || 'Sem Production associada'}
+                    </span>
+                  </div>
+                  <div>
+                    <Badge variant="outline">{draft.status}</Badge>
+                  </div>
+                  <div className="hidden text-sm text-muted-foreground md:block">
+                    {new Date(draft.updatedAt).toLocaleDateString('pt-BR')}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
+                      Abrir
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    {draft.productionHref && (
+                      <Button size="sm" variant="outline" onClick={() => router.push(draft.productionHref!)}>
+                        Ver Production
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {filteredHubCards.map((draft) => (
+              <Card key={draft.id} className="border-border/50 bg-card/30 backdrop-blur-sm">
+                <CardContent className="space-y-4 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
+                      <Video className="h-5 w-5 text-pink-300" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">Video</Badge>
+                        <Badge variant="outline">{draft.status}</Badge>
+                      </div>
+                      <h3 className="mt-2 line-clamp-2 font-semibold text-foreground" title={draft.title}>
+                        {draft.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                  </div>
+                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Project</dt>
+                      <dd className="truncate text-foreground" title={draft.projectName}>{draft.projectName}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Production</dt>
+                      <dd className="truncate text-foreground" title={draft.productionName || 'Sem Production associada'}>
+                        {draft.productionName || 'Sem Production associada'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="text-xs text-muted-foreground">{draft.meta}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => router.push(draft.href)} className="gap-2">
+                      Abrir
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    {draft.productionHref && (
+                      <Button variant="outline" onClick={() => router.push(draft.productionHref!)}>
+                        Ver Production
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
 
   return (
     <>
-      <Header title="Geração de Vídeos" />
+      <Header title={productionId ? 'Geração de Vídeos' : 'Vídeos'} />
       {productionId && (
         <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
           <Button
@@ -503,7 +847,7 @@ function VideosPageContent() {
             </div>
           )}
           {/* Drafts Section */}
-          {!isLoadingDrafts && drafts.length > 0 && (
+          {productionId && !isLoadingDrafts && drafts.length > 0 && (
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -554,15 +898,7 @@ function VideosPageContent() {
               </h3>
             </div>
           ) : !productionId ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
-              <h3 className="text-lg font-semibold text-foreground">Production obrigatória</h3>
-              <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                Para criar ou salvar um rascunho de vídeo, acesse esta página a partir de uma Production.
-              </p>
-              <Button className="mt-4" onClick={() => router.back()}>
-                Voltar
-              </Button>
-            </div>
+            renderVideoHub()
           ) : (
           <>
           {selectedProjectData && (
