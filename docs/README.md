@@ -21,6 +21,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Production Hardening Results](./product/ux/ux-production-hardening-results.md)
   Fechamento do UX-H1 com correcoes localizadas de continuidade da Production, loading e retorno contextual.
 
+- [UX Inherited Project Identity Discovery](./product/ux/ux-inherited-project-identity-discovery.md)
+  Contrato de UX-H2 para comunicar a Project Identity herdada na Production sem prometer consumo inexistente.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 
