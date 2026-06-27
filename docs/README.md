@@ -30,6 +30,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Global Navigation Reconciliation Discovery](./product/ux/ux-global-navigation-reconciliation-discovery.md)
   Contrato de UX-H3 para reconciliar Dashboard, sidebar, hubs globais e retomada de trabalho com o modelo Project / Production.
 
+- [UX Dashboard Continuation Hub Results](./product/ux/ux-dashboard-continuation-hub-results.md)
+  Fechamento do UX-H3A com Dashboard orientado a retomada por Production, itens recentes e criacao contextual.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 
