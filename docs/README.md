@@ -39,6 +39,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Gallery Output Library Results](./product/ux/ux-gallery-output-library-results.md)
   Fechamento do UX-H3C com Galeria reconciliada como biblioteca de outputs visuais gerados.
 
+- [UX Sidebar Navigation Reconciliation Results](./product/ux/ux-sidebar-navigation-reconciliation-results.md)
+  Fechamento do UX-H3D com Sidebar agrupada por Workspace, criacao, bibliotecas e sistema.
+
 - [Project Identity Prompt Composition Fix Results](./product/ux/project-identity-prompt-composition-fix-results.md)
   Fechamento da correcao de composicao e traducao de prompts de imagem com Project Identity.
 
