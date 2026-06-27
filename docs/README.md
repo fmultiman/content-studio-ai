@@ -45,6 +45,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [Project Identity Prompt Composition Fix Results](./product/ux/project-identity-prompt-composition-fix-results.md)
   Fechamento da correcao de composicao e traducao de prompts de imagem com Project Identity.
 
+- [UX Visual Consistency Audit](./product/ux/ux-visual-consistency-audit.md)
+  Auditoria UX-H4A de consistencia visual transversal apos UX-H3, com matriz de inconsistencias e plano de padronizacao.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 
