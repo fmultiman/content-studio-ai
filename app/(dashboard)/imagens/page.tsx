@@ -8,7 +8,7 @@ import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
-import { generateImagePrompt, regeneratePrompt } from '@/lib/ai-simulator'
+import { generateImagePrompt, PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -73,6 +73,7 @@ function ImagesPageContent() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const [isTranslatingPrompt, setIsTranslatingPrompt] = useState(false)
+  const [promptTranslationError, setPromptTranslationError] = useState<string | null>(null)
   
   // API Key state
   const [openaiApiKey, setOpenaiApiKey] = useState<string | null>(null)
@@ -514,12 +515,19 @@ function ImagesPageContent() {
   const updateGeneratedPrompt = (prompt: string) => {
     setGeneratedPrompt(prompt)
     setGeneratedPromptPt('')
+    setPromptTranslationError(null)
   }
 
   const handleTranslatePrompt = async () => {
     if (!generatedPrompt.trim() || isTranslatingPrompt) return
 
+    if (!openaiApiKey) {
+      setPromptTranslationError('Tradução indisponível sem provedor configurado.')
+      return
+    }
+
     setIsTranslatingPrompt(true)
+    setPromptTranslationError(null)
 
     try {
       const response = await fetch('/api/prompts/translate', {
@@ -530,14 +538,21 @@ function ImagesPageContent() {
       const data = await response.json()
 
       if (!response.ok) {
+        if (data.code === 'PROMPT_PROVIDER_NOT_CONFIGURED') {
+          setPromptTranslationError('Tradução indisponível sem provedor configurado.')
+          return
+        }
+
         throw new Error(data.error || 'Erro ao traduzir prompt')
       }
 
       setGeneratedPromptPt(data.translatedPrompt)
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Nao foi possivel traduzir o prompt.'
+      setPromptTranslationError(message)
       toast({
         title: 'Erro na traducao',
-        description: error instanceof Error ? error.message : 'Nao foi possivel traduzir o prompt.',
+        description: message,
         variant: 'destructive',
       })
     } finally {
@@ -1037,9 +1052,12 @@ function ImagesPageContent() {
         await handleCreateImage(result.prompt, selectedModel)
       }
     } catch (error) {
+      const promptError = error instanceof PromptGenerationError ? error : null
       toast({
-        title: 'Erro',
-        description: 'Não foi possível gerar o prompt. Tente novamente.',
+        title: promptError?.code === 'PROMPT_PROVIDER_NOT_CONFIGURED'
+          ? 'Provedor de IA necessario'
+          : 'Erro ao gerar prompt',
+        description: promptError?.message || 'Nao foi possivel gerar o prompt agora. Verifique a configuracao do provedor ou tente novamente.',
         variant: 'destructive',
       })
     } finally {
@@ -1403,6 +1421,8 @@ function ImagesPageContent() {
                   generatedPromptPt={generatedPromptPt}
                   onTranslatePrompt={handleTranslatePrompt}
                   isTranslatingPrompt={isTranslatingPrompt}
+                  canTranslatePrompt={!!openaiApiKey}
+                  translationError={promptTranslationError}
                   promptDetails={promptDetails}
                   onCreateImage={handleCreateImageWithModel}
                   isCreatingImage={isCreatingImage || isGeneratingNanoBanana}

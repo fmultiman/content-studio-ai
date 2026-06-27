@@ -546,8 +546,8 @@ export default function SettingsPage() {
                 <CardContent className="space-y-6">
                   <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
                     <p className="text-sm text-violet-200/80">
-                      <strong>Dica:</strong> Adicione sua chave da OpenAI para usar IA real na geração de prompts. 
-                      Sem a chave, o sistema usará simulação local.
+                      <strong>Dica:</strong> A geracao de prompts por IA requer uma chave da OpenAI configurada.
+                      Sem uma chave valida, esse recurso ficara indisponivel.
                     </p>
                   </div>
                   

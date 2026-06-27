@@ -33,6 +33,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Dashboard Continuation Hub Results](./product/ux/ux-dashboard-continuation-hub-results.md)
   Fechamento do UX-H3A com Dashboard orientado a retomada por Production, itens recentes e criacao contextual.
 
+- [Project Identity Prompt Composition Fix Results](./product/ux/project-identity-prompt-composition-fix-results.md)
+  Fechamento da correcao de composicao e traducao de prompts de imagem com Project Identity.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 
