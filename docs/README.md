@@ -33,6 +33,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Dashboard Continuation Hub Results](./product/ux/ux-dashboard-continuation-hub-results.md)
   Fechamento do UX-H3A com Dashboard orientado a retomada por Production, itens recentes e criacao contextual.
 
+- [UX Global Image and Video Hubs Results](./product/ux/ux-global-image-video-hubs-results.md)
+  Fechamento do UX-H3B com Imagens e Videos globais reconciliados como hubs de rascunhos e criacao contextual.
+
 - [Project Identity Prompt Composition Fix Results](./product/ux/project-identity-prompt-composition-fix-results.md)
   Fechamento da correcao de composicao e traducao de prompts de imagem com Project Identity.
 
