@@ -40,6 +40,12 @@ describe('view mode preference helpers', () => {
     expect(readViewModePreference(storage, 'image-hub', 'list')).toBe('list')
   })
 
+  it('uses Cards as the safe Galeria fallback for invalid saved values', () => {
+    const storage = createStorage({ 'gallery-output-view': 'table' })
+
+    expect(readViewModePreference(storage, 'gallery-output-view', 'card')).toBe('card')
+  })
+
   it('does not throw without storage', () => {
     expect(readViewModePreference(undefined, 'image-hub', 'list')).toBe('list')
     expect(() => writeViewModePreference(undefined, 'image-hub', 'card')).not.toThrow()
@@ -50,9 +56,11 @@ describe('view mode preference helpers', () => {
 
     writeViewModePreference(storage, 'image-hub', 'card')
     writeViewModePreference(storage, 'video-hub', 'list')
+    writeViewModePreference(storage, 'gallery-output-view', 'card')
 
     expect(readViewModePreference(storage, 'image-hub', 'list')).toBe('card')
     expect(readViewModePreference(storage, 'video-hub', 'card')).toBe('list')
+    expect(readViewModePreference(storage, 'gallery-output-view', 'list')).toBe('card')
   })
 
   it('keeps the toggle on native button keyboard semantics', () => {
