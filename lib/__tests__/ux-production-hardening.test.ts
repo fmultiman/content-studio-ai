@@ -41,6 +41,26 @@ describe('UX-H1 Production hardening helpers', () => {
     expect(display.title).toBe('Criar uma campanha com linguagem de bastidor')
   })
 
+  it('resolves a legacy title that starts with the intention lead without the Project name', () => {
+    const display = resolveProductionDisplay({
+      title: 'Criar uma campanha multimodal para apresentar o Portal NorteCampanha multimodal Portal Norte',
+      intention: 'Criar uma campanha multimodal para apresentar o Portal Norte: uma capa visual e um teaser curto.',
+      projectName: 'Auditoria UX Reconciliação 2026-06-26 09-15',
+    })
+
+    expect(display.title).toBe('Campanha multimodal Portal Norte')
+  })
+
+  it('resolves a legacy title that shares a long intention prefix with a wording variation', () => {
+    const display = resolveProductionDisplay({
+      title: 'Criar a capa e um teaser visual para uma faixa experimentalPortal Norte - capa e teaser',
+      intention: 'Criar a capa e um teaser visual para uma faixa experimental chamada Portal Norte.',
+      projectName: 'Auditoria UX 2026',
+    })
+
+    expect(display.title).toBe('Portal Norte - capa e teaser')
+  })
+
   it('uses a predictable fallback for empty values', () => {
     const display = resolveProductionDisplay({
       title: '   ',

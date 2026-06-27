@@ -1,7 +1,18 @@
-import { createClient } from '@/lib/supabase/server'
-import { Header } from '@/components/layout/header'
-import { ActionCards } from '@/components/dashboard/action-cards'
+import { DashboardContinuationHub } from '@/components/dashboard/continuation-hub'
 import { StatsCards } from '@/components/dashboard/stats-cards'
+import { Header } from '@/components/layout/header'
+import {
+  buildRecentProductions,
+  buildRecentProjects,
+  buildRecentWorkItems,
+  getDashboardEmptyState,
+  type DashboardEditorialContent,
+  type DashboardImageDraft,
+  type DashboardProduction,
+  type DashboardProject,
+  type DashboardVideoDraft,
+} from '@/lib/dashboard-continuation'
+import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
@@ -15,61 +26,145 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  // Fetch counts for stats
-  const [projectsResult, imagesResult, videosResult, promptsResult] = await Promise.all([
-    supabase.from('projects').select('id', { count: 'exact', head: true }),
-    supabase.from('images').select('id', { count: 'exact', head: true }),
-    supabase.from('videos').select('id', { count: 'exact', head: true }),
-    supabase.from('prompts').select('id', { count: 'exact', head: true }),
+  const [
+    projectsResult,
+    productionsResult,
+    imageDraftsResult,
+    videoDraftsResult,
+    editorialContentsResult,
+    projectsCountResult,
+    productionsCountResult,
+    imageDraftsCountResult,
+    videoDraftsCountResult,
+    editorialContentsCountResult,
+  ] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('id, name, description, context, identity, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(6),
+    supabase
+      .from('productions')
+      .select('id, project_id, title, intention, type, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('image_drafts')
+      .select('id, project_id, production_id, name, user_input, image_status, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('video_drafts')
+      .select('id, project_id, production_id, name, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('editorial_contents')
+      .select('id, project_id, production_id, title, status, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('projects')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id),
+    supabase
+      .from('productions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id),
+    supabase
+      .from('image_drafts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id),
+    supabase
+      .from('video_drafts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id),
+    supabase
+      .from('editorial_contents')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id),
   ])
 
-  const projectsCount = projectsResult.count ?? 0
-  const imagesCount = imagesResult.count ?? 0
-  const videosCount = videosResult.count ?? 0
-  const promptsCount = promptsResult.count ?? 0
+  const projects = (projectsResult.data ?? []) as DashboardProject[]
+  const productions = (productionsResult.data ?? []) as DashboardProduction[]
+  const imageDrafts = (imageDraftsResult.data ?? []) as DashboardImageDraft[]
+  const videoDrafts = (videoDraftsResult.data ?? []) as DashboardVideoDraft[]
+  const editorialContents = (editorialContentsResult.data ?? []) as DashboardEditorialContent[]
+  const recentProductions = buildRecentProductions({
+    productions,
+    projects,
+    imageDrafts,
+    videoDrafts,
+    editorialContents,
+  })
+  const recentWorkItems = buildRecentWorkItems({
+    imageDrafts,
+    videoDrafts,
+    editorialContents,
+    projects,
+    productions,
+  })
+  const recentProjects = buildRecentProjects({ projects, productions })
+
+  const projectsCount = projectsCountResult.count ?? 0
+  const productionsCount = productionsCountResult.count ?? 0
+  const imageDraftsCount = imageDraftsCountResult.count ?? 0
+  const videoDraftsCount = videoDraftsCountResult.count ?? 0
+  const editorialContentsCount = editorialContentsCountResult.count ?? 0
+  const emptyState = getDashboardEmptyState({
+    projectCount: projectsCount,
+    productionCount: productionsCount,
+    recentItemCount: recentWorkItems.length,
+  })
+  const hasLoadError = [
+    projectsResult,
+    productionsResult,
+    imageDraftsResult,
+    videoDraftsResult,
+    editorialContentsResult,
+  ].some((result) => result.error)
 
   return (
     <>
       <Header title="Dashboard" />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-8">
-          {/* Welcome Section */}
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">
-              Olá, {user.email?.split('@')[0]}!
-            </h2>
-            <p className="mt-1 text-muted-foreground">
-              O que você gostaria de criar hoje?
-            </p>
-          </div>
+          {hasLoadError && (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+              Não foi possível carregar todos os dados do Dashboard. Tente atualizar a página.
+            </div>
+          )}
 
-          {/* Stats */}
-          <StatsCards
-            projectsCount={projectsCount}
-            imagesCount={imagesCount}
-            videosCount={videosCount}
-            promptsCount={promptsCount}
+          <DashboardContinuationHub
+            userName={user.email?.split('@')[0] ?? 'criador'}
+            productions={recentProductions}
+            workItems={recentWorkItems}
+            projects={recentProjects}
+            emptyState={emptyState}
           />
 
-          {/* Action Cards */}
-          <div>
-            <h3 className="mb-4 text-lg font-semibold text-foreground">
-              Ações Rápidas
-            </h3>
-            <ActionCards />
-          </div>
-
-          {/* Recent Activity Placeholder */}
-          <div>
-            <h3 className="mb-4 text-lg font-semibold text-foreground">
-              Atividade Recente
-            </h3>
-            <div className="rounded-xl border border-border/50 bg-card/30 p-8 text-center backdrop-blur-sm">
-              <p className="text-muted-foreground">
-                Suas criações recentes aparecerão aqui
+          <section className="space-y-4" aria-labelledby="resumo-dashboard">
+            <div>
+              <h3 id="resumo-dashboard" className="text-lg font-semibold text-foreground">
+                Resumo
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Métricas secundárias do trabalho salvo.
               </p>
             </div>
-          </div>
+            <StatsCards
+              projectsCount={projectsCount}
+              productionsCount={productionsCount}
+              imageDraftsCount={imageDraftsCount}
+              videoDraftsCount={videoDraftsCount}
+              editorialContentsCount={editorialContentsCount}
+            />
+          </section>
         </div>
       </div>
     </>
