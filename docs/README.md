@@ -36,6 +36,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Global Image and Video Hubs Results](./product/ux/ux-global-image-video-hubs-results.md)
   Fechamento do UX-H3B com Imagens e Videos globais reconciliados como hubs de rascunhos e criacao contextual.
 
+- [UX Gallery Output Library Results](./product/ux/ux-gallery-output-library-results.md)
+  Fechamento do UX-H3C com Galeria reconciliada como biblioteca de outputs visuais gerados.
+
 - [Project Identity Prompt Composition Fix Results](./product/ux/project-identity-prompt-composition-fix-results.md)
   Fechamento da correcao de composicao e traducao de prompts de imagem com Project Identity.
 

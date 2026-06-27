@@ -1,12 +1,25 @@
+/* eslint-disable @next/next/no-img-element */
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AlertCircle, Download, ExternalLink, Eye, ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -14,19 +27,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Download, ImageIcon, Loader2, Plus, CheckCircle2, Clock3, FolderKanban } from 'lucide-react'
-import type { Image as ImageType, Project } from '@/lib/types'
+import type { Image as ImageType, ImageDraft, Production, Project } from '@/lib/types'
+import {
+  buildGalleryOutputs,
+  filterGalleryOutputs,
+  getGalleryEmptyState,
+  getGalleryProductionsForProject,
+  type GalleryOutputItem,
+  type GalleryOutputStatus,
+} from '@/lib/gallery-output-library'
+import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 
-type GalleryFilter = 'all' | 'approved' | 'draft'
+type GalleryStatusFilter = GalleryOutputStatus | 'all'
 
 export default function GalleryPage() {
   const router = useRouter()
   const [images, setImages] = useState<ImageType[]>([])
-  const [projects, setProjects] = useState<Record<string, Project>>({})
-  const [filter, setFilter] = useState<GalleryFilter>('all')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [productions, setProductions] = useState<Production[]>([])
+  const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [selectedProject, setSelectedProject] = useState('all')
+  const [selectedProduction, setSelectedProduction] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<GalleryStatusFilter>('all')
+  const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
+  const [selectedOutput, setSelectedOutput] = useState<GalleryOutputItem | null>(null)
+  const [viewMode, setViewMode] = useViewModePreference('gallery-output-view', 'card')
 
   useEffect(() => {
     const getSignedImageUrls = async (image: ImageType) => {
@@ -49,96 +77,135 @@ export default function GalleryPage() {
     }
 
     const fetchGallery = async () => {
-      const supabase = createClient()
+      setIsLoading(true)
+      setErrorMessage(null)
 
-      const { data: imagesData } = await supabase
-        .from('images')
-        .select('*')
-        .order('updated_at', { ascending: false })
+      try {
+        const supabase = createClient()
 
-      if (imagesData) {
-        const signedImages = await Promise.all(
-          imagesData.map((image) => getSignedImageUrls(image as ImageType)),
-        )
-        setImages(signedImages)
-
-        const projectIds = [
-          ...new Set(imagesData.map((image) => image.project_id).filter(Boolean)),
-        ] as string[]
-
-        if (projectIds.length > 0) {
-          const { data: projectsData } = await supabase
+        const [imagesResult, draftsResult, projectsResult, productionsResult] = await Promise.all([
+          supabase
+            .from('images')
+            .select('*')
+            .order('updated_at', { ascending: false }),
+          supabase
+            .from('image_drafts')
+            .select('id, project_id, production_id, name, user_input, current_image_id, updated_at')
+            .not('current_image_id', 'is', null),
+          supabase
             .from('projects')
             .select('*')
-            .in('id', projectIds)
+            .order('updated_at', { ascending: false }),
+          supabase
+            .from('productions')
+            .select('*')
+            .order('updated_at', { ascending: false }),
+        ])
 
-          if (projectsData) {
-            const projectsMap: Record<string, Project> = {}
-            projectsData.forEach((project) => {
-              projectsMap[project.id] = project
-            })
-            setProjects(projectsMap)
-          }
+        const firstError =
+          imagesResult.error ||
+          draftsResult.error ||
+          projectsResult.error ||
+          productionsResult.error
+
+        if (firstError) {
+          throw new Error(firstError.message)
         }
-      }
 
-      setIsLoading(false)
+        const signedImages = await Promise.all(
+          (imagesResult.data || []).map((image) => getSignedImageUrls(image as ImageType)),
+        )
+
+        setImages(signedImages)
+        setDrafts((draftsResult.data || []) as ImageDraft[])
+        setProjects((projectsResult.data || []) as Project[])
+        setProductions((productionsResult.data || []) as Production[])
+      } catch (error) {
+        console.error('Erro ao carregar Galeria', error)
+        setErrorMessage('Não foi possível carregar a Galeria agora.')
+      } finally {
+        setIsLoading(false)
+      }
     }
 
     fetchGallery()
-  }, [])
+  }, [retryKey])
 
-  const filteredImages = useMemo(() => {
-    let result = images
-
-    if (selectedProject !== 'all') {
-      result = result.filter((image) => image.project_id === selectedProject)
-    }
-
-    if (filter === 'approved') {
-      return result.filter((image) => image.status === 'approved')
-    }
-
-    if (filter === 'draft') {
-      return result.filter((image) => image.status !== 'approved')
-    }
-
-    return result
-  }, [filter, images, selectedProject])
-
-  const approvedCount = images.filter((image) => image.status === 'approved').length
-  const draftCount = images.length - approvedCount
-  const projectList = Object.values(projects).sort((a, b) =>
-    a.name.localeCompare(b.name, 'pt-BR')
+  const outputs = useMemo(
+    () => buildGalleryOutputs({ images, drafts, projects, productions }),
+    [drafts, images, productions, projects],
   )
 
-  const handleDownload = async (image: ImageType) => {
-    if (!image.image_url) return
+  const availableProductions = useMemo(
+    () => getGalleryProductionsForProject(productions, selectedProject),
+    [productions, selectedProject],
+  )
 
-    const response = await fetch(image.image_url)
-    if (!response.ok) return
+  const effectiveSelectedProduction = selectedProduction !== 'all' &&
+    availableProductions.some((production) => production.id === selectedProduction)
+    ? selectedProduction
+    : 'all'
 
-    const blob = await response.blob()
-    const extension = blob.type === 'image/jpeg'
-      ? 'jpg'
-      : blob.type === 'image/webp'
-        ? 'webp'
-        : 'png'
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `content-agent-${image.id}.${extension}`
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
+  const filteredOutputs = useMemo(
+    () => filterGalleryOutputs(outputs, {
+      search,
+      projectId: selectedProject,
+      productionId: effectiveSelectedProduction,
+      status: statusFilter,
+    }),
+    [effectiveSelectedProduction, outputs, search, selectedProject, statusFilter],
+  )
+
+  const hasFilters = Boolean(
+      search.trim() ||
+      selectedProject !== 'all' ||
+      effectiveSelectedProduction !== 'all' ||
+      statusFilter !== 'all',
+  )
+
+  const emptyState = getGalleryEmptyState({
+    projectCount: projects.length,
+    outputCount: outputs.length,
+    filteredCount: filteredOutputs.length,
+    hasFilters,
+  })
+
+  const approvedCount = outputs.filter((output) => output.status === 'approved').length
+  const generatedCount = outputs.filter((output) => output.status === 'generated').length
+  const rejectedCount = outputs.filter((output) => output.status === 'rejected').length
+  const projectList = [...projects].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+
+  const clearFilters = () => {
+    setSearch('')
+    setSelectedProject('all')
+    setSelectedProduction('all')
+    setStatusFilter('all')
   }
 
-  const statusLabel = (status: ImageType['status']) => {
-    if (status === 'approved') return 'Aprovada'
-    if (status === 'generating') return 'Gerando'
-    if (status === 'rejected') return 'Rejeitada'
-    return 'Rascunho'
+  const handleDownload = async (output: GalleryOutputItem) => {
+    if (!output.downloadUrl) return
+
+    try {
+      const response = await fetch(output.downloadUrl)
+      if (!response.ok) return
+
+      const blob = await response.blob()
+      const extension = blob.type === 'image/jpeg'
+        ? 'jpg'
+        : blob.type === 'image/webp'
+          ? 'webp'
+          : 'png'
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = safeGalleryFilename(output.title, extension)
+      document.body.appendChild(link)
+      link.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+    } catch {
+      setErrorMessage('Não foi possível baixar esta imagem agora.')
+    }
   }
 
   return (
@@ -146,134 +213,544 @@ export default function GalleryPage() {
       <Header title="Galeria" />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-muted-foreground">
-                Todos os resultados gerados, aprovados e ainda em rascunho.
+          <section className="max-w-2xl">
+            <div className="max-w-2xl">
+              <h1 className="text-2xl font-semibold tracking-normal">Galeria</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Explore imagens geradas nos seus Projects e Productions.
               </p>
             </div>
-            <Button
-              onClick={() => router.push('/imagens')}
-              className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-            >
-              <Plus className="h-4 w-4" />
-              Nova Imagem
-            </Button>
-          </div>
+          </section>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <ToggleGroup
-              type="single"
-              value={filter}
-              onValueChange={(value: GalleryFilter) => value && setFilter(value)}
-              className="rounded-lg border border-border/50"
-            >
-              <ToggleGroupItem value="all" className="gap-2 text-xs">
-                <ImageIcon className="h-3.5 w-3.5" />
-                Todas ({images.length})
-              </ToggleGroupItem>
-              <ToggleGroupItem value="approved" className="gap-2 text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Aprovadas ({approvedCount})
-              </ToggleGroupItem>
-              <ToggleGroupItem value="draft" className="gap-2 text-xs">
-                <Clock3 className="h-3.5 w-3.5" />
-                Rascunhos ({draftCount})
-              </ToggleGroupItem>
-            </ToggleGroup>
+          <section className="grid gap-3 sm:grid-cols-3">
+            <GalleryMetric label="Outputs visuais" value={outputs.length} />
+            <GalleryMetric label="Aprovadas" value={approvedCount} />
+            <GalleryMetric
+              label={rejectedCount > 0 ? 'Geradas / rejeitadas' : 'Geradas'}
+              value={rejectedCount > 0 ? `${generatedCount} / ${rejectedCount}` : generatedCount}
+            />
+          </section>
 
-            <div className="flex min-w-[240px] items-center gap-2">
-              <FolderKanban className="h-4 w-4 text-muted-foreground" />
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="bg-background/50">
-                  <SelectValue placeholder="Filtrar por projeto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os projetos</SelectItem>
-                  {projectList.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <Card className="border-border/50 bg-card/40">
+            <CardHeader>
+              <CardTitle className="text-base">Filtrar outputs</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-[minmax(180px,1.4fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,0.8fr)_auto] md:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="gallery-search">Busca</Label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="gallery-search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar por título, Project ou Production"
+                    className="pl-9"
+                  />
+                </div>
+              </div>
 
-          {isLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredImages.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Nenhuma imagem encontrada</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Gere uma imagem para que ela apareca aqui.
-                </p>
+              <div className="space-y-2">
+                <Label htmlFor="gallery-project-filter">Project</Label>
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger id="gallery-project-filter">
+                    <SelectValue placeholder="Todos os Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os Projects</SelectItem>
+                    {projectList.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gallery-production-filter">Production</Label>
+                <Select value={effectiveSelectedProduction} onValueChange={setSelectedProduction}>
+                  <SelectTrigger id="gallery-production-filter">
+                    <SelectValue placeholder="Todas as Productions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as Productions</SelectItem>
+                    {availableProductions.map((production) => (
+                      <SelectItem key={production.id} value={production.id}>
+                        {resolveProductionDisplay(production).title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gallery-status-filter">Status</Label>
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value: GalleryStatusFilter) => setStatusFilter(value)}
+                >
+                  <SelectTrigger id="gallery-status-filter">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="generated">Gerada</SelectItem>
+                    <SelectItem value="approved">Aprovada</SelectItem>
+                    <SelectItem value="rejected">Rejeitada</SelectItem>
+                    <SelectItem value="generating">Gerando</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={clearFilters}
+                disabled={!hasFilters}
+              >
+                Limpar filtros
+              </Button>
+            </CardContent>
+          </Card>
+
+          {errorMessage && (
+            <Card className="border-destructive/40">
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-4 w-4 text-destructive" />
+                  <p className="text-sm">{errorMessage}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setRetryKey((value) => value + 1)}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Tentar novamente
+                </Button>
               </CardContent>
             </Card>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredImages.map((image) => (
-                <Card
-                  key={image.id}
-                  className="overflow-hidden border-border/50 bg-card/30 backdrop-blur-sm"
-                >
-                  <div className="relative aspect-square bg-muted">
-                    {image.thumbnail_url || image.image_url ? (
-                      <img
-                        src={image.thumbnail_url || image.image_url || ''}
-                        alt={image.user_input}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <ImageIcon className="h-10 w-10 text-muted-foreground" />
-                      </div>
-                    )}
-                    <Badge
-                      className="absolute left-2 top-2 bg-background/80 text-foreground backdrop-blur"
-                      variant="secondary"
-                    >
-                      {statusLabel(image.status)}
-                    </Badge>
-                  </div>
-                  <CardContent className="space-y-3 p-4">
-                    <div>
-                      <p className="line-clamp-2 text-sm text-foreground">
-                        {image.user_input}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {image.model && (
-                          <Badge variant="outline">{image.model}</Badge>
-                        )}
-                        {image.project_id && projects[image.project_id] && (
-                          <Badge variant="outline">{projects[image.project_id].name}</Badge>
-                        )}
-                      </div>
-                    </div>
+          )}
 
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 gap-2"
-                        disabled={!image.image_url}
-                        onClick={() => handleDownload(image)}
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+          {isLoading ? (
+            <div
+              className="flex items-center justify-center gap-3 py-16 text-sm text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Carregando Galeria...
             </div>
+          ) : emptyState ? (
+            <GalleryEmptyStateView
+              state={emptyState}
+              onAction={() => {
+                if (emptyState.href) {
+                  router.push(emptyState.href)
+                } else {
+                  clearFilters()
+                }
+              }}
+            />
+          ) : (
+            <section className="space-y-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Outputs gerados</h2>
+                <p className="text-sm text-muted-foreground">
+                  Visualize resultados, baixe arquivos disponíveis e volte ao contexto de origem.
+                </p>
+              </div>
+                <div className="flex flex-col gap-2 sm:items-end">
+                  <ViewModeToggle
+                    value={viewMode}
+                    onValueChange={setViewMode}
+                    label="Visualização"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    {filteredOutputs.length} de {outputs.length} outputs
+                  </p>
+                </div>
+              </div>
+
+              {viewMode === 'card' ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filteredOutputs.map((output) => (
+                    <GalleryOutputCard
+                      key={output.id}
+                      output={output}
+                      onPreview={() => setSelectedOutput(output)}
+                      onDownload={() => handleDownload(output)}
+                      onNavigate={(href) => router.push(href)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="hidden grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground lg:grid">
+                    <span>Imagem</span>
+                    <span>Título</span>
+                    <span>Project</span>
+                    <span>Production</span>
+                    <span>Status</span>
+                    <span>Atualizado</span>
+                    <span>Ações</span>
+                  </div>
+                  {filteredOutputs.map((output) => (
+                    <GalleryOutputListItem
+                      key={output.id}
+                      output={output}
+                      onPreview={() => setSelectedOutput(output)}
+                      onDownload={() => handleDownload(output)}
+                      onNavigate={(href) => router.push(href)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           )}
         </div>
       </div>
+
+      <GalleryPreviewDialog
+        output={selectedOutput}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOutput(null)
+        }}
+        onDownload={handleDownload}
+        onNavigate={(href) => router.push(href)}
+      />
     </>
   )
+}
+
+function GalleryMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <Card className="border-border/50 bg-card/30">
+      <CardContent className="p-4">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="mt-1 text-2xl font-semibold">{value}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GalleryOutputCard({
+  output,
+  onPreview,
+  onDownload,
+  onNavigate,
+}: {
+  output: GalleryOutputItem
+  onPreview: () => void
+  onDownload: () => void
+  onNavigate: (href: string) => void
+}) {
+  return (
+    <Card className="overflow-hidden border-border/50 bg-card/30">
+      <GalleryImageFrame output={output} />
+      <CardContent className="space-y-4 p-4">
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="line-clamp-2 text-sm font-medium" title={output.title}>
+              {output.title}
+            </h3>
+            <Badge variant="secondary" className="shrink-0">
+              {output.statusLabel}
+            </Badge>
+          </div>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p className="truncate" title={output.projectName || 'Project não identificado'}>
+              Project: {output.projectName || 'Project não identificado'}
+            </p>
+            <p className="truncate" title={output.productionName || 'Sem Production associada'}>
+              Production: {output.productionName || 'Sem Production associada'}
+            </p>
+            <p>Gerada em {formatDate(output.generatedAt)}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <Button type="button" size="sm" className="gap-2" onClick={onPreview}>
+            <Eye className="h-4 w-4" />
+            Visualizar
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => output.productionHref && onNavigate(output.productionHref)}
+              disabled={!output.productionHref}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Production
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={!output.canDownload}
+              onClick={onDownload}
+            >
+              <Download className="h-4 w-4" />
+              Baixar
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GalleryOutputListItem({
+  output,
+  onPreview,
+  onDownload,
+  onNavigate,
+}: {
+  output: GalleryOutputItem
+  onPreview: () => void
+  onDownload: () => void
+  onNavigate: (href: string) => void
+}) {
+  return (
+    <Card className="border-border/50 bg-card/30">
+      <CardContent className="grid gap-3 p-3 lg:grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] lg:items-center">
+        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted">
+          <GalleryImageFrame output={output} compact />
+        </div>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium" title={output.title}>
+            {output.title}
+          </p>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground lg:hidden">
+            {output.projectName || 'Project não identificado'} · {output.productionName || 'Sem Production associada'}
+          </p>
+        </div>
+
+        <p className="truncate text-sm text-muted-foreground" title={output.projectName || 'Project não identificado'}>
+          <span className="font-medium text-foreground lg:hidden">Project: </span>
+          {output.projectName || 'Project não identificado'}
+        </p>
+
+        <p className="truncate text-sm text-muted-foreground" title={output.productionName || 'Sem Production associada'}>
+          <span className="font-medium text-foreground lg:hidden">Production: </span>
+          {output.productionName || 'Sem Production associada'}
+        </p>
+
+        <div>
+          <Badge variant="secondary">{output.statusLabel}</Badge>
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground lg:hidden">Atualizado: </span>
+          {formatDate(output.updatedAt)}
+        </p>
+
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-3">
+          <Button type="button" size="sm" className="gap-2" onClick={onPreview}>
+            <Eye className="h-4 w-4" />
+            Visualizar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => output.productionHref && onNavigate(output.productionHref)}
+            disabled={!output.productionHref}
+          >
+            <ExternalLink className="h-4 w-4" />
+            Ver Production
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={!output.canDownload}
+            onClick={onDownload}
+          >
+            <Download className="h-4 w-4" />
+            Baixar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GalleryImageFrame({
+  output,
+  compact = false,
+}: {
+  output: GalleryOutputItem
+  compact?: boolean
+}) {
+  const [hasError, setHasError] = useState(false)
+  const imageUrl = output.thumbnailUrl || output.imageUrl
+
+  return (
+    <div className="relative aspect-square bg-muted">
+      {imageUrl && !hasError ? (
+        <img
+          src={imageUrl}
+          alt={output.previewAlt}
+          className="h-full w-full object-cover"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
+          <ImageIcon className={compact ? 'h-5 w-5' : 'h-10 w-10'} />
+          {!compact && 'Imagem indisponível'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GalleryEmptyStateView({
+  state,
+  onAction,
+}: {
+  state: NonNullable<ReturnType<typeof getGalleryEmptyState>>
+  onAction: () => void
+}) {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+        <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
+        <h3 className="text-lg font-semibold">{state.title}</h3>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">
+          {state.description}
+        </p>
+        <Button type="button" className="mt-5" onClick={onAction}>
+          {state.kind === 'no-outputs' ? 'Ir para Imagens' : state.actionLabel}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GalleryPreviewDialog({
+  output,
+  onOpenChange,
+  onDownload,
+  onNavigate,
+}: {
+  output: GalleryOutputItem | null
+  onOpenChange: (open: boolean) => void
+  onDownload: (output: GalleryOutputItem) => void
+  onNavigate: (href: string) => void
+}) {
+  return (
+    <Dialog open={Boolean(output)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+        {output && (
+          <>
+            <DialogHeader>
+              <DialogTitle>{output.title}</DialogTitle>
+              <DialogDescription>
+                Output visual gerado em {formatDate(output.generatedAt)}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.8fr)]">
+              <div className="overflow-hidden rounded-md border bg-muted">
+                <GalleryImageFrame output={output} />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary">{output.statusLabel}</Badge>
+                  {output.projectName && <Badge variant="outline">{output.projectName}</Badge>}
+                  {output.productionName && <Badge variant="outline">{output.productionName}</Badge>}
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <p>
+                    <span className="font-medium">Project:</span>{' '}
+                    {output.projectName || 'Project não identificado'}
+                  </p>
+                  <p>
+                    <span className="font-medium">Production:</span>{' '}
+                    {output.productionName || 'Sem Production associada'}
+                  </p>
+                  <p>
+                    <span className="font-medium">Atualizada em:</span>{' '}
+                    {formatDate(output.updatedAt)}
+                  </p>
+                </div>
+
+                {output.prompt && (
+                  <div className="rounded-md border bg-background/60 p-3">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">
+                      Prompt associado
+                    </p>
+                    <p className="mt-2 max-h-32 overflow-auto text-sm text-muted-foreground">
+                      {output.prompt}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              {output.sourceHref && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onNavigate(output.sourceHref!)}
+                >
+                  Abrir origem
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!output.productionHref}
+                onClick={() => output.productionHref && onNavigate(output.productionHref)}
+              >
+                Ver Production
+              </Button>
+              <Button
+                type="button"
+                disabled={!output.canDownload}
+                onClick={() => onDownload(output)}
+              >
+                Baixar
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function formatDate(date: string) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(date))
+}
+
+function safeGalleryFilename(title: string, extension: string) {
+  const slug = title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 48)
+
+  return `${slug || 'imagem-gerada'}.${extension}`
 }
