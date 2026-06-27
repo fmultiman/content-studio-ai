@@ -17,6 +17,23 @@ export interface PromptGenerationResult {
   composition: string | null
 }
 
+export type PromptGenerationErrorCode =
+  | 'PROMPT_PROVIDER_NOT_CONFIGURED'
+  | 'PROMPT_PROVIDER_FAILED'
+  | 'PROMPT_PROVIDER_INVALID_RESPONSE'
+
+export class PromptGenerationError extends Error {
+  readonly code: PromptGenerationErrorCode
+  readonly status?: number
+
+  constructor(code: PromptGenerationErrorCode, message: string, status?: number) {
+    super(message)
+    this.name = 'PromptGenerationError'
+    this.code = code
+    this.status = status
+  }
+}
+
 type EvaluationMode = 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental'
 
 // Prepared for intelligent loop (future implementation)
@@ -164,75 +181,35 @@ async function generateWithOpenAI(
   apiKey?: string,
   evaluationMode: EvaluationMode = 'default',
   identity: ProjectIdentity | null = null,
-): Promise<PromptGenerationResult | null> {
-  if (!apiKey) return null
+): Promise<PromptGenerationResult> {
+  if (!apiKey) {
+    throw new PromptGenerationError(
+      'PROMPT_PROVIDER_NOT_CONFIGURED',
+      'A geração de prompts precisa de um provedor de IA configurado. Configure sua chave da OpenAI em Configurações e tente novamente.',
+    )
+  }
 
   try {
-    const systemPrompt = `Voce e um gerador de prompts para imagens com IA.
+    const systemPrompt = `You generate production-ready prompts for image generation models.
 
-Seu objetivo e transformar uma ideia inicial (userInput) em um prompt estruturado, especifico e de alta qualidade.
+Use the user's intent, the Project context, the normalized Project Identity, restrictions, and generation preferences as internal guidance.
 
-INPUTS:
+Output contract:
+- Return only the final image-generation prompt in English.
+- Do not expose internal context, headings, metadata, labels, markdown, JSON, or reasoning.
+- Do not include phrases such as "grounded in this context".
+- Incorporate Project Identity semantically; do not copy the identity block literally.
+- Preserve the user's visual intention.
+- Respect explicit restrictions over generic defaults or style preferences.
+- Do not add random visual presets that contradict the Project restrictions.
+- Avoid repetition and generic AI cliches.
 
-- userInput
-- context e identidade do projeto
-- evaluation_mode
-
-REGRAS BASE:
-
-- Sempre usar o contexto e identidade do projeto como base principal
-- Evitar cliches comuns de IA
-- Criar prompts claros, especificos e nao genericos
-
-COMPORTAMENTO POR evaluation_mode:
-
-Se evaluation_mode = "conceptual":
-- priorizar simbolismo e significado profundo
-- evitar imagens literais e obvias
-- criar tensao entre elementos
-- introduzir ideias de sistema, transformacao, analise ou abstracao
-
-Se evaluation_mode = "aesthetic":
-- priorizar composicao visual, iluminacao e harmonia
-- foco em estetica refinada
-- manter clareza visual e equilibrio
-
-Se evaluation_mode = "commercial":
-- priorizar impacto visual imediato
-- clareza do sujeito principal
-- imagem chamativa e facil de entender
-- forte foco em atencao e engajamento
-
-Se evaluation_mode = "experimental":
-- incentivar originalidade e criatividade
-- permitir abstracao e quebra de padrao
-- evitar estruturas previsiveis
-- introduzir elementos inesperados
-
-Se evaluation_mode = "default":
-- equilibrar conceito, estetica e clareza
-
-ESTRUTURA DO PROMPT:
-
-O prompt deve incluir:
-- descricao clara do cenario
-- sujeito principal
-- ambiente
-- iluminacao
-- composicao
-- estilo visual
-
-EVITAR:
-
-- frases genericas como "ultra detailed", "8k", sem necessidade
-- repeticoes
-- cliches visuais comuns, como figura meditando sem contexto
-
-OBJETIVO FINAL:
-
-Gerar um prompt que ja esteja alinhado com o modo de avaliacao, reduzindo a necessidade de refinamento posterior.
-
-Responda apenas com um unico prompt final em ingles, sem explicacoes, sem markdown e sem JSON.`
+Mode guidance:
+- conceptual: symbolic, layered meaning, non-literal visual interpretation.
+- aesthetic: refined visual harmony, controlled lighting, balanced composition.
+- commercial: clear main subject, immediate visual readability, strong communication.
+- experimental: original structure, creative risk, unexpected but coherent visual choices.
+- default: balance concept, visual clarity, coherent composition, and atmosphere.`
 
     const compiledContext = buildImageGenerationContext({
       context: projectContext,
@@ -268,14 +245,23 @@ ${evaluationMode}`
     })
 
     if (!response.ok) {
-      console.error('OpenAI API error:', response.status)
-      return null
+      console.error('[Prompt Generation] OpenAI API error:', response.status)
+      throw new PromptGenerationError(
+        'PROMPT_PROVIDER_FAILED',
+        'Não foi possível gerar o prompt agora. Verifique a configuração do provedor ou tente novamente.',
+        response.status,
+      )
     }
 
     const data = await response.json()
     const generatedPrompt = data.choices?.[0]?.message?.content?.trim()
 
-    if (!generatedPrompt) return null
+    if (!generatedPrompt) {
+      throw new PromptGenerationError(
+        'PROMPT_PROVIDER_INVALID_RESPONSE',
+        'O provedor de IA não retornou um prompt válido. Tente novamente.',
+      )
+    }
 
     // lighting and composition are extracted from the actual model output only; no random fallback.
     const style = identity?.expression?.visual_identity || detectStyle(userInput)
@@ -289,8 +275,15 @@ ${evaluationMode}`
       composition,
     }
   } catch (error) {
-    console.error('Error calling OpenAI:', error)
-    return null
+    if (error instanceof PromptGenerationError) {
+      throw error
+    }
+
+    console.error('[Prompt Generation] OpenAI request failed:', error)
+    throw new PromptGenerationError(
+      'PROMPT_PROVIDER_FAILED',
+      'Não foi possível gerar o prompt agora. Verifique a configuração do provedor ou tente novamente.',
+    )
   }
 }
 
@@ -307,7 +300,7 @@ function getModeGuidance(evaluationMode: EvaluationMode) {
   return guidance[evaluationMode]
 }
 
-function generateSimulated(
+export function generateSimulatedPromptForTest(
   userInput: string,
   projectContext?: string | null,
   evaluationMode: EvaluationMode = 'default',
@@ -342,15 +335,14 @@ export async function generateImagePrompt(
   evaluationMode: EvaluationMode = 'default',
   identity: ProjectIdentity | null = null,
 ): Promise<PromptGenerationResult> {
-  // Try OpenAI first
-  if (apiKey) {
-    const result = await generateWithOpenAI(userInput, projectContext, apiKey, evaluationMode, identity)
-    if (result) return result
+  if (!apiKey) {
+    throw new PromptGenerationError(
+      'PROMPT_PROVIDER_NOT_CONFIGURED',
+      'A geração de prompts precisa de um provedor de IA configurado. Configure sua chave da OpenAI em Configurações e tente novamente.',
+    )
   }
 
-  // Fallback to simulation
-  await delay(1500)
-  return generateSimulated(userInput, projectContext, evaluationMode, identity)
+  return generateWithOpenAI(userInput, projectContext, apiKey, evaluationMode, identity)
 }
 
 export async function regeneratePrompt(currentPrompt: string): Promise<PromptGenerationResult> {

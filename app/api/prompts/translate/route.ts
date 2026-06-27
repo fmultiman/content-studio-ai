@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     if (!prompt?.trim()) {
       return NextResponse.json(
-        { error: 'Prompt obrigatorio' },
+        { error: 'Prompt obrigatorio', code: 'PROMPT_REQUIRED' },
         { status: 400 },
       )
     }
@@ -35,7 +35,10 @@ export async function POST(request: Request) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'API Key da OpenAI nao configurada' },
+        {
+          error: 'Tradução indisponível sem provedor configurado.',
+          code: 'PROMPT_PROVIDER_NOT_CONFIGURED',
+        },
         { status: 400 },
       )
     }
@@ -67,9 +70,11 @@ export async function POST(request: Request) {
     const data = await response.json()
 
     if (!response.ok) {
+      console.error('[Translate Prompt] OpenAI API error:', response.status)
       return NextResponse.json(
         {
           error: data.error?.message || `Erro na OpenAI: ${response.status}`,
+          code: 'PROMPT_PROVIDER_FAILED',
           details: data,
         },
         { status: response.status },
@@ -80,7 +85,10 @@ export async function POST(request: Request) {
 
     if (!translatedPrompt) {
       return NextResponse.json(
-        { error: 'A OpenAI nao retornou uma traducao' },
+        {
+          error: 'A OpenAI nao retornou uma traducao',
+          code: 'PROMPT_PROVIDER_INVALID_RESPONSE',
+        },
         { status: 502 },
       )
     }

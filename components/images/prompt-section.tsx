@@ -23,6 +23,8 @@ interface PromptSectionProps {
   generatedPromptPt?: string
   onTranslatePrompt?: () => Promise<void>
   isTranslatingPrompt?: boolean
+  canTranslatePrompt?: boolean
+  translationError?: string | null
   promptDetails: {
     style: string
     lighting: string | null
@@ -42,6 +44,8 @@ export function PromptSection({
   generatedPromptPt = '',
   onTranslatePrompt,
   isTranslatingPrompt = false,
+  canTranslatePrompt = true,
+  translationError = null,
   promptDetails,
   onCreateImage,
   isCreatingImage,
@@ -65,7 +69,7 @@ export function PromptSection({
     const language = value === 'pt' ? 'pt' : 'en'
     setActivePromptLanguage(language)
 
-    if (language === 'pt' && !generatedPromptPt && onTranslatePrompt) {
+    if (language === 'pt' && canTranslatePrompt && !generatedPromptPt && onTranslatePrompt) {
       await onTranslatePrompt()
     }
   }
@@ -156,7 +160,11 @@ export function PromptSection({
               <Textarea
                 value={generatedPromptPt}
                 readOnly
-                placeholder="A versao em portugues sera gerada quando voce abrir esta aba."
+                placeholder={
+                  canTranslatePrompt
+                    ? 'A versao em portugues sera gerada quando voce abrir esta aba.'
+                    : 'Tradução indisponível sem provedor configurado.'
+                }
                 rows={6}
                 className="resize-none bg-background/50 text-sm"
               />
@@ -166,6 +174,19 @@ export function PromptSection({
                 </div>
               )}
             </div>
+            {(!canTranslatePrompt || translationError) && !generatedPromptPt && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                <p>{translationError || 'Tradução indisponível sem provedor configurado.'}</p>
+                {!canTranslatePrompt && (
+                  <a
+                    href="/configuracoes"
+                    className="mt-2 inline-flex font-medium underline underline-offset-4"
+                  >
+                    Configurar provedor
+                  </a>
+                )}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               Esta versao e apenas para leitura. A imagem continua usando o prompt em ingles.
             </p>
