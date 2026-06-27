@@ -27,6 +27,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Inherited Project Identity Implementation Results](./product/ux/ux-inherited-project-identity-implementation-results.md)
   Fechamento da implementação UX-H2 com indicador, resumo e strips contextuais honestos por módulo.
 
+- [UX Global Navigation Reconciliation Discovery](./product/ux/ux-global-navigation-reconciliation-discovery.md)
+  Contrato de UX-H3 para reconciliar Dashboard, sidebar, hubs globais e retomada de trabalho com o modelo Project / Production.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 
