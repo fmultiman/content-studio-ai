@@ -7,8 +7,10 @@ import { Header } from '@/components/layout/header'
 import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
+import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
 import { generateImagePrompt, regeneratePrompt } from '@/lib/ai-simulator'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
+import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -1217,6 +1219,32 @@ function ImagesPageContent() {
   }
 
   const requestedDraftId = searchParams.get('draft')
+  const selectedProjectData = selectedProject
+    ? projects.find((project) => project.id === selectedProject) ?? null
+    : null
+  let imageIdentity: ProjectIdentity | null = null
+  let imageIdentityReadError = false
+
+  try {
+    imageIdentity = normalizeProjectIdentity(selectedProjectData?.identity ?? null)
+  } catch {
+    imageIdentityReadError = true
+  }
+
+  const imageIdentitySummary = resolveInheritedIdentitySummary({
+    identity: imageIdentity,
+    projectName: selectedProjectData?.name,
+    hasLegacyContext: !!selectedProjectData?.context?.trim(),
+    readError: imageIdentityReadError,
+    isLoading: !isDataReady,
+  })
+  const projectIdentityHref = selectedProjectData
+    ? `/projetos/${selectedProjectData.id}#project-identity`
+    : undefined
+  const productionHref =
+    productionId && (productionProjectId || selectedProject)
+      ? `/projetos/${productionProjectId || selectedProject}/producoes/${productionId}`
+      : undefined
 
   return (
     <>
@@ -1322,6 +1350,16 @@ function ImagesPageContent() {
             </div>
           ) : (
             <>
+              {selectedProjectData && (
+                <WorkspaceIdentityContext
+                  surface="image"
+                  summary={imageIdentitySummary}
+                  productionTitle={productionTitle}
+                  projectHref={projectIdentityHref}
+                  productionHref={productionHref}
+                />
+              )}
+
               {/* Current Draft Indicator */}
               {currentDraftId && (
                 <div className="flex items-center justify-between rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-2">

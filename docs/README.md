@@ -24,6 +24,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Inherited Project Identity Discovery](./product/ux/ux-inherited-project-identity-discovery.md)
   Contrato de UX-H2 para comunicar a Project Identity herdada na Production sem prometer consumo inexistente.
 
+- [UX Inherited Project Identity Implementation Results](./product/ux/ux-inherited-project-identity-implementation-results.md)
+  Fechamento da implementação UX-H2 com indicador, resumo e strips contextuais honestos por módulo.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

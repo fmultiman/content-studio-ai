@@ -47,8 +47,12 @@ import type {
   PublicationChannel,
   PublicationFormat,
 } from '@/lib/types'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { ArrowLeft, Edit2, Loader2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react'
 import { ChannelPieceMediaSection } from '@/components/publication/channel-piece-media-section'
+import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
+import { resolveInheritedIdentitySummary, shouldShowEditorialIdentityContext } from '@/lib/inherited-project-identity'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { productionReturnPath } from '@/lib/ux-production-hardening'
 
 // ---------------------------------------------------------------------------
@@ -532,6 +536,26 @@ export default function EditorialContentDetailPage() {
   const linkedProduction = ec.production_id
     ? productions.find((production) => production.id === ec.production_id)
     : null
+  const currentProject = projects.find((project) => project.id === ec.project_id) ?? null
+  let editorialIdentity: ProjectIdentity | null = null
+  let editorialIdentityReadError = false
+
+  try {
+    editorialIdentity = normalizeProjectIdentity(currentProject?.identity ?? null)
+  } catch {
+    editorialIdentityReadError = true
+  }
+
+  const editorialIdentitySummary = resolveInheritedIdentitySummary({
+    identity: editorialIdentity,
+    projectName: currentProject?.name,
+    hasLegacyContext: !!currentProject?.context?.trim(),
+    readError: editorialIdentityReadError,
+  })
+  const shouldShowIdentityContext = shouldShowEditorialIdentityContext(!!ec.production_id)
+  const projectIdentityHref = currentProject
+    ? `/projetos/${currentProject.id}#project-identity`
+    : undefined
 
   return (
     <>
@@ -576,6 +600,16 @@ export default function EditorialContentDetailPage() {
               <ArrowLeft className="h-4 w-4" />
               Voltar para a Produção
             </Button>
+          )}
+
+          {shouldShowIdentityContext && linkedProductionPath && currentProject && (
+            <WorkspaceIdentityContext
+              surface="editorial"
+              summary={editorialIdentitySummary}
+              productionTitle={linkedProduction?.title}
+              projectHref={projectIdentityHref}
+              productionHref={linkedProductionPath}
+            />
           )}
 
           {/* EC Edit Form */}
