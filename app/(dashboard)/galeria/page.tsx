@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, Download, ExternalLink, Eye, ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -212,17 +213,14 @@ export default function GalleryPage() {
 
   return (
     <>
-      <Header title="Galeria" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          <section className="max-w-2xl">
-            <div className="max-w-2xl">
-              <h1 className="text-2xl font-semibold tracking-normal">Galeria</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Explore imagens geradas nos seus Projects e Productions.
-              </p>
-            </div>
-          </section>
+          <PageHeader
+            context="Biblioteca"
+            title="Galeria"
+            description="Explore imagens geradas nos seus Projects e Productions. Uploads, referências e documentos continuam em Arquivos."
+          />
 
           <section className="grid gap-3 sm:grid-cols-3">
             <GalleryMetric label="Outputs visuais" value={outputs.length} />

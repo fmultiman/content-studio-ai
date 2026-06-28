@@ -41,9 +41,9 @@ export function DashboardContinuationHub({
   return (
     <div className="space-y-8">
       <section className="space-y-2">
-        <h2 className="text-2xl font-bold text-foreground">Olá, {userName}!</h2>
-        <p className="text-muted-foreground">
-          Continue uma Production ou retome um item recente com o contexto certo.
+        <h2 className="text-lg font-semibold text-foreground">Continuidade do trabalho</h2>
+        <p className="text-sm text-muted-foreground">
+          Olá, {userName}. Continue uma Production ou retome um item recente com o contexto certo.
         </p>
       </section>
 

@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
@@ -1337,7 +1338,7 @@ function ImagesPageContent() {
               <p className="text-sm font-medium text-foreground">Criação contextual</p>
             </div>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Crie uma nova imagem dentro de uma Production ou retome um rascunho existente.
+              Entre no workspace com Project e Production definidos antes de gerar novas imagens.
             </p>
           </div>
           <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
@@ -1615,7 +1616,7 @@ function ImagesPageContent() {
 
   return (
     <>
-      <Header title={productionId ? 'Geração de Imagens' : 'Imagens'} />
+      <Header title={productionId ? 'Geração de Imagens' : undefined} />
       {productionId && (
         <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
           <Button
@@ -1643,6 +1644,14 @@ function ImagesPageContent() {
       )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {!productionId && (
+            <PageHeader
+              context="Criação"
+              title="Imagens"
+              description="Crie uma nova imagem dentro de uma Production ou retome um rascunho existente."
+            />
+          )}
+
           {loadError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
               <p className="text-sm text-destructive">{loadError}</p>

@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { SceneCard } from '@/components/videos/scene-card'
 import { StoryboardModal } from '@/components/videos/storyboard-modal'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
@@ -525,7 +526,7 @@ function VideosPageContent() {
               <p className="text-sm font-medium text-foreground">Criação contextual</p>
             </div>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Crie um novo vídeo dentro de uma Production ou retome um rascunho existente.
+              Entre no workspace com Project e Production definidos antes de criar novos videos.
             </p>
           </div>
           <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
@@ -800,7 +801,7 @@ function VideosPageContent() {
 
   return (
     <>
-      <Header title={productionId ? 'Geração de Vídeos' : 'Vídeos'} />
+      <Header title={productionId ? 'Geração de Vídeos' : undefined} />
       {productionId && (
         <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
           <Button
@@ -828,6 +829,14 @@ function VideosPageContent() {
       )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {!productionId && (
+            <PageHeader
+              context="Criação"
+              title="Vídeos"
+              description="Crie um novo vídeo dentro de uma Production ou retome um rascunho existente."
+            />
+          )}
+
           {loadError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
               <p className="text-sm text-destructive">{loadError}</p>

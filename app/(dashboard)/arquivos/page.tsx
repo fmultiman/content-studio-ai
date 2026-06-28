@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -556,41 +557,43 @@ export default function ArquivosPage() {
 
   return (
     <>
-      <Header title="Arquivos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-muted-foreground">
-              Biblioteca geral de arquivos pesados no MinIO, organizada por projeto e pasta.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <input
-                id="library-upload"
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(event) => handleUpload(event.target.files)}
-              />
-              <Button
-                type="button"
-                variant={showTrash ? 'default' : 'outline'}
-                className="gap-2"
-                onClick={() => {
-                  setShowTrash((current) => !current)
-                  setSelectedIds([])
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Lixeira
-              </Button>
-              <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
-                <label htmlFor="library-upload" className="cursor-pointer">
-                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Enviar Arquivos
-                </label>
-              </Button>
-            </div>
-          </div>
+          <PageHeader
+            context="Biblioteca"
+            title="Arquivos"
+            description="Guarde uploads, referências e documentos por Project e pasta. Outputs visuais gerados ficam na Galeria."
+            actions={(
+              <>
+                <input
+                  id="library-upload"
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => handleUpload(event.target.files)}
+                />
+                <Button
+                  type="button"
+                  variant={showTrash ? 'default' : 'outline'}
+                  className="gap-2"
+                  onClick={() => {
+                    setShowTrash((current) => !current)
+                    setSelectedIds([])
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Lixeira
+                </Button>
+                <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
+                  <label htmlFor="library-upload" className="cursor-pointer">
+                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    Enviar Arquivos
+                  </label>
+                </Button>
+              </>
+            )}
+          />
 
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardContent className="space-y-4 p-4">

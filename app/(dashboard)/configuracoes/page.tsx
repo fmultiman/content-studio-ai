@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -160,9 +161,15 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Header title="Configurações" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-3xl">
+          <PageHeader
+            context="Sistema"
+            title="Configurações"
+            description="Gerencie preferências, integrações e chaves usadas pelo Studio."
+            className="mb-6"
+          />
           <Tabs defaultValue="profile" className="space-y-6">
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="profile" className="gap-2">

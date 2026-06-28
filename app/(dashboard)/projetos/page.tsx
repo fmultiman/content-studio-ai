@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectForm } from '@/components/projects/project-form'
 import { Button } from '@/components/ui/button'
@@ -140,24 +141,23 @@ function ProjectsContent() {
 
   return (
     <>
-      <Header title="Projetos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          {/* Header Actions */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-muted-foreground">
-                Organize suas criações em projetos para melhor contexto.
-              </p>
-            </div>
-            <Button
-              onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Projeto
-            </Button>
-          </div>
+          <PageHeader
+            context="Workspace"
+            title="Projetos"
+            description="Organize identidade, contexto e Productions em um mesmo espaço."
+            actions={(
+              <Button
+                onClick={() => setShowForm(true)}
+                className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Novo Projeto
+              </Button>
+            )}
+          />
 
           {/* Search and Filters */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -267,12 +267,12 @@ function ProjectsContent() {
 
 export default function ProjectsPage() {
   return (
-    <Suspense fallback={
-      <>
-        <Header title="Projetos" />
-        <div className="flex h-full flex-col items-center justify-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Carregando projetos...</p>
+      <Suspense fallback={
+        <>
+          <Header />
+          <div className="flex h-full flex-col items-center justify-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Carregando projetos...</p>
         </div>
       </>
     }>

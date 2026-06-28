@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   AlertDialog,
@@ -293,7 +293,7 @@ export default function ProjectDetailPage() {
 
   return (
     <>
-      <Header title={project.name} />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
           {/* Back Button */}
@@ -310,7 +310,7 @@ export default function ProjectDetailPage() {
                   <FolderOpen className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <CardTitle className="text-2xl">{project.name}</CardTitle>
+                  <h1 className="text-2xl font-semibold leading-none text-foreground">{project.name}</h1>
                   <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3.5 w-3.5" />
