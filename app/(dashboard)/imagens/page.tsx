@@ -1506,20 +1506,12 @@ function ImagesPageContent() {
           </div>
         ) : hubViewMode === 'list' ? (
           <div className="overflow-hidden rounded-xl border border-border/50 bg-card/30">
-            <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] gap-3 border-b border-border/50 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
-              <span>Titulo</span>
-              <span>Project</span>
-              <span>Production</span>
-              <span>Status</span>
-              <span>Atualizado</span>
-              <span>Acoes</span>
-            </div>
             <div role="list" className="divide-y divide-border/50">
               {filteredHubCards.map((draft) => (
                 <div
                   key={draft.id}
                   role="listitem"
-                  className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] md:items-center"
+                  className="grid gap-3 px-4 py-4"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -1528,27 +1520,28 @@ function ImagesPageContent() {
                         {draft.title}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground md:hidden">
-                      Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
-                    </p>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-xs text-muted-foreground md:hidden">Project: </span>
-                    <span className="truncate text-sm text-foreground" title={draft.projectName}>
-                      {draft.projectName}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-xs text-muted-foreground md:hidden">Production: </span>
-                    <span className="truncate text-sm text-foreground" title={draft.productionName || 'Sem Production associada'}>
-                      {draft.productionName || 'Sem Production associada'}
-                    </span>
-                  </div>
-                  <div>
-                    <Badge variant="outline">{draft.status}</Badge>
-                  </div>
-                  <div className="hidden text-sm text-muted-foreground md:block">
-                    {new Date(draft.updatedAt).toLocaleDateString('pt-BR')}
+                  <div className="grid gap-2 text-sm md:grid-cols-2">
+                    <div className="min-w-0">
+                      <span className="text-xs text-muted-foreground">Project: </span>
+                      <span className="break-words text-foreground" title={draft.projectName}>
+                        {draft.projectName}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs text-muted-foreground">Production: </span>
+                      <span className="break-words text-foreground" title={draft.productionName || 'Sem Production associada'}>
+                        {draft.productionName || 'Sem Production associada'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Status:</span>
+                      <Badge variant="outline">{draft.status}</Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">Atualizado: </span>
+                      {new Date(draft.updatedAt).toLocaleDateString('pt-BR')}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">

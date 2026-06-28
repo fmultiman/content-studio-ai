@@ -203,4 +203,21 @@ describe('UX-H3B draft hub helpers', () => {
     expect(imagePage).toContain('ViewModeToggle')
     expect(videoPage).toContain('ViewModeToggle')
   })
+
+  it('uses responsive list density for image and video hubs', () => {
+    const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
+    const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
+    const oldDenseGrid = 'md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px]'
+
+    for (const source of [imagePage, videoPage]) {
+      expect(source).not.toContain(oldDenseGrid)
+      expect(source).not.toContain('hidden grid-cols-[minmax(220px,1.4fr)')
+      expect(source).not.toContain('2xl:grid-cols-[minmax(220px,1.4fr)')
+      expect(source).toContain('grid gap-2 text-sm md:grid-cols-2')
+      expect(source).toContain('text-xs text-muted-foreground">Project:')
+      expect(source).toContain('text-xs text-muted-foreground">Production:')
+      expect(source).toContain('flex flex-wrap gap-2')
+      expect(source).not.toContain('<table')
+    }
+  })
 })

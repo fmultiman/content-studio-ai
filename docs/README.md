@@ -48,6 +48,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Visual Consistency Audit](./product/ux/ux-visual-consistency-audit.md)
   Auditoria UX-H4A de consistencia visual transversal apos UX-H3, com matriz de inconsistencias e plano de padronizacao.
 
+- [UX Responsive List Density Results](./product/ux/ux-responsive-list-density-results.md)
+  Fechamento do UX-H4B1 com Listas responsivas em Imagens, Videos e Galeria.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

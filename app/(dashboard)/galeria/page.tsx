@@ -33,6 +33,7 @@ import {
   filterGalleryOutputs,
   getGalleryEmptyState,
   getGalleryProductionsForProject,
+  resolveGalleryDisplayImages,
   type GalleryOutputItem,
   type GalleryOutputStatus,
 } from '@/lib/gallery-output-library'
@@ -112,8 +113,9 @@ export default function GalleryPage() {
           throw new Error(firstError.message)
         }
 
-        const signedImages = await Promise.all(
-          (imagesResult.data || []).map((image) => getSignedImageUrls(image as ImageType)),
+        const signedImages = await resolveGalleryDisplayImages(
+          (imagesResult.data || []) as ImageType[],
+          getSignedImageUrls,
         )
 
         setImages(signedImages)
@@ -235,8 +237,8 @@ export default function GalleryPage() {
             <CardHeader>
               <CardTitle className="text-base">Filtrar outputs</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[minmax(180px,1.4fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,0.8fr)_auto] md:items-end">
-              <div className="space-y-2">
+            <CardContent className="grid gap-4 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,0.8fr)_auto] 2xl:items-end">
+              <div className="space-y-2 md:col-span-2 2xl:col-span-1">
                 <Label htmlFor="gallery-search">Busca</Label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -306,6 +308,7 @@ export default function GalleryPage() {
               <Button
                 type="button"
                 variant="outline"
+                className="md:col-span-2 md:justify-self-end 2xl:col-span-1 2xl:self-end"
                 onClick={clearFilters}
                 disabled={!hasFilters}
               >
@@ -390,7 +393,7 @@ export default function GalleryPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="hidden grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground lg:grid">
+                  <div className="hidden grid-cols-[72px_minmax(180px,1.2fr)_minmax(120px,0.85fr)_minmax(120px,0.85fr)_96px_120px_minmax(250px,auto)] gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground 2xl:grid">
                     <span>Imagem</span>
                     <span>Título</span>
                     <span>Project</span>
@@ -521,8 +524,8 @@ function GalleryOutputListItem({
 }) {
   return (
     <Card className="border-border/50 bg-card/30">
-      <CardContent className="grid gap-3 p-3 lg:grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] lg:items-center">
-        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted">
+      <CardContent className="grid gap-3 p-3 md:grid-cols-[72px_minmax(0,1fr)] 2xl:grid-cols-[72px_minmax(180px,1.2fr)_minmax(120px,0.85fr)_minmax(120px,0.85fr)_96px_120px_minmax(250px,auto)] 2xl:items-center">
+        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted md:row-span-3 2xl:row-auto">
           <GalleryImageFrame output={output} compact />
         </div>
 
@@ -530,32 +533,35 @@ function GalleryOutputListItem({
           <p className="truncate text-sm font-medium" title={output.title}>
             {output.title}
           </p>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground lg:hidden">
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground 2xl:hidden">
             {output.projectName || 'Project não identificado'} · {output.productionName || 'Sem Production associada'}
           </p>
         </div>
 
-        <p className="truncate text-sm text-muted-foreground" title={output.projectName || 'Project não identificado'}>
-          <span className="font-medium text-foreground lg:hidden">Project: </span>
-          {output.projectName || 'Project não identificado'}
-        </p>
+        <div className="grid gap-2 text-sm md:grid-cols-2 2xl:contents">
+          <p className="min-w-0 break-words text-muted-foreground xl:truncate" title={output.projectName || 'Project não identificado'}>
+            <span className="font-medium text-foreground 2xl:hidden">Project: </span>
+            {output.projectName || 'Project não identificado'}
+          </p>
 
-        <p className="truncate text-sm text-muted-foreground" title={output.productionName || 'Sem Production associada'}>
-          <span className="font-medium text-foreground lg:hidden">Production: </span>
-          {output.productionName || 'Sem Production associada'}
-        </p>
+          <p className="min-w-0 break-words text-muted-foreground xl:truncate" title={output.productionName || 'Sem Production associada'}>
+            <span className="font-medium text-foreground 2xl:hidden">Production: </span>
+            {output.productionName || 'Sem Production associada'}
+          </p>
 
-        <div>
-          <Badge variant="secondary">{output.statusLabel}</Badge>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground 2xl:hidden">Status:</span>
+            <Badge variant="secondary">{output.statusLabel}</Badge>
+          </div>
+
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground 2xl:hidden">Atualizado: </span>
+            {formatDate(output.updatedAt)}
+          </p>
         </div>
 
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground lg:hidden">Atualizado: </span>
-          {formatDate(output.updatedAt)}
-        </p>
-
-        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-3">
-          <Button type="button" size="sm" className="gap-2" onClick={onPreview}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end">
+          <Button type="button" size="sm" className="w-full gap-2 sm:min-w-max sm:w-auto" onClick={onPreview}>
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
@@ -563,7 +569,7 @@ function GalleryOutputListItem({
             type="button"
             variant="outline"
             size="sm"
-            className="gap-2"
+            className="w-full gap-2 sm:min-w-max sm:w-auto"
             onClick={() => output.productionHref && onNavigate(output.productionHref)}
             disabled={!output.productionHref}
           >
@@ -574,7 +580,7 @@ function GalleryOutputListItem({
             type="button"
             variant="outline"
             size="sm"
-            className="gap-2"
+            className="w-full gap-2 sm:min-w-max sm:w-auto"
             disabled={!output.canDownload}
             onClick={onDownload}
           >
