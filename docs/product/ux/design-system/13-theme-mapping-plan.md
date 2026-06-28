@@ -1,56 +1,72 @@
 # Theme Mapping Plan (DS-1A)
 
-## Visão Geral
-O sistema prevê três temas distintos mapeados sobre os mesmos tokens semânticos e estrutura HTML (UX-H4 mantido).
-A chave de sucesso é a garantia de que as anatomias e contratos funcionais aprovados permaneçam imutáveis. Os temas manipulam apenas a superfície estética (oklch, sombras, borders).
+## Visao geral
+O sistema preve tres temas distintos mapeados sobre os mesmos tokens semanticos e a mesma estrutura HTML.
+A chave de sucesso e garantir que anatomias e contratos funcionais aprovados permaneçam imutaveis.
+No codigo atual, apenas `:root` e `.dark` existem em `app/globals.css`; `studio` ainda e hipotese documental e precisa nascer sobre a mesma anatomia, nao em componentes paralelos.
 
-## Papéis Compartilhados
+## Papeis compartilhados
 Independentemente do tema ativo:
-- **Canvas vs Cards**: A distinção entre fundo (canvas) e elementos contidos (cards, hubs) deve ser mantida.
-- **Hierarquia de Texto**: `primary`, `secondary` e `muted` sempre terão saltos de contraste claros.
-- **Feedback**: Cores semânticas de erro e sucesso devem existir em todos os temas.
-- **Anatomia DOM**: Nenhuma classe estrutural do Tailwind (flex, grid, dimensões base) será alterada.
+- **Canvas vs cards**: a distincao entre fundo e elementos contidos deve ser mantida
+- **Hierarquia de texto**: `primary`, `secondary` e `muted` precisam manter saltos de contraste claros
+- **Feedback**: erro, success, warning e info precisam existir em todos os temas
+- **Anatomia DOM**: nenhuma classe estrutural de layout deve mudar por causa do tema
+- **Responsividade**: max-widths, wraps, stacks e overflow interno aprovados no UX-H4 precisam permanecer iguais entre `light`, `dark` e `studio`
+- **Estados**: loading, empty, filtered empty, error, success, selected e disabled precisam conservar contraste e hierarquia nos tres temas
 
 ## 1. Tema Light
-- **Prioridade:** Clareza, alta legibilidade para edição (modo de trabalho).
-- **Superfícies:** Uso sutil de sombras para distinção de profundidade; canvas off-white (`#f8f9fa` / equivalentes oklch) e cards `#ffffff`.
-- **Bordas:** Delimitadores perceptíveis sem gerar ruído opressivo (e.g., `#e2e8f0`).
-- **Ruído Visual:** Baixo. Sem uso de gradientes atmosféricos.
+- **Prioridade:** clareza e alta legibilidade para trabalho continuo
+- **Superficies:** sombras sutis, boa separacao entre canvas e cards, sem depender de glass
+- **Bordas:** delimitadores perceptiveis sem ruido excessivo
+- **Ruido visual:** baixo; sem atmosfera pesada de glow ou gradiente
 
 ## 2. Tema Dark
-- **Restrições:** Evitar a massa uniforme escura e fundos de card indiferenciáveis do canvas. 
-- **Superfícies:** Canvas em preto fosco elevado (ex: `#121212`), com superfícies de cards ligeiramente mais claras para percepção do limite.
-- **Bordas:** Usadas com intensidade suficiente (ex: transparência branca fraca) para evitar que a interface se torne uma "massa flutuante".
-- **Ruído Visual:** Baixo/Médio. Evita preto absoluto (`#000000`).
+- **Restricoes:** evitar massa uniforme escura e cards indistinguiveis do canvas
+- **Superficies:** cards e paineis precisam manter leitura clara de limite
+- **Bordas:** intensidade suficiente para evitar perda de estrutura
+- **Ruido visual:** baixo a medio; sem preto absoluto dominante
 
 ## 3. Tema Studio
-- **Objetivo:** Uma reinterpretação sofisticada das referências do protótipo Hermes, focada em geração estética ("mágica").
-- **Identidade Estética:** Injeção seletiva de violetas, cianos, menta e rosa em highlights de estado e status pills. 
-- **Limites Estritos do Studio:** 
-  - **Proibição de alteração estrutural:** Não criará componentes próprios e não afetará a anatomia UX-H4.
-  - **Legibilidade:** Não reduzirá legibilidade para favorecer estética. 
-  - **Glass restrito:** Transparências (glass) apenas em popovers, sidebars embutidas ou header flutuante. Não em painéis fundamentais que exigem contraste sólido para leitura editorial.
-  - **Controle de Glow:** Restrito a focos centrais, contornos seletivos e interações. Não deve parecer um "dashboard gamer".
+- **Objetivo:** reinterpretacao sofisticada das referencias Hermes sem reabrir o UX-H4
+- **Identidade estetica:** injecao seletiva de violetas, cianos, menta e rosa em highlights, reaproveitando a linguagem que ja aparece hoje em CTA, shell e estados do produto
+- **Limites estritos do Studio:**
+  - nao cria componentes proprios
+  - nao muda DOM
+  - nao altera responsividade
+  - nao transforma glass em default universal
+  - nao transforma glow em default universal
+  - nao reduz contraste para favorecer atmosfera
+  - nao deve parecer dashboard gamer
+  - precisa preservar acessibilidade de focus, hover, selected, badges e callouts
 
-## Decisões Humanas Requeridas
-Estas decisões não podem ser tomadas apenas lendo o código. Requerem validação visual humana baseada em provas conceituais (pilot screens):
+## Dependencias tecnicas antes do Studio
+Antes de mapear `studio`, o sistema ainda precisa fechar:
+- como `light` e `dark` serao ativados de forma consistente
+- qual sera o escopo tecnico do terceiro tema (`.theme-studio`, `data-theme` ou equivalente)
+- como preservar compatibilidade com shadcn, `next-themes` e componentes que hoje assumem apenas `light/dark`
 
-1. **Família Tipográfica Final**
-   - *Impacto:* Determina o "tom de voz" do app (Geist vs Inter, etc.).
-   - *Dependência:* Base tipográfica afeta layouts densos.
-2. **Grau de Arredondamento (Radius)**
-   - *Impacto:* Sensação mais utilitária vs "amigável/macia" nos componentes interativos.
-3. **Densidade Base**
-   - *Impacto:* Definição dos espaçamentos globais, que impactam quanta informação cabe nos hubs e modais.
-4. **Contraste das Bordas**
-   - *Impacto:* Perceção de estruturação, especialmente nos modos Dark e Studio onde bordas invisíveis causam desorientação.
-5. **Intensidade do Dark**
-   - *Impacto:* Escala física neutra base, prevenindo a temida tela de alto contraste.
-6. **Intensidade Atmosférica do Studio**
-   - *Impacto:* Nível de saturação de background gradients.
-7. **Presença do Dot Grid**
-   - *Impacto:* A malha pontilhada gera textura, mas pode causar ruído e moiré na interface.
-8. **Uso e Alcance do Efeito Glass**
-   - *Impacto:* Determinação exata de onde aplicar background blurs translúcidos com segurança de performance e legibilidade.
-9. **Uso de Fonte Monoespaçada**
-   - *Impacto:* Identificação de campos e metadados que pedem alinhamento tabular (IDs, timestamps).
+## Valores que ainda dependem de validacao humana
+Estas decisoes nao podem ser tomadas apenas lendo o codigo. Requerem validacao visual humana em telas piloto.
+
+1. **Familia tipografica final**
+   Impacto: define o tom de voz do app e interfere em layouts densos
+2. **Grau de arredondamento**
+   Impacto: muda a sensacao utilitaria vs macia dos componentes
+3. **Densidade base**
+   Impacto: define quanto conteudo cabe em hubs, dialogs e formularios
+4. **Contraste das bordas**
+   Impacto: afeta orientacao estrutural, especialmente em dark e studio
+5. **Intensidade do dark**
+   Impacto: evita tela agressiva ou massa escura sem hierarquia
+6. **Peso do brand accent**
+   Impacto: define se violet/cyan seguem como marca principal de CTA e selecao ou recuam para papel mais pontual
+7. **Intensidade atmosferica do Studio**
+   Impacto: define saturacao de fundos, highlights e acentos
+8. **Presenca de dot grid**
+   Impacto: pode gerar textura interessante ou ruido/moire
+9. **Uso e alcance do glass**
+   Impacto: decide onde blur/translucidez e seguro para leitura e performance
+10. **Nivel de translucidez das superficies**
+   Impacto: decide se o padrao atual `bg-card/30 + border-border/50 + backdrop-blur-sm` vira semantica oficial, excecao controlada ou heranca a ser reduzida
+11. **Uso de fonte monoespacada**
+   Impacto: identifica campos e metadados que pedem alinhamento tabular

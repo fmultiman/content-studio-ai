@@ -1,66 +1,120 @@
 # Semantic Token Contract (DS-1A)
 
 ## Arquitetura em camadas
-A arquitetura de tokens seguirá um formato pragmático de 3 camadas principais, mantendo total compatibilidade com Tailwind e shadcn/ui.
+A arquitetura de tokens seguira um formato pragmatico de 4 camadas, mantendo compatibilidade tecnica com Tailwind e shadcn/ui sem confundir essa compatibilidade com a semantica completa do produto.
 
-- **Layer 1 — Foundation / Scale Tokens**: Não estão no código de produção diretamente. Representam paletas físicas puras (e.g., `gray-900`, `blue-500`). O Tailwind cuida destas se necessário, mas nosso modelo prioriza pular para a camada semântica.
-- **Layer 2 — Semantic Tokens**: O núcleo do Design System. Representam função (e.g., `--canvas`, `--border-default`, `--success`).
-- **Layer 3 — Theme Mappings**: Os valores aplicados nas classes de modo (e.g., `[data-theme="dark"]`, `.dark`, `.theme-studio`) alterando as variáveis.
-- **Layer 4 — Component Tokens**: **Restrito**. Ocorre unicamente quando a composição for impossível apenas com Layer 2 sem impactar outros componentes. Em grande parte, delegados aos defaults do shadcn (ex: `--sidebar-background`).
+- **Layer 1 - Foundation / Scale Tokens**: escalas fisicas aprovadas pelo DS. Incluem neutros, brand accents, estados, tipografia, radius, elevacao, motion e espacamento. Nao significam "adotar toda a escala padrao do Tailwind"; cada familia precisa declarar subconjunto permitido e excecoes.
+- **Layer 2 - Semantic Tokens**: o nucleo do Design System. Representam funcao (`--canvas`, `--surface-translucent`, `--border-default`, `--warning`).
+- **Layer 3 - Theme Mappings**: os valores aplicados nas classes de modo (`.dark`, futuro `studio` ou equivalente) alterando as mesmas variaveis sem mudar DOM, anatomia ou responsividade.
+- **Layer 4 - Component Tokens**: restrito. So entram quando a camada semantica nao consegue expressar a necessidade sem vazar acoplamento para outras familias. O ponto de partida e preservar os tokens tecnicos do shadcn ja existentes, como `--sidebar-*`.
 
-## Taxonomia e Nomenclatura
+## Compatibilidade tecnica vs semantica do produto
 
-A camada semântica estende a base atual do shadcn e adiciona os papéis exigidos pelo UX-H4.
+### Camada de compatibilidade shadcn
+Esta camada existe para manter primitivas como `Button`, `Input`, `Card`, `Dialog`, `Tabs`, `DropdownMenu` e `Sidebar` funcionando com utilitarios padrao (`bg-background`, `text-foreground`, `border-border`, `bg-popover`, `ring-ring`).
 
-### Canvas e Superfícies
+### Camada semantica do Content Studio
+Esta camada expressa a linguagem real do produto e nao pode depender apenas de `--background`, `--foreground`, `--card`, `--muted` e `--accent`.
+O produto ja exige papeis mais especificos para:
+- canvas vs superficie translucida
+- texto principal vs descricao vs metadata vs inverse
+- borda estrutural vs borda de enfase vs foco
+- CTA principal do Studio vs acao secundaria neutra
+- info, success, warning e danger
+- selecao, destaque e estados de colecao/workspace
+
+## Taxonomia e nomenclatura
+A camada semantica estende a base atual do shadcn e adiciona os papeis exigidos pelo UX-H4.
+
+### Canvas e superficies
 | Nomenclatura | Responsabilidade | Status shadcn |
 | --- | --- | --- |
-| `canvas` | Fundo principal da aplicação. | Mapeia para `--background` |
-| `surface` | Fundo de cards padrão e popovers. | Mapeia para `--card` / `--popover` |
-| `surface-subtle` | Paineis internos embutidos. | **Novo / A definir** (ou `muted`) |
-| `surface-elevated` | Elementos flutuantes, drawers. | Utiliza elevação via sombra, estende `surface` |
-| `surface-overlay` | Fundo para modais (dimmer). | Usa bg-black/80 do `Dialog` |
-| `surface-translucent`| Módulos glass, tabs. | **Novo** |
+| `canvas` | Fundo principal da aplicacao | Mapeia para `--background` |
+| `surface` | Fundo de cards padrao e popovers | Mapeia para `--card` / `--popover` |
+| `surface-subtle` | Paineis internos embutidos e caixas de apoio | Novo / a definir; nao assumir `muted` automaticamente |
+| `surface-elevated` | Elementos flutuantes, drawers, menus | Estende `surface` com elevacao |
+| `surface-overlay` | Fundo para modais (dimmer) | Compatibilidade com overlay atual do `Dialog`; sem semantica final fechada |
+| `surface-translucent` | Paineis com blur/translucidez recorrentes no produto | Novo |
 
 ### Texto
 | Nomenclatura | Responsabilidade | Status shadcn |
 | --- | --- | --- |
-| `text-primary` | Textos vitais e de máxima leitura. | Mapeia para `--foreground` |
-| `text-secondary` | Descrições e metádata base. | **Novo / A definir** |
-| `text-muted` | Placeholder, detalhes secundários de metadata. | Mapeia para `--muted-foreground` |
-| `text-inverse` | Contraste forçado em superfícies brand. | Mapeia para `*-foreground` nativos |
+| `text-primary` | Textos vitais e de maxima leitura | Mapeia para `--foreground` |
+| `text-secondary` | Descricoes e metadata base | Novo / a definir |
+| `text-muted` | Placeholder e detalhes secundarios | Mapeia para `--muted-foreground` |
+| `text-inverse` | Contraste forcado em superficies brand | Mapeia para `*-foreground` nativos |
 
 ### Bordas
 | Nomenclatura | Responsabilidade | Status shadcn |
 | --- | --- | --- |
-| `border-subtle` | Divisores sutis, HRs. | **Novo / A definir** |
-| `border-default` | Delimitador padrão de cards. | Mapeia para `--border` |
-| `border-emphasis` | Delimitador acentuado (foco / drag). | Mapeia para `--ring` |
+| `border-subtle` | Divisores sutis e separadores internos | Novo / a definir |
+| `border-default` | Delimitador padrao de cards e paineis | Mapeia para `--border` |
+| `border-emphasis` | Delimitador acentuado para selecao, drag e destaque | Novo / nao reduzir a `ring` automaticamente |
+| `border-focus` | Acessibilidade e foco visivel | Compatibilidade com `--ring` |
 
-### Estados e Ações
-O sistema introduz os 4 pilares taxonômicos (Success, Warning, Danger, Info).
+### Acoes e estados
 | Nomenclatura | Responsabilidade | Status shadcn |
 | --- | --- | --- |
-| `action-primary` | Ação principal (CTA). | Mapeia para `--primary` |
-| `action-secondary` | Ações neutras. | Mapeia para `--secondary` |
-| `danger` / `destructive`| Pilares de deleção / Erros graves. | Mapeia para `--destructive` |
-| `success`, `warning`, `info`| Pilares de states (StatusBadge, Callout). | **Novos** |
+| `action-primary` | Acao principal (CTA) | Mapeia inicialmente para `--primary`, mas precisa contemplar o CTA brand do produto |
+| `action-secondary` | Acoes neutras | Mapeia para `--secondary` |
+| `selection` | Destaque de item ativo/selecionado | Novo / a definir |
+| `danger` / `destructive` | Delecao e erros graves | Mapeia para `--destructive` |
+| `success`, `warning`, `info` | Pilares de states, badges e callouts | Novos |
 
-## Tipografia (Roles)
-Não atrele tipografia puramente a componentes HTML, mas sim ao papel semântico que exercem (UX-H4):
-- `page-title`: Título principal (h1 do PageHeader).
-- `section-title`: Agrupadores dentro de um hub.
-- `card-title`: Título prioritário de um card (Projeto/Produção).
-- `body`: Texto padrão e descrições curtas.
-- `metadata`: Metadados menores, rótulos utilitários.
-- `caption`: O menor tamanho viável para textos periféricos. Substitui os `text-[10px]` e `text-[9px]` hardcoded.
+## Foundation scales obrigatorias
 
-## Anti-Patterns
+### Cores
+O DS nao aprova automaticamente toda a escala do Tailwind.
+Cada familia precisa declarar:
+- subconjunto adotado
+- papel semantico permitido
+- onde a familia pode aparecer
+- quando o uso direto e proibido
 
-1. **Dependência excessiva de valores hardcoded (Hex)**: Proibido introduzir cores fixas arbitrárias nas classes (ex: `bg-[#FF0000]`). Use apenas variáveis.
-2. **Explosão de Tokens de Componente**: Não crie `--card-border`, `--button-border`, `--modal-border`. Use a camada semântica `--border-default` para manter a consistência de escala.
-3. **Ignorar herança de cor de texto**: Evite estilizar ícones com classes próprias se eles puderem herdar (via `currentColor`) a cor do texto pai.
+### Tipografia
+Os roles tipograficos devem ser ligados a uma escala fechada de tamanhos, pesos e line-height. O contrato nao deve deixar cada componente escolher livremente entre `text-xs`, `text-sm`, `text-base` e arbitrarios.
 
-## Regras para Component Tokens
-Somente utilize component tokens (Layer 4) quando um componente tiver uma semântica de domíno particular e conflituosa. 
-Exemplo válido aprovado: o escopo `--sidebar-*` existente, já que a Sidebar costuma ter inversões de tema independentes da superfície principal em alguns layouts modernos.
+Roles minimos:
+- `page-title`
+- `section-title`
+- `card-title`
+- `body`
+- `metadata`
+- `caption`
+
+### Espacamento
+O contrato precisa formalizar uma malha curta para shell, secoes, cards, grupos de campo e acoes. Max-widths e min-widths locais so podem sobreviver como excecao documentada.
+
+### Radius, elevacao e motion
+`rounded-md`, `rounded-lg`, `rounded-xl`, `shadow-sm`, `shadow-lg`, blur e transicoes hoje aparecem em muitas superficies. O contrato precisa decidir:
+- quais niveis entram na escala oficial
+- quais continuam apenas como compatibilidade tecnica
+- onde translucidez e glow sao proibidos
+
+## Regras para escalas Tailwind
+- O Tailwind e material tecnico disponivel, nao decisao automatica do DS
+- Cada foundation scale deve declarar um subconjunto adotado
+- Utilitarios fora do subconjunto adotado so podem aparecer como excecao documentada
+- Roles semanticos devem impedir que cada componente escolha arbitrariamente entre varios tamanhos, tons ou radius
+
+## Anti-patterns
+1. **Dependencia excessiva de valores hardcoded (hex)**: proibido introduzir cores fixas arbitrarias nas classes (ex: `bg-[#FF0000]`)
+2. **Explosao de tokens de componente**: nao criar `--card-border`, `--button-border`, `--modal-border` quando `surface-*`, `border-*` e `action-*` resolvem
+3. **Ignorar heranca de cor**: evitar estilizar icones com classes proprias se eles puderem herdar `currentColor`
+4. **Confundir default do Tailwind com decisao do DS**: utilitarios existentes nao equivalem a aprovacao automatica
+5. **Subir token de componente cedo demais**: se um caso ainda cabe em semantic tokens, ele nao deve virar token proprio
+
+## Regras para component tokens
+Somente utilizar component tokens (Layer 4) quando um componente tiver semantica de dominio particular e conflituosa.
+
+Exemplo valido aprovado:
+- `--sidebar-*`, porque a Sidebar ja e uma camada tecnica propria do shadcn e pode manter compatibilidade separada da superficie principal
+
+Exemplos que ainda nao justificam component token:
+- card padrao do produto
+- callout de estado
+- badge semantica
+- CTA principal
+- painel translucido recorrente
+
+Esses casos devem ser resolvidos primeiro por foundation scales + semantic tokens + theme mappings.
