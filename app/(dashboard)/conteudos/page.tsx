@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { useToast } from '@/hooks/use-toast'
 import type { EditorialContent, EditorialContentStatus, Production, Project } from '@/lib/types'
 import { ExternalLink, FileText, FolderKanban, Loader2, Plus, RefreshCw, Zap } from 'lucide-react'
@@ -278,32 +280,40 @@ function PublicacoesPageContent() {
               {filtered.map((ec) => (
                 <Card
                   key={ec.id}
-                  className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                  onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
+                  className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                 >
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate font-medium">{ec.title}</span>
-                          <Badge variant={ec.status === 'ready' ? 'default' : 'secondary'}>
-                            {STATUS_LABELS[ec.status]}
-                          </Badge>
-                        </div>
-                        {ec.body && (
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                            {ec.body}
-                          </p>
-                        )}
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {projects.find((p) => p.id === ec.project_id)?.name || 'Projeto'}
-                          {ec.production_id && (
-                            <> · {productions.find((p) => p.id === ec.production_id)?.title || 'Produção'}</>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1 space-y-3">
+                        <div className="space-y-2">
+                          <span className="block truncate font-medium">{ec.title}</span>
+                          {ec.body && (
+                            <p className="line-clamp-2 text-sm text-muted-foreground">
+                              {ec.body}
+                            </p>
                           )}
-                          {' · '}{new Date(ec.updated_at).toLocaleDateString('pt-BR')}
-                        </p>
+                        </div>
+                        <ContextMetadata
+                          items={[
+                            { label: 'Project', value: projects.find((p) => p.id === ec.project_id)?.name || 'Projeto' },
+                            { label: 'Production', value: ec.production_id ? productions.find((p) => p.id === ec.production_id)?.title || 'Produção' : 'Sem Production associada' },
+                            {
+                              label: 'Status',
+                              value: <StatusBadge label={STATUS_LABELS[ec.status]} tone={ec.status === 'ready' ? 'positive' : 'neutral'} />,
+                            },
+                            { label: 'Atualizado', value: new Date(ec.updated_at).toLocaleDateString('pt-BR') },
+                          ]}
+                        />
                       </div>
-                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Abrir
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

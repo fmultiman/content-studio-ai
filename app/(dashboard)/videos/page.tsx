@@ -21,6 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, VideoScene, VideoDraft } from '@/lib/types'
@@ -706,29 +708,16 @@ function VideosPageContent() {
                         {draft.title}
                       </span>
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
                   </div>
-                  <div className="grid gap-2 text-sm md:grid-cols-2">
-                    <div className="min-w-0">
-                      <span className="text-xs text-muted-foreground">Project: </span>
-                      <span className="break-words text-foreground" title={draft.projectName}>
-                        {draft.projectName}
-                      </span>
-                    </div>
-                    <div className="min-w-0">
-                      <span className="text-xs text-muted-foreground">Production: </span>
-                      <span className="break-words text-foreground" title={draft.productionName || 'Sem Production associada'}>
-                        {draft.productionName || 'Sem Production associada'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Status:</span>
-                      <Badge variant="outline">{draft.status}</Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      <span className="text-xs text-muted-foreground">Atualizado: </span>
-                      {new Date(draft.updatedAt).toLocaleDateString('pt-BR')}
-                    </div>
-                  </div>
+                  <ContextMetadata
+                    items={[
+                      { label: 'Project', value: draft.projectName, title: draft.projectName },
+                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                      { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
+                    ]}
+                  />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
                       Abrir
@@ -754,31 +743,20 @@ function VideosPageContent() {
                       <Video className="h-5 w-5 text-pink-300" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">Video</Badge>
-                        <Badge variant="outline">{draft.status}</Badge>
-                      </div>
-                      <h3 className="mt-2 line-clamp-2 font-semibold text-foreground" title={draft.title}>
+                      <h3 className="line-clamp-2 font-semibold text-foreground" title={draft.title}>
                         {draft.title}
                       </h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
-                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
                     </div>
                   </div>
-                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Project</dt>
-                      <dd className="truncate text-foreground" title={draft.projectName}>{draft.projectName}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Production</dt>
-                      <dd className="truncate text-foreground" title={draft.productionName || 'Sem Production associada'}>
-                        {draft.productionName || 'Sem Production associada'}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="text-xs text-muted-foreground">{draft.meta}</p>
+                  <ContextMetadata
+                    items={[
+                      { label: 'Project', value: draft.projectName, title: draft.projectName },
+                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                      { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
+                    ]}
+                  />
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={() => router.push(draft.href)} className="gap-2">
                       Abrir

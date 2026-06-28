@@ -7,6 +7,8 @@ import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -465,27 +467,41 @@ export default function ProjectDetailPage() {
                   return (
                   <Card
                     key={prod.id}
-                    className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                    onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
+                    className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                   >
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1 space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="truncate font-semibold">{productionDisplay.title}</h3>
                             <Badge variant="outline" className="shrink-0">
                               {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
                             </Badge>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                          <p className="line-clamp-2 text-sm text-muted-foreground">
                             {productionDisplay.intention}
                           </p>
-                          <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            Atualizado em {formatDate(prod.updated_at)}
-                          </p>
+                          <ContextMetadata
+                            items={[
+                              {
+                                label: 'Status',
+                                value: <StatusBadge label="Ativa" tone="positive" />,
+                              },
+                              {
+                                label: 'Atualizado',
+                                value: formatDate(prod.updated_at),
+                              },
+                            ]}
+                          />
                         </div>
-                        <div className="flex shrink-0 gap-1">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
+                          >
+                            Abrir
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

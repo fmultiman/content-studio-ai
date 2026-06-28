@@ -54,6 +54,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Page Hierarchy and Context Results](./product/ux/ux-page-hierarchy-context-results.md)
   Fechamento do UX-H4B2 com Page Header compartilhado, mensagens contextuais reposicionadas e correcao do `h1` duplicado da Galeria.
 
+- [UX Cards, Metadata and Actions Results](./product/ux/ux-cards-metadata-actions-results.md)
+  Fechamento do UX-H4B3 com familias de cards reconciliadas, metadata em ordem consistente e verbos de acao harmonizados.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

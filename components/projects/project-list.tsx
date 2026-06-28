@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Project } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Card,
   CardContent,
@@ -20,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +33,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ProjectForm } from './project-form'
-import { FolderOpen, MoreVertical, Trash2, Pencil, Image, Calendar } from 'lucide-react'
+import { FolderOpen, MoreVertical, Trash2, Pencil } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useToast } from '@/hooks/use-toast'
@@ -44,8 +46,8 @@ interface ProjectListProps {
   onSelectProject?: (id: string, selected: boolean) => void
 }
 
-export function ProjectList({ 
-  projects, 
+export function ProjectList({
+  projects,
   onRefresh,
   selectable = false,
   selectedIds = new Set(),
@@ -109,46 +111,44 @@ export function ProjectList({
         {projects.map((project) => (
           <Card
             key={project.id}
-            className={`group cursor-pointer border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-200 hover:border-violet-500/50 hover:shadow-lg ${
+            className={`group border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-200 hover:border-violet-500/50 hover:shadow-lg ${
               selectedIds.has(project.id) ? 'border-violet-500 bg-violet-500/10' : ''
             }`}
-            onClick={() => router.push(`/projetos/${project.id}`)}
           >
-            <CardHeader className="flex flex-row items-start justify-between pb-2">
-              <div className="flex items-start gap-3">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 pb-2">
+              <div className="flex min-w-0 items-start gap-3">
                 {selectable && (
                   <Checkbox
                     checked={selectedIds.has(project.id)}
                     onCheckedChange={(checked) => {
                       onSelectProject?.(project.id, !!checked)
                     }}
-                    onClick={(e) => e.stopPropagation()}
                     className="mt-1"
                   />
                 )}
-                <div className="flex-1">
-                  <CardTitle className="line-clamp-1 text-base">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="line-clamp-2 text-base" title={project.name}>
                     {project.name}
                   </CardTitle>
-                <CardDescription className="mt-1 line-clamp-2 text-xs">
-                  {project.description || 'Sem descrição'}
-                </CardDescription>
+                  <CardDescription className="mt-1 line-clamp-2 text-xs">
+                    {project.description || 'Sem descrição'}
+                  </CardDescription>
                 </div>
               </div>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
+                    className="h-8 w-8 shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    aria-label={`Opções do Project ${project.name}`}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
+                    onClick={() => {
                       setEditingProject(project)
                     }}
                   >
@@ -157,8 +157,7 @@ export function ProjectList({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
+                    onClick={() => {
                       setDeleteId(project.id)
                     }}
                     className="text-destructive"
@@ -169,28 +168,41 @@ export function ProjectList({
                 </DropdownMenuContent>
               </DropdownMenu>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Image className="h-3 w-3" />
-                  <span>0 imagens</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  <span>
-                    {formatDistanceToNow(new Date(project.created_at), {
+            <CardContent className="space-y-4">
+              <ContextMetadata
+                items={[
+                  {
+                    label: 'Status',
+                    value: (
+                      <StatusBadge
+                        label={project.status === 'active' ? 'Ativo' : 'Arquivado'}
+                        tone={project.status === 'active' ? 'positive' : 'neutral'}
+                      />
+                    ),
+                  },
+                  {
+                    label: 'Atualizado',
+                    value: formatDistanceToNow(new Date(project.updated_at), {
                       addSuffix: true,
                       locale: ptBR,
-                    })}
-                  </span>
-                </div>
+                    }),
+                  },
+                ]}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/projetos/${project.id}`)}
+                >
+                  Abrir
+                </Button>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Edit Project Modal */}
       <ProjectForm
         open={!!editingProject}
         onOpenChange={(open) => !open && setEditingProject(null)}
@@ -198,7 +210,6 @@ export function ProjectList({
         onSuccess={handleEditSuccess}
       />
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

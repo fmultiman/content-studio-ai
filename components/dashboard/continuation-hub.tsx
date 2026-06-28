@@ -2,7 +2,6 @@ import Link from 'next/link'
 import type React from 'react'
 import {
   ArrowRight,
-  CalendarClock,
   FileText,
   FolderKanban,
   ImageIcon,
@@ -12,13 +11,14 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StatusBadge } from '@/components/ui/status-badge'
 import type {
   DashboardEmptyState,
   RecentProductionCard,
   RecentProjectCard,
   RecentWorkItem,
 } from '@/lib/dashboard-continuation'
-import { cn } from '@/lib/utils'
 
 type DashboardContinuationProps = {
   userName: string
@@ -47,9 +47,7 @@ export function DashboardContinuationHub({
         </p>
       </section>
 
-      {emptyState && (
-        <DashboardEmptyStateCard emptyState={emptyState} />
-      )}
+      {emptyState && <DashboardEmptyStateCard emptyState={emptyState} />}
 
       <section className="space-y-4" aria-labelledby="continuar-trabalhando">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -184,26 +182,25 @@ function ProductionCard({ production }: { production: RecentProductionCard }) {
     <article className="rounded-xl border border-border/50 bg-card/30 p-5 backdrop-blur-sm transition-colors hover:border-violet-500/50">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
-          <div className="space-y-1">
-            <Badge variant="secondary">{production.projectName}</Badge>
-            <h4 className="line-clamp-2 text-lg font-semibold text-foreground">
-              {production.title}
-            </h4>
-          </div>
+          <h4 className="line-clamp-2 text-lg font-semibold text-foreground">
+            {production.title}
+          </h4>
           {production.intention && (
             <p className="line-clamp-2 text-sm text-muted-foreground" title={production.intention}>
               {production.intention}
             </p>
           )}
-          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <Counter label="imagens" value={production.counters.images} />
-            <Counter label="vídeos" value={production.counters.videos} />
-            <Counter label="conteúdos" value={production.counters.editorial} />
-          </div>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <CalendarClock className="h-3.5 w-3.5" />
-            Atividade em {formatDate(production.activityAt)}
-          </p>
+          <ContextMetadata
+            items={[
+              { label: 'Project', value: production.projectName, title: production.projectName },
+              {
+                label: 'Itens vinculados',
+                value: `${production.counters.images} imagens · ${production.counters.videos} vídeos · ${production.counters.editorial} conteúdos`,
+              },
+              { label: 'Atualizado', value: formatDate(production.activityAt) },
+            ]}
+            className="gap-3"
+          />
         </div>
         <Button asChild size="sm" className="shrink-0">
           <Link href={production.href} aria-label={`Continuar Production ${production.title}`}>
@@ -216,34 +213,40 @@ function ProductionCard({ production }: { production: RecentProductionCard }) {
 }
 
 function WorkItemCard({ item }: { item: RecentWorkItem }) {
+  const statusTone =
+    item.status === 'Aprovada' || item.status === 'Pronto'
+      ? 'positive'
+      : item.status === 'Gerando'
+        ? 'warning'
+        : item.status === 'Rejeitada'
+          ? 'danger'
+          : 'neutral'
+
   return (
     <article className="rounded-lg border border-border/50 bg-card/25 p-4 transition-colors hover:border-border">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="space-y-3">
+        <div className="flex min-w-0 items-start gap-2">
           <WorkItemIcon type={item.type} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <Badge variant="outline">{item.label}</Badge>
             <h4 className="mt-2 line-clamp-2 text-sm font-semibold text-foreground">
               {item.title}
             </h4>
           </div>
         </div>
-        <Button asChild variant="ghost" size="sm" className="shrink-0">
+        <ContextMetadata
+          items={[
+            { label: 'Project', value: item.projectName, title: item.projectName },
+            { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+            { label: 'Status', value: <StatusBadge label={item.status} tone={statusTone} /> },
+            { label: 'Atualizado', value: formatDate(item.updatedAt) },
+          ]}
+        />
+        <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
           <Link href={item.href} aria-label={`Abrir ${item.label}: ${item.title}`}>
             Abrir
           </Link>
         </Button>
-      </div>
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p className="truncate">Project: {item.projectName}</p>
-        {item.productionName ? (
-          <p className="truncate">Production: {item.productionName}</p>
-        ) : (
-          <p>Sem Production vinculada</p>
-        )}
-        <p>
-          {item.status} · {formatDate(item.updatedAt)}
-        </p>
       </div>
     </article>
   )
@@ -263,22 +266,21 @@ function ProjectCard({ project }: { project: RecentProjectCard }) {
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">
-            {project.productionCount} {project.productionCount === 1 ? 'Production' : 'Productions'}
-          </Badge>
-          <Badge variant="outline">{project.identityLabel}</Badge>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">
-            {formatDate(project.updatedAt)}
-          </span>
-          <Button asChild variant="outline" size="sm">
-            <Link href={project.href} aria-label={`Abrir Project ${project.name}`}>
-              Abrir Project
-            </Link>
-          </Button>
-        </div>
+        <ContextMetadata
+          items={[
+            {
+              label: 'Productions',
+              value: `${project.productionCount} ${project.productionCount === 1 ? 'Production' : 'Productions'}`,
+            },
+            { label: 'Identidade', value: project.identityLabel },
+            { label: 'Atualizado', value: formatDate(project.updatedAt) },
+          ]}
+        />
+        <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+          <Link href={project.href} aria-label={`Abrir Project ${project.name}`}>
+            Abrir
+          </Link>
+        </Button>
       </div>
     </article>
   )
@@ -356,25 +358,23 @@ function ActionLink({
   )
 }
 
-function Counter({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="rounded-md bg-accent px-2 py-1">
-      {value} {label}
-    </span>
-  )
-}
-
 function WorkItemIcon({ type }: { type: RecentWorkItem['type'] }) {
-  const className = 'h-4 w-4'
-  if (type === 'image') return <ImageIcon className={cn(className, 'text-cyan-400')} />
-  if (type === 'video') return <Video className={cn(className, 'text-pink-400')} />
-  return <FileText className={cn(className, 'text-amber-400')} />
+  const iconClassName = 'h-4 w-4 shrink-0 text-muted-foreground'
+
+  if (type === 'image') {
+    return <ImageIcon className={iconClassName} />
+  }
+
+  if (type === 'video') {
+    return <Video className={iconClassName} />
+  }
+
+  return <FileText className={iconClassName} />
 }
 
-function formatDate(value: string) {
+function formatDate(date: string) {
   return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: 'short',
-    year: 'numeric',
-  }).format(new Date(value))
+  }).format(new Date(date))
 }

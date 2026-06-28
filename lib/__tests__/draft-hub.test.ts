@@ -213,9 +213,9 @@ describe('UX-H3B draft hub helpers', () => {
       expect(source).not.toContain(oldDenseGrid)
       expect(source).not.toContain('hidden grid-cols-[minmax(220px,1.4fr)')
       expect(source).not.toContain('2xl:grid-cols-[minmax(220px,1.4fr)')
-      expect(source).toContain('grid gap-2 text-sm md:grid-cols-2')
-      expect(source).toContain('text-xs text-muted-foreground">Project:')
-      expect(source).toContain('text-xs text-muted-foreground">Production:')
+      expect(source).toContain('ContextMetadata')
+      expect(source).toContain("label: 'Project'")
+      expect(source).toContain("label: 'Production'")
       expect(source).toContain('flex flex-wrap gap-2')
       expect(source).not.toContain('<table')
     }

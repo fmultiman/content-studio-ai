@@ -11,6 +11,7 @@ import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   Select,
   SelectContent,
@@ -454,24 +456,25 @@ function GalleryOutputCard({
     <Card className="overflow-hidden border-border/50 bg-card/30">
       <GalleryImageFrame output={output} />
       <CardContent className="space-y-4 p-4">
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h3 className="line-clamp-2 text-sm font-medium" title={output.title}>
               {output.title}
             </h3>
-            <Badge variant="secondary" className="shrink-0">
-              {output.statusLabel}
-            </Badge>
+            <StatusBadge
+              label={output.statusLabel}
+              tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'}
+              className="shrink-0"
+            />
           </div>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <p className="truncate" title={output.projectName || 'Project não identificado'}>
-              Project: {output.projectName || 'Project não identificado'}
-            </p>
-            <p className="truncate" title={output.productionName || 'Sem Production associada'}>
-              Production: {output.productionName || 'Sem Production associada'}
-            </p>
-            <p>Gerada em {formatDate(output.generatedAt)}</p>
-          </div>
+          <ContextMetadata
+            items={[
+              { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
+              { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
+              { label: 'Atualizado', value: formatDate(output.updatedAt) },
+            ]}
+            className="text-xs"
+          />
         </div>
 
         <div className="grid gap-2">
@@ -479,29 +482,43 @@ function GalleryOutputCard({
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => output.productionHref && onNavigate(output.productionHref)}
-              disabled={!output.productionHref}
-            >
-              <ExternalLink className="h-4 w-4" />
-              Ver Production
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              disabled={!output.canDownload}
-              onClick={onDownload}
-            >
-              <Download className="h-4 w-4" />
-              Baixar
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {output.sourceHref && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => onNavigate(output.sourceHref!)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Abrir origem
+              </Button>
+            )}
+            {output.productionHref && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => onNavigate(output.productionHref!)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Ver Production
+              </Button>
+            )}
+            {output.canDownload && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onDownload}
+              >
+                <Download className="h-4 w-4" />
+                Baixar
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
@@ -531,60 +548,63 @@ function GalleryOutputListItem({
           <p className="truncate text-sm font-medium" title={output.title}>
             {output.title}
           </p>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground 2xl:hidden">
-            {output.projectName || 'Project não identificado'} · {output.productionName || 'Sem Production associada'}
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+            {output.prompt || 'Output visual gerado'}
           </p>
         </div>
 
-        <div className="grid gap-2 text-sm md:grid-cols-2 2xl:contents">
-          <p className="min-w-0 break-words text-muted-foreground xl:truncate" title={output.projectName || 'Project não identificado'}>
-            <span className="font-medium text-foreground 2xl:hidden">Project: </span>
-            {output.projectName || 'Project não identificado'}
-          </p>
-
-          <p className="min-w-0 break-words text-muted-foreground xl:truncate" title={output.productionName || 'Sem Production associada'}>
-            <span className="font-medium text-foreground 2xl:hidden">Production: </span>
-            {output.productionName || 'Sem Production associada'}
-          </p>
-
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-foreground 2xl:hidden">Status:</span>
-            <Badge variant="secondary">{output.statusLabel}</Badge>
-          </div>
-
-          <p className="text-muted-foreground">
-            <span className="font-medium text-foreground 2xl:hidden">Atualizado: </span>
-            {formatDate(output.updatedAt)}
-          </p>
-        </div>
+        <ContextMetadata
+          items={[
+            { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
+            { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
+            { label: 'Status', value: <StatusBadge label={output.statusLabel} tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'} /> },
+            { label: 'Atualizado', value: formatDate(output.updatedAt) },
+          ]}
+          className="2xl:contents"
+          itemClassName="min-w-0"
+        />
 
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end">
           <Button type="button" size="sm" className="w-full gap-2 sm:min-w-max sm:w-auto" onClick={onPreview}>
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full gap-2 sm:min-w-max sm:w-auto"
-            onClick={() => output.productionHref && onNavigate(output.productionHref)}
-            disabled={!output.productionHref}
-          >
-            <ExternalLink className="h-4 w-4" />
-            Ver Production
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full gap-2 sm:min-w-max sm:w-auto"
-            disabled={!output.canDownload}
-            onClick={onDownload}
-          >
-            <Download className="h-4 w-4" />
-            Baixar
-          </Button>
+          {output.sourceHref && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={() => onNavigate(output.sourceHref!)}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Abrir origem
+            </Button>
+          )}
+          {output.productionHref && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={() => onNavigate(output.productionHref!)}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Production
+            </Button>
+          )}
+          {output.canDownload && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={onDownload}
+            >
+              <Download className="h-4 w-4" />
+              Baixar
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -673,7 +693,10 @@ function GalleryPreviewDialog({
 
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{output.statusLabel}</Badge>
+                  <StatusBadge
+                    label={output.statusLabel}
+                    tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'}
+                  />
                   {output.projectName && <Badge variant="outline">{output.projectName}</Badge>}
                   {output.productionName && <Badge variant="outline">{output.productionName}</Badge>}
                 </div>
