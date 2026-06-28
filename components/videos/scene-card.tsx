@@ -50,6 +50,7 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleGeneratePrompt = async () => {
@@ -69,9 +70,10 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
 
   const handleFileChange = useCallback((file: File) => {
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-      alert('Por favor, selecione uma imagem JPG, PNG ou WEBP.')
+      setImageError('Use uma imagem JPG, PNG ou WEBP para a cena.')
       return
     }
+    setImageError(null)
 
     // Convert to base64 for local preview
     const reader = new FileReader()
@@ -110,6 +112,7 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
   }
 
   const handleRemoveImage = () => {
+    setImageError(null)
     onUpdate({ ...scene, image_url: null })
   }
 
@@ -182,6 +185,11 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
                   <p className="text-xs">JPG, PNG, WEBP</p>
                 </div>
               </div>
+            )}
+            {imageError && (
+              <p className="text-xs text-destructive" role="alert">
+                {imageError}
+              </p>
             )}
           </div>
 

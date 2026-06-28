@@ -57,6 +57,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Cards, Metadata and Actions Results](./product/ux/ux-cards-metadata-actions-results.md)
   Fechamento do UX-H4B3 com familias de cards reconciliadas, metadata em ordem consistente e verbos de acao harmonizados.
 
+- [UX States, Forms and Final Polish Results](./product/ux/ux-states-forms-polish-results.md)
+  Fechamento do UX-H4B4 com estados operacionais reconciliados, feedback inline, tabs mobile de Configuracoes e acabamento final das superficies principais.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

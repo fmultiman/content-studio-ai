@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { FieldError } from '@/components/ui/field'
+import { StateMessage } from '@/components/ui/state-message'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
@@ -30,7 +32,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { useToast } from '@/hooks/use-toast'
 import type { EditorialContent, EditorialContentStatus, Production, Project } from '@/lib/types'
-import { ExternalLink, FileText, FolderKanban, Loader2, Plus, RefreshCw, Zap } from 'lucide-react'
+import { ExternalLink, FolderKanban, Loader2, Plus, Zap } from 'lucide-react'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 type StatusFilter = 'all' | EditorialContentStatus
@@ -59,6 +61,7 @@ function PublicacoesPageContent() {
   const [createTitle, setCreateTitle] = useState('')
   const [createProjectId, setCreateProjectId] = useState('none')
   const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
 
@@ -114,6 +117,7 @@ function PublicacoesPageContent() {
   const openCreateDialog = () => {
     setCreateTitle('')
     setCreateProjectId('none')
+    setCreateError(null)
     setShowCreateDialog(true)
   }
 
@@ -123,12 +127,13 @@ function PublicacoesPageContent() {
   }
 
   const handleCreate = async () => {
+    setCreateError(null)
     if (!createTitle.trim()) {
-      toast({ title: 'Título obrigatório', variant: 'destructive' })
+      setCreateError('Informe o título do conteúdo editorial.')
       return
     }
     if (createProjectId === 'none') {
-      toast({ title: 'Selecione um projeto', variant: 'destructive' })
+      setCreateError('Selecione o Project que vai receber este conteúdo.')
       return
     }
     setIsCreating(true)
@@ -238,43 +243,40 @@ function PublicacoesPageContent() {
             </p>
           </div>
           {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando conteúdos editoriais..."
+              description="Estamos preparando drafts, status e vínculos com Project e Production."
+              className="py-10"
+            />
           ) : loadError ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
-                <p className="text-muted-foreground">Erro ao carregar conteúdos.</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 gap-2"
-                  onClick={() => setRetryKey((k) => k + 1)}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Tentar novamente
-                </Button>
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os conteúdos"
+              description="Tente novamente para recuperar a lista editorial."
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((k) => k + 1)}
+            />
           ) : filtered.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Nenhum conteúdo editorial</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {editorialContents.length === 0
-                    ? 'Crie o primeiro Conteúdo Editorial para começar.'
-                    : 'Nenhum resultado para os filtros selecionados.'}
-                </p>
-                {editorialContents.length === 0 && (
-                  <Button className="mt-4" onClick={openCreateDialog}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Novo conteúdo
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="empty"
+              title={editorialContents.length === 0 ? 'Nenhum conteúdo editorial ainda' : 'Nenhum resultado encontrado'}
+              description={
+                editorialContents.length === 0
+                  ? 'Crie o primeiro conteúdo editorial para começar o fluxo de produção e publicação.'
+                  : 'Ajuste os filtros para voltar a ver conteúdos já existentes.'
+              }
+              actionLabel={editorialContents.length === 0 ? 'Novo conteúdo' : 'Limpar filtros'}
+              onAction={
+                editorialContents.length === 0
+                  ? openCreateDialog
+                  : () => {
+                      setSelectedStatus('all')
+                      setSelectedProject('all')
+                      setSelectedProduction('all')
+                    }
+              }
+            />
           ) : (
             <div className="space-y-3">
               {filtered.map((ec) => (
@@ -348,6 +350,7 @@ function PublicacoesPageContent() {
                 onChange={(e) => setCreateTitle(e.target.value)}
                 placeholder="Ex: Post de lançamento do produto X"
                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                aria-invalid={!!createError && !createTitle.trim()}
               />
             </div>
             <div className="space-y-2">
@@ -364,6 +367,7 @@ function PublicacoesPageContent() {
                 </SelectContent>
               </Select>
             </div>
+            <FieldError>{createError}</FieldError>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

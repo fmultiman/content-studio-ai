@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -816,15 +817,14 @@ function VideosPageContent() {
           )}
 
           {loadError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-              <p className="text-sm text-destructive">{loadError}</p>
-              <button
-                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
-                onClick={() => setRetryKey((k) => k + 1)}
-              >
-                Tentar novamente
-              </button>
-            </div>
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os dados de vídeo"
+              description={loadError}
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((k) => k + 1)}
+              compact
+            />
           )}
           {/* Drafts Section */}
           {productionId && !isLoadingDrafts && drafts.length > 0 && (
