@@ -1,31 +1,81 @@
-# Open Decisions & Hypotheses
+# Open Decisions
 
-Neste artefato estao listadas as decisoes nao totalmente mapeadas e incertezas que devem ser sanadas por acao humana (Review) ou por rodadas de design futuras antes da fixacao das bibliotecas em código real.
+Este documento registra apenas pendencias reais apos a reconciliacao do UX-H4. Ele nao deve repetir hipoteses que ja foram resolvidas no produto.
 
-## 1. Decisoes Humanas Pendentes (UX / Produto)
+## Decisoes encerradas pelo UX-H4
 
-### A. O Papel do "Studio" Theme
-**Dúvida:** O tema "Studio" deverá ser uma opcao no Settings (acionada unicamente pelo usuario) ou ele se tornara o estilo "global e irrevogavel" do app (matando as opcoes neutras Light/Dark)?
-**Impacto:** Se for imposto go-to-market global, precisa refinar imediatamente contraste acessivel. Se for opcao, requer arquitetura de persistencia do localstorage.
+### Encerradas e removidas do campo de incerteza
 
-### B. Header Global vs Page Headers
-**Dúvida:** O `<Header />` atual global, que muitas vezes renderiza um H1 invisivel ou conflituoso com o PageHeader da view (vide problema da Galeria que exibia 2 H1) devera ser mantido apenas como barra de utilidades (notificacoes, profile, e breadcrumbs), deixando o título H1 **inteiramente** para as views?
-**Proposta:** O Header global vira TopNav utilitario apenas. As paginas assumem o H1 via `PageHeader`.
+- `PageHeader` como unica fonte do `h1`: resolvido em H4B2.
+- Hubs de Imagens/Videos com listas tabulares: rejeitado em H4B1.
+- Galeria com loading global dependente de todas as URLs assinadas: resolvido em H4B1.
+- Cards e Lista como semanticas distintas para a mesma entidade: rejeitado em H4B3.
+- `alert()` nativo no fluxo ajustado de Videos: removido em H4B4.
 
-### C. Ações "Duplas" em Hubs de Produção
-**Dúvida:** O que priorizar nos hubs Imagens e Videos: a ação de visualizar o Asset no painel imediato, ou de "Ver Production" que redireciona o usuario mudando o contexto dele? Ter as duas acoes simultaneamente nos mesmos pesos concorre para o clique e consome espaco util valioso que comprime grids.
-**Proposta:** Manter `Abrir` ou `Preview` como Botao Primario (Accent), colocar "Ver Production" como botao secundario (Outline) acessado apenas apos visualização do item ou num dropdown (ellipsis/hover) para dispositivos nao moveis.
+## Pendencias reais para DS-1
 
-## 2. Dependências Estruturais (UX-H4)
+### 1. Tokens, tons e escala visual
 
-A rodada `DS-0` paralela ao `UX-H4*` listou as listas densas (Imagens, Videos, Galeria) como risco estrutural.
-* **Status Atual:** **CONFIRMADO**. O `UX-H4B1` refatorou com sucesso a composição dessas listas para o padrão stack mobile / grid duas-faixas sem comprometer a legibilidade, validando de vez a abordagem visual proposta. O risco estrutural neste escopo está encerrado. As próximas refatorações (H4B2/B3/B4) vão se concentrar em modais, cabeçalhos, e cards em si.
+- paleta semantica final;
+- escala tipografica;
+- espacamento;
+- radius;
+- elevacao;
+- variantes formais de badge, botao e state surface.
 
-## 3. Hipóteses
+**Classificacao:** Adiada para DS-1
 
-* **Hipótese de Componentes de Layout:** Assumimos que criar um `PageHeader` genérico resolvera as discrepancias entre Dashboard, Galeria e Hubs que usam `H2` e `H3` inconsistentemente.
-* **Hipótese de Refatoração de Classes:** Assumimos que remover backgrounds harcoded (ex: `bg-slate-900`) e trocar por tokens semanticos (`bg-canvas` e `bg-surface`) via classes novas Tailwind não quebrará o layout desde que os arquivos de tema CSS fornecam valores mapeados em OKLCH consistentes (mantendo o contraste atual ate que os designers polam).
-* **Hipótese de Navegação no Mobile:** Assumimos que em `< 768px` as entidades exibidas na interface sempre empilharão (stacking grid columns to 1fr) sem depender de carrossel horizontal de tabelas. -> **CONFIRMADA PELO UX-H4B1.**
+### 2. Anatomia visual final das familias de card
 
----
-**Status da Rodada:** Aprovada e estocada. As decisoes acima podem ser respondidas nos pull requests da implementacao `DS-1`.
+Os contratos semanticos ja estao comprovados, mas DS-1 ainda precisa formalizar:
+
+- anatomia visual de `ContinuationCard`, `ProjectCard`, `ProductionCard`, `DraftCard`, `GeneratedOutputCard`, `EditorialContentCard` e `FileCard`;
+- pesos visuais e variantes finais;
+- catalogo visual e criterios de uso.
+
+**Classificacao:** Adiada para DS-1
+
+### 3. Taxonomia visual final de callouts e feedback
+
+O produto aprovou a separacao semantica entre:
+
+- loading;
+- empty;
+- filtered empty;
+- error;
+- needs configuration;
+- success inline.
+
+DS-1 ainda precisa formalizar a anatomia visual e a escala dessas superficies.
+
+**Classificacao:** Adiada para DS-1
+
+### 4. Documentacao de componentes e estrategia de adocao
+
+Ainda faltam:
+
+- catalogo de componentes;
+- exemplos de composicao;
+- criterios de migracao;
+- checklist de adocao por superficie.
+
+**Classificacao:** Adiada para DS-1
+
+## Fora do Design System
+
+### Dominio e backend
+
+Nao sao decisoes de DS:
+
+- regras de schema;
+- backend de retry;
+- autorizacao;
+- query nova so para metadata;
+- comportamento de dominio editorial;
+- semantica de negocio de provider alem da linguagem de UX aprovada.
+
+**Classificacao:** Fora do Design System
+
+## Regra para novas duvidas
+
+Se uma decisao puder ser respondida pelo comportamento aprovado do produto, ela nao deve voltar para este documento como "aberta". Ela deve ser consolidada na reconciliacao canonica.

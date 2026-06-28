@@ -1,45 +1,125 @@
 # Component Inventory
 
-Esta classificacao serve para guiar a construcao do Design System separando componentes que sao meras cascas primitivas de componentes fortemente ligados ao negocio (Domain).
+Este inventario separa contratos comprovados na aplicacao, primitivas candidatas a DS-1 e componentes que devem continuar explicitamente ligados ao dominio.
 
-## A. Primitivos (Core UI)
+## A. Primitivos base
 
-Componentes agnósticos sem conhecimento de negocio (Atualmente supridos em sua maioria pelo shadcn/ui).
+Continuam como base agnostica:
+
 - `Button`
-- `Input` / `Textarea` / `Select` / `Checkbox`
-- `Dialog` / `Sheet` (Modais)
-- `Tabs` (List/Trigger/Content)
-- `Tooltip`
-- `Badge` (Neutro, cor definida por prop generica)
-- `Card` (Apenas a caixa, Header/Content/Footer)
-- `Table`
+- `Input`
+- `Textarea`
+- `Select`
+- `Checkbox`
+- `Dialog`
+- `Tabs`
+- `Badge`
+- `Card`
 
-## B. Componentes Compartilhados (Shared Structures)
+Esses elementos continuam fora do escopo do DS-0 reconciliado como implementacao visual final.
 
-Componentes estruturais usados por multiplas areas, compostos por Primitivos e Tokens semanticos, mas ainda independentes do modelo de dados exato (Project/Production).
-- `PageHeader` (H1 unico, texto descritivo e Ação principal).
-- `SectionHeader` (H2 com divisor, ou título de aba).
-- `FilterBar` / `FilterCard` (Padrão de barra de controle com search input lado a lado com selects responsivos).
-- `EmptyState` (Container com icone discreto, titulo, mensagem e CTA para "reiniciar" a view).
-- `StatusBadge` (Extensao do Badge genérico que processa strings fixas de sucesso, erro, atencao e as formata visualmente, ex: `StatusBadge status="completed"`).
-- `ViewModeToggle` (Switch visual entre Lista e Grid).
-- `Callout` (Caixa colorida leve para avisos/Dicas).
-- `Sidebar` (Shell esquerdo padrao).
+## B. Estruturas compartilhadas comprovadas
 
-## C. Componentes de Domínio (Domain Specific)
+### `PageHeader`
 
-Componentes que conhecem especificamente as entidades do banco ou APIs do Content Agent. Eles recebem tipos de negocio (ex: um objeto `Project` ou `Production`) e renderizam o template correspondente.
-- `OperationalCard` (Renderiza contexto rapido para retomada).
-- `DraftCard` (Card que contem dados estritos do Hub de imagens/videos, icone, metadata em ordem).
-- `OutputCard` (Gallery, thumbnail focada no topo e metadata e botões na base).
-- `ListRow` (Renderiza a linha tabular ou em duas faixas para Hubs de Imagens, Videos e Galerias, incorporando as acoes `Abrir`, `Ver Production`, etc).
-- `IdentitySummary` (Bloco visual compacto para contexto herdado).
-- `EvaluationPanel` (Componente de UI de aprovação de imagem gerada).
+- contrato comprovado na aplicacao;
+- titulo obrigatorio;
+- contexto, descricao, metadata e acoes opcionais;
+- sem wrappers vazios;
+- um unico `h1`.
 
-## D. Componentes Locais ou Duplicados (Refatoracao Candidata)
+### `ContextMetadata`
 
-Identificacao de redundancias e divergencias atuais:
-- Multiplos headers locais: Projetos tem header inline, Conteudos tem uppercases espalhados, Galeria possui header global conflitando com a secao interna. **Deve ser substituído pelo `PageHeader` (Shared).**
-- Botoes de Acao (Call-to-Action) por contexto: Paginas renderizam suas proprias div de botoes, as vezes quebrando linhas. **Devem padronizar seus verbos e respeitar limites de flex-wrap.**
-- Metadata rows: Repetem-se de formas diferentes nos hubs (Dashboard exibe metadados diferente dos DraftCards). **Deve se convergir usando uma ordem canonica descrita no DS.**
-- Status: Botoes de status sao renderizados com hardcoded classes em multiplos lugares (ex: text-green-500, text-red-500). **Necessário adotar um `StatusBadge` global.**
+- primitiva leve para metadata contextual;
+- ordem e composicao controladas pela superficie;
+- campos opcionais nao geram ruido;
+- nao conhece entidade, query ou dominio.
+
+### `StatusBadge`
+
+- badge textual simples;
+- tom positivo, neutro, warning ou danger;
+- nao depende apenas de cor;
+- nao parece botao.
+
+### `StateMessage`
+
+- primitiva leve para loading, empty, error, info e success;
+- titulo obrigatorio;
+- descricao e acao opcionais;
+- sem logica de retry, query ou dominio.
+
+### `ViewModeToggle`
+
+- padrao aprovado para alternancia Cards/Lista;
+- persistencia e acessibilidade ja comprovadas no produto.
+
+## C. Familias de superficie comprovadas
+
+### `ContinuationCard`
+
+- Dashboard;
+- mostra entidade, contexto, status e proxima acao;
+- orientado a retomada.
+
+### `ProjectCard`
+
+- `/projetos`;
+- acao primaria explicita `Abrir`;
+- nao depende do clique no card inteiro.
+
+### `ProductionCard`
+
+- `/projetos/[id]`;
+- visualmente distinto de `ProjectCard`;
+- acao primaria ligada ao workspace.
+
+### `DraftCard`
+
+- Imagens e Videos em Cards e Lista;
+- `Project` antes de `Production`;
+- `Abrir` e `Ver Production` quando valido.
+
+### `GeneratedOutputCard`
+
+- Galeria;
+- thumbnail, contexto, status, data e acoes condicionais;
+- `Visualizar`, `Abrir origem`, `Ver Production`, `Baixar`.
+
+### `EditorialContentCard`
+
+- Conteudos;
+- mantem identidade editorial;
+- `Abrir` como proxima acao natural.
+
+### `FileCard`
+
+- Arquivos;
+- inputs/uploads, nao outputs;
+- acao so aparece quando realmente existe preview ou download valido.
+
+## D. Limites de abstracao
+
+### Confirmado como aceitavel
+
+- composicao explicita;
+- primitivas pequenas com API curta;
+- reutilizacao apenas quando a repeticao e real.
+
+### Explicitamente recusado
+
+- `UniversalCard`;
+- data grid universal;
+- sistema global de acoes orientado por grande objeto de configuracao;
+- menu de tres pontos por padrao;
+- framework universal de states;
+- framework global de forms.
+
+## E. Decisoes classificadas
+
+| Decisao | Status | Observacao |
+| --- | --- | --- |
+| `PageHeader`, `ContextMetadata`, `StatusBadge` e `StateMessage` como primitivas comprovadas | Confirmada | Candidatas a formalizacao em DS-1 |
+| `FilterBar` global como componente ja definido | Refinada | O contrato existe, mas a implementacao final ficou para DS-1 |
+| `Table` como base natural das listas densas | Substituida | H4B1 aprovou duas faixas e stack em vez de tabela universal |
+| `Callout` global unico para todo contexto | Adiada para DS-1 | Taxonomia existe, anatomia visual final ainda nao |

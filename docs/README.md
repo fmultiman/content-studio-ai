@@ -60,6 +60,9 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX States, Forms and Final Polish Results](./product/ux/ux-states-forms-polish-results.md)
   Fechamento do UX-H4B4 com estados operacionais reconciliados, feedback inline, tabs mobile de Configuracoes e acabamento final das superficies principais.
 
+- [Design System V1 - DS-0 Post UX-H4 Reconciliation](./product/ux/design-system/10-post-ux-h4-reconciliation.md)
+  Reconcilia os documentos do Design System com os contratos comprovados no produto apos UX-H4 e explicita o backlog formal de DS-1.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

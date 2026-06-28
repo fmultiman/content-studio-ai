@@ -1,5 +1,7 @@
 # Current UI Inventory
 
+> Historico: este inventario registra a fotografia inicial das superficies antes da reconciliacao completa do UX-H4. Para contratos atuais, use `02-page-archetypes.md`, `04-structural-mapping.md`, `05-responsive-contracts.md` e `10-post-ux-h4-reconciliation.md`.
+
 Este inventario documenta as rotas visíveis e superficies do Content Agent Studio com base na estrutura atual.
 
 ## Rotas Principais e Superficies

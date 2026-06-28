@@ -1,59 +1,49 @@
 # Structural Mapping
 
-A Matriz de Correspondência abaixo centraliza o de-para (arquitetura proposta versus estado atual) de cada superfície.
+Este documento concentra a rastreabilidade entre aprendizados do UX-H4 e contratos reconciliados no Design System.
 
-## Confiança de Estados
+## Classificacao de decisao
 
-* **CONFIRMED**: Padrão claramente sustentado pelo produto atual e auditado sem restrições graves.
-* **CANDIDATE**: Recomendação forte, baseada em boas práticas (ou inspirada no Hermes), mas ainda exige validação de um humano.
-* **UX-H4 DEPENDENT**: Depende de decisão/correção em andamento na auditoria `UX-H4*` (ex: listas, densidade responsiva).
-* **DEFERRED**: Não será consolidado na V1 inicial. Pode sofrer refatorações mais profundas posteriormente (ex: Arquivos, Conteudos editoriais completos).
+- **Confirmada**: comportamento comprovado e aprovado na aplicacao
+- **Refinada**: a intencao original permaneceu, mas o contrato foi ajustado
+- **Substituida**: a formulacao anterior foi superada por evidencia do produto
+- **Adiada para DS-1**: decisao validada conceitualmente, mas ainda sem formalizacao visual/sistemica
+- **Fora do Design System**: depende de dominio, backend ou fluxo local
 
-## Matriz de Correspondencia
+## Matriz de rastreabilidade
 
-| Superficie | Arquétipo Recomendado | Estrutura Atual | Estrutura Recomendada | Componentes Compartilhados Candidatos | Responsividade | Tema | Estado |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **Dashboard** | Operational Overview | Sections (H2/H3), Cards retomada | PageHeader, MetricStrip, Activity Feed | PageHeader, OperationalCard, StatusBadge | Duas colunas -> Stack | Default | CANDIDATE |
-| **Projects** | Entity Collection | Cards de grid simples | PageHeader, FilterBar, EntityGrid | PageHeader, FilterBar, OperationalCard | Grid -> Stack | Default | CANDIDATE |
-| **Project Detail** | Context Workspace | Master-detail solto | Tabs, SectionHeaders, ContextBadge | SectionHeader, StatusBadge | Max-w-4xl, Stack | Default | CANDIDATE |
-| **Project Identity**| Context Workspace | Grid/Stack de callouts | PageHeader, InfoCallout, SettingCard | ContextBadge, InfoCallout | Stack | Default | CONFIRMED |
-| **Productions** | Context Workspace | Abas, Paineis de step | Tabs globais, SplitWorkspace | SplitWorkspace, ContextBadge, LoadingState | Grid -> Drawer/Stack | Default | DEFERRED |
-| **Images Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | CONFIRMED |
-| **Videos Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | CONFIRMED |
-| **Galeria** | Filtered Library | FilterCard, Lista densa/Grids visuais | PageHeader, FilterCard, OutputCard Grid | PageHeader, OutputCard, StatusBadge, EmptyState | 2-faixas -> Stack | Default | CONFIRMED |
-| **Drafts / Conteúdos**| Split Workspace | Inline text filtros, cards brutos | FilterBar simplificada, EditorialItemCard | PageHeader, FilterBar, EmptyState | Master/Detail -> Drawer | Default | DEFERRED |
-| **Assets/Arquivos** | Entity Collection | Bibliotecas, Upload zone | Tabs: Upload vs Browser. Grade visual. | SectionHeader, ListRow, ViewModeToggle | Denso (Requer revisão) | Default | DEFERRED |
-| **Settings** | Settings Surface | Tabs densas e modais soltos | Sidebar nav local, SettingsSection, FieldGroup | SettingsSection, WarningCallout, FieldGroup | Nav top/lateral -> Stack | Default | CANDIDATE |
-| **Auth** | Authentication Surface| Centralizado | Preservar minimalismo | - | Stack | Default | CONFIRMED |
+| Origem | Aprendizado | Contrato reconciliado | Documento DS | Status |
+| --- | --- | --- | --- | --- |
+| H4B2 | Paginas precisam de um unico `h1` | `PageHeader` e a unica fonte do titulo principal | 02-page-archetypes.md | Confirmada |
+| H4B2 | Contexto, titulo, descricao e acoes precisam de ordem previsivel | Ordem DOM do `PageHeader` e composicao explicita | 02-page-archetypes.md | Confirmada |
+| H4B2 | Hubs, colecoes, detalhes e workspaces nao podem parecer a mesma coisa | Arquetipos reais: hub, colecao, detalhe, workspace, configuracoes | 02-page-archetypes.md | Confirmada |
+| H4B3 | Mesma entidade precisa manter mesma linguagem entre Cards e Lista | Familias de card por entidade, sem UniversalCard | 03-component-inventory.md | Confirmada |
+| H4B3 | Metadata precisa de ordem estavel | `Project` antes de `Production`, data secundaria, status sem competir com titulo | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B3 | Acoes exigem semantica consistente | Verbos aprovados: `Abrir`, `Continuar Production`, `Visualizar`, `Ver Production`, `Abrir origem`, `Baixar` | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B3 | `ContextMetadata` e `StatusBadge` resolveram repeticao real sem excesso de abstracao | Primitivas leves, sem logica de dominio escondida | 03-component-inventory.md | Confirmada |
+| H4B1 | Tabela universal nao cabe nas listas reais | Contrato responsivo baseado em duas faixas e stack | 05-responsive-contracts.md | Substituida |
+| H4B1 | Viewport nao basta; largura util manda no layout | Contrato responsivo validado em 1600, 1280, 1024, 768 e 390 | 05-responsive-contracts.md | Refinada |
+| H4B4 | Loading deve sempre chegar a estado terminal | `StateMessage` com loading contextual e saida segura | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B4 | Empty e filtered empty sao estados distintos | Taxonomia de estados com proximo passo coerente | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B4 | Retry so quando a recuperacao e local | Retry local, sem backend novo, sem loop | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B4 | Provider ausente nao e erro temporario | `Needs configuration` aponta para Configuracoes e preserva entrada | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B4 | Formularios precisam preservar valores e validar perto do campo | Contrato de forms com `aria-invalid`, erro proximo e submit protegido | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B4 | Tabs mobile de Configuracoes precisam continuar acessiveis | Overflow horizontal interno aceitavel, sem overflow global | 05-responsive-contracts.md | Confirmada |
+| H4B1-H4B4 | Acessibilidade precisa acompanhar os contratos reais | `h1` unico, links para navegacao, botoes para acoes, badges textuais, tabs semanticas | 10-post-ux-h4-reconciliation.md | Confirmada |
+| H4B2-H4B4 | Repeticao comprovada nao justifica sistema universal | `PageHeader`, `ContextMetadata`, `StatusBadge` e `StateMessage` sao contratos comprovados e candidatos a DS-1, sem promover UniversalCard, data grid universal ou framework global de states/forms | 03-component-inventory.md | Confirmada |
+| DS-0 inicial | Tema, tokens e escala visual ainda nao foram provados na aplicacao | Formalizacao visual fica para DS-1 | 06-theme-and-token-proposal.md | Adiada para DS-1 |
 
-## Componentes Estruturais (Sistema de Composicao Candidato)
+## Superficies reconciliadas
 
-### 1. `PageHeader`
-* **Responsabilidade:** Única fonte do `<h1>` da pagina, provendo descricao auxiliar, badges globais (ex: Identity) e acao primaria de criacao.
-* **Uso:** Todas as rotas base (`/dashboard`, `/imagens`, `/videos`, etc).
-* **O que não deve conter:** Listas, metricas complexas, filtros densos.
-* **Variantes:** Default (Title, Subtitle), WithAction, WithBadge.
-* **Risco de abstracao:** Medio, precisa lidar bem com larguras flexiveis de CTA.
-
-### 2. `FilterBar` (Ou `FilterCard`)
-* **Responsabilidade:** Controle de busca (Search), dropdowns de estado e Project.
-* **Uso:** Hubs e Bibliotecas.
-* **O que não deve conter:** Ações que mudam paginas nao relacionadas ao filtro atual (ex: Criar Novo), que pertencem ao Header.
-* **Responsividade:** Em telas estreitas, quebra para blocos de inputs stackados.
-
-### 3. `ResponsiveEntityList` / `ListRow`
-* **Responsabilidade:** Apresentar entidades mantendo coerencia e consistencia nos metadados.
-* **Uso:** Hubs (`/imagens`, `/videos`) e Galeria (modo list).
-* **Dependencias:** Fortemente acoplado aos achados do `UX-H4B1`.
-* **Comportamento responsivo:** Quebra de Grid tabulado em 2-faixas, escondendo headers abstratos, e convertendo para stack compacto em Mobile.
-
-### 4. `OutputCard`
-* **Responsabilidade:** Representar outputs midiaticos de alta fidelidade (Thumbnails + Metadados rapidos + Acoes secundarias).
-* **Uso:** Galeria e Arquivos.
-* **Risco de abstracao:** Baixo.
-
-### 5. Callouts (`InfoCallout`, `WarningCallout`)
-* **Responsabilidade:** Informacao inline permanente (ex: "Voce não tem Provider configurado" ou "Project Identity herdado").
-* **Uso:** Project Identity, Configuracoes, Productions Workspace.
-* **Variantes:** Info (Azul/Violeta discreto), Warning (Amarelo/Laranja), Error (Vermelho).
-* **Risco de abstracao:** Muito baixo, altamente recomentavel criar um `Alert` estendido do Shadcn.
+| Superficie | Arquetipo | Contrato principal | Status |
+| --- | --- | --- | --- |
+| Dashboard | Hub | continuidade antes de gestao | Confirmada |
+| Projetos | Colecao | `PageHeader`, filtros e cards estruturais | Confirmada |
+| Project detail | Detalhe | identidade do Project no bloco principal, sem duplicar topo | Confirmada |
+| Production workspace | Workspace | contexto estrutural preservado sem competir com o workspace | Confirmada |
+| Imagens | Hub de criacao | Cards/Lista, contexto estrutural e estados de provider | Confirmada |
+| Videos | Hub de criacao | modulo irmao de Imagens com diferencas de dominio preservadas | Confirmada |
+| Galeria | Biblioteca de outputs | Cards-first, lista compacta e loading resiliente | Confirmada |
+| Conteudos | Hub editorial | identidade editorial, `Abrir` e estados operacionais claros | Confirmada |
+| Arquivos | Biblioteca de inputs | distinta da Galeria, sem prometer acoes invalidas | Confirmada |
+| Configuracoes | Configuracoes | header acima das tabs, tabs alcancaveis e feedback inline | Confirmada |
