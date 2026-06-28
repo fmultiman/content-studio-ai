@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Download, ExternalLink, Eye, ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Download, ExternalLink, Eye, ImageIcon, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { PageHeader } from '@/components/layout/page-header'
@@ -23,6 +23,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { StateMessage } from '@/components/ui/state-message'
 import {
   Select,
   SelectContent,
@@ -318,35 +319,22 @@ export default function GalleryPage() {
           </Card>
 
           {errorMessage && (
-            <Card className="border-destructive/40">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-4 w-4 text-destructive" />
-                  <p className="text-sm">{errorMessage}</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setRetryKey((value) => value + 1)}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Tentar novamente
-                </Button>
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="error"
+              title="Falha ao carregar a Galeria"
+              description={errorMessage}
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((value) => value + 1)}
+            />
           )}
 
           {isLoading ? (
-            <div
-              className="flex items-center justify-center gap-3 py-16 text-sm text-muted-foreground"
-              role="status"
-              aria-live="polite"
-            >
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Carregando Galeria...
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando Galeria..."
+              description="Estamos resolvendo outputs, contexto de origem e imagens disponíveis."
+              className="py-10"
+            />
           ) : emptyState ? (
             <GalleryEmptyStateView
               state={emptyState}

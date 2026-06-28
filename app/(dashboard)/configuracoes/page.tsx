@@ -5,9 +5,11 @@ import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
+import { FieldError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { StateMessage } from '@/components/ui/state-message'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Eye, EyeOff, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
@@ -23,7 +25,10 @@ export default function SettingsPage() {
   const { toast } = useToast()
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState('profile')
+  const [saveFeedback, setSaveFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [showOpenAIKey, setShowOpenAIKey] = useState(false)
   const [showReplicateKey, setShowReplicateKey] = useState(false)
   const [showNanoBananaKey, setShowNanoBananaKey] = useState(false)
@@ -47,37 +52,42 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
+      setLoadError(null)
 
-      if (user) {
-        // Fetch user settings
-        const { data: settingsData } = await supabase
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .single()
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        setUser(user)
 
-        if (settingsData) {
-          setSettings({
-            ...settingsData,
-            openai_api_key: settingsData.openai_api_key || '',
-            replicate_api_key: settingsData.replicate_api_key || '',
-            nanobanana_api_key: settingsData.nanobanana_api_key || '',
-            nanobanana_base_url: settingsData.nanobanana_base_url || 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate',
-            automation_enabled: settingsData.automation_enabled ?? false,
-            default_image_model: settingsData.default_image_model === 'openai'
-              ? 'gpt-image-2'
-              : settingsData.default_image_model || 'gpt-image-2',
-            image_evaluator_enabled: settingsData.image_evaluator_enabled ?? false,
-            max_refinement_iterations: settingsData.max_refinement_iterations ?? 2,
-          })
-          // Apply theme from settings
-          applyTheme(settingsData.theme as Theme)
+        if (user) {
+          const { data: settingsData } = await supabase
+            .from('user_settings')
+            .select('*')
+            .eq('user_id', user.id)
+            .single()
+
+          if (settingsData) {
+            setSettings({
+              ...settingsData,
+              openai_api_key: settingsData.openai_api_key || '',
+              replicate_api_key: settingsData.replicate_api_key || '',
+              nanobanana_api_key: settingsData.nanobanana_api_key || '',
+              nanobanana_base_url: settingsData.nanobanana_base_url || 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate',
+              automation_enabled: settingsData.automation_enabled ?? false,
+              default_image_model: settingsData.default_image_model === 'openai'
+                ? 'gpt-image-2'
+                : settingsData.default_image_model || 'gpt-image-2',
+              image_evaluator_enabled: settingsData.image_evaluator_enabled ?? false,
+              max_refinement_iterations: settingsData.max_refinement_iterations ?? 2,
+            })
+            applyTheme(settingsData.theme as Theme)
+          }
         }
+      } catch {
+        setLoadError('Não foi possível carregar as configurações agora.')
+      } finally {
+        setIsLoading(false)
       }
-      setIsLoading(false)
     }
     fetchData()
   }, [])
@@ -106,6 +116,7 @@ export default function SettingsPage() {
     if (!user) return
     
     setIsSaving(true)
+    setSaveFeedback(null)
     const supabase = createClient()
 
     try {
@@ -136,12 +147,20 @@ export default function SettingsPage() {
         title: 'Configurações salvas',
         description: 'Suas preferências foram atualizadas com sucesso.',
       })
+      setSaveFeedback({
+        tone: 'success',
+        message: 'Alterações salvas. Você já pode continuar trabalhando com as novas preferências.',
+      })
     } catch (error) {
       console.error('Erro ao salvar configurações:', error)
       toast({
         title: 'Erro',
         description: 'Não foi possível salvar as configurações.',
         variant: 'destructive',
+      })
+      setSaveFeedback({
+        tone: 'error',
+        message: 'Não foi possível salvar agora. Revise os campos e tente novamente.',
       })
     } finally {
       setIsSaving(false)
@@ -152,8 +171,14 @@ export default function SettingsPage() {
     return (
       <>
         <Header title="Configurações" />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-3xl">
+            <StateMessage
+              tone="loading"
+              title="Carregando configurações..."
+              description="Estamos preparando preferências, integrações e chaves salvas."
+            />
+          </div>
         </div>
       </>
     )
@@ -170,29 +195,48 @@ export default function SettingsPage() {
             description="Gerencie preferências, integrações e chaves usadas pelo Studio."
             className="mb-6"
           />
-          <Tabs defaultValue="profile" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
+          {loadError ? (
+            <StateMessage
+              tone="error"
+              title="Não foi possível abrir as configurações"
+              description={loadError}
+              actionLabel="Tentar novamente"
+              onAction={() => window.location.reload()}
+            />
+          ) : null}
+          {saveFeedback ? (
+            <StateMessage
+              tone={saveFeedback.tone}
+              title={saveFeedback.tone === 'success' ? 'Configurações salvas' : 'Falha ao salvar'}
+              description={saveFeedback.message}
+              compact
+            />
+          ) : null}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="inline-flex min-w-full gap-2">
               <TabsTrigger value="profile" className="gap-2">
                 <User className="h-4 w-4" />
-                <span className="hidden sm:inline">Perfil</span>
+                <span>Perfil</span>
               </TabsTrigger>
               <TabsTrigger value="appearance" className="gap-2">
                 <Palette className="h-4 w-4" />
-                <span className="hidden sm:inline">Aparência</span>
+                <span>Aparência</span>
               </TabsTrigger>
               <TabsTrigger value="automation" className="gap-2">
                 <Zap className="h-4 w-4" />
-                <span className="hidden sm:inline">Automação</span>
+                <span>Automação</span>
               </TabsTrigger>
               <TabsTrigger value="notifications" className="gap-2">
                 <Bell className="h-4 w-4" />
-                <span className="hidden sm:inline">Notificações</span>
+                <span>Notificações</span>
               </TabsTrigger>
               <TabsTrigger value="api" className="gap-2">
                 <Key className="h-4 w-4" />
-                <span className="hidden sm:inline">API</span>
+                <span>API</span>
               </TabsTrigger>
-            </TabsList>
+              </TabsList>
+            </div>
 
             {/* Profile Tab */}
             <TabsContent value="profile">
@@ -586,6 +630,9 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground">
                       Usada para geração de prompts otimizados via GPT
                     </p>
+                    {!settings.openai_api_key?.trim() && (
+                      <FieldError>Sem uma chave válida, a geração de prompt por IA fica indisponível.</FieldError>
+                    )}
                   </div>
                   
                   <div className="space-y-2">

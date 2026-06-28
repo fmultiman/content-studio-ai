@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { FileText, ChevronRight, Loader2, ArrowLeft, Search, ImageIcon } from 'lucide-react'
 import { GenerationHistory } from '@/components/images/generation-history'
@@ -1631,15 +1632,14 @@ function ImagesPageContent() {
           )}
 
           {loadError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-              <p className="text-sm text-destructive">{loadError}</p>
-              <button
-                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
-                onClick={() => setRetryKey((k) => k + 1)}
-              >
-                Tentar novamente
-              </button>
-            </div>
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os dados de imagem"
+              description={loadError}
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((k) => k + 1)}
+              compact
+            />
           )}
           {/* Drafts Section */}
           {productionId && !isLoadingDrafts && drafts.length > 0 && (
@@ -1703,6 +1703,26 @@ function ImagesPageContent() {
                   productionTitle={productionTitle}
                   projectHref={projectIdentityHref}
                   productionHref={productionHref}
+                />
+              )}
+              {!openaiApiKey && (
+                <StateMessage
+                  tone="info"
+                  title="Provider de prompt não configurado"
+                  description="A geração e a tradução de prompt por IA exigem uma chave válida da OpenAI em Configurações."
+                  actionLabel="Abrir Configurações"
+                  onAction={() => router.push('/configuracoes?tab=api')}
+                  compact
+                />
+              )}
+              {!nanobananaApiKey && (
+                <StateMessage
+                  tone="info"
+                  title="NanoBanana indisponível neste workspace"
+                  description="Você ainda pode criar imagens com os modelos já disponíveis. Configure a chave NanoBanana apenas se quiser esse provider."
+                  actionLabel="Ver API"
+                  onAction={() => router.push('/configuracoes?tab=api')}
+                  compact
                 />
               )}
 
