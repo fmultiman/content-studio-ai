@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
   DialogContent,
@@ -887,24 +888,43 @@ export default function ArquivosPage() {
                     )}
                   </div>
                   <CardContent className="space-y-3 p-4">
-                    <div>
-                      <p className="line-clamp-1 text-sm font-medium">{file.name}</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="line-clamp-1 text-sm font-medium" title={file.name}>{file.name}</p>
+                      </div>
+                      <ContextMetadata
+                        items={[
+                          { label: 'Project', value: file.project_id ? projectNameById.get(file.project_id) || 'Projeto' : 'Sem Project' },
+                          { label: 'Pasta', value: file.folder || 'Raiz', title: file.folder || 'Raiz' },
+                          { label: 'Tipo', value: kindLabel(file.kind) },
+                          { label: 'Tamanho', value: formatFileSize(file.file_size) },
+                          { label: 'Atualizado', value: new Date(file.updated_at).toLocaleDateString('pt-BR') },
+                        ]}
+                      />
+                      <div className="flex flex-wrap gap-2">
                         <Badge variant="outline">{kindLabel(file.kind)}</Badge>
                         <Badge variant="outline">{formatFileSize(file.file_size)}</Badge>
                       </div>
-                      <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{file.folder}</p>
                     </div>
-                    <div className="flex gap-2">
-                      {file.kind !== 'image' && (
-                        <Button asChild variant="outline" size="sm" className="gap-2">
-                          <a href={file.public_url} target="_blank" rel="noreferrer">
-                            <Eye className="h-4 w-4" />
-                            Ver
-                          </a>
-                        </Button>
-                      )}
-                      <Button asChild variant="outline" size="sm" className="flex-1 gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          if (file.kind === 'image') {
+                            openImagePreview(file.id)
+                            return
+                          }
+
+                          window.open(file.public_url, '_blank', 'noopener,noreferrer')
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                        Visualizar
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="gap-2">
                         <a href={`/api/library-files/${file.id}/download`}>
                           <Download className="h-4 w-4" />
                           Baixar
