@@ -24,7 +24,8 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-0:** concluido
 - **DS-0R:** reconciliado primeiro com UX-H4B1
 - **DS-0 pos-UX-H4:** reconciliado com UX-H4B1, H4B2, H4B3 e H4B4
-- **DS-1:** adiado ate revisao final do DS-0 reconciliado
+- **DS-1A:** concluido (Foundation Audit e Semantic Token Contract)
+- **DS-1B em diante:** bloqueados aguardando revisão do DS-1A
 
 ## Leitura recomendada
 
@@ -61,6 +62,18 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 11. [DS-0 Post UX-H4 Reconciliation](10-post-ux-h4-reconciliation.md)
     Fonte canonica da reconciliacao final do DS-0 apos H4B1, H4B2, H4B3 e H4B4.
 
+12. [Foundation Audit (DS-1A)](11-ds1a-foundation-audit.md)
+    Auditoria do estado atual da base de código.
+
+13. [Semantic Token Contract (DS-1A)](12-semantic-token-contract.md)
+    Contrato semântico e arquitetura de camadas de tokens.
+
+14. [Theme Mapping Plan (DS-1A)](13-theme-mapping-plan.md)
+    Mapeamento de papéis e diretrizes para os temas light, dark e studio.
+
+15. [DS-1 Implementation Roadmap (DS-1A)](14-ds1-implementation-roadmap.md)
+    Ordem de implementação, limites, e riscos para os próximos passos.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -84,10 +97,9 @@ agora devem ser lidos pelo documento canonico de reconciliacao final e nao pelas
 
 ## Proxima etapa
 
-Antes de qualquer implementacao de DS-1, o checkpoint seguinte e a revisao final do DS-0 reconciliado. So depois disso fazem sentido:
+Antes de qualquer implementacao de codigo (DS-1B), o checkpoint atual é a revisao dos artefatos produzidos no DS-1A:
 
-- tokens semanticos;
-- escala tipografica;
-- sistema visual formal de cards, badges e botoes;
-- catalogo de componentes;
-- estrategia de migracao de codigo.
+- Foundation Audit;
+- Semantic Token Contract;
+- Theme Mapping Plan;
+- DS-1 Implementation Roadmap.
