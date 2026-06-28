@@ -3,13 +3,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Download, ExternalLink, Eye, ImageIcon, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Download, ExternalLink, Eye, ImageIcon, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { StateMessage } from '@/components/ui/state-message'
 import {
   Select,
   SelectContent,
@@ -33,6 +37,7 @@ import {
   filterGalleryOutputs,
   getGalleryEmptyState,
   getGalleryProductionsForProject,
+  resolveGalleryDisplayImages,
   type GalleryOutputItem,
   type GalleryOutputStatus,
 } from '@/lib/gallery-output-library'
@@ -112,8 +117,9 @@ export default function GalleryPage() {
           throw new Error(firstError.message)
         }
 
-        const signedImages = await Promise.all(
-          (imagesResult.data || []).map((image) => getSignedImageUrls(image as ImageType)),
+        const signedImages = await resolveGalleryDisplayImages(
+          (imagesResult.data || []) as ImageType[],
+          getSignedImageUrls,
         )
 
         setImages(signedImages)
@@ -210,17 +216,14 @@ export default function GalleryPage() {
 
   return (
     <>
-      <Header title="Galeria" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          <section className="max-w-2xl">
-            <div className="max-w-2xl">
-              <h1 className="text-2xl font-semibold tracking-normal">Galeria</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Explore imagens geradas nos seus Projects e Productions.
-              </p>
-            </div>
-          </section>
+          <PageHeader
+            context="Biblioteca"
+            title="Galeria"
+            description="Explore imagens geradas nos seus Projects e Productions. Uploads, referências e documentos continuam em Arquivos."
+          />
 
           <section className="grid gap-3 sm:grid-cols-3">
             <GalleryMetric label="Outputs visuais" value={outputs.length} />
@@ -235,8 +238,8 @@ export default function GalleryPage() {
             <CardHeader>
               <CardTitle className="text-base">Filtrar outputs</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[minmax(180px,1.4fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,0.8fr)_auto] md:items-end">
-              <div className="space-y-2">
+            <CardContent className="grid gap-4 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,0.8fr)_auto] 2xl:items-end">
+              <div className="space-y-2 md:col-span-2 2xl:col-span-1">
                 <Label htmlFor="gallery-search">Busca</Label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -306,6 +309,7 @@ export default function GalleryPage() {
               <Button
                 type="button"
                 variant="outline"
+                className="md:col-span-2 md:justify-self-end 2xl:col-span-1 2xl:self-end"
                 onClick={clearFilters}
                 disabled={!hasFilters}
               >
@@ -315,35 +319,22 @@ export default function GalleryPage() {
           </Card>
 
           {errorMessage && (
-            <Card className="border-destructive/40">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-4 w-4 text-destructive" />
-                  <p className="text-sm">{errorMessage}</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setRetryKey((value) => value + 1)}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Tentar novamente
-                </Button>
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="error"
+              title="Falha ao carregar a Galeria"
+              description={errorMessage}
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((value) => value + 1)}
+            />
           )}
 
           {isLoading ? (
-            <div
-              className="flex items-center justify-center gap-3 py-16 text-sm text-muted-foreground"
-              role="status"
-              aria-live="polite"
-            >
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Carregando Galeria...
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando Galeria..."
+              description="Estamos resolvendo outputs, contexto de origem e imagens disponíveis."
+              className="py-10"
+            />
           ) : emptyState ? (
             <GalleryEmptyStateView
               state={emptyState}
@@ -390,7 +381,7 @@ export default function GalleryPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="hidden grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground lg:grid">
+                  <div className="hidden grid-cols-[72px_minmax(180px,1.2fr)_minmax(120px,0.85fr)_minmax(120px,0.85fr)_96px_120px_minmax(250px,auto)] gap-3 rounded-md border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground 2xl:grid">
                     <span>Imagem</span>
                     <span>Título</span>
                     <span>Project</span>
@@ -453,24 +444,25 @@ function GalleryOutputCard({
     <Card className="overflow-hidden border-border/50 bg-card/30">
       <GalleryImageFrame output={output} />
       <CardContent className="space-y-4 p-4">
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h3 className="line-clamp-2 text-sm font-medium" title={output.title}>
               {output.title}
             </h3>
-            <Badge variant="secondary" className="shrink-0">
-              {output.statusLabel}
-            </Badge>
+            <StatusBadge
+              label={output.statusLabel}
+              tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'}
+              className="shrink-0"
+            />
           </div>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <p className="truncate" title={output.projectName || 'Project não identificado'}>
-              Project: {output.projectName || 'Project não identificado'}
-            </p>
-            <p className="truncate" title={output.productionName || 'Sem Production associada'}>
-              Production: {output.productionName || 'Sem Production associada'}
-            </p>
-            <p>Gerada em {formatDate(output.generatedAt)}</p>
-          </div>
+          <ContextMetadata
+            items={[
+              { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
+              { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
+              { label: 'Atualizado', value: formatDate(output.updatedAt) },
+            ]}
+            className="text-xs"
+          />
         </div>
 
         <div className="grid gap-2">
@@ -478,29 +470,43 @@ function GalleryOutputCard({
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => output.productionHref && onNavigate(output.productionHref)}
-              disabled={!output.productionHref}
-            >
-              <ExternalLink className="h-4 w-4" />
-              Ver Production
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              disabled={!output.canDownload}
-              onClick={onDownload}
-            >
-              <Download className="h-4 w-4" />
-              Baixar
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {output.sourceHref && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => onNavigate(output.sourceHref!)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Abrir origem
+              </Button>
+            )}
+            {output.productionHref && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => onNavigate(output.productionHref!)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Ver Production
+              </Button>
+            )}
+            {output.canDownload && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onDownload}
+              >
+                <Download className="h-4 w-4" />
+                Baixar
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
@@ -521,8 +527,8 @@ function GalleryOutputListItem({
 }) {
   return (
     <Card className="border-border/50 bg-card/30">
-      <CardContent className="grid gap-3 p-3 lg:grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px] lg:items-center">
-        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted">
+      <CardContent className="grid gap-3 p-3 md:grid-cols-[72px_minmax(0,1fr)] 2xl:grid-cols-[72px_minmax(180px,1.2fr)_minmax(120px,0.85fr)_minmax(120px,0.85fr)_96px_120px_minmax(250px,auto)] 2xl:items-center">
+        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted md:row-span-3 2xl:row-auto">
           <GalleryImageFrame output={output} compact />
         </div>
 
@@ -530,57 +536,63 @@ function GalleryOutputListItem({
           <p className="truncate text-sm font-medium" title={output.title}>
             {output.title}
           </p>
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground lg:hidden">
-            {output.projectName || 'Project não identificado'} · {output.productionName || 'Sem Production associada'}
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+            {output.prompt || 'Output visual gerado'}
           </p>
         </div>
 
-        <p className="truncate text-sm text-muted-foreground" title={output.projectName || 'Project não identificado'}>
-          <span className="font-medium text-foreground lg:hidden">Project: </span>
-          {output.projectName || 'Project não identificado'}
-        </p>
+        <ContextMetadata
+          items={[
+            { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
+            { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
+            { label: 'Status', value: <StatusBadge label={output.statusLabel} tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'} /> },
+            { label: 'Atualizado', value: formatDate(output.updatedAt) },
+          ]}
+          className="2xl:contents"
+          itemClassName="min-w-0"
+        />
 
-        <p className="truncate text-sm text-muted-foreground" title={output.productionName || 'Sem Production associada'}>
-          <span className="font-medium text-foreground lg:hidden">Production: </span>
-          {output.productionName || 'Sem Production associada'}
-        </p>
-
-        <div>
-          <Badge variant="secondary">{output.statusLabel}</Badge>
-        </div>
-
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground lg:hidden">Atualizado: </span>
-          {formatDate(output.updatedAt)}
-        </p>
-
-        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-3">
-          <Button type="button" size="sm" className="gap-2" onClick={onPreview}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end">
+          <Button type="button" size="sm" className="w-full gap-2 sm:min-w-max sm:w-auto" onClick={onPreview}>
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={() => output.productionHref && onNavigate(output.productionHref)}
-            disabled={!output.productionHref}
-          >
-            <ExternalLink className="h-4 w-4" />
-            Ver Production
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={!output.canDownload}
-            onClick={onDownload}
-          >
-            <Download className="h-4 w-4" />
-            Baixar
-          </Button>
+          {output.sourceHref && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={() => onNavigate(output.sourceHref!)}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Abrir origem
+            </Button>
+          )}
+          {output.productionHref && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={() => onNavigate(output.productionHref!)}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Production
+            </Button>
+          )}
+          {output.canDownload && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 sm:min-w-max sm:w-auto"
+              onClick={onDownload}
+            >
+              <Download className="h-4 w-4" />
+              Baixar
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -669,7 +681,10 @@ function GalleryPreviewDialog({
 
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{output.statusLabel}</Badge>
+                  <StatusBadge
+                    label={output.statusLabel}
+                    tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'}
+                  />
                   {output.projectName && <Badge variant="outline">{output.projectName}</Badge>}
                   {output.productionName && <Badge variant="outline">{output.productionName}</Badge>}
                 </div>

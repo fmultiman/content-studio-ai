@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
 import { Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Production, ProductionType } from '@/lib/types'
@@ -67,6 +68,10 @@ export function ProductionForm({
     intention: '',
     type: 'editorial' as ProductionType,
   })
+  const trimmedTitle = formData.title.trim()
+  const trimmedIntention = formData.intention.trim()
+  const intentionError = !trimmedIntention ? 'Descreva a intenção da Production.' : null
+  const titleError = !trimmedTitle ? 'Informe o título da Production.' : null
 
   useEffect(() => {
     if (open) {
@@ -97,8 +102,8 @@ export function ProductionForm({
     setIsLoading(true)
     setError(null)
 
-    const title = formData.title.trim()
-    const intention = formData.intention.trim()
+    const title = trimmedTitle
+    const intention = trimmedIntention
 
     try {
       const res = await fetch(
@@ -138,7 +143,7 @@ export function ProductionForm({
   }
 
   const selectedTypeInfo = PRODUCTION_TYPES.find((t) => t.value === formData.type)
-  const canSubmit = !!formData.title.trim() && !!formData.intention.trim() && !isLoading
+  const canSubmit = !titleError && !intentionError && !isLoading
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -165,8 +170,11 @@ export function ProductionForm({
               onBlur={handleIntentionBlur}
               rows={3}
               className="bg-background/50"
+              aria-invalid={!!intentionError}
+              aria-describedby={intentionError ? 'production-intention-error' : undefined}
               required
             />
+            <FieldError id="production-intention-error">{intentionError}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -180,8 +188,11 @@ export function ProductionForm({
                 setFormData((prev) => ({ ...prev, title: e.target.value }))
               }}
               className="bg-background/50"
+              aria-invalid={!!titleError}
+              aria-describedby={titleError ? 'production-title-error' : undefined}
               required
             />
+            <FieldError id="production-title-error">{titleError}</FieldError>
             {!isEditing && !titleManuallyEdited && (
               <p className="text-xs text-muted-foreground">
                 Sugerido automaticamente a partir da intenção.
@@ -213,7 +224,7 @@ export function ProductionForm({
             )}
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          <FieldError>{error}</FieldError>
         </form>
 
         <div className="flex justify-end gap-3 border-t border-border/50 pt-4">

@@ -3,10 +3,14 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { FieldError } from '@/components/ui/field'
+import { StateMessage } from '@/components/ui/state-message'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
   DialogContent,
@@ -25,9 +29,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { useToast } from '@/hooks/use-toast'
 import type { EditorialContent, EditorialContentStatus, Production, Project } from '@/lib/types'
-import { ExternalLink, FileText, FolderKanban, Loader2, Plus, RefreshCw, Zap } from 'lucide-react'
+import { ExternalLink, FolderKanban, Loader2, Plus, Zap } from 'lucide-react'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 
 type StatusFilter = 'all' | EditorialContentStatus
@@ -56,6 +61,7 @@ function PublicacoesPageContent() {
   const [createTitle, setCreateTitle] = useState('')
   const [createProjectId, setCreateProjectId] = useState('none')
   const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
 
@@ -111,6 +117,7 @@ function PublicacoesPageContent() {
   const openCreateDialog = () => {
     setCreateTitle('')
     setCreateProjectId('none')
+    setCreateError(null)
     setShowCreateDialog(true)
   }
 
@@ -120,12 +127,13 @@ function PublicacoesPageContent() {
   }
 
   const handleCreate = async () => {
+    setCreateError(null)
     if (!createTitle.trim()) {
-      toast({ title: 'Título obrigatório', variant: 'destructive' })
+      setCreateError('Informe o título do conteúdo editorial.')
       return
     }
     if (createProjectId === 'none') {
-      toast({ title: 'Selecione um projeto', variant: 'destructive' })
+      setCreateError('Selecione o Project que vai receber este conteúdo.')
       return
     }
     setIsCreating(true)
@@ -153,31 +161,33 @@ function PublicacoesPageContent() {
 
   return (
     <>
-      <Header title="Conteúdos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-muted-foreground">
-              Crie conteúdos editoriais e adapte-os para diferentes canais e formatos.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setShowQuickFlowDialog(true)}
-              >
-                <Zap className="h-4 w-4" />
-                Criação rápida
-              </Button>
-              <Button
-                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-                onClick={openCreateDialog}
-              >
-                <Plus className="h-4 w-4" />
-                Novo conteúdo
-              </Button>
-            </div>
-          </div>
+          <PageHeader
+            context="Workspace"
+            title="Conteúdos"
+            description="Crie conteúdos editoriais, retome peças em andamento e conecte formatos, canais e Productions."
+            actions={(
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setShowQuickFlowDialog(true)}
+                >
+                  <Zap className="h-4 w-4" />
+                  Criação rápida
+                </Button>
+                <Button
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                  onClick={openCreateDialog}
+                >
+                  <Plus className="h-4 w-4" />
+                  Novo conteúdo
+                </Button>
+              </>
+            )}
+          />
 
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3">
@@ -226,79 +236,86 @@ function PublicacoesPageContent() {
             )}
           </div>
 
-          {/* EC List */}
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Conteúdos editoriais
-          </h2>
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">Conteúdos editoriais</h2>
+            <p className="text-sm text-muted-foreground">
+              Retome peças ligadas ao Project e à Production corretos.
+            </p>
+          </div>
           {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando conteúdos editoriais..."
+              description="Estamos preparando drafts, status e vínculos com Project e Production."
+              className="py-10"
+            />
           ) : loadError ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
-                <p className="text-muted-foreground">Erro ao carregar conteúdos.</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 gap-2"
-                  onClick={() => setRetryKey((k) => k + 1)}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Tentar novamente
-                </Button>
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os conteúdos"
+              description="Tente novamente para recuperar a lista editorial."
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((k) => k + 1)}
+            />
           ) : filtered.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <FileText className="mb-3 h-10 w-10 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Nenhum conteúdo editorial</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {editorialContents.length === 0
-                    ? 'Crie o primeiro Conteúdo Editorial para começar.'
-                    : 'Nenhum resultado para os filtros selecionados.'}
-                </p>
-                {editorialContents.length === 0 && (
-                  <Button className="mt-4" onClick={openCreateDialog}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Novo conteúdo
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="empty"
+              title={editorialContents.length === 0 ? 'Nenhum conteúdo editorial ainda' : 'Nenhum resultado encontrado'}
+              description={
+                editorialContents.length === 0
+                  ? 'Crie o primeiro conteúdo editorial para começar o fluxo de produção e publicação.'
+                  : 'Ajuste os filtros para voltar a ver conteúdos já existentes.'
+              }
+              actionLabel={editorialContents.length === 0 ? 'Novo conteúdo' : 'Limpar filtros'}
+              onAction={
+                editorialContents.length === 0
+                  ? openCreateDialog
+                  : () => {
+                      setSelectedStatus('all')
+                      setSelectedProject('all')
+                      setSelectedProduction('all')
+                    }
+              }
+            />
           ) : (
             <div className="space-y-3">
               {filtered.map((ec) => (
                 <Card
                   key={ec.id}
-                  className="cursor-pointer border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                  onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
+                  className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                 >
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate font-medium">{ec.title}</span>
-                          <Badge variant={ec.status === 'ready' ? 'default' : 'secondary'}>
-                            {STATUS_LABELS[ec.status]}
-                          </Badge>
-                        </div>
-                        {ec.body && (
-                          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                            {ec.body}
-                          </p>
-                        )}
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {projects.find((p) => p.id === ec.project_id)?.name || 'Projeto'}
-                          {ec.production_id && (
-                            <> · {productions.find((p) => p.id === ec.production_id)?.title || 'Produção'}</>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1 space-y-3">
+                        <div className="space-y-2">
+                          <span className="block truncate font-medium">{ec.title}</span>
+                          {ec.body && (
+                            <p className="line-clamp-2 text-sm text-muted-foreground">
+                              {ec.body}
+                            </p>
                           )}
-                          {' · '}{new Date(ec.updated_at).toLocaleDateString('pt-BR')}
-                        </p>
+                        </div>
+                        <ContextMetadata
+                          items={[
+                            { label: 'Project', value: projects.find((p) => p.id === ec.project_id)?.name || 'Projeto' },
+                            { label: 'Production', value: ec.production_id ? productions.find((p) => p.id === ec.production_id)?.title || 'Produção' : 'Sem Production associada' },
+                            {
+                              label: 'Status',
+                              value: <StatusBadge label={STATUS_LABELS[ec.status]} tone={ec.status === 'ready' ? 'positive' : 'neutral'} />,
+                            },
+                            { label: 'Atualizado', value: new Date(ec.updated_at).toLocaleDateString('pt-BR') },
+                          ]}
+                        />
                       </div>
-                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Abrir
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -333,6 +350,7 @@ function PublicacoesPageContent() {
                 onChange={(e) => setCreateTitle(e.target.value)}
                 placeholder="Ex: Post de lançamento do produto X"
                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                aria-invalid={!!createError && !createTitle.trim()}
               />
             </div>
             <div className="space-y-2">
@@ -349,6 +367,7 @@ function PublicacoesPageContent() {
                 </SelectContent>
               </Select>
             </div>
+            <FieldError>{createError}</FieldError>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

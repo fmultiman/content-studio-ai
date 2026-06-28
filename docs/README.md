@@ -48,6 +48,18 @@ sistema** — o que ele é, como funciona, o que deve se tornar.
 - [UX Visual Consistency Audit](./product/ux/ux-visual-consistency-audit.md)
   Auditoria UX-H4A de consistencia visual transversal apos UX-H3, com matriz de inconsistencias e plano de padronizacao.
 
+- [UX Responsive List Density Results](./product/ux/ux-responsive-list-density-results.md)
+  Fechamento do UX-H4B1 com Listas responsivas em Imagens, Videos e Galeria.
+
+- [UX Page Hierarchy and Context Results](./product/ux/ux-page-hierarchy-context-results.md)
+  Fechamento do UX-H4B2 com Page Header compartilhado, mensagens contextuais reposicionadas e correcao do `h1` duplicado da Galeria.
+
+- [UX Cards, Metadata and Actions Results](./product/ux/ux-cards-metadata-actions-results.md)
+  Fechamento do UX-H4B3 com familias de cards reconciliadas, metadata em ordem consistente e verbos de acao harmonizados.
+
+- [UX States, Forms and Final Polish Results](./product/ux/ux-states-forms-polish-results.md)
+  Fechamento do UX-H4B4 com estados operacionais reconciliados, feedback inline, tabs mobile de Configuracoes e acabamento final das superficies principais.
+
 ### 1. [ARCHITECTURE.md](./ARCHITECTURE.md)
 **Reconstrução da arquitetura atual**
 

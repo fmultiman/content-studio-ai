@@ -196,11 +196,28 @@ describe('UX-H3B draft hub helpers', () => {
     const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
     const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
 
-    expect(imagePage).toContain("'Imagens'")
-    expect(videoPage).toContain("'Vídeos'")
+    expect(imagePage).toContain('title="Imagens"')
+    expect(videoPage).toContain('title="Vídeos"')
     expect(imagePage.indexOf('Criar nova imagem')).toBeLessThan(imagePage.indexOf('Rascunhos recentes'))
     expect(videoPage.indexOf('Criar novo vídeo')).toBeLessThan(videoPage.indexOf('Rascunhos recentes'))
     expect(imagePage).toContain('ViewModeToggle')
     expect(videoPage).toContain('ViewModeToggle')
+  })
+
+  it('uses responsive list density for image and video hubs', () => {
+    const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
+    const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
+    const oldDenseGrid = 'md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px]'
+
+    for (const source of [imagePage, videoPage]) {
+      expect(source).not.toContain(oldDenseGrid)
+      expect(source).not.toContain('hidden grid-cols-[minmax(220px,1.4fr)')
+      expect(source).not.toContain('2xl:grid-cols-[minmax(220px,1.4fr)')
+      expect(source).toContain('ContextMetadata')
+      expect(source).toContain("label: 'Project'")
+      expect(source).toContain("label: 'Production'")
+      expect(source).toContain('flex flex-wrap gap-2')
+      expect(source).not.toContain('<table')
+    }
   })
 })

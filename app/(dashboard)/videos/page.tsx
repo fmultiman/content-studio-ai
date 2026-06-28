@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { SceneCard } from '@/components/videos/scene-card'
 import { StoryboardModal } from '@/components/videos/storyboard-modal'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
@@ -20,6 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StateMessage } from '@/components/ui/state-message'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, VideoScene, VideoDraft } from '@/lib/types'
@@ -525,7 +529,7 @@ function VideosPageContent() {
               <p className="text-sm font-medium text-foreground">Criação contextual</p>
             </div>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Crie um novo vídeo dentro de uma Production ou retome um rascunho existente.
+              Entre no workspace com Project e Production definidos antes de criar novos videos.
             </p>
           </div>
           <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
@@ -691,20 +695,12 @@ function VideosPageContent() {
           </div>
         ) : hubViewMode === 'list' ? (
           <div className="overflow-hidden rounded-xl border border-border/50 bg-card/30">
-            <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] gap-3 border-b border-border/50 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
-              <span>Titulo</span>
-              <span>Project</span>
-              <span>Production</span>
-              <span>Status</span>
-              <span>Atualizado</span>
-              <span>Acoes</span>
-            </div>
             <div role="list" className="divide-y divide-border/50">
               {filteredHubCards.map((draft) => (
                 <div
                   key={draft.id}
                   role="listitem"
-                  className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_120px_150px_170px] md:items-center"
+                  className="grid gap-3 px-4 py-4"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -713,28 +709,16 @@ function VideosPageContent() {
                         {draft.title}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground md:hidden">
-                      Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
-                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-xs text-muted-foreground md:hidden">Project: </span>
-                    <span className="truncate text-sm text-foreground" title={draft.projectName}>
-                      {draft.projectName}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-xs text-muted-foreground md:hidden">Production: </span>
-                    <span className="truncate text-sm text-foreground" title={draft.productionName || 'Sem Production associada'}>
-                      {draft.productionName || 'Sem Production associada'}
-                    </span>
-                  </div>
-                  <div>
-                    <Badge variant="outline">{draft.status}</Badge>
-                  </div>
-                  <div className="hidden text-sm text-muted-foreground md:block">
-                    {new Date(draft.updatedAt).toLocaleDateString('pt-BR')}
-                  </div>
+                  <ContextMetadata
+                    items={[
+                      { label: 'Project', value: draft.projectName, title: draft.projectName },
+                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                      { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
+                    ]}
+                  />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
                       Abrir
@@ -760,31 +744,20 @@ function VideosPageContent() {
                       <Video className="h-5 w-5 text-pink-300" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">Video</Badge>
-                        <Badge variant="outline">{draft.status}</Badge>
-                      </div>
-                      <h3 className="mt-2 line-clamp-2 font-semibold text-foreground" title={draft.title}>
+                      <h3 className="line-clamp-2 font-semibold text-foreground" title={draft.title}>
                         {draft.title}
                       </h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Atualizado em {new Date(draft.updatedAt).toLocaleString('pt-BR')}
-                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
                     </div>
                   </div>
-                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Project</dt>
-                      <dd className="truncate text-foreground" title={draft.projectName}>{draft.projectName}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Production</dt>
-                      <dd className="truncate text-foreground" title={draft.productionName || 'Sem Production associada'}>
-                        {draft.productionName || 'Sem Production associada'}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="text-xs text-muted-foreground">{draft.meta}</p>
+                  <ContextMetadata
+                    items={[
+                      { label: 'Project', value: draft.projectName, title: draft.projectName },
+                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                      { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
+                    ]}
+                  />
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={() => router.push(draft.href)} className="gap-2">
                       Abrir
@@ -807,7 +780,7 @@ function VideosPageContent() {
 
   return (
     <>
-      <Header title={productionId ? 'Geração de Vídeos' : 'Vídeos'} />
+      <Header title={productionId ? 'Geração de Vídeos' : undefined} />
       {productionId && (
         <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
           <Button
@@ -835,16 +808,23 @@ function VideosPageContent() {
       )}
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
+          {!productionId && (
+            <PageHeader
+              context="Criação"
+              title="Vídeos"
+              description="Crie um novo vídeo dentro de uma Production ou retome um rascunho existente."
+            />
+          )}
+
           {loadError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-              <p className="text-sm text-destructive">{loadError}</p>
-              <button
-                className="mt-2 rounded border border-destructive/40 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
-                onClick={() => setRetryKey((k) => k + 1)}
-              >
-                Tentar novamente
-              </button>
-            </div>
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os dados de vídeo"
+              description={loadError}
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((k) => k + 1)}
+              compact
+            />
           )}
           {/* Drafts Section */}
           {productionId && !isLoadingDrafts && drafts.length > 0 && (

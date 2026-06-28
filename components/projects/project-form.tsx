@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
 import { Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { EvaluationMode, Project } from '@/lib/types'
@@ -45,6 +46,8 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
   })
 
   const isEditing = !!project
+  const trimmedName = formData.name.trim()
+  const nameError = !trimmedName ? 'Informe o nome do Project.' : null
 
   // Populate form when editing
   useEffect(() => {
@@ -76,7 +79,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
       const { data: { user } } = await supabase.auth.getUser()
       
       if (!user) {
-        throw new Error('Usuário não autenticado')
+        throw new Error('Sua sessão expirou. Faça login novamente para salvar o Project.')
       }
 
       if (isEditing && project) {
@@ -84,7 +87,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
         const { error: updateError } = await supabase
           .from('projects')
           .update({
-            name: formData.name,
+            name: trimmedName,
             description: formData.description || null,
             context: formData.context || null,
             evaluation_mode: formData.evaluation_mode,
@@ -103,7 +106,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
           .from('projects')
           .insert({
             user_id: user.id,
-            name: formData.name,
+            name: trimmedName,
             description: formData.description || null,
             context: formData.context || null,
             evaluation_mode: formData.evaluation_mode,
@@ -167,8 +170,11 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
+              aria-invalid={!!nameError}
+              aria-describedby={nameError ? 'project-name-error' : undefined}
               className="bg-background/50"
             />
+            <FieldError id="project-name-error">{nameError}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -222,9 +228,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
             </p>
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          <FieldError>{error}</FieldError>
         </form>
 
         <div className="flex flex-shrink-0 justify-end gap-3 border-t border-border/50 pt-4">
@@ -238,7 +242,7 @@ export function ProjectForm({ open, onOpenChange, project, onSuccess }: ProjectF
           <Button
             type="submit"
             form="project-form"
-            disabled={isLoading || !formData.name}
+            disabled={isLoading || !!nameError}
             className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
           >
             {isLoading ? (

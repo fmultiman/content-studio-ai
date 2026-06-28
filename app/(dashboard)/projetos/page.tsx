@@ -4,10 +4,12 @@ import { useEffect, useState, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectForm } from '@/components/projects/project-form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { StateMessage } from '@/components/ui/state-message'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   AlertDialog,
@@ -28,6 +30,7 @@ function ProjectsContent() {
   const { toast } = useToast()
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [showForm, setShowForm] = useState(false)
   
   // Search and filter state
@@ -46,6 +49,8 @@ function ProjectsContent() {
   }, [searchParams])
 
   const fetchProjects = async () => {
+    setIsLoading(true)
+    setLoadError(false)
     const supabase = createClient()
     const { data, error } = await supabase
       .from('projects')
@@ -54,6 +59,8 @@ function ProjectsContent() {
 
     if (!error && data) {
       setProjects(data)
+    } else {
+      setLoadError(true)
     }
     setIsLoading(false)
   }
@@ -138,26 +145,27 @@ function ProjectsContent() {
     }
   }
 
+  const hasFilters = filterType !== 'all' || !!searchQuery.trim()
+
   return (
     <>
-      <Header title="Projetos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          {/* Header Actions */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-muted-foreground">
-                Organize suas criações em projetos para melhor contexto.
-              </p>
-            </div>
-            <Button
-              onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Projeto
-            </Button>
-          </div>
+          <PageHeader
+            context="Workspace"
+            title="Projetos"
+            description="Organize identidade, contexto e Productions em um mesmo espaço."
+            actions={(
+              <Button
+                onClick={() => setShowForm(true)}
+                className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Novo Projeto
+              </Button>
+            )}
+          />
 
           {/* Search and Filters */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -221,10 +229,43 @@ function ProjectsContent() {
 
           {/* Project List */}
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Carregando projetos...</p>
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando Projects..."
+              description="Estamos preparando a coleção estrutural do seu workspace."
+              className="py-8"
+            />
+          ) : loadError ? (
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar os Projects"
+              description="Tente novamente para recuperar a coleção e os filtros."
+              actionLabel="Tentar novamente"
+              onAction={fetchProjects}
+            />
+          ) : filteredProjects.length === 0 ? (
+            <StateMessage
+              tone="empty"
+              title={projects.length === 0 ? 'Nenhum Project ainda' : 'Nenhum resultado encontrado'}
+              description={
+                projects.length === 0
+                  ? 'Crie um Project para começar a organizar identidade, contexto e Productions.'
+                  : hasFilters
+                    ? 'Ajuste ou limpe os filtros para voltar a ver os Projects salvos.'
+                    : 'Não há Projects para exibir neste momento.'
+              }
+              actionLabel={projects.length === 0 ? 'Novo Projeto' : hasFilters ? 'Limpar filtros' : undefined}
+              onAction={
+                projects.length === 0
+                  ? () => setShowForm(true)
+                  : hasFilters
+                    ? () => {
+                        setSearchQuery('')
+                        setFilterType('all')
+                      }
+                    : undefined
+              }
+            />
           ) : (
             <ProjectList 
               projects={filteredProjects} 
@@ -267,12 +308,12 @@ function ProjectsContent() {
 
 export default function ProjectsPage() {
   return (
-    <Suspense fallback={
-      <>
-        <Header title="Projetos" />
-        <div className="flex h-full flex-col items-center justify-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Carregando projetos...</p>
+      <Suspense fallback={
+        <>
+          <Header />
+          <div className="flex h-full flex-col items-center justify-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Carregando projetos...</p>
         </div>
       </>
     }>

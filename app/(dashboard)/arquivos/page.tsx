@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { StateMessage } from '@/components/ui/state-message'
 import {
   Dialog,
   DialogContent,
@@ -106,7 +109,9 @@ export default function ArquivosPage() {
   const [selectedKind, setSelectedKind] = useState<KindFilter>('all')
   const [folder, setFolder] = useState('/')
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [showFolderInput, setShowFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
@@ -124,6 +129,7 @@ export default function ArquivosPage() {
 
   const loadFiles = async () => {
     setIsLoading(true)
+    setLoadError(null)
     const params = new URLSearchParams()
     if (selectedProject !== 'all') params.set('projectId', selectedProject)
     if (selectedKind !== 'all') params.set('kind', selectedKind)
@@ -143,7 +149,10 @@ export default function ArquivosPage() {
     const foldersPayload = await foldersResponse.json()
 
     if (filesResponse.ok) setFiles(filesPayload.files || [])
-    else console.error('[v0] Library files load error:', filesPayload)
+    else {
+      console.error('[v0] Library files load error:', filesPayload)
+      setLoadError('Não foi possível carregar os arquivos da biblioteca.')
+    }
     if (foldersResponse.ok) {
       const nextFolders = foldersPayload.folders || []
       setFolders(nextFolders)
@@ -151,7 +160,10 @@ export default function ArquivosPage() {
       if (selectedProject !== 'all' && folder === '/' && projectRoot?.path) {
         setFolder(projectRoot.path)
       }
-    } else console.error('[v0] Library folders load error:', foldersPayload)
+    } else {
+      console.error('[v0] Library folders load error:', foldersPayload)
+      setLoadError('Não foi possível carregar a estrutura de pastas agora.')
+    }
     if (projectsResult.data) setProjects(projectsResult.data)
     setIsLoading(false)
   }
@@ -249,6 +261,7 @@ export default function ArquivosPage() {
     if (selectedFiles.length === 0) return
 
     setIsUploading(true)
+    setUploadError(null)
     try {
       await Promise.all(selectedFiles.map(uploadFileDirectly))
       await loadFiles()
@@ -257,6 +270,7 @@ export default function ArquivosPage() {
         description: `${selectedFiles.length} arquivo(s) salvo(s) na biblioteca.`,
       })
     } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Não foi possível enviar os arquivos.')
       toast({
         title: 'Erro no upload',
         description: error instanceof Error ? error.message : 'Não foi possível enviar os arquivos.',
@@ -556,41 +570,43 @@ export default function ArquivosPage() {
 
   return (
     <>
-      <Header title="Arquivos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-muted-foreground">
-              Biblioteca geral de arquivos pesados no MinIO, organizada por projeto e pasta.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <input
-                id="library-upload"
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(event) => handleUpload(event.target.files)}
-              />
-              <Button
-                type="button"
-                variant={showTrash ? 'default' : 'outline'}
-                className="gap-2"
-                onClick={() => {
-                  setShowTrash((current) => !current)
-                  setSelectedIds([])
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Lixeira
-              </Button>
-              <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
-                <label htmlFor="library-upload" className="cursor-pointer">
-                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  Enviar Arquivos
-                </label>
-              </Button>
-            </div>
-          </div>
+          <PageHeader
+            context="Biblioteca"
+            title="Arquivos"
+            description="Guarde uploads, referências e documentos por Project e pasta. Outputs visuais gerados ficam na Galeria."
+            actions={(
+              <>
+                <input
+                  id="library-upload"
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => handleUpload(event.target.files)}
+                />
+                <Button
+                  type="button"
+                  variant={showTrash ? 'default' : 'outline'}
+                  className="gap-2"
+                  onClick={() => {
+                    setShowTrash((current) => !current)
+                    setSelectedIds([])
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Lixeira
+                </Button>
+                <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
+                  <label htmlFor="library-upload" className="cursor-pointer">
+                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    Enviar Arquivos
+                  </label>
+                </Button>
+              </>
+            )}
+          />
 
           <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
             <CardContent className="space-y-4 p-4">
@@ -661,6 +677,14 @@ export default function ArquivosPage() {
                 <p className="text-sm text-muted-foreground">
                   Selecione um projeto para criar pastas e organizar os uploads por campanha.
                 </p>
+              )}
+              {uploadError && (
+                <StateMessage
+                  tone="error"
+                  title="Upload indisponível"
+                  description={uploadError}
+                  compact
+                />
               )}
 
               {showFolderInput && selectedProject !== 'all' && (
@@ -790,25 +814,52 @@ export default function ArquivosPage() {
           )}
 
           {isLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <StateMessage
+              tone="loading"
+              title="Carregando arquivos..."
+              description="Estamos organizando uploads, pastas e ações disponíveis."
+              className="py-10"
+            />
+          ) : loadError ? (
+            <StateMessage
+              tone="error"
+              title="Não foi possível carregar a biblioteca"
+              description={loadError}
+              actionLabel="Tentar novamente"
+              onAction={loadFiles}
+            />
           ) : files.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                {showTrash ? (
-                  <Trash2 className="mb-4 h-12 w-12 text-muted-foreground" />
-                ) : (
-                  <UploadCloud className="mb-4 h-12 w-12 text-muted-foreground" />
-                )}
-                <h3 className="text-lg font-semibold">
-                  {showTrash ? 'Lixeira vazia' : 'Nenhum arquivo encontrado'}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {showTrash ? 'Arquivos excluídos aparecerão aqui.' : 'Envie arquivos para criar sua biblioteca.'}
-                </p>
-              </CardContent>
-            </Card>
+            <StateMessage
+              tone="empty"
+              title={
+                showTrash
+                  ? 'Lixeira vazia'
+                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/'
+                    ? 'Nenhum resultado encontrado'
+                    : 'Nenhum arquivo encontrado'
+              }
+              description={
+                showTrash
+                  ? 'Arquivos excluídos aparecerão aqui até serem restaurados ou removidos permanentemente.'
+                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/'
+                    ? 'Ajuste os filtros ou volte para outra pasta para localizar seus uploads.'
+                    : 'Envie arquivos para começar a biblioteca de inputs e referências.'
+              }
+              actionLabel={
+                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/')
+                  ? 'Limpar filtros'
+                  : undefined
+              }
+              onAction={
+                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/')
+                  ? () => {
+                      setSelectedProject('all')
+                      setSelectedKind('all')
+                      setFolder('/')
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {files.map((file) => (
@@ -884,24 +935,43 @@ export default function ArquivosPage() {
                     )}
                   </div>
                   <CardContent className="space-y-3 p-4">
-                    <div>
-                      <p className="line-clamp-1 text-sm font-medium">{file.name}</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="line-clamp-1 text-sm font-medium" title={file.name}>{file.name}</p>
+                      </div>
+                      <ContextMetadata
+                        items={[
+                          { label: 'Project', value: file.project_id ? projectNameById.get(file.project_id) || 'Projeto' : 'Sem Project' },
+                          { label: 'Pasta', value: file.folder || 'Raiz', title: file.folder || 'Raiz' },
+                          { label: 'Tipo', value: kindLabel(file.kind) },
+                          { label: 'Tamanho', value: formatFileSize(file.file_size) },
+                          { label: 'Atualizado', value: new Date(file.updated_at).toLocaleDateString('pt-BR') },
+                        ]}
+                      />
+                      <div className="flex flex-wrap gap-2">
                         <Badge variant="outline">{kindLabel(file.kind)}</Badge>
                         <Badge variant="outline">{formatFileSize(file.file_size)}</Badge>
                       </div>
-                      <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">{file.folder}</p>
                     </div>
-                    <div className="flex gap-2">
-                      {file.kind !== 'image' && (
-                        <Button asChild variant="outline" size="sm" className="gap-2">
-                          <a href={file.public_url} target="_blank" rel="noreferrer">
-                            <Eye className="h-4 w-4" />
-                            Ver
-                          </a>
-                        </Button>
-                      )}
-                      <Button asChild variant="outline" size="sm" className="flex-1 gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => {
+                          if (file.kind === 'image') {
+                            openImagePreview(file.id)
+                            return
+                          }
+
+                          window.open(file.public_url, '_blank', 'noopener,noreferrer')
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                        Visualizar
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="gap-2">
                         <a href={`/api/library-files/${file.id}/download`}>
                           <Download className="h-4 w-4" />
                           Baixar

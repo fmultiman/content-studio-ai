@@ -1,6 +1,7 @@
 import { DashboardContinuationHub } from '@/components/dashboard/continuation-hub'
 import { StatsCards } from '@/components/dashboard/stats-cards'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import {
   buildRecentProductions,
   buildRecentProjects,
@@ -131,9 +132,14 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <Header title="Dashboard" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-7xl space-y-8">
+          <PageHeader
+            context="Workspace"
+            title="Dashboard"
+            description="Retome Productions, itens recentes e ações globais com o contexto certo."
+          />
           {hasLoadError && (
             <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
               Não foi possível carregar todos os dados do Dashboard. Tente atualizar a página.
