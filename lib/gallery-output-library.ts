@@ -46,6 +46,8 @@ export type GalleryEmptyState = {
   href: string | null
 }
 
+export const GALLERY_SIGNED_URL_TIMEOUT_MS = 4000
+
 type ImageDraftSource = Pick<
   ImageDraft,
   'id' | 'project_id' | 'production_id' | 'name' | 'user_input' | 'current_image_id' | 'updated_at'
@@ -253,6 +255,22 @@ export function getGalleryEmptyState({
   return null
 }
 
+export async function resolveGalleryDisplayImages<T>(
+  images: T[],
+  resolver: (image: T) => Promise<T>,
+  timeoutMs = GALLERY_SIGNED_URL_TIMEOUT_MS,
+): Promise<T[]> {
+  return Promise.all(
+    images.map(async (image) => {
+      try {
+        return await withGalleryTimeout(resolver(image), timeoutMs, image)
+      } catch {
+        return image
+      }
+    }),
+  )
+}
+
 function resolveGalleryOutputTitle({
   draftName,
   prompt,
@@ -294,4 +312,24 @@ function buildGallerySourceHref({
 
   const query = params.toString()
   return query ? `/imagens?${query}` : '/imagens'
+}
+
+function withGalleryTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => resolve(fallback), timeoutMs)
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId)
+        resolve(value)
+      })
+      .catch(() => {
+        clearTimeout(timeoutId)
+        resolve(fallback)
+      })
+  })
 }

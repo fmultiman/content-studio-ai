@@ -4,9 +4,11 @@ import { join } from 'node:path'
 import {
   buildGalleryOutputs,
   filterGalleryOutputs,
+  GALLERY_SIGNED_URL_TIMEOUT_MS,
   getGalleryEmptyState,
   getGalleryProductionsForProject,
   isGeneratedVisualOutput,
+  resolveGalleryDisplayImages,
   resolveGalleryOutputStatus,
   type GalleryOutputItem,
 } from '../gallery-output-library'
@@ -297,10 +299,72 @@ describe('UX-H3C gallery output library helpers', () => {
 
   it('keeps the Lista responsive without a horizontal table', () => {
     const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
+    const oldDenseGrid = 'lg:grid-cols-[72px_minmax(180px,1.3fr)_minmax(120px,0.8fr)_minmax(120px,0.8fr)_100px_120px_220px]'
 
     expect(galleryPage).not.toContain('<table')
-    expect(galleryPage).toContain('lg:grid-cols-')
-    expect(galleryPage).toContain('lg:hidden')
+    expect(galleryPage).not.toContain(oldDenseGrid)
+    expect(galleryPage).toContain('hidden grid-cols-[72px_minmax(180px,1.2fr)')
+    expect(galleryPage).toContain('md:grid-cols-[72px_minmax(0,1fr)]')
+    expect(galleryPage).toContain('md:row-span-3 2xl:row-auto')
+    expect(galleryPage).toContain('md:grid-cols-2 2xl:contents')
+    expect(galleryPage).toContain('2xl:hidden">Project:')
+    expect(galleryPage).toContain('2xl:grid')
     expect(galleryPage).toContain('Sem Production associada')
+  })
+
+  it('keeps Galeria in a two-phase layout at intermediate widths and wraps actions safely', () => {
+    const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
+
+    expect(galleryPage).toContain("useViewModePreference('gallery-output-view', 'card')")
+    expect(galleryPage).toContain('2xl:grid-cols-[72px_minmax(180px,1.2fr)')
+    expect(galleryPage).toContain('flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end')
+    expect(galleryPage).toContain('sm:min-w-max sm:w-auto')
+    expect(galleryPage).not.toContain('xl:grid-cols-[72px_minmax(170px,1.2fr)')
+  })
+
+  it('uses a responsive filter grid that keeps clear filters inside the layout', () => {
+    const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
+
+    expect(galleryPage).toContain('md:grid-cols-2 2xl:grid-cols-[minmax(220px,1.4fr)')
+    expect(galleryPage).toContain('md:col-span-2 2xl:col-span-1')
+    expect(galleryPage).toContain('md:justify-self-end 2xl:col-span-1 2xl:self-end')
+    expect(galleryPage).not.toContain('md:grid-cols-[minmax(180px,1.4fr)')
+  })
+
+  it('resolves signed image URLs without letting a stalled request block loading forever', async () => {
+    const resolved = await resolveGalleryDisplayImages(
+      images.slice(0, 2),
+      async (image) => {
+        if (image.id === 'image-approved') {
+          return {
+            ...image,
+            image_url: 'https://example.com/signed-approved.png',
+          }
+        }
+
+        return await new Promise<typeof image>(() => {})
+      },
+      5,
+    )
+
+    expect(resolved).toEqual([
+      {
+        ...images[0],
+        image_url: 'https://example.com/signed-approved.png',
+      },
+      images[1],
+    ])
+  })
+
+  it('falls back safely when signed image resolution fails', async () => {
+    const resolved = await resolveGalleryDisplayImages(
+      images.slice(0, 1),
+      async () => {
+        throw new Error('network failed')
+      },
+      GALLERY_SIGNED_URL_TIMEOUT_MS,
+    )
+
+    expect(resolved).toEqual([images[0]])
   })
 })
