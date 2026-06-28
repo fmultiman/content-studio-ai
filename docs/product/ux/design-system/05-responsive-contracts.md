@@ -15,7 +15,7 @@ Este documento oficializa as conclusoes das analises de densidade e responsivida
 Conforme documentado no `UX-H4B1`, os breakpoints assumem os limites maximos do container (`max-w-4xl` etc):
 
 * **`>= 1280px` (Desktop Largo)**:
-  * Layout tabular completo ou grids expandidos.
+  * Layout de duas faixas (Listas) ou grids expandidos, abandonando o modelo puramente tabular.
   * Sidebar expandida não quebra layout interno se o max-w permitir.
 * **`1024px a 1279px` (Desktop Estreito)**:
   * Listas colapsam para menos colunas (duas faixas), acoes em segunda faixa (direita).
@@ -29,9 +29,9 @@ Conforme documentado no `UX-H4B1`, os breakpoints assumem os limites maximos do 
   * Componentes complexos (Tabelas) não são horizontal-scrollables, eles devem adotar Stack de "Cards".
   * Ações de botoes (flex-row) quebram ou preenchem todo block (w-full).
 
-## 3. Dependências do UX-H4*
+## 3. Confirmações do UX-H4B1
 
 As implementações do DS-1 em diante devem acatar que:
-* Imagens e Videos nao possuem mais grid puramente tabular. A responsividade aprovada e a de DUAS FAIXAS (metadados + acoes no fundo).
-* A Galeria e as areas dependentes de Provider resolveram problemas de promessas presas que bloqueavam o UI; o design system deve prever e acoplar a implementacao de Empty State / Loading State seguindo esse contrato de *failsafe*.
-* As Listas densas estao restritas ao H4B1. Quando formos aplicar a Shell em Projetos (UX-H4B2/B3) ou outros dominios, eles usarao a mesma matematica de quebra de componentes aprovada nestes testes.
+* **Grid Tabular Abandonado:** Imagens e Videos não possuem mais grid puramente tabular. A responsividade aprovada e consolidada é a de DUAS FAIXAS (metadados + acoes no fundo) para desktop e tablet, e empilhamento para mobile.
+* **Resiliência de Loading:** A Galeria e as áreas dependentes de Provider resolveram problemas de promessas presas (loading infinito bloqueado por URLs assinadas pendentes); o design system deve prever e acoplar a implementação de Empty State / Loading State seguindo esse contrato de *failsafe*, garantindo que falhas individuais não travem o contêiner.
+* **Escalabilidade das Listas:** A matemática de quebra de componentes aprovada nestes testes (duas faixas → stack) servirá de base quando formos aplicar a Shell em Projetos (UX-H4B2/B3) ou outros domínios.

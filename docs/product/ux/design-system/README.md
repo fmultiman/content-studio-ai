@@ -11,7 +11,10 @@ Este diretorio contem a fundacao documental para o **Design System V1** do Conte
 
 ## Status
 
-**DS-0 APROVADO — READY FOR HUMAN REVIEW**
+- **DS-0:** Concluído
+- **DS-0R:** Reconciliado com UX-H4B1
+- **UX-H4B2/B3/B4:** Ainda pendentes
+- **DS-1:** Bloqueado até encerramento do UX-H4 e smoke humano
 
 ## Documentos Produzidos
 
@@ -24,6 +27,7 @@ Este diretorio contem a fundacao documental para o **Design System V1** do Conte
 7. [Theme and Token Proposal](06-theme-and-token-proposal.md)
 8. [Migration Strategy](07-migration-strategy.md)
 9. [Open Decisions](08-open-decisions.md)
+10. [UX-H4B1 Reconciliation](09-ux-h4b1-reconciliation.md)
 
 ## Relacao com Auditoria UX-H4*
 

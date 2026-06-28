@@ -18,9 +18,9 @@ A Matriz de Correspondência abaixo centraliza o de-para (arquitetura proposta v
 | **Project Detail** | Context Workspace | Master-detail solto | Tabs, SectionHeaders, ContextBadge | SectionHeader, StatusBadge | Max-w-4xl, Stack | Default | CANDIDATE |
 | **Project Identity**| Context Workspace | Grid/Stack de callouts | PageHeader, InfoCallout, SettingCard | ContextBadge, InfoCallout | Stack | Default | CONFIRMED |
 | **Productions** | Context Workspace | Abas, Paineis de step | Tabs globais, SplitWorkspace | SplitWorkspace, ContextBadge, LoadingState | Grid -> Drawer/Stack | Default | DEFERRED |
-| **Images Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | UX-H4 DEPENDENT |
-| **Videos Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | UX-H4 DEPENDENT |
-| **Galeria** | Filtered Library | FilterCard, Lista densa/Grids visuais | PageHeader, FilterCard, OutputCard Grid | PageHeader, OutputCard, StatusBadge, EmptyState | 2-faixas -> Stack | Default | UX-H4 DEPENDENT |
+| **Images Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | CONFIRMED |
+| **Videos Hub** | Entity Collection | FilterCard, Lista tabular falha/Grids | PageHeader, FilterBar, ResponsiveEntityList | FilterBar, ListRow, StatusBadge, ViewModeToggle | 2-faixas -> Stack | Default | CONFIRMED |
+| **Galeria** | Filtered Library | FilterCard, Lista densa/Grids visuais | PageHeader, FilterCard, OutputCard Grid | PageHeader, OutputCard, StatusBadge, EmptyState | 2-faixas -> Stack | Default | CONFIRMED |
 | **Drafts / Conteúdos**| Split Workspace | Inline text filtros, cards brutos | FilterBar simplificada, EditorialItemCard | PageHeader, FilterBar, EmptyState | Master/Detail -> Drawer | Default | DEFERRED |
 | **Assets/Arquivos** | Entity Collection | Bibliotecas, Upload zone | Tabs: Upload vs Browser. Grade visual. | SectionHeader, ListRow, ViewModeToggle | Denso (Requer revisão) | Default | DEFERRED |
 | **Settings** | Settings Surface | Tabs densas e modais soltos | Sidebar nav local, SettingsSection, FieldGroup | SettingsSection, WarningCallout, FieldGroup | Nav top/lateral -> Stack | Default | CANDIDATE |

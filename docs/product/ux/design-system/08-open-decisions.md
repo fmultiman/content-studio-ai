@@ -18,14 +18,14 @@ Neste artefato estao listadas as decisoes nao totalmente mapeadas e incertezas q
 
 ## 2. Dependências Estruturais (UX-H4)
 
-A rodada `DS-0` paralela ao `UX-H4*` assume que as listas densas (Imagens, Videos, Galeria) estao pacatas no status *stack mobile / grid responsivo* gerado pelo UX-H4B1, validando a abordagem visual proposta.
-* **Riscos:** Se o UX-H4 refatorar bruscamente a composicao, o inventario precisara de update.
+A rodada `DS-0` paralela ao `UX-H4*` listou as listas densas (Imagens, Videos, Galeria) como risco estrutural.
+* **Status Atual:** **CONFIRMADO**. O `UX-H4B1` refatorou com sucesso a composição dessas listas para o padrão stack mobile / grid duas-faixas sem comprometer a legibilidade, validando de vez a abordagem visual proposta. O risco estrutural neste escopo está encerrado. As próximas refatorações (H4B2/B3/B4) vão se concentrar em modais, cabeçalhos, e cards em si.
 
 ## 3. Hipóteses
 
 * **Hipótese de Componentes de Layout:** Assumimos que criar um `PageHeader` genérico resolvera as discrepancias entre Dashboard, Galeria e Hubs que usam `H2` e `H3` inconsistentemente.
 * **Hipótese de Refatoração de Classes:** Assumimos que remover backgrounds harcoded (ex: `bg-slate-900`) e trocar por tokens semanticos (`bg-canvas` e `bg-surface`) via classes novas Tailwind não quebrará o layout desde que os arquivos de tema CSS fornecam valores mapeados em OKLCH consistentes (mantendo o contraste atual ate que os designers polam).
-* **Hipótese de Navegação no Mobile:** Assumimos que em `< 768px` as entidades exibidas na interface sempre empilharao (stacking grid columns to 1fr) sem depender de carrossel horizontal de tabelas.
+* **Hipótese de Navegação no Mobile:** Assumimos que em `< 768px` as entidades exibidas na interface sempre empilharão (stacking grid columns to 1fr) sem depender de carrossel horizontal de tabelas. -> **CONFIRMADA PELO UX-H4B1.**
 
 ---
 **Status da Rodada:** Aprovada e estocada. As decisoes acima podem ser respondidas nos pull requests da implementacao `DS-1`.
