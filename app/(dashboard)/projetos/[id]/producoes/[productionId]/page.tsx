@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -370,7 +370,7 @@ export default function ProductionDetailPage() {
 
   return (
     <>
-      <Header title={productionDisplay.title} />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
 
@@ -406,7 +406,7 @@ export default function ProductionDetailPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-2xl">{productionDisplay.title}</CardTitle>
+                    <h1 className="text-2xl font-semibold leading-none text-foreground">{productionDisplay.title}</h1>
                     <Badge variant="outline">
                       {PRODUCTION_TYPE_LABELS[production.type] ?? production.type}
                     </Badge>

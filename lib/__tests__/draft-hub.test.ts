@@ -196,8 +196,8 @@ describe('UX-H3B draft hub helpers', () => {
     const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
     const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
 
-    expect(imagePage).toContain("'Imagens'")
-    expect(videoPage).toContain("'Vídeos'")
+    expect(imagePage).toContain('title="Imagens"')
+    expect(videoPage).toContain('title="Vídeos"')
     expect(imagePage.indexOf('Criar nova imagem')).toBeLessThan(imagePage.indexOf('Rascunhos recentes'))
     expect(videoPage.indexOf('Criar novo vídeo')).toBeLessThan(videoPage.indexOf('Rascunhos recentes'))
     expect(imagePage).toContain('ViewModeToggle')

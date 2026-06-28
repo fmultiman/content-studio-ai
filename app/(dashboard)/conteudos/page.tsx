@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
+import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -153,31 +154,33 @@ function PublicacoesPageContent() {
 
   return (
     <>
-      <Header title="Conteúdos" />
+      <Header />
       <div className="flex-1 overflow-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-muted-foreground">
-              Crie conteúdos editoriais e adapte-os para diferentes canais e formatos.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="gap-2"
-                onClick={() => setShowQuickFlowDialog(true)}
-              >
-                <Zap className="h-4 w-4" />
-                Criação rápida
-              </Button>
-              <Button
-                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
-                onClick={openCreateDialog}
-              >
-                <Plus className="h-4 w-4" />
-                Novo conteúdo
-              </Button>
-            </div>
-          </div>
+          <PageHeader
+            context="Workspace"
+            title="Conteúdos"
+            description="Crie conteúdos editoriais, retome peças em andamento e conecte formatos, canais e Productions."
+            actions={(
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setShowQuickFlowDialog(true)}
+                >
+                  <Zap className="h-4 w-4" />
+                  Criação rápida
+                </Button>
+                <Button
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                  onClick={openCreateDialog}
+                >
+                  <Plus className="h-4 w-4" />
+                  Novo conteúdo
+                </Button>
+              </>
+            )}
+          />
 
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3">
@@ -226,10 +229,12 @@ function PublicacoesPageContent() {
             )}
           </div>
 
-          {/* EC List */}
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Conteúdos editoriais
-          </h2>
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">Conteúdos editoriais</h2>
+            <p className="text-sm text-muted-foreground">
+              Retome peças ligadas ao Project e à Production corretos.
+            </p>
+          </div>
           {isLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
