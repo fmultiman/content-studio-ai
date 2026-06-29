@@ -74,6 +74,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 15. [DS-1 Implementation Roadmap (DS-1A)](14-ds1-implementation-roadmap.md)
     Ordem de implementação, limites, e riscos para os próximos passos.
 
+16. [DS-1B Token Infrastructure](15-ds1b-token-infrastructure.md)
+    Implementacao da camada inicial de tokens semanticos, compatibilidade shadcn e mecanismo unico de tema.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:

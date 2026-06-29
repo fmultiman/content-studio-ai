@@ -4,6 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* shadcn compatibility aliases remain the technical baseline */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -37,6 +38,72 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Layer 2 — semantic product tokens */
+  --canvas: var(--background);
+  --surface: var(--card);
+  --surface-subtle: var(--muted);
+  --surface-elevated: var(--popover);
+  --surface-overlay: rgb(0 0 0 / 0.5);
+  --surface-translucent: color-mix(in oklch, var(--card) 30%, transparent);
+  --surface-interactive: var(--accent);
+  --surface-selected: color-mix(in oklch, var(--primary) 12%, var(--background));
+
+  --text-primary: var(--foreground);
+  --text-secondary: color-mix(in oklch, var(--foreground) 78%, var(--background));
+  --text-muted: var(--muted-foreground);
+  --text-disabled: color-mix(in oklch, var(--muted-foreground) 72%, var(--background));
+  --text-inverse: var(--primary-foreground);
+  --text-link: var(--primary);
+
+  --border-subtle: color-mix(in oklch, var(--border) 70%, transparent);
+  --border-default: var(--border);
+  --border-emphasis: var(--ring);
+  --border-selected: color-mix(in oklch, var(--primary) 65%, var(--border));
+  --border-danger: color-mix(in oklch, var(--destructive) 65%, var(--border));
+  --border-focus: var(--ring);
+  --focus-ring: var(--ring);
+  --selection-background: color-mix(in oklch, var(--primary) 24%, var(--background));
+  --selection-foreground: var(--foreground);
+
+  --action-primary: var(--primary);
+  --action-primary-hover: color-mix(in oklch, var(--primary) 90%, black);
+  --action-primary-foreground: var(--primary-foreground);
+  --action-secondary: var(--secondary);
+  --action-secondary-hover: color-mix(in oklch, var(--secondary) 82%, var(--foreground));
+  --action-secondary-foreground: var(--secondary-foreground);
+  --action-ghost-hover: var(--accent);
+  --action-destructive: var(--destructive);
+  --action-destructive-hover: color-mix(in oklch, var(--destructive) 88%, black);
+
+  --success: oklch(0.696 0.17 162.48);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.828 0.189 84.429);
+  --warning-foreground: oklch(0.145 0 0);
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --info: oklch(0.6 0.118 184.704);
+  --info-foreground: oklch(0.145 0 0);
+  --unavailable: color-mix(in oklch, var(--muted) 88%, var(--background));
+  --disabled: color-mix(in oklch, var(--muted) 78%, var(--background));
+
+  /* Layer 3 — atmosphere placeholders for future Studio support */
+  --atmosphere-primary: linear-gradient(180deg, transparent, transparent);
+  --atmosphere-secondary: linear-gradient(180deg, transparent, transparent);
+  --grid-color: transparent;
+  --glow-soft: none;
+  --glow-strong: none;
+
+  /* Foundation geometry and elevation */
+  --elevation-low: 0 1px 2px rgb(15 23 42 / 0.05);
+  --elevation-medium: 0 8px 24px rgb(15 23 42 / 0.08);
+  --elevation-high: 0 20px 48px rgb(15 23 42 / 0.12);
+  --radius-control: calc(var(--radius) - 2px);
+  --radius-card: var(--radius);
+  --radius-panel: calc(var(--radius) + 4px);
+  --radius-modal: calc(var(--radius) + 4px);
+  --control-height: 2.25rem;
+  --dense-control-height: 2rem;
 }
 
 .dark {
@@ -72,11 +139,37 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  --surface-overlay: rgb(0 0 0 / 0.65);
+  --surface-translucent: color-mix(in oklch, var(--card) 45%, transparent);
+  --surface-selected: color-mix(in oklch, var(--primary) 14%, var(--background));
+
+  --text-secondary: color-mix(in oklch, var(--foreground) 82%, var(--background));
+  --text-disabled: color-mix(in oklch, var(--muted-foreground) 78%, var(--background));
+
+  --border-subtle: color-mix(in oklch, var(--border) 78%, transparent);
+  --border-selected: color-mix(in oklch, var(--primary) 55%, var(--border));
+  --border-danger: color-mix(in oklch, var(--destructive) 58%, var(--border));
+  --selection-background: color-mix(in oklch, var(--primary) 18%, var(--background));
+  --selection-foreground: var(--foreground);
+
+  --action-primary-hover: color-mix(in oklch, var(--primary) 90%, white);
+  --action-secondary-hover: color-mix(in oklch, var(--secondary) 76%, var(--foreground));
+  --action-destructive-hover: color-mix(in oklch, var(--destructive) 82%, white);
+
+  --success-foreground: oklch(0.985 0 0);
+  --warning-foreground: oklch(0.205 0 0);
+  --info-foreground: oklch(0.985 0 0);
+
+  --elevation-low: 0 1px 2px rgb(2 6 23 / 0.35);
+  --elevation-medium: 0 10px 28px rgb(2 6 23 / 0.45);
+  --elevation-high: 0 24px 56px rgb(2 6 23 / 0.6);
 }
 
 @theme inline {
   --font-sans: 'Geist', 'Geist Fallback';
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  /* Layer 5 — shadcn compatibility aliases */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -113,6 +206,64 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Product semantic aliases for future DS consumption */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-translucent: var(--surface-translucent);
+  --color-surface-interactive: var(--surface-interactive);
+  --color-surface-selected: var(--surface-selected);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-link: var(--text-link);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-emphasis: var(--border-emphasis);
+  --color-border-selected: var(--border-selected);
+  --color-border-danger: var(--border-danger);
+  --color-border-focus: var(--border-focus);
+  --color-focus-ring: var(--focus-ring);
+  --color-selection-background: var(--selection-background);
+  --color-selection-foreground: var(--selection-foreground);
+  --color-action-primary: var(--action-primary);
+  --color-action-primary-hover: var(--action-primary-hover);
+  --color-action-primary-foreground: var(--action-primary-foreground);
+  --color-action-secondary: var(--action-secondary);
+  --color-action-secondary-hover: var(--action-secondary-hover);
+  --color-action-secondary-foreground: var(--action-secondary-foreground);
+  --color-action-ghost-hover: var(--action-ghost-hover);
+  --color-action-destructive: var(--action-destructive);
+  --color-action-destructive-hover: var(--action-destructive-hover);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-unavailable: var(--unavailable);
+  --color-disabled: var(--disabled);
+  --color-atmosphere-primary: var(--atmosphere-primary);
+  --color-atmosphere-secondary: var(--atmosphere-secondary);
+  --color-grid-color: var(--grid-color);
+  --shadow-glow-soft: var(--glow-soft);
+  --shadow-glow-strong: var(--glow-strong);
+  --shadow-elevation-low: var(--elevation-low);
+  --shadow-elevation-medium: var(--elevation-medium);
+  --shadow-elevation-high: var(--elevation-high);
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
+  --radius-modal: var(--radius-modal);
+  --spacing-control-height: var(--control-height);
+  --spacing-dense-control-height: var(--dense-control-height);
 }
 
 @layer base {
