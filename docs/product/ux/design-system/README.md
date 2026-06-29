@@ -27,8 +27,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-1A:** concluido (Foundation Audit e Semantic Token Contract)
 - **DS-1B:** concluido (Token Infrastructure)
 - **DS-1C:** concluido
-- **DS-1D:** implementado e em checkpoint final pre-Git
-- **DS-1E em diante:** backlog posterior de refinamento e adocao
+- **DS-1D:** concluido
+- **DS-1E:** concluido e pronto para commit
+- **DS-1F em diante:** backlog posterior de refinamento e adocao
 
 ## Leitura recomendada
 
@@ -86,6 +87,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 18. [DS-1D Studio Theme](17-ds1d-studio-theme.md)
     Implementacao do tema Studio com tipografia propria, atmosfera Hermes-like e intensidades `soft`, `balanced` e `expressive`.
 
+19. [DS-1E Controls and Indicators](18-ds1e-controls-indicators.md)
+    Refinamento sistemico de controles compartilhados, badges, indicadores, loading e feedback, sem redesign amplo de paginas ou cards de dominio.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -109,8 +113,9 @@ agora devem ser lidos pelo documento canonico de reconciliacao final e nao pelas
 
 ## Proxima etapa
 
-Com o DS-1D implementado, o proximo checkpoint natural passa a ser:
+Com o DS-1E implementado, o proximo checkpoint natural passa a ser:
 
-- fechar o lote do Studio em Git e PR;
-- iniciar refinamentos posteriores de controles, indicadores e familias de cards em DS-1E e DS-1F;
-- manter o shell `390px` como tema estrutural separado do fechamento visual do DS-1D.
+- fechar o lote de controles e indicadores em Git e PR;
+- iniciar refinamentos posteriores de familias de cards e estados contextuais em DS-1F e DS-1G;
+- tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
+- manter o shell `390px` como tema estrutural separado dos lotes visuais do DS-1.

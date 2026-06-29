@@ -19,11 +19,14 @@ interface StateMessageProps {
 }
 
 const toneStyles: Record<StateMessageTone, string> = {
-  loading: 'border-border/50 bg-card/30 text-muted-foreground',
-  empty: 'border-dashed border-border/50 bg-card/30 text-muted-foreground',
-  error: 'border-destructive/30 bg-destructive/10 text-destructive',
-  info: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-100',
-  success: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100',
+  loading: 'border-border-subtle bg-surface-subtle text-text-secondary',
+  empty: 'border-dashed border-border-subtle bg-surface-subtle text-text-secondary',
+  error:
+    'border-[color:color-mix(in_oklch,var(--indicator-danger)_48%,var(--border-default))] bg-[color:color-mix(in_oklch,var(--indicator-danger)_12%,transparent)] text-text-primary',
+  info:
+    'border-[color:color-mix(in_oklch,var(--indicator-info)_48%,var(--border-default))] bg-[color:color-mix(in_oklch,var(--indicator-info)_12%,transparent)] text-text-primary',
+  success:
+    'border-[color:color-mix(in_oklch,var(--indicator-success)_48%,var(--border-default))] bg-[color:color-mix(in_oklch,var(--indicator-success)_14%,transparent)] text-text-primary',
 }
 
 function defaultIcon(tone: StateMessageTone) {
@@ -56,6 +59,7 @@ export function StateMessage({
     <div
       role={liveRole}
       aria-live={livePoliteness}
+      data-tone={tone}
       className={cn(
         'rounded-xl border p-4',
         compact ? 'space-y-2' : 'space-y-3',
@@ -66,9 +70,9 @@ export function StateMessage({
       <div className="flex items-start gap-3">
         <div className="mt-0.5 shrink-0">{icon || defaultIcon(tone)}</div>
         <div className="min-w-0 space-y-1">
-          <p className="font-medium text-foreground">{title}</p>
+          <p className="font-medium text-text-primary">{title}</p>
           {description ? (
-            <p className={cn('text-sm', tone === 'error' ? 'text-destructive' : 'text-muted-foreground')}>
+            <p className={cn('text-sm', tone === 'error' ? 'text-text-primary' : 'text-text-muted')}>
               {description}
             </p>
           ) : null}

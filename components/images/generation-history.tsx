@@ -74,11 +74,7 @@ export function GenerationHistory({
                       </span>
                       {attempt.evaluation && (
                         <Badge 
-                          variant={attempt.evaluation.approved ? 'default' : 'secondary'}
-                          className={attempt.evaluation.approved 
-                            ? 'bg-emerald-500/20 text-emerald-400' 
-                            : 'bg-amber-500/20 text-amber-400'
-                          }
+                          variant={attempt.evaluation.approved ? 'success' : 'warning'}
                         >
                           {attempt.evaluation.approved ? (
                             <Check className="mr-1 h-3 w-3" />

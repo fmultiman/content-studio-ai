@@ -786,7 +786,7 @@ function PostsPageContent() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="line-clamp-1 text-sm font-medium">{post.name}</span>
                               {post.migrated_at ? (
-                                <Badge variant="outline" className="border-amber-500/70 text-amber-600">
+                                <Badge variant="warning">
                                   Migrado
                                 </Badge>
                               ) : (

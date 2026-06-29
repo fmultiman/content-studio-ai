@@ -415,7 +415,7 @@ export default function ProjectDetailPage() {
               </div>
               <Button
                 size="sm"
-                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                className="gap-2 text-white"
                 onClick={() => {
                   setEditingProduction(null)
                   setShowProductionForm(true)
@@ -445,7 +445,7 @@ export default function ProjectDetailPage() {
                     imagens, vídeos e conteúdos.
                   </p>
                   <Button
-                    className="mt-4"
+                    className="mt-4 text-white"
                     onClick={() => {
                       setEditingProduction(null)
                       setShowProductionForm(true)
@@ -496,7 +496,6 @@ export default function ProjectDetailPage() {
                         </div>
                         <div className="flex shrink-0 flex-wrap items-center gap-2">
                           <Button
-                            variant="outline"
                             size="sm"
                             onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
                           >

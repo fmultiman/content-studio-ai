@@ -191,7 +191,6 @@ export function ProjectList({
               />
               <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => router.push(`/projetos/${project.id}`)}
                 >

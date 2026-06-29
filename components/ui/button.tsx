@@ -5,20 +5,21 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-medium shadow-elevation-low transition-[background-color,border-color,color,box-shadow,transform] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--control-disabled-border)] disabled:bg-[var(--control-disabled-background)] disabled:text-[var(--control-disabled-text)] disabled:shadow-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklch,var(--control-focus)_42%,transparent)] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive active:translate-y-px",
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default:
+          'bg-[var(--action-primary)] text-[var(--action-primary-foreground)] hover:bg-[var(--action-primary-hover)] hover:shadow-elevation-medium focus-visible:ring-[3px] focus-visible:ring-[color:var(--control-focus)]',
         destructive:
-          'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
+          'bg-[var(--action-destructive)] text-[var(--danger-foreground)] hover:bg-[var(--action-destructive-hover)] focus-visible:ring-[3px] focus-visible:ring-[color:color-mix(in_oklch,var(--danger)_34%,white)]',
         outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'border-[var(--control-border)] bg-[var(--control-background)] text-[var(--control-text)] hover:border-[var(--control-border-hover)] hover:bg-[var(--control-background-hover)]',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+          'border-[var(--control-border)] bg-[var(--action-secondary)] text-[var(--action-secondary-foreground)] hover:border-[var(--control-border-hover)] hover:bg-[var(--action-secondary-hover)]',
         ghost:
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
-        link: 'text-primary underline-offset-4 hover:underline',
+          'bg-transparent text-[var(--text-secondary)] shadow-none hover:bg-[var(--action-ghost-hover)] hover:text-[var(--text-primary)]',
+        link: 'bg-transparent text-[var(--text-link)] shadow-none underline-offset-4 hover:text-[var(--action-primary-hover)] hover:underline',
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',
@@ -51,6 +52,8 @@ function Button({
   return (
     <Comp
       data-slot="button"
+      data-size={size ?? 'default'}
+      data-variant={variant ?? 'default'}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
