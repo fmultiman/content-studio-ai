@@ -46,14 +46,14 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex h-screen flex-col border-r border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-300',
+        'flex h-screen flex-col border-r border-border-subtle bg-surface-translucent shadow-elevation-low backdrop-blur-xl transition-all duration-300',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
       {/* Logo */}
       <div
         className={cn(
-          'flex h-16 items-center border-b border-border/50',
+          'flex h-16 items-center border-b border-border-subtle',
           collapsed ? 'justify-center px-2' : 'justify-between px-4',
         )}
       >
@@ -132,7 +132,7 @@ export function Sidebar() {
 
       {/* Persistent bottom area */}
       {systemNavigationGroup && (
-        <div className="shrink-0 border-t border-border/50 p-3">
+        <div className="shrink-0 border-t border-border-subtle p-3">
           <section
             aria-label={systemNavigationGroup.label}
             className="space-y-1"

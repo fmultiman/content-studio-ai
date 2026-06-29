@@ -25,7 +25,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-0R:** reconciliado primeiro com UX-H4B1
 - **DS-0 pos-UX-H4:** reconciliado com UX-H4B1, H4B2, H4B3 e H4B4
 - **DS-1A:** concluido (Foundation Audit e Semantic Token Contract)
-- **DS-1B em diante:** bloqueados aguardando revisão do DS-1A
+- **DS-1B:** concluido (Token Infrastructure)
+- **DS-1C:** baseline light/dark implementado e em validacao final local
+- **DS-1D em diante:** aguardando fechamento do DS-1C
 
 ## Leitura recomendada
 
@@ -63,19 +65,22 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
     Fonte canonica da reconciliacao final do DS-0 apos H4B1, H4B2, H4B3 e H4B4.
 
 12. [Foundation Audit (DS-1A)](11-ds1a-foundation-audit.md)
-    Auditoria do estado atual da base de código.
+    Auditoria do estado atual da base de codigo.
 
 13. [Semantic Token Contract (DS-1A)](12-semantic-token-contract.md)
-    Contrato semântico e arquitetura de camadas de tokens.
+    Contrato semantico e arquitetura de camadas de tokens.
 
 14. [Theme Mapping Plan (DS-1A)](13-theme-mapping-plan.md)
-    Mapeamento de papéis e diretrizes para os temas light, dark e studio.
+    Mapeamento de papeis e diretrizes para os temas light, dark e studio.
 
 15. [DS-1 Implementation Roadmap (DS-1A)](14-ds1-implementation-roadmap.md)
-    Ordem de implementação, limites, e riscos para os próximos passos.
+    Ordem de implementacao, limites, e riscos para os proximos passos.
 
 16. [DS-1B Token Infrastructure](15-ds1b-token-infrastructure.md)
     Implementacao da camada inicial de tokens semanticos, compatibilidade shadcn e mecanismo unico de tema.
+
+17. [DS-1C Light and Dark Baseline](16-ds1c-light-dark-baseline.md)
+    Formalizacao do baseline visual de light e dark, com auditoria inicial, refinamento de tokens e limites explicitados.
 
 ## Fonte de verdade
 
@@ -100,9 +105,8 @@ agora devem ser lidos pelo documento canonico de reconciliacao final e nao pelas
 
 ## Proxima etapa
 
-Antes de qualquer implementacao de codigo (DS-1B), o checkpoint atual é a revisao dos artefatos produzidos no DS-1A:
+O checkpoint atual e concluir o fechamento do DS-1C:
 
-- Foundation Audit;
-- Semantic Token Contract;
-- Theme Mapping Plan;
-- DS-1 Implementation Roadmap.
+- validar o baseline light/dark com smoke visual final;
+- registrar diferencas visuais e limites estruturais ainda fora de escopo;
+- fechar o lote antes de iniciar Studio ou migracoes mais amplas.

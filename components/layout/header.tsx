@@ -53,7 +53,7 @@ export function Header({ title }: HeaderProps) {
     : 'U'
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border/50 bg-card/30 px-6 backdrop-blur-sm">
+    <header className="flex h-16 items-center justify-between border-b border-border-subtle bg-surface-translucent px-6 shadow-elevation-low backdrop-blur-xl">
       <div>
         {title && (
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>
