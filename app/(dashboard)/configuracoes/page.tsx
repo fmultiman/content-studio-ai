@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useTheme } from 'next-themes'
 import { Header } from '@/components/layout/header'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
@@ -17,12 +18,16 @@ import { Slider } from '@/components/ui/slider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { UserSettings } from '@/lib/types'
+import {
+  DEFAULT_THEME,
+  normalizeUserSelectableTheme,
+  type UserSelectableTheme,
+} from '@/lib/theme'
 import { useToast } from '@/hooks/use-toast'
-
-type Theme = 'light' | 'dark' | 'system'
 
 export default function SettingsPage() {
   const { toast } = useToast()
+  const { theme, setTheme } = useTheme()
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -32,10 +37,14 @@ export default function SettingsPage() {
   const [showOpenAIKey, setShowOpenAIKey] = useState(false)
   const [showReplicateKey, setShowReplicateKey] = useState(false)
   const [showNanoBananaKey, setShowNanoBananaKey] = useState(false)
-  
+  const isThemeReady = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
+
   // Settings state
   const [settings, setSettings] = useState<Partial<UserSettings>>({
-    theme: 'dark',
     auto_mode_default: true,
     save_prompt_history: true,
     notifications_email: true,
@@ -49,6 +58,10 @@ export default function SettingsPage() {
     image_evaluator_enabled: false,
     max_refinement_iterations: 2,
   })
+
+  const activeTheme = isThemeReady
+    ? normalizeUserSelectableTheme(theme, DEFAULT_THEME)
+    : null
 
   useEffect(() => {
     const fetchData = async () => {
@@ -80,7 +93,7 @@ export default function SettingsPage() {
               image_evaluator_enabled: settingsData.image_evaluator_enabled ?? false,
               max_refinement_iterations: settingsData.max_refinement_iterations ?? 2,
             })
-            applyTheme(settingsData.theme as Theme)
+
           }
         }
       } catch {
@@ -92,39 +105,24 @@ export default function SettingsPage() {
     fetchData()
   }, [])
 
-  const applyTheme = (theme: Theme) => {
-    const root = document.documentElement
-    
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      root.classList.remove('light', 'dark')
-      root.classList.add(systemTheme)
-    } else {
-      root.classList.remove('light', 'dark')
-      root.classList.add(theme)
-    }
-  }
-
-  const handleThemeChange = (theme: Theme) => {
-    setSettings({ ...settings, theme })
-    applyTheme(theme)
-    // Save to localStorage for immediate persistence
-    localStorage.setItem('theme', theme)
+  const handleThemeChange = (nextTheme: UserSelectableTheme) => {
+    setTheme(nextTheme)
   }
 
   const handleSaveSettings = async () => {
     if (!user) return
-    
+
     setIsSaving(true)
     setSaveFeedback(null)
     const supabase = createClient()
+    const persistedTheme = normalizeUserSelectableTheme(theme, DEFAULT_THEME)
 
     try {
       const { error } = await supabase
         .from('user_settings')
         .upsert({
           user_id: user.id,
-          theme: settings.theme,
+          theme: persistedTheme,
           auto_mode_default: settings.auto_mode_default,
           save_prompt_history: settings.save_prompt_history,
           notifications_email: settings.notifications_email,
@@ -289,35 +287,38 @@ export default function SettingsPage() {
                     <Label>Tema</Label>
                     <div className="grid grid-cols-3 gap-3">
                       <Button
-                        variant={settings.theme === 'light' ? 'default' : 'outline'}
+                        variant={activeTheme === 'light' ? 'default' : 'outline'}
                         className="h-auto flex-col gap-2 py-4"
+                        disabled={!isThemeReady}
                         onClick={() => handleThemeChange('light')}
                       >
                         <Sun className="h-5 w-5" />
                         <span className="text-xs">Claro</span>
-                        {settings.theme === 'light' && (
+                        {activeTheme === 'light' && (
                           <Check className="absolute right-2 top-2 h-4 w-4" />
                         )}
                       </Button>
                       <Button
-                        variant={settings.theme === 'dark' ? 'default' : 'outline'}
+                        variant={activeTheme === 'dark' ? 'default' : 'outline'}
                         className="h-auto flex-col gap-2 py-4"
+                        disabled={!isThemeReady}
                         onClick={() => handleThemeChange('dark')}
                       >
                         <Moon className="h-5 w-5" />
                         <span className="text-xs">Escuro</span>
-                        {settings.theme === 'dark' && (
+                        {activeTheme === 'dark' && (
                           <Check className="absolute right-2 top-2 h-4 w-4" />
                         )}
                       </Button>
                       <Button
-                        variant={settings.theme === 'system' ? 'default' : 'outline'}
+                        variant={activeTheme === 'system' ? 'default' : 'outline'}
                         className="h-auto flex-col gap-2 py-4"
+                        disabled={!isThemeReady}
                         onClick={() => handleThemeChange('system')}
                       >
                         <Monitor className="h-5 w-5" />
                         <span className="text-xs">Sistema</span>
-                        {settings.theme === 'system' && (
+                        {activeTheme === 'system' && (
                           <Check className="absolute right-2 top-2 h-4 w-4" />
                         )}
                       </Button>
