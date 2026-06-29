@@ -115,8 +115,9 @@ describe('UX-H1 Production hardening helpers', () => {
     expect(draftLoadingMessage('video', false)).toBe('Carregando editor de vídeo...')
   })
 
-  it('uses a four-column tab grid for the four Production tabs', () => {
-    expect(PRODUCTION_TABS_GRID_CLASS).toContain('grid-cols-4')
-    expect(PRODUCTION_TABS_GRID_CLASS).not.toContain('grid-cols-5')
+  it('uses the same inline tabs pattern adopted by Settings for the Production tabs', () => {
+    expect(PRODUCTION_TABS_GRID_CLASS).toContain('inline-flex')
+    expect(PRODUCTION_TABS_GRID_CLASS).toContain('min-w-full')
+    expect(PRODUCTION_TABS_GRID_CLASS).toContain('gap-2')
   })
 })

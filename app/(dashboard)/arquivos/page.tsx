@@ -598,7 +598,7 @@ export default function ArquivosPage() {
                   <Trash2 className="h-4 w-4" />
                   Lixeira
                 </Button>
-                <Button asChild className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
+                <Button asChild className="gap-2">
                   <label htmlFor="library-upload" className="cursor-pointer">
                     {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                     Enviar Arquivos
@@ -956,7 +956,6 @@ export default function ArquivosPage() {
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
-                        variant="outline"
                         size="sm"
                         className="gap-2"
                         onClick={() => {

@@ -48,6 +48,8 @@ const Toast = React.forwardRef<
   return (
     <ToastPrimitives.Root
       ref={ref}
+      data-slot="toast"
+      data-variant={variant ?? 'default'}
       className={cn(toastVariants({ variant }), className)}
       {...props}
     />
@@ -61,8 +63,9 @@ const ToastAction = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Action
     ref={ref}
+    data-slot="toast-action"
     className={cn(
-      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-border-default bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-surface-subtle focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-border-danger group-[.destructive]:hover:bg-danger/12 group-[.destructive]:hover:text-text-primary group-[.destructive]:focus:ring-danger/40',
+      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-border-default bg-transparent px-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-subtle focus:outline-none focus:ring-2 focus:ring-[color:color-mix(in_oklch,var(--control-focus)_40%,transparent)] disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-border-danger group-[.destructive]:hover:bg-danger/12 group-[.destructive]:hover:text-text-primary group-[.destructive]:focus:ring-[color:color-mix(in_oklch,var(--danger)_38%,white)]',
       className,
     )}
     {...props}
@@ -76,8 +79,9 @@ const ToastClose = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Close
     ref={ref}
+    data-slot="toast-close"
     className={cn(
-      'absolute right-2 top-2 rounded-md p-1 text-text-muted opacity-0 transition-opacity hover:text-text-primary focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-danger group-[.destructive]:hover:text-danger group-[.destructive]:focus:ring-danger/40 group-[.destructive]:focus:ring-offset-background',
+      'absolute right-2 top-2 rounded-md p-1 text-text-muted opacity-0 transition-opacity hover:text-text-primary focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[color:color-mix(in_oklch,var(--control-focus)_40%,transparent)] group-hover:opacity-100 group-[.destructive]:text-text-muted group-[.destructive]:hover:text-text-primary group-[.destructive]:focus:ring-[color:color-mix(in_oklch,var(--danger)_38%,white)]',
       className,
     )}
     toast-close=""

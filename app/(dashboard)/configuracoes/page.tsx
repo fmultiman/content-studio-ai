@@ -27,6 +27,7 @@ import {
   type StudioIntensity,
   type UserSelectableTheme,
 } from '@/lib/theme'
+import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 
 const studioIntensityOptions: Array<{
@@ -328,6 +329,7 @@ export default function SettingsPage() {
                       <Button
                         variant={activeTheme === 'light' ? 'default' : 'outline'}
                         className="relative h-auto flex-col gap-2 py-4"
+                        aria-pressed={activeTheme === 'light'}
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('light')}
                       >
@@ -340,6 +342,7 @@ export default function SettingsPage() {
                       <Button
                         variant={activeTheme === 'dark' ? 'default' : 'outline'}
                         className="relative h-auto flex-col gap-2 py-4"
+                        aria-pressed={activeTheme === 'dark'}
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('dark')}
                       >
@@ -352,6 +355,7 @@ export default function SettingsPage() {
                       <Button
                         variant={activeTheme === 'system' ? 'default' : 'outline'}
                         className="relative h-auto flex-col gap-2 py-4"
+                        aria-pressed={activeTheme === 'system'}
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('system')}
                       >
@@ -364,6 +368,7 @@ export default function SettingsPage() {
                       <Button
                         variant={activeTheme === 'studio' ? 'default' : 'outline'}
                         className="relative h-auto flex-col gap-2 py-4"
+                        aria-pressed={activeTheme === 'studio'}
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('studio')}
                       >
@@ -388,11 +393,20 @@ export default function SettingsPage() {
                       >
                         {studioIntensityOptions.map((option) => {
                           const radioId = `studio-intensity-${option.value}`
+                          const isSelected =
+                            option.value ===
+                            (activeStudioIntensity ?? DEFAULT_STUDIO_INTENSITY)
 
                           return (
                             <div
                               key={option.value}
-                              className="flex items-start gap-3 rounded-lg border border-border/50 p-3"
+                              data-selected={isSelected}
+                              className={cn(
+                                'flex items-start gap-3 rounded-lg border p-3 transition-[background-color,border-color,box-shadow]',
+                                isSelected
+                                  ? 'border-[var(--border-selected)] bg-[var(--control-background-active)] shadow-elevation-low'
+                                  : 'border-[var(--control-border)] bg-[var(--control-background)]',
+                              )}
                             >
                               <RadioGroupItem value={option.value} id={radioId} />
                               <Label htmlFor={radioId} className="flex-1 cursor-pointer space-y-1">
@@ -408,34 +422,6 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Modo Automático Padrão</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Ativar modo automático por padrão na geração de imagens
-                      </p>
-                    </div>
-                    <Switch
-                      checked={settings.auto_mode_default}
-                      onCheckedChange={(checked) =>
-                        setSettings({ ...settings, auto_mode_default: checked })
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Salvar Histórico de Prompts</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Manter histórico de todos os prompts gerados
-                      </p>
-                    </div>
-                    <Switch
-                      checked={settings.save_prompt_history}
-                      onCheckedChange={(checked) =>
-                        setSettings({ ...settings, save_prompt_history: checked })
-                      }
-                    />
-                  </div>
                   <Button onClick={handleSaveSettings} disabled={isSaving} className="w-full">
                     {isSaving ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -605,6 +591,44 @@ export default function SettingsPage() {
                         </p>
                       </div>
                     )}
+                  </div>
+
+                  <div className="border-t border-border/50" />
+
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-semibold">Preferências adicionais</h3>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <Label>Modo Automático Padrão</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Ativar modo automático por padrão na geração de imagens
+                        </p>
+                      </div>
+                      <Switch
+                        checked={settings.auto_mode_default}
+                        onCheckedChange={(checked) =>
+                          setSettings({ ...settings, auto_mode_default: checked })
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <Label>Salvar Histórico de Prompts</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Manter histórico de todos os prompts gerados
+                        </p>
+                      </div>
+                      <Switch
+                        checked={settings.save_prompt_history}
+                        onCheckedChange={(checked) =>
+                          setSettings({ ...settings, save_prompt_history: checked })
+                        }
+                      />
+                    </div>
                   </div>
 
                   <Button onClick={handleSaveSettings} disabled={isSaving} className="w-full">

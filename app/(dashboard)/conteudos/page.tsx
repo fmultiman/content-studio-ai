@@ -179,7 +179,7 @@ function PublicacoesPageContent() {
                   Criação rápida
                 </Button>
                 <Button
-                  className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                  className="gap-2 text-white"
                   onClick={openCreateDialog}
                 >
                   <Plus className="h-4 w-4" />

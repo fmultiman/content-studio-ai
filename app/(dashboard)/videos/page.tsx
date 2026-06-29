@@ -588,7 +588,7 @@ function VideosPageContent() {
               </p>
             )}
             <Button
-              className="mt-4 w-full"
+              className="mt-4 w-full text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
               onClick={openVideoWorkspace}
               disabled={!hubCreateProjectId || !hubCreateProductionId}
             >
@@ -854,8 +854,9 @@ function VideosPageContent() {
                   {drafts.slice(0, 3).map((draft) => (
                     <button
                       key={draft.id}
+                      type="button"
                       onClick={() => loadDraft(draft)}
-                      className="flex min-w-[180px] flex-col rounded-lg border border-border/50 bg-background/50 p-3 text-left transition-colors hover:bg-background/80"
+                      className="flex min-w-[180px] flex-col rounded-lg border border-[var(--control-border)] bg-[var(--control-background)] p-3 text-left shadow-elevation-low transition-[background-color,border-color,box-shadow] hover:border-[var(--control-border-hover)] hover:bg-[var(--control-background-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[color:var(--control-focus)]"
                     >
                       <span className="font-medium text-foreground line-clamp-1">
                         {draft.name}

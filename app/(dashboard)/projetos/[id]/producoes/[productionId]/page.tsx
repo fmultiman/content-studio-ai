@@ -473,7 +473,8 @@ export default function ProductionDetailPage() {
 
           {/* Workspace Tabs */}
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className={PRODUCTION_TABS_GRID_CLASS}>
+            <div className="overflow-x-auto pb-1">
+              <TabsList className={PRODUCTION_TABS_GRID_CLASS}>
               <TabsTrigger value="overview" className="gap-2">
                 <Layers className="h-4 w-4" />
                 Visão Geral
@@ -490,7 +491,8 @@ export default function ProductionDetailPage() {
                 <FileText className="h-4 w-4" />
                 Conteúdos editoriais {editorialContents.length > 0 && `(${editorialContents.length})`}
               </TabsTrigger>
-            </TabsList>
+              </TabsList>
+            </div>
 
             {/* Visão Geral */}
             <TabsContent value="overview" className="mt-4">

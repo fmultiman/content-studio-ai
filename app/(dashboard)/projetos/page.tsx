@@ -159,7 +159,7 @@ function ProjectsContent() {
             actions={(
               <Button
                 onClick={() => setShowForm(true)}
-                className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white"
+                className="text-white"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Novo Projeto

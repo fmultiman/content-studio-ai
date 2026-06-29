@@ -78,7 +78,7 @@ export function productionReturnPath(projectId?: string | null, productionId?: s
   return `/projetos/${projectId}/producoes/${productionId}`
 }
 
-export const PRODUCTION_TABS_GRID_CLASS = 'grid w-full grid-cols-4'
+export const PRODUCTION_TABS_GRID_CLASS = 'inline-flex min-w-full gap-2'
 
 function normalizeText(value: string | null | undefined) {
   return value?.trim().replace(/\s+/g, ' ') ?? ''
