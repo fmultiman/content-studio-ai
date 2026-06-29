@@ -53,10 +53,10 @@ export function Header({ title }: HeaderProps) {
     : 'U'
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border-subtle bg-surface-translucent px-6 shadow-elevation-low backdrop-blur-xl">
+    <header className="studio-shell-pane flex h-16 items-center justify-between border-b border-border-subtle bg-surface-translucent px-6 shadow-elevation-low [backdrop-filter:blur(var(--studio-glass-blur))]">
       <div>
         {title && (
-          <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+          <h1 className="text-xl font-semibold tracking-[-0.025em] text-foreground">{title}</h1>
         )}
       </div>
 
@@ -64,7 +64,7 @@ export function Header({ title }: HeaderProps) {
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-violet-500" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary shadow-glow-soft" />
         </Button>
 
         {/* User Menu */}
