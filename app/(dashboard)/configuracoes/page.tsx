@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
 import { Header } from '@/components/layout/header'
 import { PageHeader } from '@/components/layout/page-header'
+import { useStudioIntensity } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -19,15 +20,37 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import type { UserSettings } from '@/lib/types'
 import {
+  DEFAULT_STUDIO_INTENSITY,
   DEFAULT_THEME,
+  normalizeStudioIntensity,
   normalizeUserSelectableTheme,
+  type StudioIntensity,
   type UserSelectableTheme,
 } from '@/lib/theme'
 import { useToast } from '@/hooks/use-toast'
 
+const studioIntensityOptions: Array<{
+  description: string
+  value: StudioIntensity
+}> = [
+  {
+    description: 'Atmosfera discreta e menor carga visual.',
+    value: 'soft',
+  },
+  {
+    description: 'Equilibrio entre identidade, profundidade e legibilidade.',
+    value: 'balanced',
+  },
+  {
+    description: 'Atmosfera mais presente para uma experiencia visual imersiva.',
+    value: 'expressive',
+  },
+]
+
 export default function SettingsPage() {
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
+  const { studioIntensity, setStudioIntensity } = useStudioIntensity()
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -62,6 +85,14 @@ export default function SettingsPage() {
   const activeTheme = isThemeReady
     ? normalizeUserSelectableTheme(theme, DEFAULT_THEME)
     : null
+  const isStudioIntensityReady = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
+  const activeStudioIntensity = isStudioIntensityReady
+    ? normalizeStudioIntensity(studioIntensity, DEFAULT_STUDIO_INTENSITY)
+    : null
 
   useEffect(() => {
     const fetchData = async () => {
@@ -93,7 +124,6 @@ export default function SettingsPage() {
               image_evaluator_enabled: settingsData.image_evaluator_enabled ?? false,
               max_refinement_iterations: settingsData.max_refinement_iterations ?? 2,
             })
-
           }
         }
       } catch {
@@ -109,6 +139,10 @@ export default function SettingsPage() {
     setTheme(nextTheme)
   }
 
+  const handleStudioIntensityChange = (nextStudioIntensity: StudioIntensity) => {
+    setStudioIntensity(nextStudioIntensity)
+  }
+
   const handleSaveSettings = async () => {
     if (!user) return
 
@@ -116,6 +150,10 @@ export default function SettingsPage() {
     setSaveFeedback(null)
     const supabase = createClient()
     const persistedTheme = normalizeUserSelectableTheme(theme, DEFAULT_THEME)
+    const persistedStudioIntensity = normalizeStudioIntensity(
+      studioIntensity,
+      DEFAULT_STUDIO_INTENSITY,
+    )
 
     try {
       const { error } = await supabase
@@ -123,6 +161,7 @@ export default function SettingsPage() {
         .upsert({
           user_id: user.id,
           theme: persistedTheme,
+          studio_intensity: persistedStudioIntensity,
           auto_mode_default: settings.auto_mode_default,
           save_prompt_history: settings.save_prompt_history,
           notifications_email: settings.notifications_email,
@@ -285,10 +324,10 @@ export default function SettingsPage() {
                   {/* Theme Selection */}
                   <div className="space-y-3">
                     <Label>Tema</Label>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <Button
                         variant={activeTheme === 'light' ? 'default' : 'outline'}
-                        className="h-auto flex-col gap-2 py-4"
+                        className="relative h-auto flex-col gap-2 py-4"
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('light')}
                       >
@@ -300,7 +339,7 @@ export default function SettingsPage() {
                       </Button>
                       <Button
                         variant={activeTheme === 'dark' ? 'default' : 'outline'}
-                        className="h-auto flex-col gap-2 py-4"
+                        className="relative h-auto flex-col gap-2 py-4"
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('dark')}
                       >
@@ -312,7 +351,7 @@ export default function SettingsPage() {
                       </Button>
                       <Button
                         variant={activeTheme === 'system' ? 'default' : 'outline'}
-                        className="h-auto flex-col gap-2 py-4"
+                        className="relative h-auto flex-col gap-2 py-4"
                         disabled={!isThemeReady}
                         onClick={() => handleThemeChange('system')}
                       >
@@ -322,8 +361,52 @@ export default function SettingsPage() {
                           <Check className="absolute right-2 top-2 h-4 w-4" />
                         )}
                       </Button>
+                      <Button
+                        variant={activeTheme === 'studio' ? 'default' : 'outline'}
+                        className="relative h-auto flex-col gap-2 py-4"
+                        disabled={!isThemeReady}
+                        onClick={() => handleThemeChange('studio')}
+                      >
+                        <Sparkles className="h-5 w-5" />
+                        <span className="text-xs">Studio</span>
+                        {activeTheme === 'studio' && (
+                          <Check className="absolute right-2 top-2 h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </div>
+
+                  {activeTheme === 'studio' && (
+                    <div className="space-y-3">
+                      <Label>Intensidade do Studio</Label>
+                      <RadioGroup
+                        value={activeStudioIntensity ?? DEFAULT_STUDIO_INTENSITY}
+                        onValueChange={(value) =>
+                          handleStudioIntensityChange(value as StudioIntensity)
+                        }
+                        className="grid gap-3"
+                      >
+                        {studioIntensityOptions.map((option) => {
+                          const radioId = `studio-intensity-${option.value}`
+
+                          return (
+                            <div
+                              key={option.value}
+                              className="flex items-start gap-3 rounded-lg border border-border/50 p-3"
+                            >
+                              <RadioGroupItem value={option.value} id={radioId} />
+                              <Label htmlFor={radioId} className="flex-1 cursor-pointer space-y-1">
+                                <span className="block font-medium capitalize">{option.value}</span>
+                                <p className="text-sm text-muted-foreground">
+                                  {option.description}
+                                </p>
+                              </Label>
+                            </div>
+                          )
+                        })}
+                      </RadioGroup>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between">
                     <div>

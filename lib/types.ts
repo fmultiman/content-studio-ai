@@ -33,7 +33,8 @@ export interface Production {
 export interface UserSettings {
   id: string
   user_id: string
-  theme: 'light' | 'dark' | 'system'
+  theme: 'light' | 'dark' | 'system' | 'studio'
+  studio_intensity: 'soft' | 'balanced' | 'expressive'
   auto_mode_default: boolean
   save_prompt_history: boolean
   notifications_email: boolean

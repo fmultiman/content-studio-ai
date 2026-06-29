@@ -46,7 +46,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex h-screen flex-col border-r border-border-subtle bg-surface-translucent shadow-elevation-low backdrop-blur-xl transition-all duration-300',
+        'studio-shell-pane flex h-screen flex-col border-r border-border-subtle bg-surface-translucent shadow-elevation-low [backdrop-filter:blur(var(--studio-glass-blur))] transition-all duration-300',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
@@ -62,7 +62,7 @@ export function Sidebar() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
-            <span className="font-semibold text-foreground">Content Agent</span>
+            <span className="text-base font-semibold tracking-[-0.03em] text-foreground">Content Agent</span>
           </Link>
         )}
         <Button
@@ -92,7 +92,7 @@ export function Sidebar() {
             className="space-y-1"
           >
             {!collapsed && (
-              <p className="px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              <p className="px-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
                 {group.label}
               </p>
             )}
@@ -110,7 +110,7 @@ export function Sidebar() {
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                     isActive
-                      ? 'bg-gradient-to-r from-violet-600/20 to-cyan-500/20 text-foreground'
+                      ? 'border border-border-selected bg-surface-selected text-foreground shadow-glow-soft'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                     collapsed && 'justify-center px-2'
                   )}
@@ -119,7 +119,7 @@ export function Sidebar() {
                     aria-hidden="true"
                     className={cn(
                       'h-5 w-5 shrink-0',
-                      isActive && 'text-violet-400'
+                      isActive && 'text-primary'
                     )}
                   />
                   {!collapsed && <span>{item.label}</span>}
@@ -150,7 +150,7 @@ export function Sidebar() {
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                     isActive
-                      ? 'bg-gradient-to-r from-violet-600/20 to-cyan-500/20 text-foreground'
+                      ? 'border border-border-selected bg-surface-selected text-foreground shadow-glow-soft'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                     collapsed && 'justify-center px-2'
                   )}
@@ -159,7 +159,7 @@ export function Sidebar() {
                     aria-hidden="true"
                     className={cn(
                       'h-5 w-5 shrink-0',
-                      isActive && 'text-violet-400'
+                      isActive && 'text-primary'
                     )}
                   />
                   {!collapsed && <span>{item.label}</span>}

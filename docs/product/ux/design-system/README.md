@@ -26,8 +26,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-0 pos-UX-H4:** reconciliado com UX-H4B1, H4B2, H4B3 e H4B4
 - **DS-1A:** concluido (Foundation Audit e Semantic Token Contract)
 - **DS-1B:** concluido (Token Infrastructure)
-- **DS-1C:** baseline light/dark implementado e em validacao final local
-- **DS-1D em diante:** aguardando fechamento do DS-1C
+- **DS-1C:** concluido
+- **DS-1D:** implementado e em checkpoint final pre-Git
+- **DS-1E em diante:** backlog posterior de refinamento e adocao
 
 ## Leitura recomendada
 
@@ -82,6 +83,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 17. [DS-1C Light and Dark Baseline](16-ds1c-light-dark-baseline.md)
     Formalizacao do baseline visual de light e dark, com auditoria inicial, refinamento de tokens e limites explicitados.
 
+18. [DS-1D Studio Theme](17-ds1d-studio-theme.md)
+    Implementacao do tema Studio com tipografia propria, atmosfera Hermes-like e intensidades `soft`, `balanced` e `expressive`.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -105,8 +109,8 @@ agora devem ser lidos pelo documento canonico de reconciliacao final e nao pelas
 
 ## Proxima etapa
 
-O checkpoint atual e concluir o fechamento do DS-1C:
+Com o DS-1D implementado, o proximo checkpoint natural passa a ser:
 
-- validar o baseline light/dark com smoke visual final;
-- registrar diferencas visuais e limites estruturais ainda fora de escopo;
-- fechar o lote antes de iniciar Studio ou migracoes mais amplas.
+- fechar o lote do Studio em Git e PR;
+- iniciar refinamentos posteriores de controles, indicadores e familias de cards em DS-1E e DS-1F;
+- manter o shell `390px` como tema estrutural separado do fechamento visual do DS-1D.
