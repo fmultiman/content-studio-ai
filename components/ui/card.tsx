@@ -71,19 +71,6 @@ function CardContent({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
-function CardEyebrow({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-eyebrow"
-      className={cn(
-        'text-xs font-medium tracking-[0.08em] text-[var(--card-metadata-label)] uppercase',
-        className,
-      )}
-      {...props}
-    />
-  )
-}
-
 function CardMedia({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -107,25 +94,13 @@ function CardActions({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
-function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn('flex items-center px-6 [.border-t]:pt-6', className)}
-      {...props}
-    />
-  )
-}
-
 export {
   Card,
   CardHeader,
-  CardFooter,
   CardTitle,
   CardAction,
   CardDescription,
   CardContent,
-  CardEyebrow,
   CardMedia,
   CardActions,
 }
