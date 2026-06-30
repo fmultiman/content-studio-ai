@@ -13,7 +13,13 @@ import { generateImagePrompt, PromptGenerationError, regeneratePrompt } from '@/
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardActions,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -1509,45 +1515,48 @@ function ImagesPageContent() {
             ) : null}
           </div>
         ) : hubViewMode === 'list' ? (
-          <div className="overflow-hidden rounded-xl border border-border/50 bg-card/30">
-            <div role="list" className="divide-y divide-border/50">
+          <div role="list" className="space-y-2">
               {filteredHubCards.map((draft) => (
-                <div
+                <Card
                   key={draft.id}
                   role="listitem"
-                  className="grid gap-3 px-4 py-4"
+                  className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                 >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
-                      <span className="truncate font-medium text-foreground" title={draft.title}>
-                        {draft.title}
-                      </span>
+                  <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                    <div className="min-w-0 space-y-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon className="h-4 w-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                          <CardTitle className="truncate text-sm" title={draft.title}>
+                            {draft.title}
+                          </CardTitle>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
+                      </div>
+                      <ContextMetadata
+                        dense
+                        items={[
+                          { label: 'Project', value: draft.projectName, title: draft.projectName },
+                          { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                          { label: 'Status', value: <StatusBadge label={draft.status} tone={draft.status === 'Aprovada' ? 'positive' : draft.status === 'Gerando' ? 'warning' : draft.status === 'Rejeitada' ? 'danger' : 'neutral'} /> },
+                          { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
+                        ]}
+                      />
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
-                  </div>
-                  <ContextMetadata
-                    items={[
-                      { label: 'Project', value: draft.projectName, title: draft.projectName },
-                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
-                      { label: 'Status', value: <StatusBadge label={draft.status} tone={draft.status === 'Aprovada' ? 'positive' : draft.status === 'Gerando' ? 'warning' : draft.status === 'Rejeitada' ? 'danger' : 'neutral'} /> },
-                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
-                    ]}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
-                      Abrir
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    {draft.productionHref && (
-                      <Button size="sm" variant="outline" onClick={() => router.push(draft.productionHref!)}>
-                        Ver Production
+                    <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                      <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
+                        Abrir
+                        <ChevronRight className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
-                </div>
+                      {draft.productionHref && (
+                        <Button size="sm" variant="outline" onClick={() => router.push(draft.productionHref!)}>
+                          Ver Production
+                        </Button>
+                      )}
+                    </CardActions>
+                  </CardContent>
+                </Card>
               ))}
-            </div>
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
@@ -1559,13 +1568,14 @@ function ImagesPageContent() {
                       <ImageIcon className="h-5 w-5 text-cyan-300" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="line-clamp-2 font-semibold text-foreground" title={draft.title}>
+                      <CardTitle className="line-clamp-2 text-base" title={draft.title}>
                         {draft.title}
-                      </h3>
+                      </CardTitle>
                       <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
                     </div>
                   </div>
                   <ContextMetadata
+                    dense
                     items={[
                       { label: 'Project', value: draft.projectName, title: draft.projectName },
                       { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
@@ -1573,7 +1583,7 @@ function ImagesPageContent() {
                       { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
                     ]}
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <CardActions className="flex flex-wrap gap-2">
                     <Button onClick={() => router.push(draft.href)} className="gap-2">
                       Abrir
                       <ChevronRight className="h-4 w-4" />
@@ -1583,7 +1593,7 @@ function ImagesPageContent() {
                         Ver Production
                       </Button>
                     )}
-                  </div>
+                  </CardActions>
                 </CardContent>
               </Card>
             ))}

@@ -11,6 +11,14 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardActions,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StatusBadge } from '@/components/ui/status-badge'
 import type {
@@ -179,36 +187,37 @@ export function DashboardContinuationHub({
 
 function ProductionCard({ production }: { production: RecentProductionCard }) {
   return (
-    <article className="rounded-xl border border-border/50 bg-card/30 p-5 backdrop-blur-sm transition-colors hover:border-violet-500/50">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-3">
-          <h4 className="line-clamp-2 text-lg font-semibold text-foreground">
-            {production.title}
-          </h4>
-          {production.intention && (
-            <p className="line-clamp-2 text-sm text-muted-foreground" title={production.intention}>
-              {production.intention}
-            </p>
-          )}
-          <ContextMetadata
-            items={[
-              { label: 'Project', value: production.projectName, title: production.projectName },
-              {
-                label: 'Itens vinculados',
-                value: `${production.counters.images} imagens · ${production.counters.videos} vídeos · ${production.counters.editorial} conteúdos`,
-              },
-              { label: 'Atualizado', value: formatDate(production.activityAt) },
-            ]}
-            className="gap-3"
-          />
-        </div>
-        <Button asChild size="sm" className="shrink-0">
-          <Link href={production.href} aria-label={`Continuar Production ${production.title}`}>
-            Continuar Production
-          </Link>
-        </Button>
-      </div>
-    </article>
+    <Card className="border-border/50 bg-card/30 backdrop-blur-sm transition-colors hover:border-violet-500/50">
+      <CardHeader className="gap-3 pb-0">
+        <CardTitle className="line-clamp-2 text-lg">{production.title}</CardTitle>
+        {production.intention && (
+          <CardDescription className="line-clamp-2" title={production.intention}>
+            {production.intention}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4 pt-0">
+        <ContextMetadata
+          dense
+          items={[
+            { label: 'Project', value: production.projectName, title: production.projectName },
+            {
+              label: 'Itens vinculados',
+              value: `${production.counters.images} imagens · ${production.counters.videos} vídeos · ${production.counters.editorial} conteúdos`,
+            },
+            { label: 'Atualizado', value: formatDate(production.activityAt) },
+          ]}
+          className="gap-3"
+        />
+        <CardActions>
+          <Button asChild size="sm" className="shrink-0">
+            <Link href={production.href} aria-label={`Continuar Production ${production.title}`}>
+              Continuar Production
+            </Link>
+          </Button>
+        </CardActions>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -223,18 +232,19 @@ function WorkItemCard({ item }: { item: RecentWorkItem }) {
           : 'neutral'
 
   return (
-    <article className="rounded-lg border border-border/50 bg-card/25 p-4 transition-colors hover:border-border">
-      <div className="space-y-3">
+    <Card className="border-border/50 bg-card/25 transition-colors hover:border-border">
+      <CardContent className="space-y-3 p-4">
         <div className="flex min-w-0 items-start gap-2">
           <WorkItemIcon type={item.type} />
           <div className="min-w-0 flex-1">
             <Badge variant="outline">{item.label}</Badge>
-            <h4 className="mt-2 line-clamp-2 text-sm font-semibold text-foreground">
+            <CardTitle className="mt-2 line-clamp-2 text-sm">
               {item.title}
-            </h4>
+            </CardTitle>
           </div>
         </div>
         <ContextMetadata
+          dense
           items={[
             { label: 'Project', value: item.projectName, title: item.projectName },
             { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
@@ -242,31 +252,34 @@ function WorkItemCard({ item }: { item: RecentWorkItem }) {
             { label: 'Atualizado', value: formatDate(item.updatedAt) },
           ]}
         />
-        <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-          <Link href={item.href} aria-label={`Abrir ${item.label}: ${item.title}`}>
-            Abrir
-          </Link>
-        </Button>
-      </div>
-    </article>
+        <CardActions>
+          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+            <Link href={item.href} aria-label={`Abrir ${item.label}: ${item.title}`}>
+              Abrir
+            </Link>
+          </Button>
+        </CardActions>
+      </CardContent>
+    </Card>
   )
 }
 
 function ProjectCard({ project }: { project: RecentProjectCard }) {
   return (
-    <article className="rounded-lg border border-border/50 bg-card/25 p-4">
-      <div className="space-y-3">
+    <Card className="border-border/50 bg-card/25">
+      <CardContent className="space-y-3 p-4">
         <div className="space-y-1">
-          <h4 className="line-clamp-2 text-sm font-semibold text-foreground">
+          <CardTitle className="line-clamp-2 text-sm">
             {project.name}
-          </h4>
+          </CardTitle>
           {project.description && (
-            <p className="line-clamp-2 text-xs text-muted-foreground">
+            <CardDescription className="line-clamp-2 text-xs">
               {project.description}
-            </p>
+            </CardDescription>
           )}
         </div>
         <ContextMetadata
+          dense
           items={[
             {
               label: 'Productions',
@@ -276,13 +289,15 @@ function ProjectCard({ project }: { project: RecentProjectCard }) {
             { label: 'Atualizado', value: formatDate(project.updatedAt) },
           ]}
         />
-        <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-          <Link href={project.href} aria-label={`Abrir Project ${project.name}`}>
-            Abrir
-          </Link>
-        </Button>
-      </div>
-    </article>
+        <CardActions>
+          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
+            <Link href={project.href} aria-label={`Abrir Project ${project.name}`}>
+              Abrir
+            </Link>
+          </Button>
+        </CardActions>
+      </CardContent>
+    </Card>
   )
 }
 

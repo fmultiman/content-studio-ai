@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Card,
+  CardActions,
   CardContent,
   CardDescription,
   CardHeader,
@@ -112,10 +113,12 @@ export function ProjectList({
           <Card
             key={project.id}
             className={`group border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-200 hover:border-violet-500/50 hover:shadow-lg ${
-              selectedIds.has(project.id) ? 'border-violet-500 bg-violet-500/10' : ''
+              selectedIds.has(project.id)
+                ? 'border-[var(--card-selected-border)] bg-[var(--card-selected-background)]'
+                : ''
             }`}
           >
-            <CardHeader className="flex flex-row items-start justify-between gap-3 pb-2">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 pb-0">
               <div className="flex min-w-0 items-start gap-3">
                 {selectable && (
                   <Checkbox
@@ -168,8 +171,9 @@ export function ProjectList({
                 </DropdownMenuContent>
               </DropdownMenu>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-0">
               <ContextMetadata
+                dense
                 items={[
                   {
                     label: 'Status',
@@ -189,14 +193,14 @@ export function ProjectList({
                   },
                 ]}
               />
-              <div className="flex flex-wrap gap-2">
+              <CardActions>
                 <Button
                   size="sm"
                   onClick={() => router.push(`/projetos/${project.id}`)}
                 >
                   Abrir
                 </Button>
-              </div>
+              </CardActions>
             </CardContent>
           </Card>
         ))}

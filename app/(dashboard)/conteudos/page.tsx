@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardActions, CardContent, CardTitle } from '@/components/ui/card'
 import { FieldError } from '@/components/ui/field'
 import { StateMessage } from '@/components/ui/state-message'
 import { ContextMetadata } from '@/components/ui/context-metadata'
@@ -288,7 +288,7 @@ function PublicacoesPageContent() {
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 flex-1 space-y-3">
                         <div className="space-y-2">
-                          <span className="block truncate font-medium">{ec.title}</span>
+                          <CardTitle className="line-clamp-1 text-base">{ec.title}</CardTitle>
                           {ec.body && (
                             <p className="line-clamp-2 text-sm text-muted-foreground">
                               {ec.body}
@@ -296,6 +296,7 @@ function PublicacoesPageContent() {
                           )}
                         </div>
                         <ContextMetadata
+                          dense
                           items={[
                             { label: 'Project', value: projects.find((p) => p.id === ec.project_id)?.name || 'Projeto' },
                             { label: 'Production', value: ec.production_id ? productions.find((p) => p.id === ec.production_id)?.title || 'Produção' : 'Sem Production associada' },
@@ -307,15 +308,17 @@ function PublicacoesPageContent() {
                           ]}
                         />
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        Abrir
-                      </Button>
+                      <CardActions className="sm:ml-4 sm:justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => router.push(`/projetos/${ec.project_id}/conteudos/${ec.id}`)}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          Abrir
+                        </Button>
+                      </CardActions>
                     </div>
                   </CardContent>
                 </Card>

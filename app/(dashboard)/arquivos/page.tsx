@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardActions, CardContent, CardMedia, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
@@ -864,7 +864,7 @@ export default function ArquivosPage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {files.map((file) => (
                 <Card key={file.id} className="overflow-hidden border-border/50 bg-card/30 backdrop-blur-sm">
-                  <div
+                  <CardMedia
                     className="relative aspect-video bg-muted"
                     role={file.kind === 'image' ? 'button' : undefined}
                     tabIndex={file.kind === 'image' ? 0 : undefined}
@@ -933,13 +933,16 @@ export default function ArquivosPage() {
                         <KindIcon kind={file.kind} />
                       </div>
                     )}
-                  </div>
+                  </CardMedia>
                   <CardContent className="space-y-3 p-4">
                     <div className="space-y-3">
                       <div>
-                        <p className="line-clamp-1 text-sm font-medium" title={file.name}>{file.name}</p>
+                        <CardTitle className="line-clamp-1 text-sm" title={file.name}>
+                          {file.name}
+                        </CardTitle>
                       </div>
                       <ContextMetadata
+                        dense
                         items={[
                           { label: 'Project', value: file.project_id ? projectNameById.get(file.project_id) || 'Projeto' : 'Sem Project' },
                           { label: 'Pasta', value: file.folder || 'Raiz', title: file.folder || 'Raiz' },
@@ -953,7 +956,7 @@ export default function ArquivosPage() {
                         <Badge variant="outline">{formatFileSize(file.file_size)}</Badge>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <CardActions className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         size="sm"
@@ -976,7 +979,7 @@ export default function ArquivosPage() {
                           Baixar
                         </a>
                       </Button>
-                    </div>
+                    </CardActions>
                   </CardContent>
                 </Card>
               ))}

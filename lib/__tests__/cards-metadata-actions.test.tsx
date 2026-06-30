@@ -111,4 +111,34 @@ describe('UX-H4B3 cards, metadata and actions', () => {
     expect(galleryPage).toContain('PageHeader')
     expect(galleryPage).toContain('ViewModeToggle')
   })
+
+  it('keeps eyebrows optional and avoids repeating the route family in pilot cards', () => {
+    const projectList = readFileSync(join(process.cwd(), 'components/projects/project-list.tsx'), 'utf8')
+    const dashboardHub = readFileSync(join(process.cwd(), 'components/dashboard/continuation-hub.tsx'), 'utf8')
+    const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
+    const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
+
+    expect(projectList).not.toContain('>Project<')
+    expect(dashboardHub).not.toContain('>Continuidade<')
+    expect(imagePage).not.toContain('Rascunho de imagem')
+    expect(videoPage).not.toContain('Rascunho de vídeo')
+  })
+
+  it('keeps list-mode drafts and production work items as individual compact cards', () => {
+    const imagePage = readFileSync(join(process.cwd(), 'app/(dashboard)/imagens/page.tsx'), 'utf8')
+    const videoPage = readFileSync(join(process.cwd(), 'app/(dashboard)/videos/page.tsx'), 'utf8')
+    const productionPage = readFileSync(
+      join(process.cwd(), 'app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx'),
+      'utf8',
+    )
+
+    for (const source of [imagePage, videoPage, productionPage]) {
+      expect(source).toContain('CardActions')
+      expect(source).toContain('ContextMetadata')
+    }
+
+    expect(imagePage).toContain("md:grid-cols-[minmax(0,1fr)_auto]")
+    expect(videoPage).toContain("md:grid-cols-[minmax(0,1fr)_auto]")
+    expect(productionPage).toContain("md:grid-cols-[minmax(0,1fr)_auto]")
+  })
 })

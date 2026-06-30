@@ -28,8 +28,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-1B:** concluido (Token Infrastructure)
 - **DS-1C:** concluido
 - **DS-1D:** concluido
-- **DS-1E:** concluido e pronto para commit
-- **DS-1F em diante:** backlog posterior de refinamento e adocao
+- **DS-1E:** concluido
+- **DS-1F:** concluido
+- **DS-1G em diante:** backlog posterior de consolidacao e adocao
 
 ## Leitura recomendada
 
@@ -90,6 +91,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 19. [DS-1E Controls and Indicators](18-ds1e-controls-indicators.md)
     Refinamento sistemico de controles compartilhados, badges, indicadores, loading e feedback, sem redesign amplo de paginas ou cards de dominio.
 
+20. [DS-1F Card Anatomies](19-ds1f-card-anatomies.md)
+    Taxonomia real de familias de cards, pilotos aprovados, expansao controlada para call sites equivalentes e limites explicitados para DS-1G e DS-1H.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -113,9 +117,9 @@ agora devem ser lidos pelo documento canonico de reconciliacao final e nao pelas
 
 ## Proxima etapa
 
-Com o DS-1E implementado, o proximo checkpoint natural passa a ser:
+Com o DS-1F implementado, o proximo checkpoint natural passa a ser:
 
-- fechar o lote de controles e indicadores em Git e PR;
-- iniciar refinamentos posteriores de familias de cards e estados contextuais em DS-1F e DS-1G;
+- fechar o lote de anatomias de cards em Git e PR;
+- consolidar primitivas realmente adotadas e usos locais remanescentes em DS-1G;
 - tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
 - manter o shell `390px` como tema estrutural separado dos lotes visuais do DS-1.

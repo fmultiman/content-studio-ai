@@ -5,7 +5,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import {
+  Card,
+  CardActions,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -469,38 +476,39 @@ export default function ProjectDetailPage() {
                     key={prod.id}
                     className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                   >
-                    <CardContent className="p-4">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1 space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate font-semibold">{productionDisplay.title}</h3>
-                            <Badge variant="outline" className="shrink-0">
-                              {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
-                            </Badge>
-                          </div>
-                          <p className="line-clamp-2 text-sm text-muted-foreground">
-                            {productionDisplay.intention}
-                          </p>
-                          <ContextMetadata
-                            items={[
-                              {
-                                label: 'Status',
-                                value: <StatusBadge label="Ativa" tone="positive" />,
-                              },
-                              {
-                                label: 'Atualizado',
-                                value: formatDate(prod.updated_at),
-                              },
-                            ]}
-                          />
-                        </div>
+                    <CardHeader className="gap-3 pb-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CardTitle className="truncate text-base">{productionDisplay.title}</CardTitle>
+                        <Badge variant="outline" className="shrink-0">
+                          {PRODUCTION_TYPE_LABELS[prod.type] ?? prod.type}
+                        </Badge>
+                      </div>
+                      <CardDescription className="line-clamp-2">
+                        {productionDisplay.intention}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-0">
+                      <ContextMetadata
+                        dense
+                        items={[
+                          {
+                            label: 'Status',
+                            value: <StatusBadge label="Ativa" tone="positive" />,
+                          },
+                          {
+                            label: 'Atualizado',
+                            value: formatDate(prod.updated_at),
+                          },
+                        ]}
+                      />
+                      <CardActions className="justify-between">
+                        <Button
+                          size="sm"
+                          onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
+                        >
+                          Abrir
+                        </Button>
                         <div className="flex shrink-0 flex-wrap items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => router.push(`/projetos/${projectId}/producoes/${prod.id}`)}
-                          >
-                            Abrir
-                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -528,7 +536,7 @@ export default function ProjectDetailPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                      </div>
+                      </CardActions>
                     </CardContent>
                   </Card>
                   )
