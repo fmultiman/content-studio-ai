@@ -30,7 +30,8 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 - **DS-1D:** concluido
 - **DS-1E:** concluido
 - **DS-1F:** concluido
-- **DS-1G em diante:** backlog posterior de consolidacao e adocao
+- **DS-1G:** consolidado nesta branch de trabalho
+- **DS-1H em diante:** backlog posterior de adocao transversal e hardening
 
 ## Leitura recomendada
 
@@ -94,6 +95,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 20. [DS-1F Card Anatomies](19-ds1f-card-anatomies.md)
     Taxonomia real de familias de cards, pilotos aprovados, expansao controlada para call sites equivalentes e limites explicitados para DS-1G e DS-1H.
 
+21. [DS-1G Proven Primitives](20-ds1g-proven-primitives.md)
+    Consolidacao das primitivas comprovadas, remocao de wrappers UI sem uso, unificacao do sistema de toast e registro do que permanece `LOCAL BY DESIGN`.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -121,5 +125,6 @@ Com o DS-1F implementado, o proximo checkpoint natural passa a ser:
 
 - fechar o lote de anatomias de cards em Git e PR;
 - consolidar primitivas realmente adotadas e usos locais remanescentes em DS-1G;
+- tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
 - tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
 - manter o shell `390px` como tema estrutural separado dos lotes visuais do DS-1.
