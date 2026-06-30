@@ -98,6 +98,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 21. [DS-1G Proven Primitives](20-ds1g-proven-primitives.md)
     Consolidacao das primitivas comprovadas, remocao de wrappers UI sem uso, unificacao do sistema de toast e registro do que permanece `LOCAL BY DESIGN`.
 
+22. [DS-1H-A Adoption and Shell Audit](21-ds1ha-adoption-shell-audit.md)
+    Auditoria transversal de adocao apos DS-1G, separacao entre problemas de pagina e shell, decisao preliminar sobre `Lista/Cards` e recomendacao de piloto para DS-1H-B.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
