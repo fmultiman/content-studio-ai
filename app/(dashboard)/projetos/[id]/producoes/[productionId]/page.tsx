@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card, CardActions, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -49,6 +49,7 @@ import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   InheritedIdentityIndicator,
   InheritedIdentitySummaryCard,
@@ -650,18 +651,31 @@ export default function ProductionDetailPage() {
                   <div className="space-y-2">
                     {imageDrafts.map((draft) => (
                       <Card key={draft.id} className="border-border/50 bg-card/30">
-                        <CardContent className="flex items-center justify-between p-4">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">
+                        <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                          <div className="min-w-0 space-y-3">
+                            <CardTitle className="line-clamp-1 text-sm">
                               {draft.name || draft.user_input.split('\n')[0].slice(0, 60) || 'Rascunho sem título'}
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {draft.image_status === 'approved' ? 'Aprovada' :
-                               draft.image_status === 'generating' ? 'Gerando' : 'Rascunho'} ·{' '}
-                              {new Date(draft.updated_at).toLocaleDateString('pt-BR')}
-                            </p>
+                            </CardTitle>
+                            <ContextMetadata
+                              dense
+                              items={[
+                                {
+                                  label: 'Status',
+                                  value:
+                                    draft.image_status === 'approved'
+                                      ? 'Aprovada'
+                                      : draft.image_status === 'generating'
+                                        ? 'Gerando'
+                                        : 'Rascunho',
+                                },
+                                {
+                                  label: 'Atualizado',
+                                  value: new Date(draft.updated_at).toLocaleDateString('pt-BR'),
+                                },
+                              ]}
+                            />
                           </div>
-                          <div className="flex shrink-0 gap-2 ml-4">
+                          <CardActions className="flex flex-wrap gap-2 md:justify-end">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -688,7 +702,7 @@ export default function ProductionDetailPage() {
                               <Link2Off className="h-3.5 w-3.5" />
                               Desvincular
                             </Button>
-                          </div>
+                          </CardActions>
                         </CardContent>
                       </Card>
                     ))}
@@ -735,15 +749,24 @@ export default function ProductionDetailPage() {
                   <div className="space-y-2">
                     {videoDrafts.map((draft) => (
                       <Card key={draft.id} className="border-border/50 bg-card/30">
-                        <CardContent className="flex items-center justify-between p-4">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">{draft.name || 'Rascunho sem título'}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {draft.scenes?.length ?? 0} cena{(draft.scenes?.length ?? 0) !== 1 ? 's' : ''} ·{' '}
-                              {new Date(draft.updated_at).toLocaleDateString('pt-BR')}
-                            </p>
+                        <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                          <div className="min-w-0 space-y-3">
+                            <CardTitle className="line-clamp-1 text-sm">{draft.name || 'Rascunho sem título'}</CardTitle>
+                            <ContextMetadata
+                              dense
+                              items={[
+                                {
+                                  label: 'Cenas',
+                                  value: `${draft.scenes?.length ?? 0} cena${(draft.scenes?.length ?? 0) !== 1 ? 's' : ''}`,
+                                },
+                                {
+                                  label: 'Atualizado',
+                                  value: new Date(draft.updated_at).toLocaleDateString('pt-BR'),
+                                },
+                              ]}
+                            />
                           </div>
-                          <div className="flex shrink-0 gap-2 ml-4">
+                          <CardActions className="flex flex-wrap gap-2 md:justify-end">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -770,7 +793,7 @@ export default function ProductionDetailPage() {
                               <Link2Off className="h-3.5 w-3.5" />
                               Desvincular
                             </Button>
-                          </div>
+                          </CardActions>
                         </CardContent>
                       </Card>
                     ))}
@@ -836,10 +859,10 @@ export default function ProductionDetailPage() {
                       return (
                         <Card key={ec.id} className="border-border/50 bg-card/30">
                           <CardContent className="p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1">
+                            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                              <div className="min-w-0 space-y-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <p className="truncate font-medium">{ec.title}</p>
+                                  <CardTitle className="line-clamp-1 text-sm">{ec.title}</CardTitle>
                                   <Badge variant={ec.status === 'ready' ? 'default' : 'secondary'} className="shrink-0">
                                     {ec.status === 'ready' ? 'Pronto' : ec.status === 'archived' ? 'Arquivado' : 'Rascunho'}
                                   </Badge>
@@ -849,9 +872,10 @@ export default function ProductionDetailPage() {
                                     </span>
                                   )}
                                 </div>
-                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                  {new Date(ec.updated_at).toLocaleDateString('pt-BR')}
-                                </p>
+                                <ContextMetadata
+                                  dense
+                                  items={[{ label: 'Atualizado', value: new Date(ec.updated_at).toLocaleDateString('pt-BR') }]}
+                                />
                                 {isLoadingCps ? (
                                   <div className="mt-2 flex items-center gap-1.5">
                                     <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -876,17 +900,19 @@ export default function ProductionDetailPage() {
                                   </div>
                                 ) : null}
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="ml-2 shrink-0 gap-1 text-xs"
-                                onClick={() =>
-                                  router.push(`/projetos/${projectId}/conteudos/${ec.id}`)
-                                }
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Abrir
-                              </Button>
+                              <CardActions className="md:justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="shrink-0 gap-1 text-xs"
+                                  onClick={() =>
+                                    router.push(`/projetos/${projectId}/conteudos/${ec.id}`)
+                                  }
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Abrir
+                                </Button>
+                              </CardActions>
                             </div>
                           </CardContent>
                         </Card>

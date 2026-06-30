@@ -94,6 +94,18 @@
   --control-disabled-text: var(--text-disabled);
   --control-readonly-background: var(--surface-subtle);
 
+  --card-background: var(--surface);
+  --card-background-hover: color-mix(in oklch, var(--surface) 88%, var(--canvas));
+  --card-border: var(--border-default);
+  --card-border-hover: var(--border-emphasis);
+  --card-title: var(--text-primary);
+  --card-description: var(--text-secondary);
+  --card-metadata-label: var(--text-muted);
+  --card-metadata-value: var(--text-primary);
+  --card-media-background: var(--surface-subtle);
+  --card-selected-background: var(--surface-selected);
+  --card-selected-border: var(--border-selected);
+
   --indicator-brand: var(--primary);
   --indicator-neutral: color-mix(in oklch, var(--surface) 82%, var(--text-secondary));
   --indicator-success: var(--success);
@@ -310,6 +322,18 @@
   --control-disabled-border: rgb(255 255 255 / 0.055);
   --control-disabled-text: rgb(138 138 155 / 0.52);
   --control-readonly-background: rgb(255 255 255 / 0.04);
+
+  --card-background: color-mix(in srgb, var(--surface) var(--studio-panel-surface-mix), transparent);
+  --card-background-hover: color-mix(in srgb, var(--surface) 84%, rgb(255 255 255 / 0.03));
+  --card-border: var(--border-default);
+  --card-border-hover: rgb(255 255 255 / 0.16);
+  --card-title: var(--text-primary);
+  --card-description: var(--text-secondary);
+  --card-metadata-label: rgb(138 138 155 / 0.86);
+  --card-metadata-value: var(--text-primary);
+  --card-media-background: rgb(255 255 255 / 0.04);
+  --card-selected-background: color-mix(in srgb, var(--primary) 18%, rgb(255 255 255 / 0.04));
+  --card-selected-border: color-mix(in srgb, var(--primary) 42%, rgb(255 255 255 / 0.14));
 
   --indicator-brand: #a78bfa;
   --indicator-neutral: rgb(244 244 248 / 0.72);
@@ -767,6 +791,13 @@
   .studio [data-slot='dialog-title'] {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
+  }
+  .studio [data-slot='card-eyebrow'],
+  .studio [data-slot='context-metadata-label'] {
+    font-family: var(--font-technical);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
   .studio [data-slot='card-description'],
   .studio [data-slot='dialog-description'] {

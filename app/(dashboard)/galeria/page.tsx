@@ -10,7 +10,14 @@ import { PageHeader } from '@/components/layout/page-header'
 import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardActions,
+  CardContent,
+  CardHeader,
+  CardMedia,
+  CardTitle,
+} from '@/components/ui/card'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   Dialog,
@@ -442,13 +449,15 @@ function GalleryOutputCard({
 }) {
   return (
     <Card className="overflow-hidden border-border/50 bg-card/30">
-      <GalleryImageFrame output={output} />
+      <CardMedia className="aspect-square">
+        <GalleryImageFrame output={output} />
+      </CardMedia>
       <CardContent className="space-y-4 p-4">
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="line-clamp-2 text-sm font-medium" title={output.title}>
+            <CardTitle className="line-clamp-2 text-sm" title={output.title}>
               {output.title}
-            </h3>
+            </CardTitle>
             <StatusBadge
               label={output.statusLabel}
               tone={output.status === 'approved' ? 'positive' : output.status === 'generating' ? 'warning' : output.status === 'rejected' ? 'danger' : 'neutral'}
@@ -456,12 +465,12 @@ function GalleryOutputCard({
             />
           </div>
           <ContextMetadata
+            dense
             items={[
               { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
               { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
               { label: 'Atualizado', value: formatDate(output.updatedAt) },
             ]}
-            className="text-xs"
           />
         </div>
 
@@ -470,7 +479,7 @@ function GalleryOutputCard({
             <Eye className="h-4 w-4" />
             Visualizar
           </Button>
-          <div className="flex flex-wrap gap-2">
+          <CardActions>
             {output.sourceHref && (
               <Button
                 type="button"
@@ -507,7 +516,7 @@ function GalleryOutputCard({
                 Baixar
               </Button>
             )}
-          </div>
+          </CardActions>
         </div>
       </CardContent>
     </Card>
@@ -528,20 +537,21 @@ function GalleryOutputListItem({
   return (
     <Card className="border-border/50 bg-card/30">
       <CardContent className="grid gap-3 p-3 md:grid-cols-[72px_minmax(0,1fr)] 2xl:grid-cols-[72px_minmax(180px,1.2fr)_minmax(120px,0.85fr)_minmax(120px,0.85fr)_96px_120px_minmax(250px,auto)] 2xl:items-center">
-        <div className="h-16 w-16 overflow-hidden rounded-md bg-muted md:row-span-3 2xl:row-auto">
+        <CardMedia className="h-16 w-16 rounded-md md:row-span-3 2xl:row-auto">
           <GalleryImageFrame output={output} compact />
-        </div>
+        </CardMedia>
 
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={output.title}>
+          <CardTitle className="truncate text-sm" title={output.title}>
             {output.title}
-          </p>
+          </CardTitle>
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {output.prompt || 'Output visual gerado'}
           </p>
         </div>
 
         <ContextMetadata
+          dense
           items={[
             { label: 'Project', value: output.projectName || 'Project não identificado', title: output.projectName || 'Project não identificado' },
             { label: 'Production', value: output.productionName || 'Sem Production associada', title: output.productionName || 'Sem Production associada' },
@@ -552,7 +562,7 @@ function GalleryOutputListItem({
           itemClassName="min-w-0"
         />
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end">
+        <CardActions className="flex flex-col gap-2 sm:flex-row sm:flex-wrap 2xl:justify-end">
           <Button type="button" size="sm" className="w-full gap-2 sm:min-w-max sm:w-auto" onClick={onPreview}>
             <Eye className="h-4 w-4" />
             Visualizar
@@ -593,7 +603,7 @@ function GalleryOutputListItem({
               Baixar
             </Button>
           )}
-        </div>
+        </CardActions>
       </CardContent>
     </Card>
   )

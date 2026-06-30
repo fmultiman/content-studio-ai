@@ -14,12 +14,14 @@ type ContextMetadataProps = {
   items: ContextMetadataItem[]
   className?: string
   itemClassName?: string
+  dense?: boolean
 }
 
 export function ContextMetadata({
   items,
   className,
   itemClassName,
+  dense = false,
 }: ContextMetadataProps) {
   const visibleItems = items.filter((item) => item.value !== null && item.value !== undefined && item.value !== '')
 
@@ -28,15 +30,35 @@ export function ContextMetadata({
   }
 
   return (
-    <dl className={cn('grid gap-2 text-sm sm:grid-cols-2', className)}>
+    <dl
+      data-slot="context-metadata"
+      className={cn(
+        dense ? 'grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2' : 'grid gap-3 text-sm sm:grid-cols-2',
+        className,
+      )}
+    >
       {visibleItems.map((item) => (
         <div
           key={item.label}
+          data-slot="context-metadata-item"
           className={cn(item.fullWidth && 'sm:col-span-2', itemClassName)}
         >
-          <dt className="text-xs text-muted-foreground">{item.label}</dt>
+          <dt
+            data-slot="context-metadata-label"
+            className={cn(
+              'text-[var(--card-metadata-label)]',
+              dense ? 'text-[11px]' : 'text-xs',
+            )}
+          >
+            {item.label}
+          </dt>
           <dd
-            className={cn('mt-0.5 break-words text-foreground', item.valueClassName)}
+            data-slot="context-metadata-value"
+            className={cn(
+              'mt-0.5 break-words text-[var(--card-metadata-value)]',
+              dense ? 'text-xs' : 'text-sm',
+              item.valueClassName,
+            )}
             title={item.title}
           >
             {item.value}
