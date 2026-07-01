@@ -1,4 +1,4 @@
-import { Sidebar } from '@/components/layout/sidebar'
+import { StudioShell } from '@/components/layout/studio-shell'
 import { ThemePreferenceBootstrap } from '@/components/theme-preference-bootstrap'
 
 export default function DashboardLayout({
@@ -7,12 +7,9 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="studio-shell flex h-screen overflow-hidden bg-transparent">
+    <div className="h-screen overflow-hidden bg-transparent">
       <ThemePreferenceBootstrap />
-      <Sidebar />
-      <main className="studio-main flex flex-1 flex-col overflow-hidden">
-        {children}
-      </main>
+      <StudioShell>{children}</StudioShell>
     </div>
   )
 }
