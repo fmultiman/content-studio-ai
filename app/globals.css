@@ -662,7 +662,6 @@
       var(--atmosphere-primary),
       var(--atmosphere-secondary);
   }
-  .studio .studio-shell,
   .studio .studio-shell-pane {
     position: relative;
     z-index: 2;
@@ -681,9 +680,7 @@
   .studio .studio-main {
     position: relative;
     z-index: 2;
-    background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.01), transparent 24%),
-      transparent;
+    background: transparent;
   }
   .studio [data-slot='card'],
   .studio [data-slot='dialog-content'],

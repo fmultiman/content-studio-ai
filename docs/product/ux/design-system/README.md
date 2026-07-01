@@ -101,6 +101,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 22. [DS-1H-A Adoption and Shell Audit](21-ds1ha-adoption-shell-audit.md)
     Auditoria transversal de adocao apos DS-1G, separacao entre problemas de pagina e shell, decisao preliminar sobre `Lista/Cards` e recomendacao de piloto para DS-1H-B.
 
+23. [DS-1H-B Shell Pilot and Decision](22-ds1hb-shell-pilot.md)
+    Piloto funcional e reversivel do novo shell com top utility bar compacta, rail desktop flutuante/colapsavel, drawer mobile convencional e decisao final para o lote seguinte.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:

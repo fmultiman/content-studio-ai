@@ -6,13 +6,11 @@ export type SidebarNavigationItemId =
   | 'videos'
   | 'gallery'
   | 'files'
-  | 'settings'
 
 export type SidebarNavigationGroupId =
   | 'workspace'
   | 'creation'
   | 'libraries'
-  | 'system'
 
 export interface SidebarNavigationItem {
   id: SidebarNavigationItemId
@@ -52,13 +50,6 @@ export const navigationGroups: SidebarNavigationGroup[] = [
       { id: 'files', label: 'Arquivos', href: '/arquivos' },
     ],
   },
-  {
-    id: 'system',
-    label: 'Sistema',
-    items: [
-      { id: 'settings', label: 'Configurações', href: '/configuracoes' },
-    ],
-  },
 ]
 
 function normalizePathname(pathname: string) {
@@ -78,9 +69,11 @@ export function isNavigationItemActive(
 }
 
 export function getActiveNavigationItem(pathname: string) {
-  return flattenNavigationGroups().find((item) =>
-    isNavigationItemActive(item, pathname),
-  ) ?? null
+  return (
+    flattenNavigationGroups().find((item) =>
+      isNavigationItemActive(item, pathname),
+    ) ?? null
+  )
 }
 
 export function flattenNavigationGroups() {
