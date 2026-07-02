@@ -3,7 +3,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { useStudioIntensity } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
@@ -207,8 +210,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <>
-        <Header title="Configurações" />
+      <DashboardPage>
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="w-full max-w-3xl">
             <StateMessage
@@ -218,15 +220,13 @@ export default function SettingsPage() {
             />
           </div>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
   return (
-    <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-3xl">
+    <DashboardPage>
+      <DashboardPageContent width="3xl">
           <PageHeader
             context="Sistema"
             title="Configurações"
@@ -839,8 +839,7 @@ export default function SettingsPage() {
               </Card>
             </TabsContent>
           </Tabs>
-        </div>
-      </div>
-    </>
+      </DashboardPageContent>
+    </DashboardPage>
   )
 }

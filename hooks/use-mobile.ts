@@ -1,24 +1,31 @@
 import * as React from 'react'
 
-const MOBILE_BREAKPOINT = 768
+import { STUDIO_SHELL_MOBILE_BREAKPOINT } from '@/lib/studio-shell-state'
+
+function subscribeToMobileBreakpoint(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia(
+    `(max-width: ${STUDIO_SHELL_MOBILE_BREAKPOINT}px)`,
+  )
+
+  mediaQuery.addEventListener('change', onStoreChange)
+
+  return () => {
+    mediaQuery.removeEventListener('change', onStoreChange)
+  }
+}
+
+function getMobileBreakpointSnapshot() {
+  return window.innerWidth <= STUDIO_SHELL_MOBILE_BREAKPOINT
+}
+
+function getMobileBreakpointServerSnapshot() {
+  return false
+}
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState(() => {
-    if (typeof window === 'undefined') {
-      return false
-    }
-
-    return window.innerWidth <= MOBILE_BREAKPOINT
-  })
-
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
-    const onChange = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT)
-    }
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
-
-  return isMobile
+  return React.useSyncExternalStore(
+    subscribeToMobileBreakpoint,
+    getMobileBreakpointSnapshot,
+    getMobileBreakpointServerSnapshot,
+  )
 }

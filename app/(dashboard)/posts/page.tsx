@@ -6,7 +6,11 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageBar,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -585,10 +589,10 @@ function PostsPageContent() {
   }
 
   return (
-    <>
-      <Header title="Arquivo legado de Posts" />
+    <DashboardPage>
       {productionId && (
-        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+        <DashboardPageBar>
+          <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -610,10 +614,10 @@ function PostsPageContent() {
               · {productionTitle}
             </span>
           )}
-        </div>
+          </div>
+        </DashboardPageBar>
       )}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-7xl space-y-6">
+      <DashboardPageContent width="7xl" className="space-y-6">
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
             <span className="mt-0.5 shrink-0">⚠</span>
             <span>
@@ -1019,9 +1023,8 @@ function PostsPageContent() {
               </CardContent>
             </Card>
           </div>
-        </div>
-      </div>
-    </>
+      </DashboardPageContent>
+    </DashboardPage>
   )
 }
 

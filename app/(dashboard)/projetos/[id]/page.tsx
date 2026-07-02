@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -259,19 +262,17 @@ export default function ProjectDetailPage() {
 
   if (isLoading) {
     return (
-      <>
-        <Header title="Carregando..." />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
   if (error || !project) {
     return (
-      <>
-        <Header title="Erro" />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-muted-foreground">{error || 'Projeto não encontrado'}</p>
           <Button variant="outline" onClick={() => router.push('/projetos')}>
@@ -279,7 +280,7 @@ export default function ProjectDetailPage() {
             Voltar para Projetos
           </Button>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
@@ -302,9 +303,8 @@ export default function ProjectDetailPage() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-5xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="5xl" className="space-y-6">
           {/* Back Button */}
           <Button variant="ghost" onClick={() => router.push('/projetos')} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -544,8 +544,8 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       {/* Project Identity Form Modal */}
       <ProjectIdentityForm

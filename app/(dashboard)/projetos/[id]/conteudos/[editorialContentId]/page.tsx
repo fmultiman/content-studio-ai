@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -496,22 +499,20 @@ export default function EditorialContentDetailPage() {
 
   if (isLoading) {
     return (
-      <>
-        <Header title="Carregando conteúdo..." />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             Carregando conteúdo editorial...
           </p>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
   if (error || !ec) {
     return (
-      <>
-        <Header title="Erro" />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-muted-foreground">{error || 'Conteúdo editorial não encontrado'}</p>
           <div className="flex gap-2">
@@ -524,7 +525,7 @@ export default function EditorialContentDetailPage() {
             </Button>
           </div>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
@@ -559,9 +560,8 @@ export default function EditorialContentDetailPage() {
 
   return (
     <>
-      <Header title={ec.title} />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="4xl" className="space-y-6">
 
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -847,8 +847,8 @@ export default function EditorialContentDetailPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       {/* EC Delete Confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

@@ -2,7 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
@@ -161,9 +164,8 @@ function PublicacoesPageContent() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-5xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="5xl" className="space-y-6">
           <PageHeader
             context="Workspace"
             title="Conteúdos"
@@ -326,8 +328,8 @@ function PublicacoesPageContent() {
             </div>
           )}
 
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       <QuickFlowDialog
         open={showQuickFlowDialog}

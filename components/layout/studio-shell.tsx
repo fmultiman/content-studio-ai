@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
   type RefObject,
@@ -17,19 +18,13 @@ import {
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import {
   Bell,
-  FileText,
-  FolderKanban,
-  Image,
-  Images,
-  LayoutDashboard,
-  PanelLeft,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
   Sparkles,
-  UploadCloud,
-  Video,
   LogOut,
+  X,
 } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -64,18 +59,24 @@ import {
   isNavigationItemActive,
   navigationGroups,
   type SidebarNavigationItem,
-  type SidebarNavigationItemId,
 } from '@/lib/sidebar-navigation'
 import {
-  getDefaultStudioShellDesktopPreference,
+  canStudioShellExpandImmediately,
+  getStudioShellRenderedDesktopMode,
   getLastVisibleStudioShellMode,
-  getStudioShellEffectiveMode,
   isStudioShellVisibleMode,
+  resolveStudioShellState,
   sanitizeStudioShellDesktopPreference,
   STUDIO_SHELL_COMPACT_WIDTH,
   STUDIO_SHELL_EXPANDED_WIDTH,
   STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
   STUDIO_SHELL_MOBILE_BREAKPOINT,
+  STUDIO_SHELL_MOBILE_DRAWER_VIEWPORT_WIDTH,
+  STUDIO_SHELL_MOBILE_DRAWER_WIDTH,
+  STUDIO_SHELL_PAGE_PADDING,
+  STUDIO_SHELL_RAIL_MAX_HEIGHT,
+  STUDIO_SHELL_RAIL_RADIUS,
+  STUDIO_SHELL_RAIL_TOP_OFFSET,
   STUDIO_SHELL_STORAGE_KEY,
   STUDIO_SHELL_TOP_BAR_HEIGHT,
   STUDIO_SHELL_TRANSITION_MS,
@@ -89,20 +90,100 @@ import { cn } from '@/lib/utils'
 
 const MOBILE_DRAWER_EFFECTIVE_MODE = 'mobile-drawer' as const
 
-const navigationIcons: Record<SidebarNavigationItemId, typeof LayoutDashboard> = {
-  dashboard: LayoutDashboard,
-  projects: FolderKanban,
-  contents: FileText,
-  images: Image,
-  videos: Video,
-  gallery: Images,
-  files: UploadCloud,
+type StudioShellStoredState = {
+  desktopPreference: StudioShellDesktopPreference | null
+  lastVisibleMode: StudioShellVisibleMode | null
+}
+
+const EMPTY_STUDIO_SHELL_STORED_STATE_SNAPSHOT = ''
+
+function subscribeToWindowResize(onStoreChange: () => void) {
+  window.addEventListener('resize', onStoreChange)
+
+  return () => {
+    window.removeEventListener('resize', onStoreChange)
+  }
+}
+
+function getViewportWidthSnapshot() {
+  return window.innerWidth
+}
+
+function getViewportWidthServerSnapshot() {
+  return STUDIO_SHELL_WIDE_BREAKPOINT
+}
+
+function subscribeToStudioShellStorage(_onStoreChange: () => void) {
+  return () => {}
+}
+
+function getStoredStudioShellStateSnapshot() {
+  const storedPreference = sanitizeStudioShellDesktopPreference(
+    window.localStorage.getItem(STUDIO_SHELL_STORAGE_KEY),
+  )
+  const storedLastVisibleMode = window.localStorage.getItem(
+    STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
+  )
+
+  return JSON.stringify({
+    desktopPreference: storedPreference,
+    lastVisibleMode: isStudioShellVisibleMode(storedLastVisibleMode)
+      ? storedLastVisibleMode
+      : null,
+  } satisfies StudioShellStoredState)
+}
+
+function getStoredStudioShellStateServerSnapshot() {
+  return EMPTY_STUDIO_SHELL_STORED_STATE_SNAPSHOT
+}
+
+function subscribeToClientHydration(_onStoreChange: () => void) {
+  return () => {}
+}
+
+function getClientHydrationSnapshot() {
+  return true
+}
+
+function getClientHydrationServerSnapshot() {
+  return false
+}
+
+function parseStoredStudioShellStateSnapshot(
+  snapshot: string,
+): StudioShellStoredState {
+  if (!snapshot) {
+    return {
+      desktopPreference: null,
+      lastVisibleMode: null,
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as Partial<StudioShellStoredState>
+
+    return {
+      desktopPreference: sanitizeStudioShellDesktopPreference(
+        parsed.desktopPreference,
+      ),
+      lastVisibleMode: isStudioShellVisibleMode(parsed.lastVisibleMode)
+        ? parsed.lastVisibleMode
+        : null,
+    }
+  } catch {
+    return {
+      desktopPreference: null,
+      lastVisibleMode: null,
+    }
+  }
 }
 
 type StudioShellContextValue = {
   desktopPreference: StudioShellDesktopPreference
   effectiveMode: StudioShellEffectiveMode
   lastVisibleMode: StudioShellVisibleMode
+  renderedDesktopMode: StudioShellVisibleMode | null
+  canExpandImmediately: boolean
   isMobileViewport: boolean
   mobileDrawerOpen: boolean
   setMobileDrawerOpen: (open: boolean) => void
@@ -214,7 +295,11 @@ export function StudioShellHeaderTrigger() {
           onClick={toggleFromHeader}
         >
           {effectiveMode === MOBILE_DRAWER_EFFECTIVE_MODE ? (
-            <PanelLeft className="h-4 w-4" />
+            mobileDrawerOpen ? (
+              <X className="h-4 w-4" />
+            ) : (
+              <Menu className="h-4 w-4" />
+            )
           ) : effectiveMode === 'hidden' ? (
             <PanelLeftOpen className="h-4 w-4" />
           ) : (
@@ -374,7 +459,13 @@ function RailControlButton({
 }
 
 function StudioShellDesktopControls() {
-  const { effectiveMode, lastVisibleMode, setCompact, setExpanded } = useStudioShell()
+  const {
+    canExpandImmediately,
+    effectiveMode,
+    lastVisibleMode,
+    setCompact,
+    setExpanded,
+  } = useStudioShell()
 
   if (effectiveMode === MOBILE_DRAWER_EFFECTIVE_MODE) {
     return null
@@ -383,6 +474,10 @@ function StudioShellDesktopControls() {
   const isCompact =
     effectiveMode === 'compact' ||
     (effectiveMode === 'hidden' && lastVisibleMode === 'compact')
+
+  if (isCompact && !canExpandImmediately) {
+    return null
+  }
 
   return (
     <div className="flex items-center justify-center">
@@ -413,7 +508,7 @@ function StudioShellNavLink({
 }) {
   const pathname = usePathname()
   const { closeMobileDrawerForNavigation, isMobileViewport } = useStudioShell()
-  const Icon = navigationIcons[item.id]
+  const Icon = item.icon
   const isActive = isNavigationItemActive(item, pathname)
 
   return (
@@ -458,10 +553,8 @@ function StudioShellNavLink({
 }
 
 function StudioShellRail() {
-  const { effectiveMode, isMobileViewport, lastVisibleMode } = useStudioShell()
-  const compact =
-    effectiveMode === 'compact' ||
-    (effectiveMode === 'hidden' && lastVisibleMode === 'compact')
+  const { effectiveMode, isMobileViewport, renderedDesktopMode } = useStudioShell()
+  const compact = renderedDesktopMode === 'compact'
 
   if (isMobileViewport) {
     return (
@@ -469,7 +562,12 @@ function StudioShellRail() {
         side="left"
         variant="sidebar"
         collapsible="offcanvas"
-        className="z-50 !w-[min(11.75rem,56vw)] !max-w-none !gap-0 !border-r !border-border-subtle/80 !bg-surface-elevated !p-0 !text-foreground !shadow-elevation-high [backdrop-filter:blur(var(--studio-glass-blur))]"
+        className="z-50 !max-w-none !gap-0 !border-r !border-border-subtle/80 !bg-surface-elevated !p-0 !text-foreground !shadow-elevation-high [backdrop-filter:blur(var(--studio-glass-blur))]"
+        style={
+          {
+            width: `min(${STUDIO_SHELL_MOBILE_DRAWER_WIDTH}, ${STUDIO_SHELL_MOBILE_DRAWER_VIEWPORT_WIDTH})`,
+          } as CSSProperties
+        }
         aria-label="NavegaÃ§Ã£o principal"
       >
         <div
@@ -515,15 +613,21 @@ function StudioShellRail() {
       side="left"
       variant="sidebar"
       collapsible={effectiveMode === 'hidden' ? 'offcanvas' : 'icon'}
-      className="z-30 border-none bg-transparent px-3 pb-3 pt-[3.75rem] shadow-none motion-reduce:transition-none [&>[data-sidebar=sidebar]]:rounded-none [&>[data-sidebar=sidebar]]:border-0 [&>[data-sidebar=sidebar]]:bg-transparent [&>[data-sidebar=sidebar]]:shadow-none [&[data-slot=sidebar-container]]:bg-transparent [&[data-slot=sidebar-container]]:border-0 [&[data-slot=sidebar-container]]:shadow-none [&[data-slot=sidebar-container]]:outline-none [&[data-slot=sidebar-container]]:before:hidden [&[data-slot=sidebar-container]]:after:hidden"
+      className="z-30 border-none bg-transparent px-3 pb-3 shadow-none motion-reduce:transition-none [&>[data-sidebar=sidebar]]:rounded-none [&>[data-sidebar=sidebar]]:border-0 [&>[data-sidebar=sidebar]]:bg-transparent [&>[data-sidebar=sidebar]]:shadow-none [&[data-slot=sidebar-container]]:bg-transparent [&[data-slot=sidebar-container]]:border-0 [&[data-slot=sidebar-container]]:shadow-none [&[data-slot=sidebar-container]]:outline-none [&[data-slot=sidebar-container]]:before:hidden [&[data-slot=sidebar-container]]:after:hidden"
+      style={{ paddingTop: STUDIO_SHELL_RAIL_TOP_OFFSET }}
       aria-label="Navegação principal"
     >
       <div
         id="studio-shell-navigation"
         className={cn(
-          'flex max-h-[calc(100svh-4.5rem)] self-start flex-col overflow-hidden rounded-[1.25rem] border border-border-subtle/80 bg-surface-translucent shadow-[0_10px_24px_rgb(2_6_23_/_0.16)] [backdrop-filter:blur(var(--studio-glass-blur))] dark:shadow-[0_12px_28px_rgb(2_6_23_/_0.24)]',
+          'flex self-start flex-col overflow-hidden border border-border-subtle/80 bg-surface-translucent [backdrop-filter:blur(var(--studio-glass-blur))]',
           compact && 'mt-6',
         )}
+        style={{
+          borderRadius: STUDIO_SHELL_RAIL_RADIUS,
+          boxShadow: 'var(--shadow-elevation-low)',
+          maxHeight: STUDIO_SHELL_RAIL_MAX_HEIGHT,
+        }}
       >
         <SidebarHeader
           className="items-center border-b border-border-subtle/70 px-2 py-1.5"
@@ -571,61 +675,57 @@ export function StudioShell({ children }: { children: ReactNode }) {
   const pendingTriggerFocusRestoreRef = useRef(false)
   const pendingTriggerFocusAfterPathChangeRef = useRef(false)
   const pathnameAtDrawerCloseRef = useRef<string | null>(null)
-  const [viewportWidth, setViewportWidth] = useState(STUDIO_SHELL_WIDE_BREAKPOINT)
-  const [desktopPreference, setDesktopPreference] =
-    useState<StudioShellDesktopPreference>('expanded')
-  const [lastVisibleMode, setLastVisibleMode] =
-    useState<StudioShellVisibleMode>('expanded')
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
-  const [hasExplicitPreference, setHasExplicitPreference] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const mobileDrawerOpenRef = useRef(mobileDrawerOpen)
+  const [desktopPreferenceOverride, setDesktopPreferenceOverride] =
+    useState<StudioShellDesktopPreference | null>(null)
+  const [lastVisibleModeOverride, setLastVisibleModeOverride] =
+    useState<StudioShellVisibleMode | null>(null)
+  const [hiddenVisualMode, setHiddenVisualMode] =
+    useState<StudioShellVisibleMode | null>(null)
+  const viewportWidth = useSyncExternalStore(
+    subscribeToWindowResize,
+    getViewportWidthSnapshot,
+    getViewportWidthServerSnapshot,
+  )
+  const storedShellStateSnapshot = useSyncExternalStore(
+    subscribeToStudioShellStorage,
+    getStoredStudioShellStateSnapshot,
+    getStoredStudioShellStateServerSnapshot,
+  )
+  const storedShellState = useMemo(
+    () => parseStoredStudioShellStateSnapshot(storedShellStateSnapshot),
+    [storedShellStateSnapshot],
+  )
+  const isInitialized = useSyncExternalStore(
+    subscribeToClientHydration,
+    getClientHydrationSnapshot,
+    getClientHydrationServerSnapshot,
+  )
+  const {
+    desktopPreference,
+    effectiveMode,
+    lastVisibleMode,
+  } = resolveStudioShellState({
+    viewportWidth,
+    storedPreference: storedShellState.desktopPreference,
+    storedLastVisibleMode: storedShellState.lastVisibleMode,
+    desktopPreferenceOverride,
+    lastVisibleModeOverride,
+  })
+  const canExpandImmediately = canStudioShellExpandImmediately(viewportWidth)
+  const renderedDesktopMode = getStudioShellRenderedDesktopMode({
+    effectiveMode,
+    lastVisibleMode,
+    hiddenVisualMode,
+  })
 
   useEffect(() => {
-    const updateViewportWidth = () => {
-      const nextViewportWidth = window.innerWidth
-      setViewportWidth(nextViewportWidth)
-
-      if (!hasExplicitPreference) {
-        const nextDefaultPreference =
-          getDefaultStudioShellDesktopPreference(nextViewportWidth)
-        setDesktopPreference(nextDefaultPreference)
-        setLastVisibleMode((currentLastVisibleMode) =>
-          getLastVisibleStudioShellMode(nextDefaultPreference, currentLastVisibleMode),
-        )
-      }
-    }
-
-    const storedPreference = sanitizeStudioShellDesktopPreference(
-      window.localStorage.getItem(STUDIO_SHELL_STORAGE_KEY),
-    )
-    const storedLastVisibleMode = window.localStorage.getItem(
-      STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
-    )
-    const nextViewportWidth = window.innerWidth
-    const nextDefaultPreference =
-      getDefaultStudioShellDesktopPreference(nextViewportWidth)
-    const nextDesktopPreference = storedPreference ?? nextDefaultPreference
-    const nextLastVisibleMode = isStudioShellVisibleMode(storedLastVisibleMode)
-      ? storedLastVisibleMode
-      : nextDesktopPreference === 'hidden'
-        ? 'expanded'
-        : nextDesktopPreference
-
-    setViewportWidth(nextViewportWidth)
-    setDesktopPreference(nextDesktopPreference)
-    setLastVisibleMode(nextLastVisibleMode)
-    setHasExplicitPreference(Boolean(storedPreference))
-    setIsInitialized(true)
-
-    window.addEventListener('resize', updateViewportWidth)
-
-    return () => {
-      window.removeEventListener('resize', updateViewportWidth)
-    }
-  }, [hasExplicitPreference])
-
-  useEffect(() => {
-    if (!isInitialized || !hasExplicitPreference) {
+    if (
+      !isInitialized ||
+      desktopPreferenceOverride === null ||
+      lastVisibleModeOverride === null
+    ) {
       return
     }
 
@@ -634,7 +734,17 @@ export function StudioShell({ children }: { children: ReactNode }) {
       STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
       lastVisibleMode,
     )
-  }, [desktopPreference, hasExplicitPreference, isInitialized, lastVisibleMode])
+  }, [
+    desktopPreference,
+    desktopPreferenceOverride,
+    isInitialized,
+    lastVisibleMode,
+    lastVisibleModeOverride,
+  ])
+
+  useEffect(() => {
+    mobileDrawerOpenRef.current = mobileDrawerOpen
+  }, [mobileDrawerOpen])
 
   useEffect(() => {
     if (!mobileDrawerOpen && pendingTriggerFocusRestoreRef.current) {
@@ -655,29 +765,43 @@ export function StudioShell({ children }: { children: ReactNode }) {
   }, [mobileDrawerOpen, pathname])
 
   useEffect(() => {
-    if (!isMobileViewport && mobileDrawerOpen) {
-      setMobileDrawerOpen(false)
-    }
-  }, [isMobileViewport, mobileDrawerOpen])
+    const mobileBreakpointMediaQuery = window.matchMedia(
+      `(max-width: ${STUDIO_SHELL_MOBILE_BREAKPOINT}px)`,
+    )
 
-  const effectiveMode = getStudioShellEffectiveMode(desktopPreference, viewportWidth)
+    const handleDesktopTransition = (event: MediaQueryListEvent) => {
+      if (!event.matches && mobileDrawerOpenRef.current) {
+        setMobileDrawerOpen(false)
+      }
+    }
+
+    mobileBreakpointMediaQuery.addEventListener('change', handleDesktopTransition)
+
+    return () => {
+      mobileBreakpointMediaQuery.removeEventListener(
+        'change',
+        handleDesktopTransition,
+      )
+    }
+  }, [])
+
   const hiddenDesktopWidth =
-    effectiveMode === 'hidden' && lastVisibleMode === 'compact'
+    renderedDesktopMode === 'compact'
       ? `calc(${STUDIO_SHELL_COMPACT_WIDTH} + 0.75rem)`
       : STUDIO_SHELL_EXPANDED_WIDTH
 
   const commitDesktopPreference = useCallback(
     (nextPreference: StudioShellDesktopPreference) => {
-      setDesktopPreference(nextPreference)
-      setLastVisibleMode((currentLastVisibleMode) =>
-        getLastVisibleStudioShellMode(nextPreference, currentLastVisibleMode),
+      setDesktopPreferenceOverride(nextPreference)
+      setLastVisibleModeOverride(
+        getLastVisibleStudioShellMode(nextPreference, lastVisibleMode),
       )
-      setHasExplicitPreference(true)
     },
-    [],
+    [lastVisibleMode],
   )
 
   const restoreLastVisibleMode = useCallback(() => {
+    setHiddenVisualMode(null)
     commitDesktopPreference(lastVisibleMode)
   }, [commitDesktopPreference, lastVisibleMode])
 
@@ -719,16 +843,21 @@ export function StudioShell({ children }: { children: ReactNode }) {
   ])
 
   const setExpanded = useCallback(() => {
+    setHiddenVisualMode(null)
     commitDesktopPreference('expanded')
   }, [commitDesktopPreference])
 
   const setCompact = useCallback(() => {
+    setHiddenVisualMode(null)
     commitDesktopPreference('compact')
   }, [commitDesktopPreference])
 
   const setHidden = useCallback(() => {
+    setHiddenVisualMode(
+      effectiveMode === 'expanded' ? 'expanded' : 'compact',
+    )
     commitDesktopPreference('hidden')
-  }, [commitDesktopPreference])
+  }, [commitDesktopPreference, effectiveMode])
 
   const toggleFromHeader = useCallback(() => {
     if (isMobileViewport) {
@@ -751,6 +880,8 @@ export function StudioShell({ children }: { children: ReactNode }) {
       desktopPreference,
       effectiveMode,
       lastVisibleMode,
+      renderedDesktopMode,
+      canExpandImmediately,
       isMobileViewport,
       mobileDrawerOpen,
       setMobileDrawerOpen: handleMobileDrawerOpenChange,
@@ -765,12 +896,14 @@ export function StudioShell({ children }: { children: ReactNode }) {
     }),
     [
       closeMobileDrawerForNavigation,
+      canExpandImmediately,
       desktopPreference,
       effectiveMode,
       handleMobileDrawerOpenChange,
       isMobileViewport,
       lastVisibleMode,
       mobileDrawerOpen,
+      renderedDesktopMode,
       restoreLastVisibleMode,
       setCompact,
       setExpanded,
@@ -805,14 +938,16 @@ export function StudioShell({ children }: { children: ReactNode }) {
           data-shell-desktop-preference={desktopPreference}
           data-shell-effective-mode={effectiveMode}
           data-shell-last-visible-mode={lastVisibleMode}
+          data-shell-rendered-desktop-mode={renderedDesktopMode ?? ''}
           data-shell-initialized={isInitialized ? 'true' : 'false'}
         >
           <GlobalUtilityBar />
           <StudioShellRail />
           <main
-            className="studio-main flex min-w-0 flex-1 flex-col overflow-hidden pt-[var(--studio-shell-top-bar-height)] motion-reduce:transition-none"
+            className="studio-main flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pt-[var(--studio-shell-top-bar-height)] motion-reduce:transition-none"
             data-shell-main
             style={{
+              '--studio-shell-page-padding': STUDIO_SHELL_PAGE_PADDING,
               '--studio-shell-top-bar-height': STUDIO_SHELL_TOP_BAR_HEIGHT,
               transitionDuration: `${STUDIO_SHELL_TRANSITION_MS}ms`,
             } as CSSProperties}

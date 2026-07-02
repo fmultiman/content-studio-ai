@@ -3,7 +3,10 @@
 import { useEffect, useState, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { ProjectList } from '@/components/projects/project-list'
 import { ProjectForm } from '@/components/projects/project-form'
@@ -149,9 +152,8 @@ function ProjectsContent() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-7xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="7xl" className="space-y-6">
           <PageHeader
             context="Workspace"
             title="Projetos"
@@ -275,8 +277,8 @@ function ProjectsContent() {
               onSelectProject={handleSelectProject}
             />
           )}
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       <ProjectForm open={showForm} onOpenChange={setShowForm} onSuccess={fetchProjects} />
 
@@ -309,13 +311,12 @@ function ProjectsContent() {
 export default function ProjectsPage() {
   return (
       <Suspense fallback={
-        <>
-          <Header />
+        <DashboardPage className="items-center justify-center">
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Carregando projetos...</p>
-        </div>
-      </>
+          </div>
+        </DashboardPage>
     }>
       <ProjectsContent />
     </Suspense>

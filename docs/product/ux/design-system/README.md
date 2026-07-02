@@ -104,6 +104,9 @@ Este diretorio documenta o estado discovery do Design System V1 do Content Agent
 23. [DS-1H-B Shell Pilot and Decision](22-ds1hb-shell-pilot.md)
     Piloto funcional e reversivel do novo shell com top utility bar compacta, rail desktop flutuante/colapsavel, drawer mobile convencional e decisao final para o lote seguinte.
 
+24. [DS-1H-C Shell Foundation and Responsive Hardening](23-ds1hc-shell-foundation.md)
+    Consolidacao do shell aprovado como infraestrutura oficial do dashboard, com remocao do shell legado, centralizacao de medidas e breakpoints, contrato unico de scroll/mobile e smoke transversal das rotas principais.
+
 ## Fonte de verdade
 
 Na reconciliacao pos-UX-H4, a ordem de evidencia passa a ser:
@@ -132,5 +135,5 @@ Com o DS-1F implementado, o proximo checkpoint natural passa a ser:
 - fechar o lote de anatomias de cards em Git e PR;
 - consolidar primitivas realmente adotadas e usos locais remanescentes em DS-1G;
 - tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
-- tratar adocao transversal, listas Lista/Cards e hardening responsivo em DS-1H;
+- consolidar a fundacao oficial do shell e o hardening responsivo em DS-1H-C;
 - manter o shell `390px` como tema estrutural separado dos lotes visuais do DS-1.
