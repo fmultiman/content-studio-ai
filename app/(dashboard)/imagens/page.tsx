@@ -3,7 +3,11 @@
 import { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageBar,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
@@ -1604,10 +1608,10 @@ function ImagesPageContent() {
   )
 
   return (
-    <>
-      <Header title={productionId ? 'Geração de Imagens' : undefined} />
+    <DashboardPage>
       {productionId && (
-        <div className="flex items-center gap-3 border-b border-border/50 bg-card/30 px-6 py-2">
+        <DashboardPageBar>
+          <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -1629,10 +1633,10 @@ function ImagesPageContent() {
               · {productionTitle}
             </span>
           )}
-        </div>
+          </div>
+        </DashboardPageBar>
       )}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+      <DashboardPageContent width="4xl" className="space-y-6">
           {!productionId && (
             <PageHeader
               context="Criação"
@@ -1821,9 +1825,8 @@ function ImagesPageContent() {
               )}
             </>
           )}
-        </div>
-      </div>
-    </>
+      </DashboardPageContent>
+    </DashboardPage>
   )
 }
 

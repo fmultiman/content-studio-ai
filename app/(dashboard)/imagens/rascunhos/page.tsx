@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -104,20 +107,17 @@ export default function ImageDraftsPage() {
 
   if (isLoading) {
     return (
-      <>
-        <Header title="Rascunhos de Imagens" />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
   return (
-    <>
-      <Header title="Rascunhos de Imagens" />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-6">
+    <DashboardPage>
+      <DashboardPageContent width="4xl" className="space-y-6">
           {/* Back Button */}
           <Button
             variant="ghost"
@@ -208,8 +208,7 @@ export default function ImageDraftsPage() {
               ))}
             </div>
           )}
-        </div>
-      </div>
-    </>
+      </DashboardPageContent>
+    </DashboardPage>
   )
 }

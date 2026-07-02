@@ -1,3 +1,14 @@
+import {
+  FileText,
+  FolderKanban,
+  Image,
+  Images,
+  LayoutDashboard,
+  UploadCloud,
+  Video,
+  type LucideIcon,
+} from 'lucide-react'
+
 export type SidebarNavigationItemId =
   | 'dashboard'
   | 'projects'
@@ -14,6 +25,7 @@ export type SidebarNavigationGroupId =
 
 export interface SidebarNavigationItem {
   id: SidebarNavigationItemId
+  icon: LucideIcon
   label: string
   href: string
 }
@@ -29,25 +41,40 @@ export const navigationGroups: SidebarNavigationGroup[] = [
     id: 'workspace',
     label: 'Workspace',
     items: [
-      { id: 'dashboard', label: 'Dashboard', href: '/dashboard' },
-      { id: 'projects', label: 'Projetos', href: '/projetos' },
-      { id: 'contents', label: 'Conteúdos', href: '/conteudos' },
+      {
+        id: 'dashboard',
+        icon: LayoutDashboard,
+        label: 'Dashboard',
+        href: '/dashboard',
+      },
+      {
+        id: 'projects',
+        icon: FolderKanban,
+        label: 'Projetos',
+        href: '/projetos',
+      },
+      {
+        id: 'contents',
+        icon: FileText,
+        label: 'Conteúdos',
+        href: '/conteudos',
+      },
     ],
   },
   {
     id: 'creation',
     label: 'Criação',
     items: [
-      { id: 'images', label: 'Imagens', href: '/imagens' },
-      { id: 'videos', label: 'Vídeos', href: '/videos' },
+      { id: 'images', icon: Image, label: 'Imagens', href: '/imagens' },
+      { id: 'videos', icon: Video, label: 'Vídeos', href: '/videos' },
     ],
   },
   {
     id: 'libraries',
     label: 'Bibliotecas',
     items: [
-      { id: 'gallery', label: 'Galeria', href: '/galeria' },
-      { id: 'files', label: 'Arquivos', href: '/arquivos' },
+      { id: 'gallery', icon: Images, label: 'Galeria', href: '/galeria' },
+      { id: 'files', icon: UploadCloud, label: 'Arquivos', href: '/arquivos' },
     ],
   },
 ]

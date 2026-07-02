@@ -1,6 +1,9 @@
 import { DashboardContinuationHub } from '@/components/dashboard/continuation-hub'
 import { StatsCards } from '@/components/dashboard/stats-cards'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage as DashboardShellPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   buildRecentProductions,
@@ -131,10 +134,8 @@ export default async function DashboardPage() {
   ].some((result) => result.error)
 
   return (
-    <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-7xl space-y-8">
+    <DashboardShellPage>
+      <DashboardPageContent width="7xl" className="space-y-8">
           <PageHeader
             context="Workspace"
             title="Dashboard"
@@ -171,8 +172,7 @@ export default async function DashboardPage() {
               editorialContentsCount={editorialContentsCount}
             />
           </section>
-        </div>
-      </div>
-    </>
+      </DashboardPageContent>
+    </DashboardShellPage>
   )
 }

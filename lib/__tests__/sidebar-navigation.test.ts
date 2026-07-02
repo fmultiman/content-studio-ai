@@ -26,6 +26,12 @@ describe('DS-1H-B shell navigation source', () => {
     ])
   })
 
+  it('keeps icons in the canonical navigation source', () => {
+    for (const item of flattenNavigationGroups()) {
+      expect(item.icon).toBeTruthy()
+    }
+  })
+
   it('does not keep Configurações as a rail navigation destination', () => {
     expect(flattenNavigationGroups().map((item) => item.label)).not.toContain(
       'Configurações',

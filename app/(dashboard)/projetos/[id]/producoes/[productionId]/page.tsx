@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardActions, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -320,22 +323,20 @@ export default function ProductionDetailPage() {
 
   if (isLoading) {
     return (
-      <>
-        <Header title="Carregando Production..." />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             {productionWorkspaceLoadingMessage('page')}
           </p>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
   if (error || !production || !project) {
     return (
-      <>
-        <Header title="Erro" />
+      <DashboardPage className="items-center justify-center">
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-muted-foreground">{error || 'Produção não encontrada'}</p>
           <Button variant="outline" onClick={() => router.push(`/projetos/${projectId}`)}>
@@ -343,7 +344,7 @@ export default function ProductionDetailPage() {
             Voltar para o Projeto
           </Button>
         </div>
-      </>
+      </DashboardPage>
     )
   }
 
@@ -371,9 +372,8 @@ export default function ProductionDetailPage() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-5xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="5xl" className="space-y-6">
 
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -924,8 +924,8 @@ export default function ProductionDetailPage() {
             </TabsContent>
 
           </Tabs>
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       <QuickFlowDialog
         open={showQuickFlowDialog}

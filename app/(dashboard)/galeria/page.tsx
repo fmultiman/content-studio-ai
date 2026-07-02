@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Download, ExternalLink, Eye, ImageIcon, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
 import { Badge } from '@/components/ui/badge'
@@ -223,9 +226,8 @@ export default function GalleryPage() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-7xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="7xl" className="space-y-6">
           <PageHeader
             context="Biblioteca"
             title="Galeria"
@@ -410,8 +412,8 @@ export default function GalleryPage() {
               )}
             </section>
           )}
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       <GalleryPreviewDialog
         output={selectedOutput}

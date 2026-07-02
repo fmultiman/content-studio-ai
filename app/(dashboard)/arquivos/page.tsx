@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Header } from '@/components/layout/header'
+import {
+  DashboardPage,
+  DashboardPageContent,
+} from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
@@ -570,9 +573,8 @@ export default function ArquivosPage() {
 
   return (
     <>
-      <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-7xl space-y-6">
+      <DashboardPage>
+        <DashboardPageContent width="7xl" className="space-y-6">
           <PageHeader
             context="Biblioteca"
             title="Arquivos"
@@ -985,8 +987,8 @@ export default function ArquivosPage() {
               ))}
             </div>
           )}
-        </div>
-      </div>
+        </DashboardPageContent>
+      </DashboardPage>
 
       <Dialog open={previewIndex !== null} onOpenChange={(open) => !open && setPreviewIndex(null)}>
         <DialogContent className="h-[90vh] max-h-[90vh] w-[92vw] max-w-[92vw] border-border/60 bg-black p-0 text-white sm:max-w-[92vw]">

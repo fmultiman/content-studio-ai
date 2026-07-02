@@ -20,20 +20,55 @@ type StudioIntensityContextValue = {
 
 const StudioIntensityContext = React.createContext<StudioIntensityContextValue | null>(null)
 
+const STUDIO_INTENSITY_SERVER_SNAPSHOT = DEFAULT_STUDIO_INTENSITY
+const STUDIO_INTENSITY_CHANGE_EVENT = 'studio-intensity-change'
+
+function readStudioIntensitySnapshot() {
+  if (typeof window === 'undefined') {
+    return STUDIO_INTENSITY_SERVER_SNAPSHOT
+  }
+
+  return normalizeStudioIntensity(
+    window.localStorage.getItem(STUDIO_INTENSITY_STORAGE_KEY),
+  )
+}
+
+function subscribeToStudioIntensity(onStoreChange: () => void) {
+  if (typeof window === 'undefined') {
+    return () => undefined
+  }
+
+  const handleStorage = (event: StorageEvent) => {
+    if (
+      event.key !== null &&
+      event.key !== STUDIO_INTENSITY_STORAGE_KEY
+    ) {
+      return
+    }
+
+    onStoreChange()
+  }
+
+  window.addEventListener('storage', handleStorage)
+  window.addEventListener(STUDIO_INTENSITY_CHANGE_EVENT, onStoreChange)
+
+  return () => {
+    window.removeEventListener('storage', handleStorage)
+    window.removeEventListener(STUDIO_INTENSITY_CHANGE_EVENT, onStoreChange)
+  }
+}
+
 function StudioIntensityProvider({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [studioIntensity, setStudioIntensityState] = React.useState<StudioIntensity>(() => {
-    if (typeof window === 'undefined') {
-      return DEFAULT_STUDIO_INTENSITY
-    }
+  const studioIntensity = React.useSyncExternalStore(
+    subscribeToStudioIntensity,
+    readStudioIntensitySnapshot,
+    () => STUDIO_INTENSITY_SERVER_SNAPSHOT,
+  )
 
-    return normalizeStudioIntensity(
-      window.localStorage.getItem(STUDIO_INTENSITY_STORAGE_KEY),
-    )
-  })
   React.useEffect(() => {
     if (typeof window === 'undefined') {
       return
@@ -44,7 +79,11 @@ function StudioIntensityProvider({
   }, [studioIntensity])
 
   const setStudioIntensity = (nextStudioIntensity: StudioIntensity) => {
-    setStudioIntensityState(normalizeStudioIntensity(nextStudioIntensity))
+    const normalizedStudioIntensity = normalizeStudioIntensity(nextStudioIntensity)
+
+    document.documentElement.dataset.studioIntensity = normalizedStudioIntensity
+    window.localStorage.setItem(STUDIO_INTENSITY_STORAGE_KEY, normalizedStudioIntensity)
+    window.dispatchEvent(new Event(STUDIO_INTENSITY_CHANGE_EVENT))
   }
 
   return (
