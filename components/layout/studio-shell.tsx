@@ -54,7 +54,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useStudioShellViewport } from '@/hooks/use-mobile'
 import {
   isNavigationItemActive,
   navigationGroups,
@@ -89,6 +89,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
 const MOBILE_DRAWER_EFFECTIVE_MODE = 'mobile-drawer' as const
+const STUDIO_SHELL_STORAGE_CHANGE_EVENT = 'studio-shell-storage-change'
 
 type StudioShellStoredState = {
   desktopPreference: StudioShellDesktopPreference | null
@@ -96,25 +97,40 @@ type StudioShellStoredState = {
 }
 
 const EMPTY_STUDIO_SHELL_STORED_STATE_SNAPSHOT = ''
+let storedStudioShellStateSnapshotCache =
+  EMPTY_STUDIO_SHELL_STORED_STATE_SNAPSHOT
 
-function subscribeToWindowResize(onStoreChange: () => void) {
-  window.addEventListener('resize', onStoreChange)
+function subscribeToStudioShellStorage(onStoreChange: () => void) {
+  const handleStorageChange = (event: Event) => {
+    if (event instanceof StorageEvent) {
+      if (
+        event.key !== null &&
+        event.key !== STUDIO_SHELL_STORAGE_KEY &&
+        event.key !== STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY
+      ) {
+        return
+      }
+    }
+
+    onStoreChange()
+  }
+
+  window.addEventListener('storage', handleStorageChange)
+  window.addEventListener(
+    STUDIO_SHELL_STORAGE_CHANGE_EVENT,
+    handleStorageChange,
+  )
+
+  // Force reconciliation from the live client snapshot right after hydration.
+  onStoreChange()
 
   return () => {
-    window.removeEventListener('resize', onStoreChange)
+    window.removeEventListener('storage', handleStorageChange)
+    window.removeEventListener(
+      STUDIO_SHELL_STORAGE_CHANGE_EVENT,
+      handleStorageChange,
+    )
   }
-}
-
-function getViewportWidthSnapshot() {
-  return window.innerWidth
-}
-
-function getViewportWidthServerSnapshot() {
-  return STUDIO_SHELL_WIDE_BREAKPOINT
-}
-
-function subscribeToStudioShellStorage(_onStoreChange: () => void) {
-  return () => {}
 }
 
 function getStoredStudioShellStateSnapshot() {
@@ -125,28 +141,22 @@ function getStoredStudioShellStateSnapshot() {
     STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
   )
 
-  return JSON.stringify({
+  const nextSnapshot = JSON.stringify({
     desktopPreference: storedPreference,
     lastVisibleMode: isStudioShellVisibleMode(storedLastVisibleMode)
       ? storedLastVisibleMode
       : null,
   } satisfies StudioShellStoredState)
+
+  if (storedStudioShellStateSnapshotCache !== nextSnapshot) {
+    storedStudioShellStateSnapshotCache = nextSnapshot
+  }
+
+  return storedStudioShellStateSnapshotCache
 }
 
 function getStoredStudioShellStateServerSnapshot() {
   return EMPTY_STUDIO_SHELL_STORED_STATE_SNAPSHOT
-}
-
-function subscribeToClientHydration(_onStoreChange: () => void) {
-  return () => {}
-}
-
-function getClientHydrationSnapshot() {
-  return true
-}
-
-function getClientHydrationServerSnapshot() {
-  return false
 }
 
 function parseStoredStudioShellStateSnapshot(
@@ -669,7 +679,8 @@ function StudioShellRail() {
 
 export function StudioShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
-  const isMobileViewport = useIsMobile()
+  const viewport = useStudioShellViewport()
+  const isMobileViewport = viewport.isMobile
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const previousPathnameRef = useRef(pathname)
   const pendingTriggerFocusRestoreRef = useRef(false)
@@ -683,11 +694,6 @@ export function StudioShell({ children }: { children: ReactNode }) {
     useState<StudioShellVisibleMode | null>(null)
   const [hiddenVisualMode, setHiddenVisualMode] =
     useState<StudioShellVisibleMode | null>(null)
-  const viewportWidth = useSyncExternalStore(
-    subscribeToWindowResize,
-    getViewportWidthSnapshot,
-    getViewportWidthServerSnapshot,
-  )
   const storedShellStateSnapshot = useSyncExternalStore(
     subscribeToStudioShellStorage,
     getStoredStudioShellStateSnapshot,
@@ -697,23 +703,18 @@ export function StudioShell({ children }: { children: ReactNode }) {
     () => parseStoredStudioShellStateSnapshot(storedShellStateSnapshot),
     [storedShellStateSnapshot],
   )
-  const isInitialized = useSyncExternalStore(
-    subscribeToClientHydration,
-    getClientHydrationSnapshot,
-    getClientHydrationServerSnapshot,
-  )
   const {
     desktopPreference,
     effectiveMode,
     lastVisibleMode,
   } = resolveStudioShellState({
-    viewportWidth,
+    viewportWidth: viewport.width,
     storedPreference: storedShellState.desktopPreference,
     storedLastVisibleMode: storedShellState.lastVisibleMode,
     desktopPreferenceOverride,
     lastVisibleModeOverride,
   })
-  const canExpandImmediately = canStudioShellExpandImmediately(viewportWidth)
+  const canExpandImmediately = canStudioShellExpandImmediately(viewport.width)
   const renderedDesktopMode = getStudioShellRenderedDesktopMode({
     effectiveMode,
     lastVisibleMode,
@@ -722,7 +723,6 @@ export function StudioShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
-      !isInitialized ||
       desktopPreferenceOverride === null ||
       lastVisibleModeOverride === null
     ) {
@@ -734,10 +734,10 @@ export function StudioShell({ children }: { children: ReactNode }) {
       STUDIO_SHELL_LAST_VISIBLE_STORAGE_KEY,
       lastVisibleMode,
     )
+    window.dispatchEvent(new Event(STUDIO_SHELL_STORAGE_CHANGE_EVENT))
   }, [
     desktopPreference,
     desktopPreferenceOverride,
-    isInitialized,
     lastVisibleMode,
     lastVisibleModeOverride,
   ])
@@ -938,8 +938,9 @@ export function StudioShell({ children }: { children: ReactNode }) {
           data-shell-desktop-preference={desktopPreference}
           data-shell-effective-mode={effectiveMode}
           data-shell-last-visible-mode={lastVisibleMode}
+          data-shell-hidden-visual-mode={hiddenVisualMode ?? ''}
           data-shell-rendered-desktop-mode={renderedDesktopMode ?? ''}
-          data-shell-initialized={isInitialized ? 'true' : 'false'}
+          data-shell-initialized="true"
         >
           <GlobalUtilityBar />
           <StudioShellRail />
