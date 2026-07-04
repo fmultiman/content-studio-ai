@@ -65,13 +65,6 @@ export function getStudioShellEffectiveMode(
     return 'mobile-drawer'
   }
 
-  if (
-    viewportWidth < STUDIO_SHELL_WIDE_BREAKPOINT &&
-    desktopPreference === 'expanded'
-  ) {
-    return 'compact'
-  }
-
   return desktopPreference
 }
 
@@ -87,7 +80,7 @@ export function getLastVisibleStudioShellMode(
 }
 
 export function canStudioShellExpandImmediately(viewportWidth: number) {
-  return viewportWidth >= STUDIO_SHELL_WIDE_BREAKPOINT
+  return viewportWidth > STUDIO_SHELL_MOBILE_BREAKPOINT
 }
 
 export function getStudioShellRenderedDesktopMode({

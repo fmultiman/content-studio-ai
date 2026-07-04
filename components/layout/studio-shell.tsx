@@ -492,7 +492,7 @@ function StudioShellDesktopControls() {
   return (
     <div className="flex items-center justify-center">
       <RailControlButton
-        ariaLabel={isCompact ? 'Expandir navegação' : 'Compactar navegação'}
+        ariaLabel={isCompact ? 'Expandir navegação' : 'Recolher navegação'}
         onClick={isCompact ? setExpanded : setCompact}
       >
         {isCompact ? (

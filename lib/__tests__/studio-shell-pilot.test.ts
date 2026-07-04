@@ -45,18 +45,22 @@ describe('DS-1H-C shell foundation', () => {
 
   it('separates persisted desktop preference from the effective mode with <=768 as drawer', () => {
     expect(getStudioShellEffectiveMode('expanded', 1600)).toBe('expanded')
-    expect(getStudioShellEffectiveMode('expanded', 1024)).toBe('compact')
-    expect(getStudioShellEffectiveMode('expanded', 769)).toBe('compact')
+    expect(getStudioShellEffectiveMode('expanded', 1024)).toBe('expanded')
+    expect(getStudioShellEffectiveMode('expanded', 769)).toBe('expanded')
     expect(getStudioShellEffectiveMode('expanded', 768)).toBe('mobile-drawer')
     expect(getStudioShellEffectiveMode('expanded', 390)).toBe('mobile-drawer')
     expect(getStudioShellEffectiveMode('hidden', 1600)).toBe('hidden')
   })
 
-  it('forces compact at 1279 and respects expanded again at 1280', () => {
-    expect(getStudioShellEffectiveMode('expanded', 1279)).toBe('compact')
+  it('allows manual expansion across tablet widths and still respects 1280+', () => {
+    expect(getStudioShellEffectiveMode('expanded', 769)).toBe('expanded')
+    expect(getStudioShellEffectiveMode('expanded', 1024)).toBe('expanded')
+    expect(getStudioShellEffectiveMode('expanded', 1279)).toBe('expanded')
     expect(getStudioShellEffectiveMode('expanded', 1280)).toBe('expanded')
-    expect(canStudioShellExpandImmediately(1279)).toBe(false)
+    expect(canStudioShellExpandImmediately(769)).toBe(true)
+    expect(canStudioShellExpandImmediately(1279)).toBe(true)
     expect(canStudioShellExpandImmediately(1280)).toBe(true)
+    expect(canStudioShellExpandImmediately(768)).toBe(false)
   })
 
   it('resolves first load without preference from viewport defaults', () => {
@@ -71,6 +75,19 @@ describe('DS-1H-C shell foundation', () => {
       effectiveMode: 'expanded',
       hasExplicitPreference: false,
       lastVisibleMode: 'expanded',
+    })
+
+    expect(
+      resolveStudioShellState({
+        viewportWidth: 769,
+        storedPreference: null,
+        storedLastVisibleMode: null,
+      }),
+    ).toMatchObject({
+      desktopPreference: 'compact',
+      effectiveMode: 'compact',
+      hasExplicitPreference: false,
+      lastVisibleMode: 'compact',
     })
 
     expect(
@@ -115,7 +132,7 @@ describe('DS-1H-C shell foundation', () => {
     })
   })
 
-  it('preserves hidden plus lastVisibleMode and keeps expanded preference compact-effective at 1024', () => {
+  it('preserves hidden plus lastVisibleMode and keeps expanded preference effective on tablet widths', () => {
     expect(
       resolveStudioShellState({
         viewportWidth: 1600,
@@ -137,9 +154,37 @@ describe('DS-1H-C shell foundation', () => {
       }),
     ).toMatchObject({
       desktopPreference: 'expanded',
-      effectiveMode: 'compact',
+      effectiveMode: 'expanded',
       hasExplicitPreference: true,
       lastVisibleMode: 'expanded',
+    })
+  })
+
+  it('reloads tablet widths from the persisted choice instead of forcing compact', () => {
+    expect(
+      resolveStudioShellState({
+        viewportWidth: 800,
+        storedPreference: 'expanded',
+        storedLastVisibleMode: 'expanded',
+      }),
+    ).toMatchObject({
+      desktopPreference: 'expanded',
+      effectiveMode: 'expanded',
+      hasExplicitPreference: true,
+      lastVisibleMode: 'expanded',
+    })
+
+    expect(
+      resolveStudioShellState({
+        viewportWidth: 1180,
+        storedPreference: 'compact',
+        storedLastVisibleMode: 'compact',
+      }),
+    ).toMatchObject({
+      desktopPreference: 'compact',
+      effectiveMode: 'compact',
+      hasExplicitPreference: true,
+      lastVisibleMode: 'compact',
     })
   })
 
@@ -165,6 +210,36 @@ describe('DS-1H-C shell foundation', () => {
       effectiveMode: 'expanded',
       lastVisibleMode: 'expanded',
     })
+  })
+
+  it('restores hidden tablet state back to the last visible mode', () => {
+    expect(
+      resolveStudioShellState({
+        viewportWidth: 800,
+        storedPreference: 'hidden',
+        storedLastVisibleMode: 'expanded',
+      }),
+    ).toMatchObject({
+      desktopPreference: 'hidden',
+      effectiveMode: 'hidden',
+      lastVisibleMode: 'expanded',
+    })
+
+    expect(
+      getStudioShellRenderedDesktopMode({
+        effectiveMode: 'hidden',
+        lastVisibleMode: 'expanded',
+        hiddenVisualMode: 'expanded',
+      }),
+    ).toBe('expanded')
+
+    expect(
+      getStudioShellRenderedDesktopMode({
+        effectiveMode: 'hidden',
+        lastVisibleMode: 'compact',
+        hiddenVisualMode: 'compact',
+      }),
+    ).toBe('compact')
   })
 
   it('keeps the last visible desktop mode when hiding the rail', () => {
@@ -318,15 +393,17 @@ describe('DS-1H-C shell foundation', () => {
   it('freezes hidden exit geometry from the rendered mode instead of the persisted preference', () => {
     const source = studioShellSource()
 
-    expect(source).toContain("setHiddenVisualMode(\n      effectiveMode === 'expanded' ? 'expanded' : 'compact',")
+    expect(source).toContain('setHiddenVisualMode(')
+    expect(source).toContain("effectiveMode === 'expanded' ? 'expanded' : 'compact'")
     expect(source).toContain("renderedDesktopMode === 'compact'")
     expect(source).toContain("data-shell-rendered-desktop-mode={renderedDesktopMode ?? ''}")
   })
 
-  it('hides the local expand affordance at constrained tablet widths and uses a real mobile menu trigger', () => {
+  it('keeps the local expand affordance on tablet, hides it on mobile, and uses a real mobile menu trigger', () => {
     const source = studioShellSource()
 
-    expect(source).toContain('if (isCompact && !canExpandImmediately) {')
+    expect(source).toContain("if (effectiveMode === MOBILE_DRAWER_EFFECTIVE_MODE) {")
+    expect(source).toContain("ariaLabel={isCompact ? 'Expandir navegação' : 'Recolher navegação'}")
     expect(source).toContain("<Menu className=\"h-4 w-4\" />")
     expect(source).toContain("<X className=\"h-4 w-4\" />")
     expect(source).not.toContain('<PanelLeft className="h-4 w-4" />')
