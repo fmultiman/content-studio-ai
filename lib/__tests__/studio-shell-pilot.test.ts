@@ -390,6 +390,18 @@ describe('DS-1H-C shell foundation', () => {
     expect(source).toContain('Content Studio')
   })
 
+  it('adds an explicit close action inside the mobile drawer surface only', () => {
+    const source = studioShellSource()
+
+    expect(source).toContain('aria-label="Fechar navegação"')
+    expect(source).toContain('title="Fechar navegação"')
+    expect(source).toContain('onClick={() => setMobileDrawerOpen(false)}')
+    expect(source).toContain('triggerRef.current?.focus()')
+    expect(source).toContain(
+      "focus-visible:ring-offset-surface-elevated",
+    )
+  })
+
   it('freezes hidden exit geometry from the rendered mode instead of the persisted preference', () => {
     const source = studioShellSource()
 
@@ -404,6 +416,7 @@ describe('DS-1H-C shell foundation', () => {
 
     expect(source).toContain("if (effectiveMode === MOBILE_DRAWER_EFFECTIVE_MODE) {")
     expect(source).toContain("ariaLabel={isCompact ? 'Expandir navegação' : 'Recolher navegação'}")
+    expect(source).toContain('setMobileDrawerOpen(false)')
     expect(source).toContain("<Menu className=\"h-4 w-4\" />")
     expect(source).toContain("<X className=\"h-4 w-4\" />")
     expect(source).not.toContain('<PanelLeft className="h-4 w-4" />')

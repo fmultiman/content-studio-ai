@@ -563,7 +563,12 @@ function StudioShellNavLink({
 }
 
 function StudioShellRail() {
-  const { effectiveMode, isMobileViewport, renderedDesktopMode } = useStudioShell()
+  const {
+    effectiveMode,
+    isMobileViewport,
+    renderedDesktopMode,
+    setMobileDrawerOpen,
+  } = useStudioShell()
   const compact = renderedDesktopMode === 'compact'
 
   if (isMobileViewport) {
@@ -584,17 +589,30 @@ function StudioShellRail() {
           id="studio-shell-navigation"
           className="flex h-full flex-col overflow-hidden"
         >
-          <div className="flex items-center gap-2.5 border-b border-border-subtle/70 px-2.5 py-3">
-            <Link
-              href="/dashboard"
-              aria-label="Abrir dashboard"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white"
+          <div className="flex items-center justify-between gap-2.5 border-b border-border-subtle/70 px-2.5 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Link
+                href="/dashboard"
+                aria-label="Abrir dashboard"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 text-white"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Link>
+              <p className="min-w-0 text-sm font-medium tracking-[-0.02em] text-foreground">
+                Content Studio
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-lg text-muted-foreground hover:bg-surface-interactive hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated"
+              aria-label="Fechar navegação"
+              title="Fechar navegação"
+              onClick={() => setMobileDrawerOpen(false)}
             >
-              <Sparkles className="h-4 w-4" />
-            </Link>
-            <p className="min-w-0 text-sm font-medium tracking-[-0.02em] text-foreground">
-              Content Studio
-            </p>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           <SidebarContent className="gap-3 px-2 py-3">
