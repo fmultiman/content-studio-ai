@@ -1,0 +1,57 @@
+﻿{
+  "schema_version": "static-render.v0",
+  "manifest_id": "fixture:comunidades-alternativas:terra-una:cover:01",
+  "source": {
+    "type": "fixture",
+    "ref": "fixture:channel-piece:terra-una-carousel"
+  },
+  "context": {
+    "project_ref": "fixture:project:comunidades-alternativas",
+    "production_ref": "fixture:production:terra-una-instagram"
+  },
+  "template": {
+    "id": "editorial.documentary-card",
+    "version": "0.1.0",
+    "variant": "cover",
+    "scope": "system"
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "unit": "px"
+  },
+  "identity": {
+    "snapshot_ref": "fixture:identity:comunidades-alternativas:v1",
+    "token_profile": "default"
+  },
+  "content": {
+    "eyebrow": "Comunidade em foco",
+    "title": "Terra Una",
+    "subtitle": "Memórias, práticas e caminhos de uma experiência comunitária",
+    "source_line": "Portal Comunidades Alternativas",
+    "footer": "Pequenas ações regeneram um mundo inteiro."
+  },
+  "assets": {
+    "hero": {
+      "type": "fixture",
+      "ref": "fixture:asset:terra-una:documentary-photo-01",
+      "fit": "cover",
+      "focal_point": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "alt": "Fotografia documental da comunidade, a ser vinculada a um asset real no Project."
+    }
+  },
+  "output": {
+    "format": "png",
+    "role": "carousel_item",
+    "quality_profile": "social-high"
+  },
+  "metadata": {
+    "fixture": true,
+    "fixture_purpose": "Validar o primeiro fluxo genérico de composição estática do Content Agent Studio usando um Project real como referência sem criar dependência de código.",
+    "not_a_database_record": true,
+    "source_verification_required_before_publication": true
+  }
+}

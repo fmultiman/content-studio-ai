@@ -164,7 +164,9 @@ fixture/missing/unsupported, static cover/info/second project, erros de
 schema/binding/identity/asset, timeline mínima, content/motion/asset
 inválidos e ausência de texto `remotion` no output resolvido.
 
-Resultado focado Wave 3 + Wave 2: **92/92 testes** (9 arquivos). A suite
+Resultado focado Wave 3 + Wave 2: **90/90 testes** — 77 testes das Waves
+anteriores + 13 testes novos da Wave 3 (mais 2 testes de isolamento já
+existentes no pacote `lib/creative`). A suite
 completa, typecheck, lint e build foram executados no fechamento desta Wave;
 qualquer warning de lint permanece o baseline preexistente e não foi
 reclassificado como falha desta camada.
