@@ -9,7 +9,10 @@ import type {
   DocumentaryCardInfoContent,
 } from '@/lib/schemas/creative/documentary-card'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
+import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
 import type { MaterialName } from './primitives'
+
+export type { DocumentaryCardPreviewTuning }
 
 export type DocumentaryCardVariant = 'cover' | 'info'
 export type DocumentaryCardMode = 'still' | 'video'
@@ -29,6 +32,12 @@ export type DocumentaryCardProps = {
   materialBaseUrl?: string
   materialUrls?: Partial<Record<MaterialName, string>>
   materialAssets?: Partial<Record<MaterialName, ResolvedAsset>>
+  /**
+   * Wave 6 authoring-only: runtime visual tuning applied on top of the default
+   * artifact plan. NEVER serialised into a StaticRenderManifest.
+   * When absent, the component renders exactly as the Wave 5 still would.
+   */
+  previewTuning?: DocumentaryCardPreviewTuning
 }
 
 export type DocumentaryCardVisualContext = DocumentaryCardProps & {

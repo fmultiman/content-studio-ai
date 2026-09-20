@@ -10,12 +10,32 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
   const isDark = palette.background.toLowerCase() === '#0b1020'
   const mutedInk = isDark ? '#f3ead8' : palette.ink
   const heroScale = context.mode === 'video' && context.motion?.preset === 'slow_push' ? 1 + (context.progress * 0.06) : 1
-  const heroStyle: CSSProperties = reel
+
+  // Preview tuning (Wave 6 authoring-only; absent = no change from default)
+  const heroTuning = context.previewTuning?.hero
+  const titleTuning = context.previewTuning?.title
+
+  const baseHeroStyle: CSSProperties = reel
     ? { height: '35%', right: '10%', top: '47%', width: '67%' }
     : { bottom: '10%', height: '35%', right: '7%', width: '43%' }
-  const titleStyle: CSSProperties = reel
+  const heroStyle: CSSProperties = heroTuning
+    ? {
+        ...baseHeroStyle,
+        transform: `translate(${heroTuning.offsetX}px, ${heroTuning.offsetY}px) rotate(${heroTuning.rotation}deg) scale(${heroTuning.scale})`,
+        transformOrigin: 'center',
+      }
+    : baseHeroStyle
+
+  const baseTitleStyle: CSSProperties = reel
     ? { left: '7%', minHeight: '20%', padding: '3% 4%', top: '19%', width: '70%' }
     : { left: '4%', minHeight: '27%', padding: '3% 4%', top: '25%', width: '61%' }
+  const titleStyle: CSSProperties = titleTuning
+    ? {
+        ...baseTitleStyle,
+        transform: `translate(${titleTuning.offsetX}px, ${titleTuning.offsetY}px) rotate(${titleTuning.rotation}deg)`,
+        transformOrigin: 'top left',
+      }
+    : baseTitleStyle
 
   return (
     <>

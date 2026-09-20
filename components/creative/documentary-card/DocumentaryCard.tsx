@@ -22,6 +22,7 @@ export function DocumentaryCard({
   materialBaseUrl,
   materialUrls,
   materialAssets,
+  previewTuning,
   frame = 0,
   durationInFrames = 180,
 }: DocumentaryCardProps) {
@@ -44,6 +45,7 @@ export function DocumentaryCard({
     materialBaseUrl,
     materialUrls,
     materialAssets,
+    previewTuning,
     frame,
     durationInFrames,
     progress,

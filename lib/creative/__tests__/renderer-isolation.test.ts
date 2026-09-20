@@ -68,9 +68,16 @@ describe('Wave 1 — Remotion isolation', () => {
     expect(offenders).toEqual([])
   })
 
-  it('the allowed preview route does import remotion (sanity check the scan actually works)', () => {
+  it('the allowed preview route verifies isolation: Wave 6 authoring lab uses DocumentaryCard directly, not via @remotion/player', () => {
+    // Wave 6 replaced the Thumbnail/@remotion/player usage with a direct
+    // DocumentaryCard render. The preview route is still the allowed surface,
+    // but it now demonstrates even stronger Remotion isolation: the browser
+    // preview does not depend on the Remotion player at all.
     const previewFile = join(PROJECT_ROOT, 'app', 'dev', 'creative-preview', 'page.tsx')
     const contents = readFileSync(previewFile, 'utf8')
-    expect(REMOTION_IMPORT_RE.test(contents)).toBe(true)
+    // Sanity: the route renders DocumentaryCard
+    expect(contents).toContain('DocumentaryCard')
+    // And does NOT need @remotion/player for the authoring preview
+    expect(contents).not.toContain("from '@remotion/player'")
   })
 })
