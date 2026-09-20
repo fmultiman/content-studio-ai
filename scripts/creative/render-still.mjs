@@ -18,11 +18,19 @@ const entry = path.join(repoRoot, 'remotion', 'index.ts')
 const outDir = path.join(repoRoot, '.tmp', 'creative')
 const outputPath = path.join(outDir, 'spike-still.png')
 
+const webpackOverride = (config) => ({
+  ...config,
+  resolve: {
+    ...config.resolve,
+    alias: { ...(config.resolve?.alias ?? {}), '@': repoRoot },
+  },
+})
+
 async function main() {
   mkdirSync(outDir, { recursive: true })
 
   const t0 = Date.now()
-  const bundleLocation = await bundle({ entryPoint: entry })
+  const bundleLocation = await bundle({ entryPoint: entry, webpackOverride })
   const t1 = Date.now()
 
   const composition = await selectComposition({

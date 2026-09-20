@@ -12,6 +12,7 @@ export type ResolvedAsset = {
   version?: string
   focal_point?: FocalPoint
   alt?: string
+  fit?: 'cover' | 'contain' | 'fill'
 }
 
 type FixtureAsset = Omit<ResolvedAsset, 'ref' | 'focal_point' | 'alt' | 'version' | 'checksum'> & {
@@ -96,6 +97,7 @@ export function resolveAsset(ref: AssetRef): AssetResolutionResult {
       version: ref.version ?? fixture.version,
       focal_point: ref.focal_point,
       alt: ref.alt,
+      fit: ref.fit,
     },
   }
 }
