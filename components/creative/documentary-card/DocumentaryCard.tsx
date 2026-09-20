@@ -5,6 +5,7 @@ import { CoverVariant } from './CoverVariant'
 import { InfoVariant } from './InfoVariant'
 import { paletteFromTokens } from './primitives'
 import type { DocumentaryCardProps, DocumentaryCardVisualContext } from './types'
+import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -74,6 +75,7 @@ export function documentaryCardPropsFromResolvedInput(
   input: ResolvedStaticRenderInput,
   mode: DocumentaryCardProps['mode'] = 'still',
   motion: DocumentaryCardProps['motion'] = undefined,
+  previewTuning?: DocumentaryCardPreviewTuning,
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -95,6 +97,7 @@ export function documentaryCardPropsFromResolvedInput(
     canvas: input.manifest.canvas,
     mode,
     motion,
+    previewTuning,
     sequence: input.manifest.sequence,
     materialAssets: resolvedMaterialAssets,
     materialUrls: {

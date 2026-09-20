@@ -3,6 +3,7 @@ import { useCurrentFrame, useVideoConfig } from 'remotion'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
+import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
@@ -39,6 +40,7 @@ export const DocumentaryCardStillComposition: React.FC<DocumentaryCardCompositio
 
 export type StaticRenderManifestStillProps = {
   resolvedInput: ResolvedStaticRenderInput
+  overrides?: AuthoringRenderOverrides
 }
 
 /**
@@ -46,11 +48,11 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
-export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput }) => {
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides }) => {
   if (resolvedInput.resolvedTemplate.descriptor.component_key !== 'editorial.documentary-card') {
     throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   }
 
-  const props = documentaryCardPropsFromResolvedInput(resolvedInput, 'still')
+  const props = documentaryCardPropsFromResolvedInput(resolvedInput, 'still', undefined, overrides?.documentaryCard)
   return <DocumentaryCard {...remotionProps(props)} mode="still" />
 }

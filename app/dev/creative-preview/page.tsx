@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useReducer, useState } from 'react'
+import Image from 'next/image'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import {
   AUTHORING_HERO_ASSETS,
@@ -21,6 +22,22 @@ import {
   type DocumentaryCardPreviewTuning,
 } from '@/lib/creative/authoring'
 import { resolveTemplateComponent } from '@/lib/creative/templates/component-resolver'
+
+type RenderResult = {
+  status: 'succeeded'
+  render_id: string
+  output_path: string
+  output_identifier: string
+  image_data_url: string
+  variant: string
+  canvas: { width: number; height: number; unit: 'px' }
+  width: number
+  height: number
+  duration_ms: number
+  diagnostics: unknown[]
+  bridge: 'local-dev-only'
+  tuned: boolean
+}
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 
@@ -212,6 +229,20 @@ const S = {
     minHeight: 0,
     padding: 24,
   },
+  finalRenderCard: {
+    alignItems: 'center',
+    background: '#0d1117',
+    border: '1px solid #30363d',
+    borderRadius: 6,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+    maxWidth: 380,
+    padding: 12,
+    width: '100%',
+  },
+  finalRenderHeader: { alignItems: 'center', display: 'flex', justifyContent: 'space-between', width: '100%' },
+  renderMeta: { color: '#8b949e', fontSize: 10, lineHeight: 1.5, textAlign: 'center' as const },
   previewLabel: { color: '#484f58', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase' as const },
   sliderRow: { alignItems: 'center', display: 'flex', gap: 8, marginBottom: 5 },
   sliderLabel: { color: '#8b949e', fontSize: 10, minWidth: 60 },
@@ -292,6 +323,9 @@ function Slider({
 
 export default function AuthoringLabPage() {
   const [state, dispatch] = useReducer(reducer, createInitialAuthoringState())
+  const [renderState, setRenderState] = useState<'idle' | 'rendering' | 'success' | 'error'>('idle')
+  const [renderResult, setRenderResult] = useState<RenderResult | null>(null)
+  const [renderError, setRenderError] = useState<string | null>(null)
 
   // Verify the component resolver produces the same component as render
   const componentResolved = useMemo(() => !!resolveTemplateComponent('editorial.documentary-card'), [])
@@ -314,6 +348,25 @@ export default function AuthoringLabPage() {
 
   // Derive the manifest (tuning excluded) for the debug panel
   const derivedManifest = useMemo(() => deriveManifestFromState(state), [state])
+
+  const renderThis = useCallback(async () => {
+    setRenderState('rendering')
+    setRenderError(null)
+    try {
+      const response = await fetch('/dev/creative-preview/render', {
+        body: JSON.stringify({ manifest: derivedManifest, overrides: { documentaryCard: state.tuning } }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      })
+      const payload = await response.json() as RenderResult & { error?: string }
+      if (!response.ok) throw new Error(payload.error ?? `Render failed (${response.status})`)
+      setRenderResult(payload)
+      setRenderState('success')
+    } catch (error) {
+      setRenderState('error')
+      setRenderError(error instanceof Error ? error.message : 'Render failed.')
+    }
+  }, [derivedManifest, state.tuning])
 
   // Canvas dimensions for scaling
   const canvasHeight = state.canvas === 'portrait' ? 1350 : 1920
@@ -347,9 +400,14 @@ export default function AuthoringLabPage() {
             : <span style={{ ...S.headerBadge, background: '#7d0c1533', border: '1px solid #da3633', color: '#da3633' }}>component ✗</span>
           }
         </div>
-        <button style={S.btn} onClick={() => { dispatch({ type: 'TOGGLE_DEBUG' }) }}>
-          {state.debugPanelOpen ? 'Hide debug' : 'Show debug'}
-        </button>
+        <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
+          <button style={S.btnPrimary} disabled={renderState === 'rendering'} onClick={() => { void renderThis() }}>
+            {renderState === 'rendering' ? 'Rendering…' : 'Render this'}
+          </button>
+          <button style={S.btn} onClick={() => { dispatch({ type: 'TOGGLE_DEBUG' }) }}>
+            {state.debugPanelOpen ? 'Hide debug' : 'Show debug'}
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -595,6 +653,28 @@ export default function AuthoringLabPage() {
           <div style={{ color: '#484f58', fontSize: 10, maxWidth: 360, textAlign: 'center' }}>
             Preview scale: {Math.round(scale * 100)}% of {canvasWidth}×{canvasHeight}.
             Tuning changes apply instantly without page reload.
+          </div>
+
+          <div style={S.finalRenderCard}>
+            <div style={S.finalRenderHeader}>
+              <span style={S.sectionTitle}>Final render</span>
+              <span style={{ color: renderState === 'error' ? '#da3633' : renderState === 'success' ? '#3fb950' : '#8b949e', fontSize: 10 }}>
+                {renderState === 'idle' ? 'idle' : renderState === 'rendering' ? 'rendering…' : renderState === 'success' ? 'success' : 'error'}
+              </span>
+            </div>
+            {renderResult
+              ? (
+                  <>
+                    <Image alt="Final rendered Documentary Card PNG" height={340} src={renderResult.image_data_url} style={{ height: 'auto', maxHeight: 340, maxWidth: 272, objectFit: 'contain', width: 'auto' }} unoptimized width={272} />
+                    <div style={S.renderMeta}>
+                      {renderResult.duration_ms} ms · {renderResult.variant} · {renderResult.canvas.width}×{renderResult.canvas.height}<br />
+                      {renderResult.tuned ? 'runtime tuning included' : 'default Wave 5 behavior'} · {renderResult.bridge}<br />
+                      {renderResult.output_identifier} · diagnostics: {renderResult.diagnostics.length}
+                    </div>
+                  </>
+                )
+              : <div style={{ color: '#484f58', fontSize: 11 }}>Click “Render this” to compare the real PNG with the live preview.</div>}
+            {renderError && <div style={{ color: '#da3633', fontSize: 10, maxWidth: 360 }}>{renderError}</div>}
           </div>
         </div>
 

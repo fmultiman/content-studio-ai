@@ -1,3 +1,5 @@
 export type { AuthoringState, AuthoringVariant, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning } from './types'
 export { DEFAULT_TUNING, AUTHORING_HERO_ASSETS } from './types'
 export { createInitialAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, TUNING_BOUNDS, clampTuningValue } from './authoring-state'
+export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest } from './render-request'
+export type { AuthoringRenderRequest, AuthoringRenderOverrides } from './render-request'

@@ -83,4 +83,32 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(still0).toBe(still100)
     expect(video).toContain('scale(1.033')
   })
+
+  it('applies the same runtime tuning tree used by authoring preview', () => {
+    const input = documentaryCardFixtures.cover45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover',
+      content: input.manifest.content as never,
+      assets: input.resolvedAssets,
+      tokens: input.tokens,
+      canvas: input.manifest.canvas,
+      mode: 'still',
+      sequence: input.manifest.sequence,
+      previewTuning: {
+        hero: { offsetX: 42, offsetY: -24, rotation: 2, scale: 1.08 },
+        title: { offsetX: 9, offsetY: 4, rotation: -1 },
+      },
+    }))
+    expect(markup).toContain('translate(42px, -24px) rotate(2deg) scale(1.08)')
+    expect(markup).toContain('translate(9px, 4px) rotate(-1deg)')
+  })
+
+  it('keeps Wave 5 transforms absent when no override is supplied', () => {
+    const input = documentaryCardFixtures.cover45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    expect(markup).not.toContain('translate(42px')
+  })
 })
