@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "creative:render-static": "node scripts/creative/run-static-manifest.mjs",
+    "creative:render-timeline": "node scripts/creative/run-timeline-manifest.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "validate": "pnpm typecheck && pnpm lint && pnpm build"

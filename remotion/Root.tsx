@@ -66,6 +66,16 @@ export const RemotionRoot: React.FC = () => {
         calculateMetadata={calculateTimelineMetadata}
       />
       <Composition
+        id="TimelineManifestVideo"
+        component={TimelineComposition}
+        defaultProps={{ resolvedInput: timelineResolved.value }}
+        durationInFrames={180}
+        fps={30}
+        width={1080}
+        height={1920}
+        calculateMetadata={calculateTimelineMetadata}
+      />
+      <Composition
         id="StaticRenderManifestStill"
         component={StaticRenderManifestStillComposition}
         defaultProps={{ resolvedInput: documentaryCardFixtures.cover45 }}
