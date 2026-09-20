@@ -5,6 +5,7 @@ import {
   DocumentaryCardInfoAssetsSchema,
   DocumentaryCardInfoContentSchema,
 } from '@/lib/schemas/creative/documentary-card'
+import { QuoteCardAssetsSchema, QuoteCardContentSchema } from '@/lib/schemas/creative/quote-card'
 import { TemplateDescriptorSchema, type TemplateDescriptor } from '@/lib/schemas/creative/template-descriptor'
 import type { AssetRef, CanvasSpec, MotionSpec, TemplateRef } from '@/lib/schemas/creative/primitives'
 
@@ -77,6 +78,33 @@ const documentaryCardDescriptor = TemplateDescriptorSchema.parse({
   component_key: 'editorial.documentary-card',
 })
 
+const quoteCardDescriptor = TemplateDescriptorSchema.parse({
+  id: 'editorial.quote-card',
+  version: '0.1.0',
+  scope: 'system',
+  label: 'Editorial Quote Card',
+  supported_modes: ['still', 'video'],
+  variants: ['default'],
+  canvas_support: {
+    strategy: 'declared_sizes',
+    sizes: [
+      { width: 1080, height: 1350, unit: 'px' },
+      { width: 1080, height: 1920, unit: 'px' },
+    ],
+  },
+  schemas: {
+    content: 'editorial.quote-card.content.v0',
+    assets: 'editorial.quote-card.assets.v0',
+  },
+  capabilities: {
+    motion_presets: ['none', 'fade'],
+    supports_transparency: false,
+  },
+  identity_requirements: ['typography.display', 'typography.body', 'colors.background', 'colors.foreground'],
+  text_policy: { default_overflow_policy: 'human_review' },
+  component_key: 'editorial.quote-card',
+})
+
 const TEMPLATE_REGISTRY: readonly RegisteredTemplate[] = [
   {
     descriptor: documentaryCardDescriptor,
@@ -88,6 +116,15 @@ const TEMPLATE_REGISTRY: readonly RegisteredTemplate[] = [
       info: {
         content: DocumentaryCardInfoContentSchema,
         assets: DocumentaryCardInfoAssetsSchema,
+      },
+    },
+  },
+  {
+    descriptor: quoteCardDescriptor,
+    variants: {
+      default: {
+        content: QuoteCardContentSchema,
+        assets: QuoteCardAssetsSchema,
       },
     },
   },

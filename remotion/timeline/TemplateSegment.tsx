@@ -1,14 +1,8 @@
 import React from 'react'
-import { DocumentaryCard, documentaryCardPropsFromRuntimeInput } from '@/components/creative/documentary-card'
 import type { ResolvedTimelineInput, ResolvedTimelineTemplateSegment } from '@/lib/creative/resolution/resolve-timeline'
-import { resolveTemplateComponent } from '@/lib/creative/templates/component-resolver'
-import { remotionProps } from '../DocumentaryCardComposition'
+import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
+import { remotionTemplateProps } from '../DocumentaryCardComposition'
 import { segmentFrameState } from './frame-model'
-
-// Resolve the registered component once at the adapter module boundary. This
-// keeps React's component identity stable while the segment still verifies the
-// neutral component_key on every render.
-const RegisteredDocumentaryCard = resolveTemplateComponent('editorial.documentary-card')
 
 type TemplateSegmentProps = {
   globalFrame: number
@@ -22,15 +16,13 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
   const state = segmentFrameState(globalFrame, segment.start_frame, segment.duration_frames)
   if (!state.visible || state.localFrame === null) return null
 
-  if (resolvedTemplate.descriptor.component_key !== 'editorial.documentary-card' || !RegisteredDocumentaryCard) {
+  const binding = resolveTemplateBinding(resolvedTemplate.descriptor.component_key)
+  if (!binding) {
     throw new Error(`No visual component is registered for ${resolvedTemplate.descriptor.component_key}`)
   }
-  const variant = resolvedTemplate.ref.variant
-  if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported timeline template variant: ${variant ?? '(missing)'}`)
-
-  const props = documentaryCardPropsFromRuntimeInput({
-    variant,
-    content: segment.payload.content as never,
+  const props = binding.createProps({
+    variant: resolvedTemplate.ref.variant,
+    content: segment.payload.content,
     assets: resolvedAssets,
     tokens: resolvedInput.tokens,
     canvas: {
@@ -46,7 +38,5 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
     durationInFrames: segment.duration_frames,
   })
 
-  // Registry selection proves the component_key boundary; all V0 registered
-  // template components currently share the DocumentaryCard props contract.
-  return <RegisteredDocumentaryCard {...remotionProps(props)} />
+  return <>{binding.component(remotionTemplateProps(props))}</>
 }

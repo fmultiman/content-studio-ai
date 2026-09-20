@@ -31,7 +31,7 @@ describe('Wave 3 template registry', () => {
     expect(result.value.descriptor.scope).toBe('system')
     expect(result.value.descriptor.component_key).toBe('editorial.documentary-card')
     expect(selectTemplateBindingSchemas(result.value).valid).toBe(true)
-    expect(listTemplates()).toHaveLength(1)
+    expect(listTemplates()).toHaveLength(2)
   })
 
   it.each([

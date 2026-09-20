@@ -4,27 +4,35 @@ import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/compon
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
+import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
+export function remotionTemplateProps<T>(props: T): T {
+  if (!props || typeof props !== 'object') return props
+  const value = props as Record<string, unknown>
+  const assets = value.assets
+  const normalizedAssets = assets && typeof assets === 'object'
+    ? Object.fromEntries(Object.entries(assets).map(([slot, asset]) => {
+        if (!asset || typeof asset !== 'object') return [slot, asset]
+        const resolved = asset as Record<string, unknown>
+        const path = typeof resolved.path === 'string' ? resolved.path : undefined
+        return [slot, path?.startsWith('public/') ? { ...resolved, url: `/public/${path.slice('public/'.length)}` } : asset]
+      }))
+    : assets
+  const materialUrls = value.materialUrls && typeof value.materialUrls === 'object'
+    ? Object.fromEntries(Object.entries(value.materialUrls).map(([name, url]) => [name, typeof url === 'string' && url.startsWith('/creative-fixtures/') ? `/public${url}` : url]))
+    : value.materialUrls
+  return { ...value, assets: normalizedAssets, materialUrls } as T
+}
+
 export function remotionProps(props: DocumentaryCardProps): DocumentaryCardProps {
   return {
-    ...props,
+    ...remotionTemplateProps(props),
     materialUrls: {
       tornPaper: '/public/creative-fixtures/torn-paper-cream-01.png',
       tape: '/public/creative-fixtures/tape-kraft-01.png',
     },
-    assets: Object.fromEntries(
-      Object.entries(props.assets).map(([slot, asset]) => [
-        slot,
-        {
-          ...asset,
-          url: asset.path.startsWith('public/')
-            ? `/public/${asset.path.slice('public/'.length)}`
-            : asset.url,
-        },
-      ]),
-    ),
   }
 }
 
@@ -49,10 +57,15 @@ export type StaticRenderManifestStillProps = {
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
 export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides }) => {
-  if (resolvedInput.resolvedTemplate.descriptor.component_key !== 'editorial.documentary-card') {
-    throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
-  }
-
-  const props = documentaryCardPropsFromResolvedInput(resolvedInput, 'still', undefined, overrides?.documentaryCard)
-  return <DocumentaryCard {...remotionProps(props)} mode="still" />
+  const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
+  if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
+  const props = binding.createProps({
+    variant: resolvedInput.resolvedTemplate.ref.variant,
+    content: resolvedInput.manifest.content,
+    assets: resolvedInput.resolvedAssets,
+    tokens: resolvedInput.tokens,
+    canvas: resolvedInput.manifest.canvas,
+    sequence: resolvedInput.manifest.sequence,
+  }, { mode: 'still', overrides })
+  return <>{binding.component(remotionTemplateProps(props))}</>
 }

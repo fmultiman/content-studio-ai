@@ -1,0 +1,14 @@
+{
+  "schema_version": "static-render.v0",
+  "manifest_id": "fixture:quote-card:1350:a",
+  "source": { "type": "fixture", "ref": "fixture:quote-card" },
+  "context": { "project_ref": "fixture:project:comunidades-alternativas", "production_ref": "fixture:production:quote-proof" },
+  "template": { "id": "editorial.quote-card", "version": "0.1.0", "variant": "default", "scope": "system" },
+  "canvas": { "width": 1080, "height": 1350, "unit": "px" },
+  "identity": { "snapshot_ref": "fixture:identity:comunidades-alternativas:v1", "token_profile": "default" },
+  "sequence": { "index": 2, "total": 4 },
+  "content": { "eyebrow": "A small record", "quote": "The work becomes clearer when the questions stay visible.", "attribution": "Editorial notebook", "source_line": "Shared Creative Rendering · Wave 9A" },
+  "assets": {},
+  "output": { "format": "png", "role": "fixture" },
+  "metadata": { "fixture": true, "not_a_database_record": true }
+}

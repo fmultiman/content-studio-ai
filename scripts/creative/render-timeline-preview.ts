@@ -1,10 +1,11 @@
 /** Wave 7 local frame extraction proof. This is not the official video path. */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundle, type WebpackConfiguration, type WebpackOverrideFn } from '@remotion/bundler'
 import { renderStill, selectComposition } from '@remotion/renderer'
 import { documentaryCardTimelinePreview } from '@/lib/creative/fixtures/timeline-preview-fixtures'
+import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
 import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
 import { timelineAdapterDiagnostics } from '@/remotion/timeline'
 
@@ -12,14 +13,20 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..', '..')
 const outputDir = path.join(repoRoot, '.tmp', 'creative', 'timeline-preview')
 const entry = path.join(repoRoot, 'remotion', 'index.ts')
-const proofFrames = [0, 45, 90, 135, 179]
 
 function repoRelative(filePath: string): string {
   return path.relative(repoRoot, filePath).split(path.sep).join('/')
 }
 
-export async function renderTimelinePreview(): Promise<Record<string, unknown>> {
-  const resolved = resolveTimelineManifest(documentaryCardTimelinePreview)
+async function defaultTimelineManifest(): Promise<TimelineManifest> {
+  const fixturePath = process.env.CREATIVE_TIMELINE_FIXTURE
+  if (!fixturePath) return documentaryCardTimelinePreview
+  return JSON.parse(await readFile(path.resolve(repoRoot, fixturePath), 'utf8')) as TimelineManifest
+}
+
+export async function renderTimelinePreview(manifest?: TimelineManifest): Promise<Record<string, unknown>> {
+  const selectedManifest = manifest ?? await defaultTimelineManifest()
+  const resolved = resolveTimelineManifest(selectedManifest)
   if (!resolved.valid) throw new Error(`Timeline manifest failed resolution: ${JSON.stringify(resolved.errors)}`)
 
   await mkdir(outputDir, { recursive: true })
@@ -44,6 +51,7 @@ export async function renderTimelinePreview(): Promise<Record<string, unknown>> 
     id: 'TimelineManifestPreview',
     inputProps,
   })
+  const proofFrames = [0, Math.floor(resolved.value.manifest.specification.duration_frames / 2), resolved.value.manifest.specification.duration_frames - 1]
   const outputs: Array<Record<string, unknown>> = []
   for (const frame of proofFrames) {
     const outputPath = path.join(outputDir, `frame-${String(frame).padStart(3, '0')}.png`)
