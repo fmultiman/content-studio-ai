@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "creative:render-static": "node scripts/creative/run-static-manifest.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "validate": "pnpm typecheck && pnpm lint && pnpm build"
@@ -72,6 +73,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
+    "jiti": "2.6.1",
     "postcss": "^8.5",
     "postgres": "^3.4.9",
     "tailwindcss": "^4.2.0",

@@ -1,0 +1,44 @@
+{
+  "schema_version": "static-render.v0",
+  "manifest_id": "fixture:documentary-card:info:1350:a",
+  "source": { "type": "fixture", "ref": "fixture:documentary-card" },
+  "context": {
+    "project_ref": "fixture:project:comunidades-alternativas",
+    "production_ref": "fixture:production:terra-una"
+  },
+  "template": {
+    "id": "editorial.documentary-card",
+    "version": "0.1.0",
+    "variant": "info",
+    "scope": "system"
+  },
+  "canvas": { "width": 1080, "height": 1350, "unit": "px" },
+  "identity": {
+    "snapshot_ref": "fixture:identity:comunidades-alternativas:v1",
+    "token_profile": "default"
+  },
+  "sequence": { "index": 2, "total": 10 },
+  "content": {
+    "title": "Uma pergunta, duas edicoes",
+    "intro": "Pequenos registros tambem guardam grandes historias.",
+    "body_blocks": [
+      "Ha registro de uma edicao Brasiliense de 1983, na Colecao Primeiros Passos no 108.",
+      "O exemplar apresentado aqui e a edicao Nova Cultural / Brasiliense, de 1985, identificada como no 58 da colecao."
+    ],
+    "fact_cards": [
+      { "primary": "1983", "secondary": "ed. Brasiliense", "tertiary": "no 108" },
+      { "primary": "1985", "secondary": "ed. Nova Cultural / Brasiliense", "tertiary": "no 58" }
+    ],
+    "source_line": "Colecao Primeiros Passos",
+    "annotation": "duas edicoes, outros caminhos"
+  },
+  "assets": {
+    "logo": {
+      "type": "fixture",
+      "ref": "fixture:asset:comunidades-alternativas:logo-v1",
+      "fit": "contain"
+    }
+  },
+  "output": { "format": "png", "role": "fixture" },
+  "metadata": { "fixture": true, "not_a_database_record": true, "fixture_purpose": "Wave 5 official static render input" }
+}

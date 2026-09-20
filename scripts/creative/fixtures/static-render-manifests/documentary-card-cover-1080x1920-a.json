@@ -1,0 +1,43 @@
+{
+  "schema_version": "static-render.v0",
+  "manifest_id": "fixture:documentary-card:cover:1920:a",
+  "source": { "type": "fixture", "ref": "fixture:documentary-card" },
+  "context": {
+    "project_ref": "fixture:project:comunidades-alternativas",
+    "production_ref": "fixture:production:terra-una"
+  },
+  "template": {
+    "id": "editorial.documentary-card",
+    "version": "0.1.0",
+    "variant": "cover",
+    "scope": "system"
+  },
+  "canvas": { "width": 1080, "height": 1920, "unit": "px" },
+  "identity": {
+    "snapshot_ref": "fixture:identity:comunidades-alternativas:v1",
+    "token_profile": "default"
+  },
+  "sequence": { "index": 1, "total": 10 },
+  "content": {
+    "eyebrow": "Memoria viva / Livros",
+    "title": "O que sao comunidades alternativas?",
+    "subtitle": "Uma pergunta lancada num pais em transicao, enquanto outras formas de viver tentavam ganhar mais espaco.",
+    "source_line": "Publicado originalmente em 1983.",
+    "detail_note": "Edicao apresentada: Nova Cultural / Brasiliense, 1985."
+  },
+  "assets": {
+    "hero": {
+      "type": "fixture",
+      "ref": "fixture:asset:documentary-card:hero-archival-01",
+      "fit": "cover",
+      "focal_point": { "x": 0.5, "y": 0.42 }
+    },
+    "logo": {
+      "type": "fixture",
+      "ref": "fixture:asset:comunidades-alternativas:logo-v1",
+      "fit": "contain"
+    }
+  },
+  "output": { "format": "png", "role": "fixture" },
+  "metadata": { "fixture": true, "not_a_database_record": true, "fixture_purpose": "Wave 5 official static render input" }
+}

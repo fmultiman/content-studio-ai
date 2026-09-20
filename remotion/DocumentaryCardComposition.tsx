@@ -1,11 +1,12 @@
 import React from 'react'
 import { useCurrentFrame, useVideoConfig } from 'remotion'
-import { DocumentaryCard } from '@/components/creative/documentary-card'
+import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
+import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
-function remotionProps(props: DocumentaryCardProps): DocumentaryCardProps {
+export function remotionProps(props: DocumentaryCardProps): DocumentaryCardProps {
   return {
     ...props,
     materialUrls: {
@@ -35,3 +36,21 @@ export const DocumentaryCardComposition: React.FC<DocumentaryCardCompositionProp
 export const DocumentaryCardStillComposition: React.FC<DocumentaryCardCompositionProps> = (props) => (
   <DocumentaryCard {...remotionProps(props)} mode="still" />
 )
+
+export type StaticRenderManifestStillProps = {
+  resolvedInput: ResolvedStaticRenderInput
+}
+
+/**
+ * Official Wave 5 adapter boundary: Remotion receives the renderer-neutral
+ * resolved input, then chooses the registered component by component_key.
+ * No manifest fixture is assembled here and no resolver state is persisted.
+ */
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput }) => {
+  if (resolvedInput.resolvedTemplate.descriptor.component_key !== 'editorial.documentary-card') {
+    throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
+  }
+
+  const props = documentaryCardPropsFromResolvedInput(resolvedInput, 'still')
+  return <DocumentaryCard {...remotionProps(props)} mode="still" />
+}
