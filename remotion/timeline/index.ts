@@ -1,0 +1,7 @@
+export { TimelineComposition } from './TimelineComposition'
+export type { TimelineCompositionProps } from './TimelineComposition'
+export { TemplateSegment } from './TemplateSegment'
+export { segmentFrameState } from './frame-model'
+export type { SegmentFrameState } from './frame-model'
+export { timelineAdapterDiagnostics } from './adapter-diagnostics'
+export type { TimelineAdapterDiagnostic } from './adapter-diagnostics'

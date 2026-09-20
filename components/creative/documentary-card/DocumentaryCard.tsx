@@ -62,6 +62,9 @@ export function DocumentaryCard({
     overflow: 'hidden',
     position: 'relative',
     width: canvas.width,
+    // A semantic fade is interpreted by the shared visual tree. Still output
+    // remains fully opaque; video adapters provide only runtime frame data.
+    opacity: mode === 'video' && motion?.preset === 'fade' ? contentOpacity : 1,
   }
 
   return (
@@ -71,14 +74,24 @@ export function DocumentaryCard({
   )
 }
 
-export function documentaryCardPropsFromResolvedInput(
-  input: ResolvedStaticRenderInput,
-  mode: DocumentaryCardProps['mode'] = 'still',
-  motion: DocumentaryCardProps['motion'] = undefined,
-  previewTuning?: DocumentaryCardPreviewTuning,
+export type DocumentaryCardRuntimeInput = Pick<
+  DocumentaryCardProps,
+  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence'
+>
+
+export type DocumentaryCardRuntimeOptions = Pick<
+  DocumentaryCardProps,
+  'mode' | 'motion' | 'previewTuning' | 'frame' | 'durationInFrames'
+>
+
+/**
+ * Shared runtime props builder for still and timeline adapters. It keeps the
+ * material asset plan and DocumentaryCard tree identical across both paths.
+ */
+export function documentaryCardPropsFromRuntimeInput(
+  input: DocumentaryCardRuntimeInput,
+  options: DocumentaryCardRuntimeOptions,
 ): DocumentaryCardProps {
-  const variant = input.manifest.template.variant
-  if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
   const materialAssets = {
     tornPaper: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:torn-paper-cream-01' }),
     tape: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:tape-kraft-01' }),
@@ -89,20 +102,36 @@ export function documentaryCardPropsFromResolvedInput(
       return [name, result.value]
     }),
   ) as NonNullable<DocumentaryCardProps['materialAssets']>
+
   return {
-    variant,
-    content: input.manifest.content as DocumentaryCardProps['content'],
-    assets: input.resolvedAssets,
-    tokens: input.tokens,
-    canvas: input.manifest.canvas,
-    mode,
-    motion,
-    previewTuning,
-    sequence: input.manifest.sequence,
+    ...input,
+    mode: options.mode,
+    motion: options.motion,
+    previewTuning: options.previewTuning,
+    frame: options.frame,
+    durationInFrames: options.durationInFrames,
     materialAssets: resolvedMaterialAssets,
     materialUrls: {
       tornPaper: resolvedMaterialAssets.tornPaper?.url,
       tape: resolvedMaterialAssets.tape?.url,
     },
   }
+}
+
+export function documentaryCardPropsFromResolvedInput(
+  input: ResolvedStaticRenderInput,
+  mode: DocumentaryCardProps['mode'] = 'still',
+  motion: DocumentaryCardProps['motion'] = undefined,
+  previewTuning?: DocumentaryCardPreviewTuning,
+): DocumentaryCardProps {
+  const variant = input.manifest.template.variant
+  if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
+  return documentaryCardPropsFromRuntimeInput({
+    variant,
+    content: input.manifest.content as DocumentaryCardProps['content'],
+    assets: input.resolvedAssets,
+    tokens: input.tokens,
+    canvas: input.manifest.canvas,
+    sequence: input.manifest.sequence,
+  }, { mode, motion, previewTuning })
 }
