@@ -9,6 +9,7 @@ import type {
   DocumentaryCardInfoContent,
 } from '@/lib/schemas/creative/documentary-card'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
+import type { MaterialName } from './primitives'
 
 export type DocumentaryCardVariant = 'cover' | 'info'
 export type DocumentaryCardMode = 'still' | 'video'
@@ -25,6 +26,9 @@ export type DocumentaryCardProps = {
   sequence?: SequenceContext
   frame?: number
   durationInFrames?: number
+  materialBaseUrl?: string
+  materialUrls?: Partial<Record<MaterialName, string>>
+  materialAssets?: Partial<Record<MaterialName, ResolvedAsset>>
 }
 
 export type DocumentaryCardVisualContext = DocumentaryCardProps & {

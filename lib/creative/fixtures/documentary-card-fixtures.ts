@@ -49,8 +49,8 @@ function coverManifest(canvas: CanvasSpec, identity: IdentitySnapshotRef, neutra
       : {
           hero: {
             type: 'fixture',
-            ref: 'fixture:asset:terra-una:documentary-photo-01',
-            fit: 'contain',
+            ref: 'fixture:asset:documentary-card:hero-archival-01',
+            fit: 'cover',
             focal_point: { x: 0.5, y: 0.42 },
           },
           logo: { type: 'fixture', ref: 'fixture:asset:comunidades-alternativas:logo-v1', fit: 'contain' },

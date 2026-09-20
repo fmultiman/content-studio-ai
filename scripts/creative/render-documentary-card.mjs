@@ -29,13 +29,13 @@ const outputs = [
 
 async function main() {
   mkdirSync(outDir, { recursive: true })
-  const bundleLocation = await bundle({ entryPoint: entry, webpackOverride })
+  const bundleLocation = await bundle({ entryPoint: entry, publicDir: path.join(repoRoot, 'public'), publicPath: '/', webpackOverride })
   const rendered = []
 
   for (const [id, filename] of outputs) {
     const output = path.join(outDir, filename)
-    const composition = await selectComposition({ serveUrl: bundleLocation, id, inputProps: {} })
-    await renderStill({ composition, serveUrl: bundleLocation, output, inputProps: {} })
+    const composition = await selectComposition({ serveUrl: bundleLocation, id })
+    await renderStill({ composition, serveUrl: bundleLocation, output })
     rendered.push({ output, width: composition.width, height: composition.height })
   }
 

@@ -14,7 +14,6 @@ export type ResolvedAsset = {
   alt?: string
   fit?: 'cover' | 'contain' | 'fill'
 }
-
 type FixtureAsset = Omit<ResolvedAsset, 'ref' | 'focal_point' | 'alt' | 'version' | 'checksum'> & {
   checksum: string
   version: string
@@ -41,6 +40,16 @@ const FIXTURE_ASSETS: Readonly<Record<string, FixtureAsset>> = {
     checksum: 'fixture-terra-una-photo-01-v1',
     version: 'v1',
   },
+  'fixture:asset:documentary-card:hero-archival-01': {
+    source: 'fixture',
+    path: 'public/creative-fixtures/documentary-card-hero-01.webp',
+    url: '/creative-fixtures/documentary-card-hero-01.webp',
+    mime_type: 'image/webp',
+    width: 800,
+    height: 1067,
+    checksum: 'fixture-documentary-card-hero-archival-v1',
+    version: 'v1',
+  },
   'fixture:asset:acme-labs:hero-01': {
     source: 'fixture',
     path: 'public/creative-fixtures/acme-labs-hero-01.svg',
@@ -49,6 +58,26 @@ const FIXTURE_ASSETS: Readonly<Record<string, FixtureAsset>> = {
     width: 1080,
     height: 1920,
     checksum: 'fixture-acme-labs-hero-01-v1',
+    version: 'v1',
+  },
+  'fixture:asset:documentary-card:torn-paper-cream-01': {
+    source: 'fixture',
+    path: 'public/creative-fixtures/torn-paper-cream-01.png',
+    url: '/creative-fixtures/torn-paper-cream-01.png',
+    mime_type: 'image/png',
+    width: 1024,
+    height: 683,
+    checksum: 'fixture-documentary-card-torn-paper-v1',
+    version: 'v1',
+  },
+  'fixture:asset:documentary-card:tape-kraft-01': {
+    source: 'fixture',
+    path: 'public/creative-fixtures/tape-kraft-01.png',
+    url: '/creative-fixtures/tape-kraft-01.png',
+    mime_type: 'image/png',
+    width: 1024,
+    height: 341,
+    checksum: 'fixture-documentary-card-tape-v1',
     version: 'v1',
   },
 }

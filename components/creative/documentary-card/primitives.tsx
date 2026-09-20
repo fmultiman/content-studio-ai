@@ -12,6 +12,19 @@ export type CardPalette = {
   ink: string
 }
 
+export type MaterialName = 'tornPaper' | 'tape'
+
+const MATERIAL_PATHS: Record<MaterialName, string> = {
+  tornPaper: 'torn-paper-cream-01.png',
+  tape: 'tape-kraft-01.png',
+}
+
+export function materialUrl(name: MaterialName, baseUrl?: string, urls?: Partial<Record<MaterialName, string>>): string {
+  if (urls?.[name]) return urls[name] as string
+  const path = MATERIAL_PATHS[name]
+  return `${baseUrl ?? '/creative-fixtures'}/${path}`
+}
+
 export function paletteFromTokens(tokens: VisualTokensSnapshot): CardPalette {
   return {
     background: tokens.colors.background,
@@ -54,12 +67,18 @@ export function PaperPlane({
   children,
   color,
   rotation,
+  material,
+  materialBaseUrl,
+  materialUrls,
   style,
   className,
 }: {
   children?: ReactNode
   color: string
   rotation: number
+  material?: MaterialName
+  materialBaseUrl?: string
+  materialUrls?: Partial<Record<MaterialName, string>>
   style?: CSSProperties
   className?: string
 }) {
@@ -67,7 +86,11 @@ export function PaperPlane({
     <div
       className={className}
       style={{
-        background: color,
+        backgroundColor: color,
+        backgroundImage: material ? `url(${materialUrl(material, materialBaseUrl, materialUrls)})` : undefined,
+        backgroundBlendMode: material ? 'multiply' : undefined,
+        backgroundPosition: 'center',
+        backgroundSize: 'cover',
         boxShadow: '0 18px 36px rgba(0, 0, 0, .18)',
         clipPath: 'polygon(2% 5%, 98% 0, 100% 94%, 5% 100%, 0 18%)',
         transform: `rotate(${rotation}deg)`,
@@ -84,12 +107,81 @@ export function Tape({ color, rotation, style }: { color: string; rotation: numb
     <div
       aria-hidden="true"
       style={{
-        background: color,
-        boxShadow: '0 2px 5px rgba(0, 0, 0, .16)',
-        height: 28,
-        opacity: .86,
+        backgroundColor: color,
+        boxShadow: '0 4px 8px rgba(0, 0, 0, .14)',
+        height: 36,
+        opacity: .9,
         transform: `rotate(${rotation}deg)`,
-        width: 110,
+        width: 132,
+        ...style,
+      }}
+    />
+  )
+}
+
+export function MaterialTape({
+  color,
+  rotation,
+  baseUrl,
+  urls,
+  style,
+}: {
+  color: string
+  rotation: number
+  baseUrl?: string
+  urls?: Partial<Record<MaterialName, string>>
+  style?: CSSProperties
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        backgroundColor: color,
+        backgroundImage: `url(${materialUrl('tape', baseUrl, urls)})`,
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: '100% 100%',
+        filter: 'saturate(.82)',
+        height: 42,
+        opacity: .92,
+        position: 'relative',
+        transform: `rotate(${rotation}deg)`,
+        width: 164,
+        ...style,
+      }}
+    />
+  )
+}
+
+export function GrainOverlay({ color, style }: { color: string; style?: CSSProperties }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        backgroundImage: `radial-gradient(${color} 0.7px, transparent 0.9px), radial-gradient(${color} 0.55px, transparent 0.75px)`,
+        backgroundPosition: '0 0, 13px 11px',
+        backgroundSize: '23px 23px, 31px 31px',
+        mixBlendMode: 'soft-light',
+        opacity: .2,
+        pointerEvents: 'none',
+        ...style,
+      }}
+    />
+  )
+}
+
+export function Pin({ color, style }: { color: string; style?: CSSProperties }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        background: `radial-gradient(circle at 35% 30%, #fff8 0 10%, ${color} 12% 58%, #0008 60% 100%)`,
+        border: '1px solid #0005',
+        borderRadius: '50%',
+        boxShadow: '0 3px 6px #0004',
+        display: 'block',
+        height: 22,
+        width: 22,
         ...style,
       }}
     />
@@ -182,7 +274,7 @@ export function BrandMark({
         }}
       />
       <div style={{ color: palette.foreground, fontFamily: tokens.typography.display.family, fontSize: 20, fontWeight: tokens.typography.display.weight, letterSpacing: '.08em', lineHeight: 1.1, maxWidth: 230, textTransform: 'uppercase' }}>
-        Project identity
+        Field notes
       </div>
     </div>
   )

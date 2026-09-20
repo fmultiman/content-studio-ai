@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
+import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
 import { CoverVariant } from './CoverVariant'
 import { InfoVariant } from './InfoVariant'
 import { paletteFromTokens } from './primitives'
@@ -18,6 +19,9 @@ export function DocumentaryCard({
   mode,
   motion,
   sequence,
+  materialBaseUrl,
+  materialUrls,
+  materialAssets,
   frame = 0,
   durationInFrames = 180,
 }: DocumentaryCardProps) {
@@ -37,6 +41,9 @@ export function DocumentaryCard({
     mode,
     motion,
     sequence,
+    materialBaseUrl,
+    materialUrls,
+    materialAssets,
     frame,
     durationInFrames,
     progress,
@@ -68,6 +75,16 @@ export function documentaryCardPropsFromResolvedInput(
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
+  const materialAssets = {
+    tornPaper: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:torn-paper-cream-01' }),
+    tape: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:tape-kraft-01' }),
+  }
+  const resolvedMaterialAssets = Object.fromEntries(
+    Object.entries(materialAssets).map(([name, result]) => {
+      if (!result.valid) throw new Error(`Documentary card material failed to resolve: ${result.error.message}`)
+      return [name, result.value]
+    }),
+  ) as NonNullable<DocumentaryCardProps['materialAssets']>
   return {
     variant,
     content: input.manifest.content as DocumentaryCardProps['content'],
@@ -77,5 +94,10 @@ export function documentaryCardPropsFromResolvedInput(
     mode,
     motion,
     sequence: input.manifest.sequence,
+    materialAssets: resolvedMaterialAssets,
+    materialUrls: {
+      tornPaper: resolvedMaterialAssets.tornPaper?.url,
+      tape: resolvedMaterialAssets.tape?.url,
+    },
   }
 }
