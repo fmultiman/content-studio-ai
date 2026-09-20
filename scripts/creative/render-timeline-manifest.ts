@@ -14,6 +14,7 @@ import { renderMedia, selectComposition } from '@remotion/renderer'
 import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
 import { resolveTimelineManifest, type ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import { timelineAdapterDiagnostics } from '@/remotion/timeline'
+import { prepareTypography } from '@/lib/creative/typography/prepare-typography'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..', '..')
@@ -48,6 +49,7 @@ export type TimelineVideoExecutionResult = {
   started_at: string
   finished_at: string
   duration_ms: number
+  typography_preparation_ms: number
   diagnostics: unknown[]
   source_manifest_fixture: string
   extracted_frames: Array<{ label: string; frame_path: string }>
@@ -129,6 +131,8 @@ export async function renderOfficialTimelineManifest(
 ): Promise<TimelineVideoExecutionResult> {
   const { manifest, sourcePath } = await readTimelineManifest(fixturePath)
   const resolvedInput = resolveOfficialTimeline(manifest)
+  const typography = await prepareTypography(resolvedInput.tokens)
+  if (!typography.valid) throw new TimelineRenderValidationError('Typography could not be prepared for video render.', typography.errors)
   const started = new Date()
   await mkdir(outputDir, { recursive: true })
 
@@ -190,6 +194,7 @@ export async function renderOfficialTimelineManifest(
     started_at: started.toISOString(),
     finished_at: finished.toISOString(),
     duration_ms: finished.getTime() - started.getTime(),
+    typography_preparation_ms: typography.value.preparation_ms,
     diagnostics: resolvedInput.diagnostics,
     source_manifest_fixture: repoRelative(sourcePath),
     extracted_frames: extractedFrames,

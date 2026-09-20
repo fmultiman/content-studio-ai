@@ -5,6 +5,7 @@ import type { DocumentaryCardProps } from '@/components/creative/documentary-car
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
+import { TypographyReadyBoundary } from './TypographyReadyBoundary'
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
@@ -67,5 +68,5 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     canvas: resolvedInput.manifest.canvas,
     sequence: resolvedInput.manifest.sequence,
   }, { mode: 'still', overrides })
-  return <>{binding.component(remotionTemplateProps(props))}</>
+  return <TypographyReadyBoundary typography={resolvedInput.typography}>{binding.component(remotionTemplateProps(props))}</TypographyReadyBoundary>
 }

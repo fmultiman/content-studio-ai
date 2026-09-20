@@ -7,6 +7,7 @@ import { renderStill, selectComposition } from '@remotion/renderer'
 import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { resolveTemplateComponent } from '@/lib/creative/templates/component-resolver'
+import { prepareTypography } from '@/lib/creative/typography/prepare-typography'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..', '..')
@@ -35,6 +36,7 @@ export type StaticRenderExecutionResult = {
   finished_at: string
   duration_ms: number
   diagnostics: Array<{ kind: string; code?: string; message: string; path?: string }>
+  typography_preparation_ms?: number
   alpha_assets?: AlphaAssetResult[]
   source_manifest_fixture: string
 }
@@ -153,6 +155,8 @@ async function main(): Promise<void> {
     }
 
     const input = resolved.value
+    const typography = await prepareTypography(input.tokens)
+    if (!typography.valid) throw new Error(`Typography preparation failed: ${JSON.stringify(typography.errors)}`)
     const templateKey = `${input.resolvedTemplate.ref.id}@${input.resolvedTemplate.ref.version}`
     const componentKey = input.resolvedTemplate.descriptor.component_key
     if (!resolveTemplateComponent(componentKey)) throw new Error(`No component registered for ${componentKey}`)
@@ -185,6 +189,7 @@ async function main(): Promise<void> {
       finished_at: finished.toISOString(),
       duration_ms: finished.getTime() - started.getTime(),
       diagnostics: input.diagnostics,
+      typography_preparation_ms: typography.value.preparation_ms,
       alpha_assets: alphaAssets,
       source_manifest_fixture: sourceManifestFixture,
     }

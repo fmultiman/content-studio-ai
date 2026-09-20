@@ -2,6 +2,7 @@ import React from 'react'
 import { useCurrentFrame } from 'remotion'
 import type { ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import { TemplateSegment } from './TemplateSegment'
+import { TypographyReadyBoundary } from '../TypographyReadyBoundary'
 
 export type TimelineCompositionProps = {
   resolvedInput: ResolvedTimelineInput
@@ -18,7 +19,7 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolv
     .sort((a, b) => a.order - b.order)
 
   return (
-    <>
+    <TypographyReadyBoundary typography={resolvedInput.typography}>
       {tracks.flatMap((track) => resolvedInput.resolvedTemplateSegments
         .filter((resolvedSegment) => resolvedSegment.segment.track_id === track.id)
         .map((resolvedSegment) => (
@@ -29,6 +30,6 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolv
             resolvedSegment={resolvedSegment}
           />
         )))}
-    </>
+    </TypographyReadyBoundary>
   )
 }

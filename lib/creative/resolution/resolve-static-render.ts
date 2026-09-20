@@ -11,11 +11,13 @@ import {
   type ResolvedTemplate,
 } from '@/lib/creative/templates/registry'
 import { resolutionResult, schemaDiagnostics, type ResolutionResult, type RuntimeDiagnostic } from './diagnostics'
+import { resolveTypography, tokensWithResolvedTypography, type ResolvedTypography } from '@/lib/creative/typography/resolve-typography'
 
 export type ResolvedStaticRenderInput = {
   manifest: StaticRenderManifest
   resolvedTemplate: ResolvedTemplate
   tokens: VisualTokensSnapshot
+  typography: ResolvedTypography
   resolvedAssets: Record<string, ResolvedAsset>
   diagnostics: RuntimeDiagnostic[]
 }
@@ -43,6 +45,10 @@ export function resolveStaticRenderManifest(input: unknown): ResolutionResult<Re
   }
 
   if (!template.valid || !identity.valid) return resolutionResult(errors)
+
+  const typography = resolveTypography(identity.value)
+  if (!typography.valid) errors.push(...typography.errors)
+  if (!typography.valid) return resolutionResult(errors)
 
   const mode = validateTemplateMode(template.value, 'still')
   if (!mode.valid) errors.push(templateDiagnostic(mode.error))
@@ -73,7 +79,8 @@ export function resolveStaticRenderManifest(input: unknown): ResolutionResult<Re
   const value: ResolvedStaticRenderInput = {
     manifest,
     resolvedTemplate: template.value,
-    tokens: identity.value,
+    tokens: tokensWithResolvedTypography(identity.value, typography.value),
+    typography: typography.value,
     resolvedAssets,
     diagnostics: [],
   }

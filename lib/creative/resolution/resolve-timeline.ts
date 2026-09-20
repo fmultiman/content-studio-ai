@@ -13,6 +13,7 @@ import {
   type ResolvedTemplate,
 } from '@/lib/creative/templates/registry'
 import { resolutionResult, schemaDiagnostics, type ResolutionResult, type RuntimeDiagnostic } from './diagnostics'
+import { resolveTypography, tokensWithResolvedTypography, type ResolvedTypography } from '@/lib/creative/typography/resolve-typography'
 
 type TemplateSegment = typeof TemplateSegmentSchema['_output']
 
@@ -25,6 +26,7 @@ export type ResolvedTimelineTemplateSegment = {
 export type ResolvedTimelineInput = {
   manifest: TimelineManifest
   tokens: VisualTokensSnapshot
+  typography: ResolvedTypography
   resolvedAssets: Record<string, ResolvedAsset>
   resolvedTemplateSegments: ResolvedTimelineTemplateSegment[]
   diagnostics: RuntimeDiagnostic[]
@@ -73,6 +75,9 @@ export function resolveTimelineManifest(input: unknown): ResolutionResult<Resolv
   const identity = resolveIdentitySnapshot(manifest.identity)
   if (!identity.valid) errors.push({ kind: 'identity_error', ...identity.error })
 
+  const typography = identity.valid ? resolveTypography(identity.value) : { valid: false as const, errors: [] }
+  if (!typography.valid) errors.push(...typography.errors)
+
   const resolvedAssets = resolveAssetSlots(manifest.assets, 'assets', errors)
   const resolvedTemplateSegments: ResolvedTimelineTemplateSegment[] = []
 
@@ -110,11 +115,12 @@ export function resolveTimelineManifest(input: unknown): ResolutionResult<Resolv
     }
   }
 
-  if (!identity.valid || errors.length > 0) return resolutionResult(errors)
+  if (!identity.valid || !typography.valid || errors.length > 0) return resolutionResult(errors)
 
   const value: ResolvedTimelineInput = {
     manifest,
-    tokens: identity.value,
+    tokens: tokensWithResolvedTypography(identity.value, typography.value),
+    typography: typography.value,
     resolvedAssets,
     resolvedTemplateSegments,
     diagnostics: [],

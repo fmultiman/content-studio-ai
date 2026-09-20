@@ -6,6 +6,7 @@ export type RuntimeDiagnosticKind =
   | 'binding_error'
   | 'identity_error'
   | 'asset_error'
+  | 'typography_error'
 
 export type RuntimeDiagnostic = {
   kind: RuntimeDiagnosticKind

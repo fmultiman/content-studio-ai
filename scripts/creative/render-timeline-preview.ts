@@ -8,6 +8,7 @@ import { documentaryCardTimelinePreview } from '@/lib/creative/fixtures/timeline
 import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
 import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
 import { timelineAdapterDiagnostics } from '@/remotion/timeline'
+import { prepareTypography } from '@/lib/creative/typography/prepare-typography'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..', '..')
@@ -28,6 +29,8 @@ export async function renderTimelinePreview(manifest?: TimelineManifest): Promis
   const selectedManifest = manifest ?? await defaultTimelineManifest()
   const resolved = resolveTimelineManifest(selectedManifest)
   if (!resolved.valid) throw new Error(`Timeline manifest failed resolution: ${JSON.stringify(resolved.errors)}`)
+  const typography = await prepareTypography(resolved.value.tokens)
+  if (!typography.valid) throw new Error(`Typography preparation failed: ${JSON.stringify(typography.errors)}`)
 
   await mkdir(outputDir, { recursive: true })
   const webpackOverride: WebpackOverrideFn = (config: WebpackConfiguration) => ({
@@ -66,6 +69,7 @@ export async function renderTimelinePreview(manifest?: TimelineManifest): Promis
     specification: resolved.value.manifest.specification,
     component_key: resolved.value.resolvedTemplateSegments[0]?.resolvedTemplate.descriptor.component_key,
     motion: resolved.value.resolvedTemplateSegments[0]?.segment.payload.motion,
+    typography_preparation_ms: typography.value.preparation_ms,
     adapter_diagnostics: timelineAdapterDiagnostics(resolved.value),
     frames: outputs,
   }
