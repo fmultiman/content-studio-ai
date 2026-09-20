@@ -204,7 +204,9 @@ Ambos os outputs vivem em `.tmp/creative/` (git-ignorado, nunca versionado) — 
 1. **Render em produção não pode acontecer em `app/api/**` na Vercel.** `@remotion/renderer` depende de Chromium headless, que excede o limite de 50 MB de Vercel Functions (confirmado na documentação oficial do Remotion, citada no audit Wave 0). Por isso os scripts de render são Node puro, nunca importados por uma rota Next — confirmado pelo teste de isolamento.
 2. **Verificação visual interativa da rota `/dev/creative-preview` não foi concluída nesta sessão.** Ao subir `pnpm dev` e navegar até a rota via browser, o middleware global existente (`proxy.ts` → `lib/supabase/middleware.ts`) lançou `500` por falta de `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` neste ambiente (sem `.env.local`). **Confirmado que isso é um gap de ambiente pré-existente e não uma regressão desta Wave**: a mesma verificação em `/login` (rota existente, não tocada) produz exatamente o mesmo erro. Não criei `.env.local` nem credenciais fictícias (fora de escopo; "NÃO consultar Supabase"). A prova de "preview funciona" para o Gate 1 se apoia em vez disso em: (a) `pnpm build` gerando `/dev/creative-preview` como página estática (`○`) sem erros; (b) `pnpm typecheck` limpo; (c) o teste de isolamento confirmando que a rota realmente importa `@remotion/player`; (d) o fato de que o **mesmo componente `SpikeComposition`** foi executado com sucesso dentro do Chromium headless via `renderStill`/`renderMedia` — evidência mais forte de correção do que uma captura de tela isolada.
 3. **`esbuild` exigiu aprovação manual de build script** (§2.2) — resolvido com escopo mínimo e aprovação explícita.
-4. Compatibilidade Next 16.2.4 com Remotion 4.0.526 não é citada explicitamente na documentação oficial (que cita "Next.js 15" como referência de upgrade para React 19), mas **`pnpm build` completo (compile + typecheck + geração estática de 39 rotas, incluindo a nova) não apresentou nenhum erro atribuível a essa combinação** — evidência empírica de compatibilidade nesta versão, ainda que não testada em runtime de produção real.
+4. Compatibilidade Next 16.2.4 com Remotion 4.0.526 não é citada explicitamente na documentação oficial (que cita "Next.js 15" como referência de upgrade para React 19), mas **`pnpm build` completo (compile + typecheck + geração de todas as rotas, incluindo a nova) não apresentou nenhum erro atribuível a essa combinação** — evidência empírica de compatibilidade nesta versão, ainda que não testada em runtime de produção real.
+
+> **Correção factual (registrada na Wave 2):** a versão original desta seção citava "39 rotas"/"38 rotas" a partir do contador interno de build do Next.js `Generating static pages (38/38)`, que mede apenas páginas geradas estaticamente (`○`) e não o total de rotas. A contagem correta de rotas baseadas em arquivo (`page.tsx` + `route.ts`) sob `app/`, confirmada por listagem direta do sistema de arquivos, é **48 pré-existentes** (17 `page.tsx` + 31 `route.ts`) + 1 nova (`app/dev/creative-preview/page.tsx`) = 49 rotas em arquivo; a tabela impressa pelo `pnpm build` soma 50 linhas porque inclui também a entrada sintética `/_not-found`, gerada automaticamente pelo Next e não correspondente a um arquivo do projeto.
 
 ### 2.8 Impacto no build/runtime — registrado
 
@@ -213,8 +215,8 @@ Ambos os outputs vivem em `.tmp/creative/` (git-ignorado, nunca versionado) — 
 | `pnpm typecheck` | PASS | PASS |
 | `pnpm test` | 288/288 (17 arquivos) | 288/288 (17 arquivos, +1 novo: `renderer-isolation.test.ts`) |
 | `pnpm lint` | 0 erros, 45 warnings | 0 erros, 45 warnings (nenhum novo) |
-| `pnpm build` | não executado no baseline | **PASS** — Turbopack compile 91s + TypeScript 46s + geração estática (39 rotas, 38 páginas) ≈ 1.9s; total ≈ 3m 8s |
-| Rotas existentes | 38 rotas (`app/(dashboard)/**`, `app/api/**`, etc.) | as mesmas 38 rotas **inalteradas**, + 1 nova rota estática isolada (`/dev/creative-preview`) |
+| `pnpm build` | não executado no baseline | **PASS** — Turbopack compile 91s + TypeScript 46s + geração de páginas (contador interno do Next: 38/38 páginas estáticas) ≈ 1.9s; total ≈ 3m 8s |
+| Rotas existentes (arquivo) | 48 rotas pré-existentes (17 `page.tsx` + 31 `route.ts` sob `app/`, contadas por listagem direta) | as mesmas 48 rotas **inalteradas**, + 1 nova rota estática isolada (`/dev/creative-preview`) = 49 rotas em arquivo |
 | Tamanho de `node_modules` | — | +168 pacotes novos (135 do primeiro `pnpm add` + 33 do `@remotion/cli`), incluindo o binário Chrome Headless Shell (113.3 MB, armazenado no cache do Remotion, fora do repositório) |
 | Dependências de banco/domínio tocadas | — | nenhuma |
 
@@ -228,7 +230,7 @@ Ambos os outputs vivem em `.tmp/creative/` (git-ignorado, nunca versionado) — 
 | 2 | Preview funciona | ✅ (arquitetural) / ⚠️ (visual bloqueado por gap de ambiente não relacionado) | §2.7 item 2 |
 | 3 | Still real gerado | ✅ | `spike-still.png`, PNG 1080×1350, 26 611 bytes |
 | 4 | MP4 real gerado | ✅ | `spike-video.mp4`, ISO Media, 1080×1920/30fps/180f, 171 881 bytes |
-| 5 | React/Next existentes continuam funcionais | ✅ | `pnpm build` — 38 rotas existentes intactas + build completo sem erros |
+| 5 | React/Next existentes continuam funcionais | ✅ | `pnpm build` — 48 rotas em arquivo pré-existentes intactas + build completo sem erros |
 | 6 | Nenhum schema/domain module importa Remotion | ✅ | `lib/creative/__tests__/renderer-isolation.test.ts` passou (varredura de `app/`, `lib/`, `components/`) |
 | 7 | Nenhuma rota/API existente foi alterada | ✅ | `git status --porcelain` restrito às áreas WIP/domínio — vazio |
 | 8 | Nenhum banco foi acessado | ✅ | nenhum import de `@/lib/supabase/*` em qualquer arquivo novo |
