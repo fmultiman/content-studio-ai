@@ -6,22 +6,30 @@ import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/compon
 import {
   AUTHORING_HERO_ASSETS,
   DEFAULT_TUNING,
+  DEFAULT_PRIMITIVE_TRANSFORMS,
+  DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
   TUNING_BOUNDS,
   clampTuningValue,
   createInitialAuthoringState,
   defaultContentForVariant,
   deriveManifestFromState,
+  derivePrimitiveSelectionRequest,
   resolvePreviewInput,
+  projectRefForIdentity,
   type AuthoringCanvas,
   type AuthoringCoverContent,
   type AuthoringHeroRef,
   type AuthoringIdentity,
   type AuthoringInfoContent,
+  type AuthoringPrimitiveSelection,
+  type AuthoringPrimitiveTransforms,
   type AuthoringState,
   type AuthoringVariant,
   type DocumentaryCardPreviewTuning,
+  type PrimitiveTransforms,
 } from '@/lib/creative/authoring'
 import { resolveTemplateComponent } from '@/lib/creative/templates/component-resolver'
+import { listPrimitivesForProject, type PrimitiveListItem } from '@/lib/creative/primitives/discovery'
 
 type RenderResult = {
   status: 'succeeded'
@@ -37,6 +45,8 @@ type RenderResult = {
   diagnostics: unknown[]
   bridge: 'local-dev-only'
   tuned: boolean
+  primitive_paper?: string
+  primitive_tape?: string
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -54,6 +64,13 @@ type Action =
   | { type: 'RESET_TUNING' }
   | { type: 'RESET_CONTENT' }
   | { type: 'TOGGLE_DEBUG' }
+  // Phase 2C: primitive selection
+  | { type: 'SET_PRIMITIVE_PAPER'; key: string | undefined }
+  | { type: 'SET_PRIMITIVE_TAPE'; key: string | undefined }
+  | { type: 'RESET_PRIMITIVE_PAPER' }
+  | { type: 'RESET_PRIMITIVE_TAPE' }
+  | { type: 'SET_PRIMITIVE_TRANSFORM'; slot: 'paper' | 'tape'; field: keyof PrimitiveTransforms; value: number }
+  | { type: 'RESET_PRIMITIVE_TRANSFORMS'; slot: 'paper' | 'tape' }
 
 function reducer(state: AuthoringState, action: Action): AuthoringState {
   switch (action.type) {
@@ -79,6 +96,11 @@ function reducer(state: AuthoringState, action: Action): AuthoringState {
         identity: action.identity,
         heroRef: undefined,
         contentOverride: defaultContentForVariant(state.variant, action.identity),
+        // Reset primitive selection when identity changes (may not have primitives)
+        primitiveSelection: action.identity === 'a'
+          ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' }
+          : {},
+        primitiveTransforms: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE },
       }
     case 'SET_CANVAS':
       return { ...state, canvas: action.canvas }
@@ -110,6 +132,62 @@ function reducer(state: AuthoringState, action: Action): AuthoringState {
       return { ...state, contentOverride: defaultContentForVariant(state.variant, state.identity), heroRef: undefined }
     case 'TOGGLE_DEBUG':
       return { ...state, debugPanelOpen: !state.debugPanelOpen }
+    // Phase 2C: primitive selection actions
+    case 'SET_PRIMITIVE_PAPER':
+      return {
+        ...state,
+        primitiveSelection: { ...state.primitiveSelection, paper: action.key },
+        // Reset transforms when changing primitive selection
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+        },
+      }
+    case 'SET_PRIMITIVE_TAPE':
+      return {
+        ...state,
+        primitiveSelection: { ...state.primitiveSelection, tape: action.key },
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+        },
+      }
+    case 'RESET_PRIMITIVE_PAPER':
+      return {
+        ...state,
+        primitiveSelection: { ...state.primitiveSelection, paper: 'paper-card-light-01' },
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+        },
+      }
+    case 'RESET_PRIMITIVE_TAPE':
+      return {
+        ...state,
+        primitiveSelection: { ...state.primitiveSelection, tape: 'tape-kraft-short-01' },
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+        },
+      }
+    case 'SET_PRIMITIVE_TRANSFORM': {
+      const prevSlot = state.primitiveTransforms[action.slot]
+      return {
+        ...state,
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          [action.slot]: { ...prevSlot, [action.field]: action.value },
+        },
+      }
+    }
+    case 'RESET_PRIMITIVE_TRANSFORMS':
+      return {
+        ...state,
+        primitiveTransforms: {
+          ...state.primitiveTransforms,
+          [action.slot]: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+        },
+      }
     default:
       return state
   }
@@ -149,7 +227,7 @@ const S = {
     display: 'grid',
     flex: 1,
     gap: 0,
-    gridTemplateColumns: '260px 1fr',
+    gridTemplateColumns: '280px 1fr',
   },
   panel: {
     background: '#161b22',
@@ -219,6 +297,15 @@ const S = {
     fontSize: 11,
     padding: '4px 10px',
   },
+  btnSm: {
+    background: '#21262d',
+    border: '1px solid #30363d',
+    borderRadius: 4,
+    color: '#8b949e',
+    cursor: 'pointer',
+    fontSize: 10,
+    padding: '2px 8px',
+  },
   previewArea: {
     alignItems: 'center',
     background: '#010409',
@@ -262,6 +349,37 @@ const S = {
     cursor: 'pointer',
     marginBottom: 6,
     padding: '6px 8px',
+  },
+  primitiveCard: {
+    alignItems: 'center',
+    background: '#0d1117',
+    border: '1px solid #30363d',
+    borderRadius: 4,
+    cursor: 'pointer',
+    display: 'flex',
+    gap: 8,
+    marginBottom: 4,
+    padding: '6px 8px',
+  },
+  primitiveCardActive: {
+    alignItems: 'center',
+    background: '#1f6feb22',
+    border: '1px solid #1f6feb',
+    borderRadius: 4,
+    cursor: 'pointer',
+    display: 'flex',
+    gap: 8,
+    marginBottom: 4,
+    padding: '6px 8px',
+  },
+  categoryPill: {
+    background: '#21262d',
+    borderRadius: 3,
+    color: '#8b949e',
+    fontSize: 9,
+    letterSpacing: '.06em',
+    padding: '1px 5px',
+    textTransform: 'uppercase' as const,
   },
   checker: {
     background: 'repeating-conic-gradient(#333 0% 25%, #1a1a1a 0% 50%) 0 0 / 10px 10px',
@@ -319,6 +437,99 @@ function Slider({
   )
 }
 
+// ─── PrimitivePicker ──────────────────────────────────────────────────────────
+
+function PrimitivePicker({
+  slot,
+  label,
+  primitives,
+  selectedKey,
+  onSelect,
+  onReset,
+}: {
+  slot: 'paper' | 'tape'
+  label: string
+  primitives: PrimitiveListItem[]
+  selectedKey: string | undefined
+  onSelect: (key: string | undefined) => void
+  onReset: () => void
+}) {
+  const slotCategory = slot === 'paper' ? 'paper' : 'tape'
+  const available = primitives.filter((p) => p.category === slotCategory)
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={S.label}>{label}</span>
+        <button style={S.btnSm} onClick={onReset} title={`Reset ${slot} to template default`}>
+          Reset {slot}
+        </button>
+      </div>
+      {available.length === 0
+        ? <div style={{ color: '#484f58', fontSize: 10 }}>No {slot} primitives available for this project.</div>
+        : available.map((primitive) => {
+            const isActive = selectedKey === primitive.key
+            return (
+              <div
+                key={primitive.key}
+                style={isActive ? S.primitiveCardActive : S.primitiveCard}
+                onClick={() => { onSelect(isActive ? undefined : primitive.key) }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') onSelect(isActive ? undefined : primitive.key) }}
+              >
+                <span style={S.checker} title="Alpha transparent PNG" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: isActive ? '#58a6ff' : '#c9d1d9', fontSize: 11, fontWeight: isActive ? 700 : 400 }}>
+                    {primitive.display_name}
+                  </div>
+                  <div style={{ color: '#484f58', fontSize: 9, marginTop: 1 }}>
+                    {primitive.key} · v{primitive.version}
+                    <span style={{ ...S.categoryPill, marginLeft: 4 }}>{primitive.category}</span>
+                  </div>
+                </div>
+                {isActive && <span style={{ color: '#3fb950', fontSize: 9 }}>✓</span>}
+              </div>
+            )
+          })
+      }
+      {selectedKey === undefined && (
+        <div style={{ color: '#6e7681', fontSize: 9, marginTop: 2 }}>
+          No primitive selected — template fixture fallback active.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── PrimitiveTransformControls ───────────────────────────────────────────────
+
+function PrimitiveTransformControls({
+  slot,
+  transforms,
+  onChange,
+  onReset,
+}: {
+  slot: 'paper' | 'tape'
+  transforms: PrimitiveTransforms
+  onChange: (field: keyof PrimitiveTransforms, value: number) => void
+  onReset: () => void
+}) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ color: '#8b949e', fontSize: 10 }}>{slot} transforms</span>
+        <button style={S.btnSm} onClick={onReset}>Reset</button>
+      </div>
+      <Slider label="offset X" value={transforms.offsetX} min={-120} max={120} step={1} onChange={(v) => { onChange('offsetX', v) }} />
+      <Slider label="offset Y" value={transforms.offsetY} min={-120} max={120} step={1} onChange={(v) => { onChange('offsetY', v) }} />
+      <Slider label="rotation" value={transforms.rotation} min={-15} max={15} step={0.5} onChange={(v) => { onChange('rotation', v) }} />
+      <Slider label="scale" value={transforms.scale} min={0.5} max={2} step={0.01} onChange={(v) => { onChange('scale', v) }} />
+      <Slider label="opacity" value={transforms.opacity} min={0} max={1} step={0.01} onChange={(v) => { onChange('opacity', v) }} />
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AuthoringLabPage() {
@@ -349,12 +560,28 @@ export default function AuthoringLabPage() {
   // Derive the manifest (tuning excluded) for the debug panel
   const derivedManifest = useMemo(() => deriveManifestFromState(state), [state])
 
+  // Phase 2C: derive primitive selection for render request
+  const primitiveSelectionRequest = useMemo(() => derivePrimitiveSelectionRequest(state), [state])
+
+  // Phase 2C: discover available primitives for identity 'a' (Portal project)
+  const projectRef = useMemo(() => projectRefForIdentity(state.identity), [state.identity])
+  const availablePrimitives = useMemo((): PrimitiveListItem[] => {
+    if (!projectRef) return []
+    const result = listPrimitivesForProject(projectRef)
+    return result.found ? result.primitives : []
+  }, [projectRef])
+
   const renderThis = useCallback(async () => {
     setRenderState('rendering')
     setRenderError(null)
     try {
       const response = await fetch('/dev/creative-preview/render', {
-        body: JSON.stringify({ manifest: derivedManifest, overrides: { documentaryCard: state.tuning } }),
+        body: JSON.stringify({
+          manifest: derivedManifest,
+          overrides: { documentaryCard: state.tuning },
+          // Phase 2C: pass primitive selection alongside the manifest
+          ...(primitiveSelectionRequest ? { primitiveSelection: primitiveSelectionRequest } : {}),
+        }),
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       })
@@ -366,14 +593,13 @@ export default function AuthoringLabPage() {
       setRenderState('error')
       setRenderError(error instanceof Error ? error.message : 'Render failed.')
     }
-  }, [derivedManifest, state.tuning])
+  }, [derivedManifest, state.tuning, primitiveSelectionRequest])
 
   // Canvas dimensions for scaling
   const canvasHeight = state.canvas === 'portrait' ? 1350 : 1920
   const canvasWidth = 1080
 
   // Preview scale to fit in the center column
-  // Target ~480px wide max, or constrained by 70vh height
   const [previewWidth] = useState(360)
   const previewHeight = Math.round((previewWidth / canvasWidth) * canvasHeight)
   const scale = previewWidth / canvasWidth
@@ -388,17 +614,24 @@ export default function AuthoringLabPage() {
   const heroTuning = state.tuning.hero
   const titleTuning = state.tuning.title
 
+  const hasPrimitives = availablePrimitives.length > 0
+
   return (
     <div style={S.root}>
       {/* Header */}
       <div style={S.header}>
         <div style={{ alignItems: 'center', display: 'flex', gap: 10 }}>
           <span style={S.headerTitle}>Documentary Card — Authoring Lab</span>
-          <span style={S.headerBadge}>Wave 6 · /dev/creative-preview</span>
+          <span style={S.headerBadge}>Phase 2C · /dev/creative-preview</span>
           {componentResolved
             ? <span style={{ ...S.headerBadge, background: '#1a7f2233', border: '1px solid #3fb950', color: '#3fb950' }}>component ✓</span>
             : <span style={{ ...S.headerBadge, background: '#7d0c1533', border: '1px solid #da3633', color: '#da3633' }}>component ✗</span>
           }
+          {hasPrimitives && (
+            <span style={{ ...S.headerBadge, background: '#1a7f2233', border: '1px solid #3fb950', color: '#3fb950' }}>
+              {availablePrimitives.length} primitives
+            </span>
+          )}
         </div>
         <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
           <button style={S.btnPrimary} disabled={renderState === 'rendering'} onClick={() => { void renderThis() }}>
@@ -411,7 +644,7 @@ export default function AuthoringLabPage() {
       </div>
 
       {/* Body */}
-      <div style={{ ...S.body, gridTemplateColumns: state.debugPanelOpen ? '260px 1fr 300px' : '260px 1fr' }}>
+      <div style={{ ...S.body, gridTemplateColumns: state.debugPanelOpen ? '280px 1fr 300px' : '280px 1fr' }}>
         {/* ── Left panel ── */}
         <div style={S.panel}>
 
@@ -430,7 +663,7 @@ export default function AuthoringLabPage() {
               </select>
             </div>
             <div style={{ marginBottom: 6 }}>
-              <label style={S.label}>Identity</label>
+              <label style={S.label}>Identity / Project</label>
               <select
                 style={S.select}
                 value={state.identity}
@@ -460,6 +693,74 @@ export default function AuthoringLabPage() {
               </button>
             </div>
           </div>
+
+          {/* ── Phase 2C: Primitive Slots ── */}
+          {hasPrimitives && (
+            <div style={S.section}>
+              <div style={S.sectionTitle}>
+                Primitives
+                <span style={{ color: '#484f58', fontWeight: 400 }}> (project-scoped)</span>
+              </div>
+              <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 8 }}>
+                Select materials from the project&apos;s primitive catalog.
+                <br />
+                <span style={{ color: '#484f58' }}>Preview uses fixture proxy; final render uses real S3 assets.</span>
+              </div>
+
+              {/* Paper slot */}
+              <PrimitivePicker
+                slot="paper"
+                label="Paper slot"
+                primitives={availablePrimitives}
+                selectedKey={state.primitiveSelection.paper}
+                onSelect={(key) => { dispatch({ type: 'SET_PRIMITIVE_PAPER', key }) }}
+                onReset={() => { dispatch({ type: 'RESET_PRIMITIVE_PAPER' }) }}
+              />
+
+              {/* Tape slot */}
+              <PrimitivePicker
+                slot="tape"
+                label="Tape slot"
+                primitives={availablePrimitives}
+                selectedKey={state.primitiveSelection.tape}
+                onSelect={(key) => { dispatch({ type: 'SET_PRIMITIVE_TAPE', key }) }}
+                onReset={() => { dispatch({ type: 'RESET_PRIMITIVE_TAPE' }) }}
+              />
+
+              {primitiveSelectionRequest && (
+                <div style={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: 3, fontSize: 9, marginTop: 6, padding: '4px 6px' }}>
+                  <span style={{ color: '#3fb950' }}>✓ Render will use real project primitives</span><br />
+                  <span style={{ color: '#484f58' }}>Manifest stays neutral (no PrimitiveRef)</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Phase 2C: Primitive Transforms */}
+          {hasPrimitives && (state.primitiveSelection.paper || state.primitiveSelection.tape) && (
+            <div style={S.section}>
+              <div style={S.sectionTitle}>
+                Primitive Transforms
+                <span style={{ color: '#484f58', fontWeight: 400 }}> (authoring-layer)</span>
+              </div>
+              {state.primitiveSelection.paper && (
+                <PrimitiveTransformControls
+                  slot="paper"
+                  transforms={state.primitiveTransforms.paper}
+                  onChange={(field, value) => { dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: 'paper', field, value }) }}
+                  onReset={() => { dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: 'paper' }) }}
+                />
+              )}
+              {state.primitiveSelection.tape && (
+                <PrimitiveTransformControls
+                  slot="tape"
+                  transforms={state.primitiveTransforms.tape}
+                  onChange={(field, value) => { dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: 'tape', field, value }) }}
+                  onReset={() => { dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: 'tape' }) }}
+                />
+              )}
+            </div>
+          )}
 
           {/* Content editing */}
           <div style={S.section}>
@@ -536,9 +837,6 @@ export default function AuthoringLabPage() {
                   </div>
                 )
               })}
-              <div style={{ color: '#484f58', fontSize: 9, marginTop: 4 }}>
-                Checkerboard = transparent (alpha-backed). Solid grey = opaque.
-              </div>
             </div>
           )}
 
@@ -652,7 +950,9 @@ export default function AuthoringLabPage() {
 
           <div style={{ color: '#484f58', fontSize: 10, maxWidth: 360, textAlign: 'center' }}>
             Preview scale: {Math.round(scale * 100)}% of {canvasWidth}×{canvasHeight}.
-            Tuning changes apply instantly without page reload.
+            {primitiveSelectionRequest
+              ? ' Using project primitives · paper + tape real S3 assets in final render.'
+              : ' No project primitives selected.'}
           </div>
 
           <div style={S.finalRenderCard}>
@@ -668,12 +968,15 @@ export default function AuthoringLabPage() {
                     <Image alt="Final rendered Documentary Card PNG" height={340} src={renderResult.image_data_url} style={{ height: 'auto', maxHeight: 340, maxWidth: 272, objectFit: 'contain', width: 'auto' }} unoptimized width={272} />
                     <div style={S.renderMeta}>
                       {renderResult.duration_ms} ms · {renderResult.variant} · {renderResult.canvas.width}×{renderResult.canvas.height}<br />
-                      {renderResult.tuned ? 'runtime tuning included' : 'default Wave 5 behavior'} · {renderResult.bridge}<br />
+                      {renderResult.tuned ? 'runtime tuning included' : 'default behavior'} · {renderResult.bridge}<br />
+                      {renderResult.primitive_paper && <span style={{ color: '#3fb950' }}>paper: {renderResult.primitive_paper}</span>}
+                      {renderResult.primitive_paper && renderResult.primitive_tape && ' · '}
+                      {renderResult.primitive_tape && <span style={{ color: '#3fb950' }}>tape: {renderResult.primitive_tape}</span>}<br />
                       {renderResult.output_identifier} · diagnostics: {renderResult.diagnostics.length}
                     </div>
                   </>
                 )
-              : <div style={{ color: '#484f58', fontSize: 11 }}>Click “Render this” to compare the real PNG with the live preview.</div>}
+              : <div style={{ color: '#484f58', fontSize: 11 }}>Click &quot;Render this&quot; to compare the real PNG with the live preview.</div>}
             {renderError && <div style={{ color: '#da3633', fontSize: 10, maxWidth: 360 }}>{renderError}</div>}
           </div>
         </div>
@@ -681,6 +984,17 @@ export default function AuthoringLabPage() {
         {/* ── Optional right debug panel ── */}
         {state.debugPanelOpen && (
           <div style={{ ...S.panel, borderLeft: '1px solid #30363d', borderRight: 'none' }}>
+            <div style={S.section}>
+              <div style={S.sectionTitle}>Primitive Selection State</div>
+              <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 4 }}>
+                Semantic keys — never signed URLs
+              </div>
+              <pre style={S.codeBlock}>{JSON.stringify({
+                primitiveSelection: state.primitiveSelection,
+                primitiveTransforms: state.primitiveTransforms,
+                renderRequest: primitiveSelectionRequest ?? null,
+              }, null, 2)}</pre>
+            </div>
             <div style={S.section}>
               <div style={S.sectionTitle}>Current Tuning</div>
               <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 4 }}>
@@ -691,7 +1005,7 @@ export default function AuthoringLabPage() {
             <div style={S.section}>
               <div style={S.sectionTitle}>Derived Manifest (tuning excluded)</div>
               <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 4 }}>
-                This is what would feed the Wave 5 render path
+                This is what feeds the render path — no PrimitiveRef
               </div>
               <button
                 style={S.btn}
@@ -725,29 +1039,6 @@ export default function AuthoringLabPage() {
                   )
                 : <span style={{ color: '#da3633' }}>Resolution failed</span>
               }
-            </div>
-            <div style={S.section}>
-              <div style={S.sectionTitle}>Transparency Proof</div>
-              <div style={{ color: '#8b949e', fontSize: 10, marginBottom: 6 }}>
-                Alpha-backed material assets (confirmed via sharp in Wave 5)
-              </div>
-              {[
-                { name: 'torn-paper-cream-01.png', alpha: true },
-                { name: 'tape-kraft-01.png', alpha: true },
-                { name: 'documentary-card-hero-01.webp', alpha: false, note: 'opaque by design' },
-              ].map((a) => (
-                <div key={a.name} style={{ alignItems: 'center', display: 'flex', gap: 6, marginBottom: 4 }}>
-                  {a.alpha
-                    ? <span style={S.checker} />
-                    : <span style={{ background: '#555', borderRadius: 2, display: 'inline-block', height: 20, marginRight: 6, width: 20 }} />
-                  }
-                  <div>
-                    <div style={{ color: a.alpha ? '#3fb950' : '#8b949e', fontSize: 10 }}>
-                      {a.name} — {a.alpha ? 'alpha real ✓' : `opaque${a.note ? ` (${a.note})` : ''}`}
-                    </div>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         )}

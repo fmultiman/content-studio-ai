@@ -108,6 +108,53 @@ export const DEFAULT_TUNING: DocumentaryCardPreviewTuning = {
   title: { offsetX: 0, offsetY: 0, rotation: 0 },
 }
 
+// ── Primitive selection — semantic keys, never signed URLs ────────────────────
+
+/**
+ * Phase 2C: selected primitive keys per slot.
+ * Values are primitive keys (e.g. 'paper-card-light-01'), NOT library_file IDs,
+ * NOT signed URLs, NOT storage paths.
+ *
+ * undefined means "use template default" (fixture fallback).
+ */
+export interface AuthoringPrimitiveSelection {
+  paper?: string  // primitive key for the paper slot
+  tape?: string   // primitive key for the tape slot
+}
+
+/** Transforms applied by the authoring layer on top of template defaults. */
+export interface PrimitiveTransforms {
+  /** px offset, clamped */
+  offsetX: number
+  /** px offset, clamped */
+  offsetY: number
+  /** degrees */
+  rotation: number
+  /** dimensionless multiplier */
+  scale: number
+  /** 0–1 */
+  opacity: number
+}
+
+export const DEFAULT_PRIMITIVE_TRANSFORMS: PrimitiveTransforms = {
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  scale: 1,
+  opacity: 1,
+}
+
+/** Per-slot transform overrides in the authoring layer. */
+export interface AuthoringPrimitiveTransforms {
+  paper: PrimitiveTransforms
+  tape: PrimitiveTransforms
+}
+
+export const DEFAULT_PRIMITIVE_TRANSFORMS_STATE: AuthoringPrimitiveTransforms = {
+  paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+  tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+}
+
 // ── AuthoringState — full ephemeral session state ─────────────────────────────
 
 export interface AuthoringState {
@@ -123,6 +170,20 @@ export interface AuthoringState {
 
   /** Content overrides applied on top of the fixture defaults */
   contentOverride: AuthoringContent
+
+  /**
+   * Phase 2C: selected primitive keys for the paper and tape slots.
+   * Semantic selection — keys only. Resolution to AssetRef happens at
+   * preview and render time. NEVER stores signed URLs.
+   */
+  primitiveSelection: AuthoringPrimitiveSelection
+
+  /**
+   * Phase 2C: authoring-layer transforms for primitive slots.
+   * These are additional transforms on top of template defaults.
+   * NEVER serialised into a StaticRenderManifest directly.
+   */
+  primitiveTransforms: AuthoringPrimitiveTransforms
 
   /**
    * Preview-only visual tuning.

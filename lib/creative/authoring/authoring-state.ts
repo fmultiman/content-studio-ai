@@ -10,6 +10,8 @@ import type { CanvasSpec } from '@/lib/schemas/creative/primitives'
 import type { StaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { resolveDocumentaryCardFixture, documentaryCardTemplate } from '@/lib/creative/fixtures/documentary-card-fixtures'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
+import type { PrimitiveSelectionRequest } from './render-request'
+import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import {
   type AuthoringCanvas,
   type AuthoringCoverContent,
@@ -18,9 +20,8 @@ import {
   type AuthoringState,
   type AuthoringVariant,
   DEFAULT_TUNING,
-} from './types'
-
-// ── Canvas helpers ────────────────────────────────────────────────────────────
+  DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
+} from './types'// ── Canvas helpers ────────────────────────────────────────────────────────────
 
 export function canvasSpecFromAuthoring(canvas: AuthoringCanvas): CanvasSpec {
   return canvas === 'portrait'
@@ -86,6 +87,11 @@ export function createInitialAuthoringState(
     canvas,
     heroRef: undefined,
     contentOverride: defaultContentForVariant(variant, identity),
+    primitiveSelection: {
+      paper: 'paper-card-light-01',
+      tape: 'tape-kraft-short-01',
+    },
+    primitiveTransforms: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE },
     tuning: DEFAULT_TUNING,
     debugPanelOpen: false,
   }
@@ -166,6 +172,39 @@ export function deriveManifestFromState(state: AuthoringState): StaticRenderMani
     assets,
     output: { format: 'png' as const, role: 'fixture' as const },
     metadata: { fixture: true, not_a_database_record: true, notes: 'authoring-draft: visual overrides excluded' },
+  }
+}
+
+// ── Phase 2C: derive primitive selection for render request ───────────────────
+
+/**
+ * Map identity to a project ref for primitive catalog lookup.
+ * Only identity 'a' (Portal Comunidades Alternativas) has a real project-scoped
+ * primitive catalog. Identity 'b' has no project primitive catalog in V0.
+ */
+export function projectRefForIdentity(identity: AuthoringIdentity): string | null {
+  if (identity === 'a') return PORTAL_PROJECT_REF
+  return null
+}
+
+/**
+ * Derives the PrimitiveSelectionRequest to include in the render request.
+ * Returns undefined when identity has no primitive catalog or no primitives are selected.
+ *
+ * Phase 2C: neutral manifests do NOT carry PrimitiveRef.
+ * Primitive selection travels beside the manifest in the render request.
+ */
+export function derivePrimitiveSelectionRequest(state: AuthoringState): PrimitiveSelectionRequest | undefined {
+  const projectRef = projectRefForIdentity(state.identity)
+  if (!projectRef) return undefined
+
+  const { paper, tape } = state.primitiveSelection
+  if (!paper && !tape) return undefined
+
+  return {
+    projectRef,
+    ...(paper ? { paper } : {}),
+    ...(tape ? { tape } : {}),
   }
 }
 
