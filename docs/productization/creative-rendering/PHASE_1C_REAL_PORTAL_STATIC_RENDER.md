@@ -37,7 +37,7 @@ The live Identity contained persisted textual fields (`foundation`, `relationshi
 
 The existing read path is Supabase `library_files` access through the authenticated service/API layer, followed by `adaptLibraryFileToResolvedAsset` (`lib/creative/integration/library-file-adapter.ts`) and the existing `createPresignedReadUrl` abstraction (`lib/storage/s3.ts`). `LibraryFile` has `id`, project ownership, kind, MIME, and `storage_path`; it has no width/height fields. Signed URLs are runtime-only and must not be persisted or logged.
 
-The live lookup returned compatible image rows with `kind=image`, `mime_type=image/png`, `storage_provider=s3`, and non-null `storage_path`; no dimensions are persisted. The existing adapter accepted the canonical shape. Calling the existing `createPresignedReadUrl` with the live path was blocked cleanly because this checkout has no S3 endpoint/bucket/credential configuration. No URL was logged or persisted.
+The live lookup returned compatible image rows with `kind=image`, `mime_type=image/png`, `storage_provider=s3`, and non-null `storage_path`; no dimensions are persisted. The existing adapter accepted the canonical shape. The versioned S3 implementation is AWS SDK S3-compatible, uses the VPS endpoint `https://s3.multihuman.com.br`, bucket `content-studio`, default region `us-east-1`, and path-style addressing unless disabled. Calling `createPresignedReadUrl` with the live path was blocked because the process has no S3 credentials/configuration. No URL was logged or persisted.
 
 ## 6. Static render flow
 
@@ -55,8 +55,8 @@ No credentials, signed URL, token, or secret was written to source, documentatio
 |---|---:|
 | Identity fetch/preparation | Connector lookup/adaptation passed; timing not instrumented |
 | LibraryFile fetch | Connector lookup passed; timing not instrumented |
-| Presigned URL preparation | Not measured live |
-| Asset access | Control only; real S3 pending |
+| Presigned URL preparation | Blocked by missing S3 runtime configuration |
+| Asset access | Blocked by missing S3 runtime configuration |
 | Static render duration | 9,602 ms (canonical fixture control) |
 | Total live end-to-end | Not measured |
 
@@ -100,6 +100,12 @@ The connector read only the required schema and rows. It selected the active pro
 | Chromium live asset fetch | **BLOCKED_BY_ENVIRONMENT** |
 | Live PNG | **NOT RUN** |
 
-The S3 helper returned no URL because the local process has no configured endpoint, bucket, or access credentials. No credentials were exported or searched for, no `.env` file was created, and no signed URL was persisted. The live happy-path stops at the approved storage boundary.
+The S3 helper returned no URL because the local process has none of the required S3 variables. The normal mechanism is the application environment (`S3_ENDPOINT`, `S3_BUCKET_NAME` or `S3_BUCKET`, `S3_ACCESS_KEY` or `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` or `S3_SECRET_ACCESS_KEY`, optional `S3_REGION`, `S3_FORCE_PATH_STYLE`, and `PUBLIC_STORAGE_BASE_URL`). No credentials were exported or searched for, no `.env` file was created, and no signed URL was persisted. The live happy-path stops at the approved storage boundary.
 
-**Live verification gate:** `PASS_WITH_CONSTRAINTS` (`SUPABASE LIVE = PASS`, `PROJECT LIVE = PASS`, `PROJECT IDENTITY LIVE = PASS`, `LIBRARYFILE LIVE = PASS`, `S3 LIVE = BLOCKED_BY_ENVIRONMENT`).
+**Live verification gate:** `S3_ACCESS_CONFIGURATION_REQUIRED` (`SUPABASE LIVE = PASS`, `PROJECT LIVE = PASS`, `PROJECT IDENTITY LIVE = PASS`, `LIBRARYFILE LIVE = PASS`, `S3 LIVE = BLOCKED_BY_ENVIRONMENT`).
+
+### VPS storage verification
+
+**Storage environment:** `SHARED_DEVELOPMENT_PREPRODUCTION_STORAGE` (VPS)
+
+The provider and public endpoint/bucket are documented by versioned project configuration, but the access credentials are not available to this process. The required configuration must be supplied through the application's normal approved environment mechanism; it must not be pasted into chat or committed. No upload, delete, overwrite, bucket creation, or policy change was attempted.
