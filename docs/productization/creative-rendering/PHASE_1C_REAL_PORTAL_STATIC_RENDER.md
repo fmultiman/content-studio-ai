@@ -70,7 +70,7 @@ Existing adapter/tests cover missing storage path, unsupported/non-image MIME, m
 - Full suite: **457/457 PASS** (36 files).
 - Typecheck: **PASS**.
 - Lint: **0 errors / 45 warnings** (pre-existing warning baseline).
-- Build: **PASS** — Next.js 16.2.4, 38 routes generated.
+- Build: **PASS** — Next.js 16.2.4.
 
 ## 11. Phase 1C gate
 
@@ -79,3 +79,26 @@ Existing adapter/tests cover missing storage path, unsupported/non-image MIME, m
 ## 12. Remaining constraints and recommendation
 
 Do not start async infrastructure. The next slice should first provision or attach an explicitly authorized DEV-only read path (without changing tenancy, auth, bucket ownership, or schema), select an existing safe Project and associated LibraryFile read-only, run the same static orchestration, verify MIME/Chromium access before expiry, and then replace this control evidence with a redacted live execution summary. If credentials or policy require new authority, stop with `ARCHITECTURE / ENVIRONMENT ESCALATION REQUIRED`.
+
+## Live DEV Verification
+
+**Date:** 2026-09-21
+**Starting HEAD:** `24455adf864287883e42f744290ec5da8b6cdbb0`
+**Environment declaration:** `ENVIRONMENT = DEV` could not be established.
+
+The repository configuration and versioned scripts identify the expected variable names and the Supabase connector was available read-only. The connector listed one active Content Agent Studio project (`nuhdhnasuohizxtmyiju`) and no development branches. It did not expose an environment label. Versioned scripts also refer to this same project ref in production-oriented contexts. Because DEV versus Production cannot be distinguished with certainty, no table, Project, Identity, LibraryFile, or storage object was queried.
+
+| Live check | Result |
+|---|---|
+| Authorized DEV confirmation | **FAIL — environment ambiguous** |
+| Project lookup | **NOT RUN** |
+| Project Identity lookup | **NOT RUN** |
+| Phase 1A adapter on live Identity | **NOT RUN** |
+| LibraryFile lookup | **NOT RUN** |
+| S3 presign/object access | **NOT RUN** |
+| Chromium live asset fetch | **NOT RUN** |
+| Live PNG | **NOT RUN** |
+
+This is an environment boundary, not a source or architecture defect. No credentials were exported, no `.env` file was created, no production data was read, and no mutation occurred. The required next action is to provide an explicitly identified DEV Supabase project or authorized DEV branch plus its existing runtime/storage access mechanism; secrets must remain in the approved environment/tooling and must not be pasted into chat or committed.
+
+**Live verification gate:** `ENVIRONMENT_ESCALATION_REQUIRED`.
