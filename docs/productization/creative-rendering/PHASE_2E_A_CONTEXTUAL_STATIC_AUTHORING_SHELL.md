@@ -116,7 +116,7 @@ Focused authoring tests: 36 passed. Existing render, primitive, timeline, and id
 
 ## 21. Baseline
 
-- Full suite: 503/503 tests passed before and after the phase changes;
+- Full suite: 505/505 tests passed before and after the phase changes;
 - typecheck: PASS;
 - lint: PASS, baseline 0 errors / 45 warnings;
 - production build: PASS (Next.js optimized build, including the new contextual page and API routes).
