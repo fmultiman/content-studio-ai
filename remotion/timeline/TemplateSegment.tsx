@@ -3,15 +3,17 @@ import type { ResolvedTimelineInput, ResolvedTimelineTemplateSegment } from '@/l
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { remotionTemplateProps } from '../DocumentaryCardComposition'
 import { segmentFrameState } from './frame-model'
+import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
 
 type TemplateSegmentProps = {
   globalFrame: number
   resolvedInput: ResolvedTimelineInput
   resolvedSegment: ResolvedTimelineTemplateSegment
+  primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
 }
 
 /** Maps one resolved, neutral template segment into the shared visual tree. */
-export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment }) => {
+export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment, primitiveMaterials }) => {
   const { segment, resolvedAssets, resolvedTemplate } = resolvedSegment
   const state = segmentFrameState(globalFrame, segment.start_frame, segment.duration_frames)
   if (!state.visible || state.localFrame === null) return null
@@ -31,6 +33,7 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
       unit: 'px',
     },
     sequence: segment.payload.sequence,
+    primitiveMaterials,
   }, {
     mode: 'video',
     motion: segment.payload.motion,

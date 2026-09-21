@@ -28,13 +28,7 @@ export function remotionTemplateProps<T>(props: T): T {
 }
 
 export function remotionProps(props: DocumentaryCardProps): DocumentaryCardProps {
-  return {
-    ...remotionTemplateProps(props),
-    materialUrls: {
-      tornPaper: '/public/creative-fixtures/torn-paper-cream-01.png',
-      tape: '/public/creative-fixtures/tape-kraft-01.png',
-    },
-  }
+  return remotionTemplateProps(props)
 }
 
 export const DocumentaryCardComposition: React.FC<DocumentaryCardCompositionProps> = (props) => {
@@ -50,6 +44,7 @@ export const DocumentaryCardStillComposition: React.FC<DocumentaryCardCompositio
 export type StaticRenderManifestStillProps = {
   resolvedInput: ResolvedStaticRenderInput
   overrides?: AuthoringRenderOverrides
+  primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
 }
 
 /**
@@ -57,7 +52,7 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
-export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides }) => {
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials }) => {
   const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
@@ -67,6 +62,7 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     tokens: resolvedInput.tokens,
     canvas: resolvedInput.manifest.canvas,
     sequence: resolvedInput.manifest.sequence,
+    primitiveMaterials,
   }, { mode: 'still', overrides })
   return <TypographyReadyBoundary typography={resolvedInput.typography}>{binding.component(remotionTemplateProps(props))}</TypographyReadyBoundary>
 }

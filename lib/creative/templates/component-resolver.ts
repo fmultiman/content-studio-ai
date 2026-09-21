@@ -15,6 +15,7 @@ export type TemplateComponentInput = {
   tokens: VisualTokensSnapshot
   canvas: CanvasSpec
   sequence?: SequenceContext
+  primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
 }
 
 export type TemplateComponentRuntime = {
@@ -43,6 +44,7 @@ const COMPONENT_BINDINGS: Readonly<Record<string, TemplateComponentBinding>> = {
       tokens: input.tokens,
       canvas: input.canvas,
       sequence: input.sequence,
+      primitiveMaterials: input.primitiveMaterials,
     }, {
       mode: runtime.mode,
       motion: runtime.motion,

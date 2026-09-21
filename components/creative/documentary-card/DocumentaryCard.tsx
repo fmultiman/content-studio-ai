@@ -76,7 +76,7 @@ export function DocumentaryCard({
 
 export type DocumentaryCardRuntimeInput = Pick<
   DocumentaryCardProps,
-  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence'
+  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials'
 >
 
 export type DocumentaryCardRuntimeOptions = Pick<
@@ -93,8 +93,12 @@ export function documentaryCardPropsFromRuntimeInput(
   options: DocumentaryCardRuntimeOptions,
 ): DocumentaryCardProps {
   const materialAssets = {
-    tornPaper: resolveFixtureAssetSync('fixture:asset:documentary-card:torn-paper-cream-01'),
-    tape: resolveFixtureAssetSync('fixture:asset:documentary-card:tape-kraft-01'),
+    tornPaper: input.primitiveMaterials?.paper
+      ? { valid: true as const, value: input.primitiveMaterials.paper }
+      : resolveFixtureAssetSync('fixture:asset:documentary-card:torn-paper-cream-01'),
+    tape: input.primitiveMaterials?.tape
+      ? { valid: true as const, value: input.primitiveMaterials.tape }
+      : resolveFixtureAssetSync('fixture:asset:documentary-card:tape-kraft-01'),
   }
   const resolvedMaterialAssets = Object.fromEntries(
     Object.entries(materialAssets).map(([name, result]) => {
@@ -111,6 +115,7 @@ export function documentaryCardPropsFromRuntimeInput(
     frame: options.frame,
     durationInFrames: options.durationInFrames,
     materialAssets: resolvedMaterialAssets,
+    primitiveMaterials: input.primitiveMaterials,
     materialUrls: {
       tornPaper: resolvedMaterialAssets.tornPaper?.url,
       tape: resolvedMaterialAssets.tape?.url,
@@ -123,6 +128,7 @@ export function documentaryCardPropsFromResolvedInput(
   mode: DocumentaryCardProps['mode'] = 'still',
   motion: DocumentaryCardProps['motion'] = undefined,
   previewTuning?: DocumentaryCardPreviewTuning,
+  primitiveMaterials?: DocumentaryCardProps['primitiveMaterials'],
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -133,5 +139,6 @@ export function documentaryCardPropsFromResolvedInput(
     tokens: input.tokens,
     canvas: input.manifest.canvas,
     sequence: input.manifest.sequence,
+    primitiveMaterials,
   }, { mode, motion, previewTuning })
 }
