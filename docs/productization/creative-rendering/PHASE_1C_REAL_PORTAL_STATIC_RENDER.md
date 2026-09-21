@@ -1,7 +1,7 @@
 # Phase 1C — Real Portal Static Render Proof
 
 **Date:** 2026-09-21  
-**Scope:** read-only DEV/local verification and static render validation  
+**Scope:** read-only shared-development-preproduction verification and static render validation
 **Verdict:** `PASS_WITH_CONSTRAINTS`
 
 ## 1. Objective
@@ -10,7 +10,7 @@ This phase attempted the first end-to-end Content Studio → Project Identity �
 
 ## 2. Environment used
 
-The checkout was clean on branch `traycer/content-studio-ai-soft-yak`, HEAD `cefe5b5f4d9cdff217b2f582189b227f3274d82c` (`feat: integrate LibraryFile assets with creative rendering`). No `.env*` file and no DEV Supabase/S3 variables were present in this worktree or process environment. No production database, mutation, or credential was used.
+The checkout was clean on branch `traycer/content-studio-ai-soft-yak`, at the prior verification commit `4b1521028b5a892cea079c1ae91ea37f51faa6cb`. The authorized environment label is `SHARED_DEVELOPMENT_PREPRODUCTION`, using Supabase ref `nuhdhnasuohizxtmyiju` through the read-only connector. No `.env*` file or local S3 variables were present. No production mutation or credential was used.
 
 The official static path was run locally with the repository's existing Remotion adapter. Next build completed successfully.
 
@@ -18,11 +18,11 @@ The official static path was run locally with the repository's existing Remotion
 
 | Boundary | Result | Evidence/classification |
 |---|---|---|
-| Project row | **NOT PROVEN LIVE** | No authorized DEV data-access credentials/configuration available |
-| Project Identity row | **NOT PROVEN LIVE** | Adapter is real, input was not fetched from a database |
-| LibraryFile row | **NOT PROVEN LIVE** | Phase 1B used an in-memory canonical record |
-| S3/storage object | **NOT PROVEN LIVE** | Phase 1B injected a `picsum.photos` URL; it was not S3 |
-| Chromium asset fetch | **CONTROL ONLY** | Network-shaped/canonical proof, not a real storage object |
+| Project row | **LIVE PASS** | Read-only connector selected active project `Alquimia Cibernética` (safe redacted ref `0b04df8b…e8187`) |
+| Project Identity row | **LIVE PASS** | Canonical `projects.identity` was read; textual fields were present |
+| LibraryFile row | **LIVE PASS** | Two non-deleted `image/png` rows belong to the same project |
+| S3/storage object | **BLOCKED_BY_ENVIRONMENT** | Local S3 helper has no authorized runtime configuration |
+| Chromium asset fetch | **NOT RUN** | No real readable URL could be prepared |
 | Static renderer → PNG | **PASS** | Official `run-static-manifest` path produced 1080×1350 PNG |
 
 The Phase 1B report's “PASS” is therefore narrowed factually here: architectural integration was proven, while live DB/S3 integration remains pending.
@@ -31,13 +31,13 @@ The Phase 1B report's “PASS” is therefore narrowed factually here: architect
 
 The canonical product path is the existing Supabase server/data-access layer reading `projects`, followed by `Project.identity` (`lib/types.ts`) and `adaptProjectIdentityToVisualTokens` (`lib/creative/integration/project-identity-adapter.ts`). The adapter remains persistence-agnostic and does not query Supabase.
 
-The adapter currently maps no persisted visual token fields because Project Identity V1 is primarily textual. Typography, colors, spacing, and brand remain explicit defaults in `CREATIVE_IDENTITY_DEFAULTS`. They must be reported as `DEFAULTED`, never as persisted project data. No live project was selected because the required DEV environment was unavailable.
+The live Identity contained persisted textual fields (`foundation`, `relationship`, `expression`, `governance`, and `practice`). Phase 1A consumed this canonical payload successfully and produced a valid `VisualTokensSnapshot`. Typography, colors, spacing, and brand remain `DEFAULTED`, because Project Identity V1 does not persist those visual token fields.
 
 ## 5. Real LibraryFile and storage path
 
 The existing read path is Supabase `library_files` access through the authenticated service/API layer, followed by `adaptLibraryFileToResolvedAsset` (`lib/creative/integration/library-file-adapter.ts`) and the existing `createPresignedReadUrl` abstraction (`lib/storage/s3.ts`). `LibraryFile` has `id`, project ownership, kind, MIME, and `storage_path`; it has no width/height fields. Signed URLs are runtime-only and must not be persisted or logged.
 
-No live LibraryFile lookup or S3 presign was executed in this environment. The existing adapter and negative behavior remain covered by tests; live URL resolution, MIME verification, Chromium loading of the real object, and expiry-before-render remain open.
+The live lookup returned compatible image rows with `kind=image`, `mime_type=image/png`, `storage_provider=s3`, and non-null `storage_path`; no dimensions are persisted. The existing adapter accepted the canonical shape. Calling the existing `createPresignedReadUrl` with the live path was blocked cleanly because this checkout has no S3 endpoint/bucket/credential configuration. No URL was logged or persisted.
 
 ## 6. Static render flow
 
@@ -53,8 +53,8 @@ No credentials, signed URL, token, or secret was written to source, documentatio
 
 | Measurement | Result |
 |---|---:|
-| Identity fetch/preparation | Not measured live; no DEV data source |
-| LibraryFile fetch | Not measured live |
+| Identity fetch/preparation | Connector lookup/adaptation passed; timing not instrumented |
+| LibraryFile fetch | Connector lookup passed; timing not instrumented |
 | Presigned URL preparation | Not measured live |
 | Asset access | Control only; real S3 pending |
 | Static render duration | 9,602 ms (canonical fixture control) |
@@ -62,7 +62,7 @@ No credentials, signed URL, token, or secret was written to source, documentatio
 
 ## 9. Failure behavior and dimensions
 
-Existing adapter/tests cover missing storage path, unsupported/non-image MIME, missing LibraryFile-shaped input, and presign failure without exposing secrets. Missing Project/Identity/LibraryFile and inaccessible/expired real assets were not forced against live data. `LibraryFile` dimensions remain `unknown`; no new probing architecture was added.
+Existing adapter/tests cover missing storage path, unsupported/non-image MIME, missing LibraryFile-shaped input, and presign failure without exposing secrets. Missing Project/Identity/LibraryFile and inaccessible/expired real assets were not forced destructively against live data. `LibraryFile` dimensions remain `unknown`; no new probing architecture was added.
 
 ## 10. Validation baseline
 
@@ -74,31 +74,32 @@ Existing adapter/tests cover missing storage path, unsupported/non-image MIME, m
 
 ## 11. Phase 1C gate
 
-`PASS_WITH_CONSTRAINTS` is the maximum factual gate. The renderer, adapters, official static path, security boundary, and full validation pass. Gate items 1–6 (live Project, Identity, LibraryFile, real storage object, real URL, and Chromium consumption) cannot be claimed because this checkout has no authorized DEV environment/configuration. This is not an architecture escalation: it is an environment availability constraint.
+`PASS_WITH_CONSTRAINTS` remains the factual gate. Project, Identity, and LibraryFile are now live-proven through the authorized connector. Real storage access, presigning, Chromium asset fetch, and a live PNG remain blocked by missing local S3 runtime configuration. This is an environment constraint, not an architecture change.
 
 ## 12. Remaining constraints and recommendation
 
-Do not start async infrastructure. The next slice should first provision or attach an explicitly authorized DEV-only read path (without changing tenancy, auth, bucket ownership, or schema), select an existing safe Project and associated LibraryFile read-only, run the same static orchestration, verify MIME/Chromium access before expiry, and then replace this control evidence with a redacted live execution summary. If credentials or policy require new authority, stop with `ARCHITECTURE / ENVIRONMENT ESCALATION REQUIRED`.
+Do not start async infrastructure. The remaining slice is to attach the already-authorized S3 runtime configuration through its normal environment mechanism, then run the same read-only orchestration and verify MIME/Chromium access before expiry. If credentials or policy require new authority, stop with `ARCHITECTURE / ENVIRONMENT ESCALATION REQUIRED`.
 
 ## Live DEV Verification
 
 **Date:** 2026-09-21
-**Starting HEAD:** `24455adf864287883e42f744290ec5da8b6cdbb0`
-**Environment declaration:** `ENVIRONMENT = DEV` could not be established.
+**Starting HEAD:** `4b1521028b5a892cea079c1ae91ea37f51faa6cb`
+**Environment:** `SHARED_DEVELOPMENT_PREPRODUCTION`
+**Authorization mechanism:** Supabase read-only connector, explicitly authorized by the user for ref `nuhdhnasuohizxtmyiju`.
 
-The repository configuration and versioned scripts identify the expected variable names and the Supabase connector was available read-only. The connector listed one active Content Agent Studio project (`nuhdhnasuohizxtmyiju`) and no development branches. It did not expose an environment label. Versioned scripts also refer to this same project ref in production-oriented contexts. Because DEV versus Production cannot be distinguished with certainty, no table, Project, Identity, LibraryFile, or storage object was queried.
+The connector read only the required schema and rows. It selected the active project `Alquimia Cibernética` with a non-null Identity and two compatible image LibraryFiles in the same project. No write, mutation, or sensitive row dump was performed.
 
 | Live check | Result |
 |---|---|
-| Authorized DEV confirmation | **FAIL — environment ambiguous** |
-| Project lookup | **NOT RUN** |
-| Project Identity lookup | **NOT RUN** |
-| Phase 1A adapter on live Identity | **NOT RUN** |
-| LibraryFile lookup | **NOT RUN** |
-| S3 presign/object access | **NOT RUN** |
-| Chromium live asset fetch | **NOT RUN** |
+| Authorized environment | **PASS — SHARED_DEVELOPMENT_PREPRODUCTION** |
+| Project lookup | **PASS** |
+| Project Identity lookup | **PASS** |
+| Phase 1A adapter on live Identity | **PASS** |
+| LibraryFile lookup | **PASS** |
+| S3 presign/object access | **BLOCKED_BY_ENVIRONMENT** |
+| Chromium live asset fetch | **BLOCKED_BY_ENVIRONMENT** |
 | Live PNG | **NOT RUN** |
 
-This is an environment boundary, not a source or architecture defect. No credentials were exported, no `.env` file was created, no production data was read, and no mutation occurred. The required next action is to provide an explicitly identified DEV Supabase project or authorized DEV branch plus its existing runtime/storage access mechanism; secrets must remain in the approved environment/tooling and must not be pasted into chat or committed.
+The S3 helper returned no URL because the local process has no configured endpoint, bucket, or access credentials. No credentials were exported or searched for, no `.env` file was created, and no signed URL was persisted. The live happy-path stops at the approved storage boundary.
 
-**Live verification gate:** `ENVIRONMENT_ESCALATION_REQUIRED`.
+**Live verification gate:** `PASS_WITH_CONSTRAINTS` (`SUPABASE LIVE = PASS`, `PROJECT LIVE = PASS`, `PROJECT IDENTITY LIVE = PASS`, `LIBRARYFILE LIVE = PASS`, `S3 LIVE = BLOCKED_BY_ENVIRONMENT`).
