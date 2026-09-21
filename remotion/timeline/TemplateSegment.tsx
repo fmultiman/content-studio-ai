@@ -10,10 +10,11 @@ type TemplateSegmentProps = {
   resolvedInput: ResolvedTimelineInput
   resolvedSegment: ResolvedTimelineTemplateSegment
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
+  primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
 }
 
 /** Maps one resolved, neutral template segment into the shared visual tree. */
-export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment, primitiveMaterials }) => {
+export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment, primitiveMaterials, primitiveTransforms }) => {
   const { segment, resolvedAssets, resolvedTemplate } = resolvedSegment
   const state = segmentFrameState(globalFrame, segment.start_frame, segment.duration_frames)
   if (!state.visible || state.localFrame === null) return null
@@ -34,6 +35,7 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
     },
     sequence: segment.payload.sequence,
     primitiveMaterials,
+    primitiveTransforms,
   }, {
     mode: 'video',
     motion: segment.payload.motion,

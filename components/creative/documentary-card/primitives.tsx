@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
+import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 
 export type CardPalette = {
   background: string
@@ -70,6 +71,7 @@ export function PaperPlane({
   material,
   materialBaseUrl,
   materialUrls,
+  primitiveTransform,
   style,
   className,
 }: {
@@ -79,6 +81,7 @@ export function PaperPlane({
   material?: MaterialName
   materialBaseUrl?: string
   materialUrls?: Partial<Record<MaterialName, string>>
+  primitiveTransform?: PrimitiveTransforms
   style?: CSSProperties
   className?: string
 }) {
@@ -93,8 +96,13 @@ export function PaperPlane({
         backgroundSize: 'cover',
         boxShadow: '0 18px 36px rgba(0, 0, 0, .18)',
         clipPath: 'polygon(2% 5%, 98% 0, 100% 94%, 5% 100%, 0 18%)',
-        transform: `rotate(${rotation}deg)`,
         ...style,
+        ...(primitiveTransform
+          ? {
+              opacity: primitiveTransform.opacity,
+              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${rotation + primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
+            }
+          : { transform: style?.transform ?? `rotate(${rotation}deg)` }),
       }}
     >
       {children}
@@ -124,12 +132,14 @@ export function MaterialTape({
   rotation,
   baseUrl,
   urls,
+  primitiveTransform,
   style,
 }: {
   color: string
   rotation: number
   baseUrl?: string
   urls?: Partial<Record<MaterialName, string>>
+  primitiveTransform?: PrimitiveTransforms
   style?: CSSProperties
 }) {
   return (
@@ -143,11 +153,18 @@ export function MaterialTape({
         backgroundSize: '100% 100%',
         filter: 'saturate(.82)',
         height: 42,
-        opacity: .92,
         position: 'relative',
-        transform: `rotate(${rotation}deg)`,
         width: 164,
         ...style,
+        ...(primitiveTransform
+          ? {
+              opacity: primitiveTransform.opacity,
+              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${rotation + primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
+            }
+          : {
+              opacity: typeof style?.opacity === 'number' ? style.opacity : .92,
+              transform: style?.transform ?? `rotate(${rotation}deg)`,
+            }),
       }}
     />
   )

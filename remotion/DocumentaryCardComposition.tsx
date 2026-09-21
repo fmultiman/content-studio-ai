@@ -45,6 +45,7 @@ export type StaticRenderManifestStillProps = {
   resolvedInput: ResolvedStaticRenderInput
   overrides?: AuthoringRenderOverrides
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
+  primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
 }
 
 /**
@@ -52,7 +53,7 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
-export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials }) => {
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms }) => {
   const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
@@ -63,6 +64,7 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     canvas: resolvedInput.manifest.canvas,
     sequence: resolvedInput.manifest.sequence,
     primitiveMaterials,
+    primitiveTransforms,
   }, { mode: 'still', overrides })
   return <TypographyReadyBoundary typography={resolvedInput.typography}>{binding.component(remotionTemplateProps(props))}</TypographyReadyBoundary>
 }

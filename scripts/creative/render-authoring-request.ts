@@ -45,6 +45,8 @@ export type AuthoringRenderExecutionResult = {
   tuned: boolean
   primitive_paper?: string
   primitive_tape?: string
+  primitive_transforms?: AuthoringRenderRequest['primitiveTransforms']
+  primitive_materials_resolved: { paper: boolean; tape: boolean }
 }
 
 function repoRelative(filePath: string): string {
@@ -158,6 +160,7 @@ export async function renderAuthoringRequest(raw: unknown): Promise<AuthoringRen
     resolvedInput: input,
     overrides: request.overrides,
     primitiveMaterials: Object.keys(primitiveMaterials).length > 0 ? primitiveMaterials : undefined,
+    primitiveTransforms: request.primitiveTransforms,
   }
   const composition = await selectComposition({
     serveUrl: bundleLocation,
@@ -182,6 +185,8 @@ export async function renderAuthoringRequest(raw: unknown): Promise<AuthoringRen
     tuned: Boolean(request.overrides?.documentaryCard),
     primitive_paper: primitiveKeys.paper,
     primitive_tape: primitiveKeys.tape,
+    primitive_transforms: request.primitiveTransforms,
+    primitive_materials_resolved: { paper: Boolean(primitiveMaterials.paper), tape: Boolean(primitiveMaterials.tape) },
   }
 }
 
@@ -190,4 +195,3 @@ export async function readAuthoringRequestFromStdin(): Promise<unknown> {
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
 }
-

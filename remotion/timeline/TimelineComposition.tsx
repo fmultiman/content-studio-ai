@@ -8,13 +8,14 @@ import type { DocumentaryCardProps } from '@/components/creative/documentary-car
 export type TimelineCompositionProps = {
   resolvedInput: ResolvedTimelineInput
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
+  primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
 }
 
 /**
  * Remotion-only adapter: timeline owns WHEN; registered templates own HOW.
  * No Remotion types or state cross back into TimelineManifest/resolution.
  */
-export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolvedInput, primitiveMaterials }) => {
+export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolvedInput, primitiveMaterials, primitiveTransforms }) => {
   const globalFrame = useCurrentFrame()
   const tracks = [...resolvedInput.manifest.tracks]
     .filter((track) => track.kind === 'video' || track.kind === 'overlay')
@@ -31,6 +32,7 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolv
             resolvedInput={resolvedInput}
             resolvedSegment={resolvedSegment}
             primitiveMaterials={primitiveMaterials}
+            primitiveTransforms={primitiveTransforms}
           />
         )))}
     </TypographyReadyBoundary>

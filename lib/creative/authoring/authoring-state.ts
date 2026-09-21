@@ -10,7 +10,7 @@ import type { CanvasSpec } from '@/lib/schemas/creative/primitives'
 import type { StaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { resolveDocumentaryCardFixture, documentaryCardTemplate } from '@/lib/creative/fixtures/documentary-card-fixtures'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
-import type { PrimitiveSelectionRequest } from './render-request'
+import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import {
   type AuthoringCanvas,
@@ -19,7 +19,9 @@ import {
   type AuthoringInfoContent,
   type AuthoringState,
   type AuthoringVariant,
+  type PrimitiveTransforms,
   DEFAULT_TUNING,
+  DEFAULT_PRIMITIVE_TRANSFORMS,
   DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
 } from './types'// ── Canvas helpers ────────────────────────────────────────────────────────────
 
@@ -206,6 +208,21 @@ export function derivePrimitiveSelectionRequest(state: AuthoringState): Primitiv
     ...(paper ? { paper } : {}),
     ...(tape ? { tape } : {}),
   }
+}
+
+/** Returns only non-default transforms; absence means template defaults. */
+export function derivePrimitiveTransformsRequest(state: AuthoringState): PrimitiveTransformsRequest | undefined {
+  const isDefault = (transform: PrimitiveTransforms) => Object.keys(DEFAULT_PRIMITIVE_TRANSFORMS).every((key) => {
+    const field = key as keyof PrimitiveTransforms
+    return transform[field] === DEFAULT_PRIMITIVE_TRANSFORMS[field]
+  })
+  const primitiveTransforms = Object.fromEntries(
+    (['paper', 'tape'] as const)
+      .filter((slot) => !isDefault(state.primitiveTransforms[slot]))
+      .map((slot) => [slot, state.primitiveTransforms[slot]]),
+  ) as PrimitiveTransformsRequest
+
+  return primitiveTransforms && Object.keys(primitiveTransforms).length > 0 ? primitiveTransforms : undefined
 }
 
 // ── Tuning bounds ─────────────────────────────────────────────────────────────

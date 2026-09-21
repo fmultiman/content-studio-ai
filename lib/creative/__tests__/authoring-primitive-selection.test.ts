@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createInitialAuthoringState,
   derivePrimitiveSelectionRequest,
+  derivePrimitiveTransformsRequest,
   deriveManifestFromState,
   projectRefForIdentity,
 } from '@/lib/creative/authoring/authoring-state'
@@ -88,6 +89,26 @@ describe('derivePrimitiveSelectionRequest', () => {
     expect(serialized).not.toContain('signed')
     expect(serialized).not.toContain('storage_path')
     expect(serialized).not.toContain('s3.amazonaws')
+  })
+
+  it('keeps default transforms absent from the request', () => {
+    const state = createInitialAuthoringState()
+    expect(derivePrimitiveTransformsRequest(state)).toBeUndefined()
+  })
+
+  it('serializes adjusted paper and tape transforms without signed URLs', () => {
+    const state = createInitialAuthoringState()
+    const adjusted = {
+      ...state,
+      primitiveTransforms: {
+        paper: { offsetX: 64, offsetY: -38, rotation: 11, scale: 1.24, opacity: 1 },
+        tape: { offsetX: -27, offsetY: 19, rotation: -8, scale: 0.82, opacity: 0.63 },
+      },
+    }
+    const request = derivePrimitiveTransformsRequest(adjusted)
+    expect(request).toEqual(adjusted.primitiveTransforms)
+    expect(JSON.stringify(request)).not.toContain('signed')
+    expect(JSON.stringify(request)).not.toContain('storage')
   })
 })
 
@@ -201,5 +222,29 @@ describe('render request schema — Phase 2C extension', () => {
     const manifest = deriveManifestFromState(createInitialAuthoringState())
     const result = authoringRenderRequestSchema.safeParse({ manifest })
     expect(result.success).toBe(true)
+  })
+
+  it('authoringRenderRequestSchema preserves primitive transforms beside the manifest', async () => {
+    const { authoringRenderRequestSchema } = await import('@/lib/creative/authoring/render-request')
+    const manifest = deriveManifestFromState(createInitialAuthoringState())
+    const result = authoringRenderRequestSchema.safeParse({
+      manifest,
+      primitiveTransforms: {
+        paper: { offsetX: 64, offsetY: -38, rotation: 11, scale: 1.24, opacity: 1 },
+        tape: { offsetX: -27, offsetY: 19, rotation: -8, scale: 0.82, opacity: 0.63 },
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.primitiveTransforms?.paper?.offsetX).toBe(64)
+  })
+
+  it('rejects transforms outside the deterministic bounds', async () => {
+    const { authoringRenderRequestSchema } = await import('@/lib/creative/authoring/render-request')
+    const manifest = deriveManifestFromState(createInitialAuthoringState())
+    const result = authoringRenderRequestSchema.safeParse({
+      manifest,
+      primitiveTransforms: { paper: { offsetX: 999, offsetY: 0, rotation: 0, scale: 1, opacity: 1 } },
+    })
+    expect(result.success).toBe(false)
   })
 })

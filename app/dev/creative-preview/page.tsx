@@ -14,6 +14,7 @@ import {
   defaultContentForVariant,
   deriveManifestFromState,
   derivePrimitiveSelectionRequest,
+  derivePrimitiveTransformsRequest,
   resolvePreviewInput,
   projectRefForIdentity,
   type AuthoringCanvas,
@@ -554,14 +555,16 @@ export default function AuthoringLabPage() {
   const cardProps = useMemo(() => {
     if (!previewInput) return null
     const base = documentaryCardPropsFromResolvedInput(previewInput, 'still')
-    return { ...base, previewTuning: state.tuning }
-  }, [previewInput, state.tuning])
+    const primitiveTransforms = derivePrimitiveTransformsRequest(state)
+    return { ...base, previewTuning: state.tuning, primitiveTransforms }
+  }, [previewInput, state])
 
   // Derive the manifest (tuning excluded) for the debug panel
   const derivedManifest = useMemo(() => deriveManifestFromState(state), [state])
 
   // Phase 2C: derive primitive selection for render request
   const primitiveSelectionRequest = useMemo(() => derivePrimitiveSelectionRequest(state), [state])
+  const primitiveTransformsRequest = useMemo(() => derivePrimitiveTransformsRequest(state), [state])
 
   // Phase 2C: discover available primitives for identity 'a' (Portal project)
   const projectRef = useMemo(() => projectRefForIdentity(state.identity), [state.identity])
@@ -581,6 +584,9 @@ export default function AuthoringLabPage() {
           overrides: { documentaryCard: state.tuning },
           // Phase 2C: pass primitive selection alongside the manifest
           ...(primitiveSelectionRequest ? { primitiveSelection: primitiveSelectionRequest } : {}),
+          ...(primitiveTransformsRequest
+            ? { primitiveTransforms: primitiveTransformsRequest }
+            : {}),
         }),
         headers: { 'content-type': 'application/json' },
         method: 'POST',
@@ -593,7 +599,7 @@ export default function AuthoringLabPage() {
       setRenderState('error')
       setRenderError(error instanceof Error ? error.message : 'Render failed.')
     }
-  }, [derivedManifest, state.tuning, primitiveSelectionRequest])
+  }, [derivedManifest, state.tuning, primitiveSelectionRequest, primitiveTransformsRequest])
 
   // Canvas dimensions for scaling
   const canvasHeight = state.canvas === 'portrait' ? 1350 : 1920

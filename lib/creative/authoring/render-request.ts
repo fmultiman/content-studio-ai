@@ -13,6 +13,7 @@
 import { z } from 'zod'
 import { StaticRenderManifestSchema } from '@/lib/schemas/creative/static-render'
 import type { DocumentaryCardPreviewTuning } from './types'
+import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 
 const heroTuningSchema = z.object({
   offsetX: z.number().finite().min(-120).max(120),
@@ -47,11 +48,25 @@ export const primitiveSelectionSchema = z.object({
   tape: z.string().min(1).optional(),
 }).strict()
 
+const primitiveTransformsSchema = z.object({
+  offsetX: z.number().finite().min(-120).max(120),
+  offsetY: z.number().finite().min(-120).max(120),
+  rotation: z.number().finite().min(-15).max(15),
+  scale: z.number().finite().min(0.5).max(2),
+  opacity: z.number().finite().min(0).max(1),
+}).strict()
+
+export const primitiveTransformsBySlotSchema = z.object({
+  paper: primitiveTransformsSchema.optional(),
+  tape: primitiveTransformsSchema.optional(),
+}).strict()
+
 export const authoringRenderRequestSchema = z.object({
   manifest: StaticRenderManifestSchema,
   overrides: authoringRenderOverridesSchema.optional(),
   /** Phase 2C: primitive selection (semantic keys, resolved server-side) */
   primitiveSelection: primitiveSelectionSchema.optional(),
+  primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
 }).strict()
 
 export type AuthoringRenderOverrides = {
@@ -64,13 +79,15 @@ export type PrimitiveSelectionRequest = {
   tape?: string
 }
 
+export type PrimitiveTransformsRequest = Partial<Record<'paper' | 'tape', PrimitiveTransforms>>
+
 export type AuthoringRenderRequest = {
   manifest: z.infer<typeof StaticRenderManifestSchema>
   overrides?: AuthoringRenderOverrides
   primitiveSelection?: PrimitiveSelectionRequest
+  primitiveTransforms?: PrimitiveTransformsRequest
 }
 
 export function parseAuthoringRenderRequest(input: unknown): AuthoringRenderRequest {
   return authoringRenderRequestSchema.parse(input)
 }
-

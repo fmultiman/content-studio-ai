@@ -1,5 +1,5 @@
 export type { AuthoringState, AuthoringVariant, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning, AuthoringPrimitiveSelection, AuthoringPrimitiveTransforms, PrimitiveTransforms } from './types'
 export { DEFAULT_TUNING, AUTHORING_HERO_ASSETS, DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE } from './types'
-export { createInitialAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, projectRefForIdentity } from './authoring-state'
-export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest, primitiveSelectionSchema } from './render-request'
-export type { AuthoringRenderRequest, AuthoringRenderOverrides, PrimitiveSelectionRequest } from './render-request'
+export { createInitialAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, projectRefForIdentity } from './authoring-state'
+export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest, primitiveSelectionSchema, primitiveTransformsBySlotSchema } from './render-request'
+export type { AuthoringRenderRequest, AuthoringRenderOverrides, PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'

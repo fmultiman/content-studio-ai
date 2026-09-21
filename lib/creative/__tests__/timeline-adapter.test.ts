@@ -78,6 +78,24 @@ describe('Wave 7 Timeline adapter', () => {
     expect(atStart).toBe(atMiddle)
   })
 
+  it('reuses the same primitive transform model for a timeline frame', () => {
+    const result = resolveTimelineManifest(documentaryCardTimelinePreview)
+    expect(result.valid).toBe(true)
+    if (!result.valid) return
+    const segment = result.value.resolvedTemplateSegments[0]
+    const frame = renderToStaticMarkup(createElement(TemplateSegment, {
+      globalFrame: 90,
+      resolvedInput: result.value,
+      resolvedSegment: segment,
+      primitiveTransforms: {
+        paper: { offsetX: 64, offsetY: -38, rotation: 11, scale: 1.24, opacity: 0.8 },
+        tape: { offsetX: -27, offsetY: 19, rotation: -8, scale: 0.82, opacity: 0.63 },
+      },
+    }))
+    expect(frame).toContain('translate(64px, -38px)')
+    expect(frame).toContain('translate(-27px, 19px)')
+  })
+
   it('does not mutate the neutral manifest and reports unsupported kinds explicitly', () => {
     const before = JSON.stringify(documentaryCardTimelinePreview)
     const result = resolveTimelineManifest(documentaryCardTimelinePreview)

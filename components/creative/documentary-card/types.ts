@@ -10,6 +10,7 @@ import type {
 } from '@/lib/schemas/creative/documentary-card'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
+import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 import type { MaterialName } from './primitives'
 
 export type { DocumentaryCardPreviewTuning }
@@ -34,6 +35,7 @@ export type DocumentaryCardProps = {
   materialAssets?: Partial<Record<MaterialName, ResolvedAsset>>
   /** Selected project-scoped primitive materials. Absent means explicit fixture control fallback. */
   primitiveMaterials?: Partial<Record<'paper' | 'tape', ResolvedAsset>>
+  primitiveTransforms?: Partial<Record<'paper' | 'tape', PrimitiveTransforms>>
   /**
    * Wave 6 authoring-only: runtime visual tuning applied on top of the default
    * artifact plan. NEVER serialised into a StaticRenderManifest.

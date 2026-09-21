@@ -23,6 +23,7 @@ export function DocumentaryCard({
   materialBaseUrl,
   materialUrls,
   materialAssets,
+  primitiveTransforms,
   previewTuning,
   frame = 0,
   durationInFrames = 180,
@@ -46,6 +47,7 @@ export function DocumentaryCard({
     materialBaseUrl,
     materialUrls,
     materialAssets,
+    primitiveTransforms,
     previewTuning,
     frame,
     durationInFrames,
@@ -76,7 +78,7 @@ export function DocumentaryCard({
 
 export type DocumentaryCardRuntimeInput = Pick<
   DocumentaryCardProps,
-  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials'
+  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms'
 >
 
 export type DocumentaryCardRuntimeOptions = Pick<
@@ -129,6 +131,7 @@ export function documentaryCardPropsFromResolvedInput(
   motion: DocumentaryCardProps['motion'] = undefined,
   previewTuning?: DocumentaryCardPreviewTuning,
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials'],
+  primitiveTransforms?: DocumentaryCardProps['primitiveTransforms'],
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -140,5 +143,6 @@ export function documentaryCardPropsFromResolvedInput(
     canvas: input.manifest.canvas,
     sequence: input.manifest.sequence,
     primitiveMaterials,
+    primitiveTransforms,
   }, { mode, motion, previewTuning })
 }

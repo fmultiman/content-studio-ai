@@ -111,4 +111,20 @@ describe('Wave 4 Documentary Card composition', () => {
     }))
     expect(markup).not.toContain('translate(42px')
   })
+
+  it('applies resolved paper and tape transforms to the shared material slots', () => {
+    const input = documentaryCardFixtures.cover45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+      primitiveTransforms: {
+        paper: { offsetX: 64, offsetY: -38, rotation: 11, scale: 1.24, opacity: 0.8 },
+        tape: { offsetX: -27, offsetY: 19, rotation: -8, scale: 0.82, opacity: 0.63 },
+      },
+    }))
+    expect(markup).toContain('translate(64px, -38px) rotate(12.8deg) scale(1.24)')
+    expect(markup).toContain('translate(-27px, 19px) rotate(-17deg) scale(0.82)')
+    expect(markup).toContain('opacity:0.8')
+    expect(markup).toContain('opacity:0.63')
+  })
 })

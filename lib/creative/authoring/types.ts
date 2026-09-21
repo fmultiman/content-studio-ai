@@ -122,27 +122,11 @@ export interface AuthoringPrimitiveSelection {
   tape?: string   // primitive key for the tape slot
 }
 
-/** Transforms applied by the authoring layer on top of template defaults. */
-export interface PrimitiveTransforms {
-  /** px offset, clamped */
-  offsetX: number
-  /** px offset, clamped */
-  offsetY: number
-  /** degrees */
-  rotation: number
-  /** dimensionless multiplier */
-  scale: number
-  /** 0–1 */
-  opacity: number
-}
-
-export const DEFAULT_PRIMITIVE_TRANSFORMS: PrimitiveTransforms = {
-  offsetX: 0,
-  offsetY: 0,
-  rotation: 0,
-  scale: 1,
-  opacity: 1,
-}
+import {
+  DEFAULT_PRIMITIVE_TRANSFORMS,
+  DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
+  type PrimitiveTransforms,
+} from '@/lib/creative/primitives/transforms'
 
 /** Per-slot transform overrides in the authoring layer. */
 export interface AuthoringPrimitiveTransforms {
@@ -150,10 +134,8 @@ export interface AuthoringPrimitiveTransforms {
   tape: PrimitiveTransforms
 }
 
-export const DEFAULT_PRIMITIVE_TRANSFORMS_STATE: AuthoringPrimitiveTransforms = {
-  paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
-  tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
-}
+export { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE }
+export type { PrimitiveTransforms }
 
 // ── AuthoringState — full ephemeral session state ─────────────────────────────
 
