@@ -57,7 +57,9 @@ function resolveAssetSlots(
   return resolvedAssets
 }
 
-export function resolveTimelineManifest(input: unknown): ResolutionResult<ResolvedTimelineInput> {
+export function resolveTimelineManifest(
+  input: unknown,
+): ResolutionResult<ResolvedTimelineInput> {
   const parsed = TimelineManifestSchema.safeParse(input)
   if (!parsed.success) return resolutionResult(schemaDiagnostics(parsed.error))
 

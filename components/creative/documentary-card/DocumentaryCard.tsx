@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
-import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
+import { resolveFixtureAssetSync } from '@/lib/creative/assets/resolve-asset'
 import { CoverVariant } from './CoverVariant'
 import { InfoVariant } from './InfoVariant'
 import { paletteFromTokens } from './primitives'
@@ -93,8 +93,8 @@ export function documentaryCardPropsFromRuntimeInput(
   options: DocumentaryCardRuntimeOptions,
 ): DocumentaryCardProps {
   const materialAssets = {
-    tornPaper: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:torn-paper-cream-01' }),
-    tape: resolveAsset({ type: 'fixture', ref: 'fixture:asset:documentary-card:tape-kraft-01' }),
+    tornPaper: resolveFixtureAssetSync('fixture:asset:documentary-card:torn-paper-cream-01'),
+    tape: resolveFixtureAssetSync('fixture:asset:documentary-card:tape-kraft-01'),
   }
   const resolvedMaterialAssets = Object.fromEntries(
     Object.entries(materialAssets).map(([name, result]) => {

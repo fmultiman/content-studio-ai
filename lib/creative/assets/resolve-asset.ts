@@ -2,7 +2,7 @@ import type { AssetRef, FocalPoint } from '@/lib/schemas/creative/primitives'
 
 export type ResolvedAsset = {
   ref: string
-  source: 'fixture'
+  source: 'fixture' | 'library_file'
   path: string
   url: string
   mime_type: string
@@ -94,39 +94,69 @@ export type AssetResolutionResult =
     }
 
 export function resolveAsset(ref: AssetRef): AssetResolutionResult {
-  if (ref.type !== 'fixture') {
+  if (ref.type === 'fixture') {
+    const fixture = FIXTURE_ASSETS[ref.ref]
+    if (!fixture) {
+      return {
+        valid: false,
+        error: {
+          code: 'asset_not_found',
+          message: `Fixture asset "${ref.ref}" is not registered locally`,
+          path: 'assets',
+        },
+      }
+    }
     return {
-      valid: false,
-      error: {
-        code: 'asset_type_not_supported',
-        message: `Asset type "${ref.type}" is not supported by the local fixture resolver`,
-        path: 'assets',
+      valid: true,
+      value: {
+        ref: ref.ref,
+        ...fixture,
+        checksum: ref.checksum ?? fixture.checksum,
+        version: ref.version ?? fixture.version,
+        focal_point: ref.focal_point,
+        alt: ref.alt,
+        fit: ref.fit,
       },
     }
   }
 
-  const fixture = FIXTURE_ASSETS[ref.ref]
-  if (!fixture) {
+  if (ref.type === 'library_file') {
     return {
-      valid: false,
-      error: {
-        code: 'asset_not_found',
-        message: `Fixture asset "${ref.ref}" is not registered locally`,
-        path: 'assets',
+      valid: true,
+      value: {
+        ref: ref.ref,
+        source: 'library_file',
+        path: `library_file:${ref.ref}`,
+        url: '', // Empty until resolved by integration layer or authoring proxy
+        mime_type: 'image/*', // Assumed image, overridable by DB
+        focal_point: ref.focal_point,
+        alt: ref.alt,
+        fit: ref.fit,
+        checksum: ref.checksum,
+        version: ref.version,
       },
     }
   }
 
   return {
-    valid: true,
-    value: {
-      ref: ref.ref,
-      ...fixture,
-      checksum: ref.checksum ?? fixture.checksum,
-      version: ref.version ?? fixture.version,
-      focal_point: ref.focal_point,
-      alt: ref.alt,
-      fit: ref.fit,
+    valid: false,
+    error: {
+      code: 'asset_type_not_supported',
+      message: `Asset type "${ref.type}" is not supported without an integration preparation pass`,
+      path: 'assets',
     },
   }
 }
+
+// Keep a synchronous version exclusively for DocumentCard component fallbacks
+export function resolveFixtureAssetSync(ref: string): AssetResolutionResult {
+  const fixture = FIXTURE_ASSETS[ref]
+  if (!fixture) {
+    return { valid: false, error: { code: 'asset_not_found', message: `Fixture asset "${ref}" not found`, path: 'assets' } }
+  }
+  return {
+    valid: true,
+    value: { ref, ...fixture, source: 'fixture' }
+  }
+}
+
