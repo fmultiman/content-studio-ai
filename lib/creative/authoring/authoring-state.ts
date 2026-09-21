@@ -14,9 +14,11 @@ import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './re
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import {
   type AuthoringCanvas,
+  type AuthoringContent,
   type AuthoringCoverContent,
   type AuthoringIdentity,
   type AuthoringInfoContent,
+  type AuthoringPrimitiveSelection,
   type AuthoringState,
   type AuthoringVariant,
   type PrimitiveTransforms,
@@ -99,6 +101,21 @@ export function createInitialAuthoringState(
   }
 }
 
+/** Builds the existing ephemeral state from a real product context. */
+export function createContextualAuthoringState(
+  context: NonNullable<AuthoringState['productContext']>,
+  canvas: AuthoringCanvas,
+  content: AuthoringContent,
+  primitiveSelection: AuthoringPrimitiveSelection = {},
+): AuthoringState {
+  return {
+    ...createInitialAuthoringState('cover', 'a', canvas),
+    contentOverride: content,
+    primitiveSelection,
+    productContext: context,
+  }
+}
+
 // ── Resolve the preview input from authoring state ────────────────────────────
 // Uses the SAME resolveDocumentaryCardFixture path as the Wave 5 render.
 
@@ -114,6 +131,25 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
   // Apply content overrides: replace manifest content with authoring edits.
   // This keeps the resolution layer in place — we patch the manifest's content
   // field rather than bypassing the resolver entirely.
+  if (state.productContext) {
+    return {
+      ...base,
+      tokens: state.productContext.identitySnapshot,
+      manifest: {
+        ...base.manifest,
+        manifest_id: `channel-piece:${state.productContext.channelPieceId}:authoring`,
+        source: { type: 'channel_piece', ref: state.productContext.channelPieceId },
+        context: {
+          project_ref: state.productContext.projectId,
+          ...(state.productContext.productionId ? { production_ref: state.productContext.productionId } : {}),
+        },
+        identity: { snapshot_ref: state.productContext.identitySnapshot.snapshot_ref, token_profile: 'default' },
+        content: state.contentOverride as unknown as Record<string, unknown>,
+        metadata: { source_verification_required_before_publication: true, locale: 'pt-BR', notes: 'contextual static authoring draft' },
+      },
+    } as ResolvedStaticRenderInput
+  }
+
   return {
     ...base,
     manifest: {
@@ -158,6 +194,26 @@ export function deriveManifestFromState(state: AuthoringState): StaticRenderMani
       : {}),
   }
 
+  if (state.productContext) {
+    return {
+      schema_version: 'static-render.v0',
+      manifest_id: `channel-piece:${state.productContext.channelPieceId}:authoring`,
+      source: { type: 'channel_piece', ref: state.productContext.channelPieceId },
+      context: {
+        project_ref: state.productContext.projectId,
+        ...(state.productContext.productionId ? { production_ref: state.productContext.productionId } : {}),
+      },
+      template: { ...documentaryCardTemplate, variant: state.variant },
+      canvas: canvasSpec,
+      identity: { snapshot_ref: state.productContext.identitySnapshot.snapshot_ref, token_profile: 'default' },
+      sequence: { index: 1, total: 1 },
+      content: state.contentOverride as unknown as Record<string, unknown>,
+      assets,
+      output: { format: 'png', role: 'channel_piece' },
+      metadata: { source_verification_required_before_publication: true, locale: 'pt-BR', notes: 'contextual static authoring draft' },
+    }
+  }
+
   return {
     schema_version: 'static-render.v0',
     manifest_id: `authoring:draft:${state.variant}:${canvasSpec.height}:${state.identity}`,
@@ -197,7 +253,7 @@ export function projectRefForIdentity(identity: AuthoringIdentity): string | nul
  * Primitive selection travels beside the manifest in the render request.
  */
 export function derivePrimitiveSelectionRequest(state: AuthoringState): PrimitiveSelectionRequest | undefined {
-  const projectRef = projectRefForIdentity(state.identity)
+  const projectRef = state.productContext?.primitiveProjectRef ?? projectRefForIdentity(state.identity)
   if (!projectRef) return undefined
 
   const { paper, tape } = state.primitiveSelection

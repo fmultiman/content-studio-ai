@@ -105,7 +105,7 @@ async function resolvePrimitiveToAsset(
 
 export async function renderAuthoringRequest(raw: unknown): Promise<AuthoringRenderExecutionResult> {
   const request: AuthoringRenderRequest = parseAuthoringRenderRequest(raw)
-  const resolved = resolveStaticRenderManifest(request.manifest)
+  const resolved = resolveStaticRenderManifest(request.manifest, { identitySnapshot: request.identitySnapshot })
   if (!resolved.valid) {
     throw new Error(`Authoring manifest failed validation: ${JSON.stringify(resolved.errors)}`)
   }

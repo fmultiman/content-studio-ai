@@ -30,7 +30,10 @@ function bindingDiagnostic(error: { code: string; message: string; path?: string
   return { kind: 'binding_error', ...error }
 }
 
-export function resolveStaticRenderManifest(input: unknown): ResolutionResult<ResolvedStaticRenderInput> {
+export function resolveStaticRenderManifest(
+  input: unknown,
+  options?: { identitySnapshot?: VisualTokensSnapshot },
+): ResolutionResult<ResolvedStaticRenderInput> {
   const parsed = StaticRenderManifestSchema.safeParse(input)
   if (!parsed.success) return resolutionResult(schemaDiagnostics(parsed.error))
 
@@ -39,7 +42,9 @@ export function resolveStaticRenderManifest(input: unknown): ResolutionResult<Re
   const template = resolveTemplate(manifest.template)
   if (!template.valid) errors.push(templateDiagnostic(template.error))
 
-  const identity = resolveIdentitySnapshot(manifest.identity)
+  const identity = options?.identitySnapshot
+    ? { valid: true as const, value: options.identitySnapshot }
+    : resolveIdentitySnapshot(manifest.identity)
   if (!identity.valid) {
     errors.push({ kind: 'identity_error', ...identity.error })
   }

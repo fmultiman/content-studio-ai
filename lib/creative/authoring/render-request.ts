@@ -12,6 +12,7 @@
  */
 import { z } from 'zod'
 import { StaticRenderManifestSchema } from '@/lib/schemas/creative/static-render'
+import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { DocumentaryCardPreviewTuning } from './types'
 import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 
@@ -67,6 +68,12 @@ export const authoringRenderRequestSchema = z.object({
   /** Phase 2C: primitive selection (semantic keys, resolved server-side) */
   primitiveSelection: primitiveSelectionSchema.optional(),
   primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
+  context: z.object({
+    projectId: z.string().min(1),
+    editorialContentId: z.string().min(1),
+    channelPieceId: z.string().min(1),
+  }).strict().optional(),
+  identitySnapshot: VisualTokensSnapshotSchema.optional(),
 }).strict()
 
 export type AuthoringRenderOverrides = {
@@ -86,6 +93,8 @@ export type AuthoringRenderRequest = {
   overrides?: AuthoringRenderOverrides
   primitiveSelection?: PrimitiveSelectionRequest
   primitiveTransforms?: PrimitiveTransformsRequest
+  context?: { projectId: string; editorialContentId: string; channelPieceId: string }
+  identitySnapshot?: VisualTokensSnapshot
 }
 
 export function parseAuthoringRenderRequest(input: unknown): AuthoringRenderRequest {

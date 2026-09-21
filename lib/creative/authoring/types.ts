@@ -127,11 +127,29 @@ import {
   DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
   type PrimitiveTransforms,
 } from '@/lib/creative/primitives/transforms'
+import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
+import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 
 /** Per-slot transform overrides in the authoring layer. */
 export interface AuthoringPrimitiveTransforms {
   paper: PrimitiveTransforms
   tape: PrimitiveTransforms
+}
+
+/** Runtime-only context for product authoring; never persisted as a domain entity. */
+export interface AuthoringProductContext {
+  projectId: string
+  projectName: string
+  productionId: string | null
+  productionTitle: string | null
+  editorialContentId: string
+  editorialContentTitle: string
+  channelPieceId: string
+  channel: string
+  format: string
+  projectIdentity: ProjectIdentity
+  identitySnapshot: VisualTokensSnapshot
+  primitiveProjectRef?: string
 }
 
 export { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE }
@@ -166,6 +184,8 @@ export interface AuthoringState {
    * NEVER serialised into a StaticRenderManifest directly.
    */
   primitiveTransforms: AuthoringPrimitiveTransforms
+
+  productContext?: AuthoringProductContext
 
   /**
    * Preview-only visual tuning.
