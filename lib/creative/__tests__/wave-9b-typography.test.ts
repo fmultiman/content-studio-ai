@@ -10,15 +10,16 @@ import { awaitTypographyReady, resolveTypography } from '@/lib/creative/typograp
 import { IDENTITY_FIXTURES } from '@/lib/creative/identity/fixtures'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 
-describe('Wave 9B deterministic typography proof', () => {
+describe('Wave 9B/9C deterministic typography proof', () => {
   it('resolves display/body/label through the project-local fixture', () => {
     const result = resolveTypography(IDENTITY_FIXTURES[0])
     expect(result.valid).toBe(true)
     if (result.valid) {
-      expect(result.value.display.family).toBe('Inter Tight')
+      expect(result.value.display.family).toBe('Fraunces')
+      expect(result.value.display.requested_family).toBe('Fraunces')
       expect(result.value.body.source).toBe('project_local')
       expect(result.value.label?.weight).toBe(600)
-      expect(result.value.cssText).toContain('/creative-fonts/inter-tight-latin.woff2')
+      expect(result.value.cssText).toContain('/creative-fonts/fraunces-700.woff2')
     }
   })
 
@@ -48,7 +49,7 @@ describe('Wave 9B deterministic typography proof', () => {
     if (staticResult.valid && quoteTimeline.valid && documentaryTimeline.valid) {
       expect(staticResult.value.typography.display.family).toBe(quoteTimeline.value.typography.display.family)
       expect(quoteTimeline.value.typography.cssText).toBe(documentaryTimeline.value.typography.cssText)
-      expect(staticResult.value.tokens.typography.display.family).toBe('Inter Tight')
+      expect(staticResult.value.tokens.typography.display.family).toBe('Fraunces')
     }
   })
 
@@ -70,9 +71,19 @@ describe('Wave 9B deterministic typography proof', () => {
       if (quoteBinding && documentaryBinding) {
         const quoteProps = quoteBinding.createProps({ variant: 'default', content: staticResult.value.manifest.content, assets: {}, tokens: staticResult.value.tokens, canvas: staticResult.value.manifest.canvas }, { mode: 'still' })
         const documentaryProps = documentaryBinding.createProps({ variant: 'cover', content: documentary.value.manifest.content, assets: documentary.value.resolvedAssets, tokens: documentary.value.tokens, canvas: documentary.value.manifest.canvas }, { mode: 'still' })
-        expect(renderToStaticMarkup(createElement(quoteBinding.component, quoteProps as object))).toContain('Inter Tight')
-        expect(renderToStaticMarkup(createElement(documentaryBinding.component, documentaryProps as object))).toContain('Inter Tight')
+        expect(renderToStaticMarkup(createElement(quoteBinding.component, quoteProps as object))).toContain('Fraunces')
+        expect(renderToStaticMarkup(createElement(documentaryBinding.component, documentaryProps as object))).toContain('Fraunces')
       }
+    }
+  })
+
+  it('resolves Identity B to its declared families without an identity branch', () => {
+    const result = resolveTypography(IDENTITY_FIXTURES[1])
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.value.display).toMatchObject({ requested_family: 'Space Grotesk', family: 'Space Grotesk', weight: 700 })
+      expect(result.value.body).toMatchObject({ requested_family: 'Inter', family: 'Inter', weight: 400 })
+      expect(result.value.label).toMatchObject({ requested_family: 'Inter', family: 'Inter', weight: 600 })
     }
   })
 })

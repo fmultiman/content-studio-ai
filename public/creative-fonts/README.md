@@ -1,5 +1,5 @@
-# Creative rendering font fixture
+# Creative rendering font fixtures
 
-`inter-tight-latin.woff2` is the Latin subset emitted by the repository's existing `next/font/google` Inter Tight build and frozen here for the renderer proof. The upstream family is Inter Tight by The Inter Project Authors, sourced from the Google Fonts repository metadata at https://github.com/google/fonts/tree/main/ofl/intertight.
+These are the six exact family/weight bindings required by the identity fixtures. They were downloaded from the Google Fonts CSS endpoint and frozen locally so render never fetches a font over the network. All four families are distributed under the SIL Open Font License 1.1; see `FONT_SOURCES.md` and `OFL.txt`.
 
-License: SIL Open Font License 1.1. The complete license text is in `OFL.txt`. This fixture is a controlled local runtime asset; render code must not fetch a font over the network.
+The previous Wave 9B Inter Tight proof asset remains in this directory for historical compatibility, but it is no longer used as a silent alias by the runtime registry.

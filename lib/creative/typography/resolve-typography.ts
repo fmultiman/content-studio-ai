@@ -9,12 +9,29 @@ export type TypographyDiagnostic = {
   path?: string
 }
 
+export type RuntimeFontFamily = 'Fraunces' | 'Source Sans 3' | 'Space Grotesk' | 'Inter'
+
+type RuntimeFontRegistration = {
+  family: RuntimeFontFamily
+  source: 'project_local'
+  styles: readonly ['normal']
+  files: Readonly<Record<number, string>>
+}
+
+/** Small versioned runtime capability, not a user-facing font catalog. */
+export const RUNTIME_FONT_REGISTRY: Readonly<Record<RuntimeFontFamily, RuntimeFontRegistration>> = {
+  Fraunces: { family: 'Fraunces', source: 'project_local', styles: ['normal'], files: { 700: '/creative-fonts/fraunces-700.woff2' } },
+  'Source Sans 3': { family: 'Source Sans 3', source: 'project_local', styles: ['normal'], files: { 400: '/creative-fonts/source-sans-3-400.woff2', 600: '/creative-fonts/source-sans-3-600.woff2' } },
+  'Space Grotesk': { family: 'Space Grotesk', source: 'project_local', styles: ['normal'], files: { 700: '/creative-fonts/space-grotesk-700.woff2' } },
+  Inter: { family: 'Inter', source: 'project_local', styles: ['normal'], files: { 400: '/creative-fonts/inter-400.woff2', 600: '/creative-fonts/inter-600.woff2' } },
+}
+
 export type ResolvedFontRole = {
   requested_family: string
-  family: 'Inter Tight'
+  family: RuntimeFontFamily
   source: 'project_local'
-  url: '/creative-fonts/inter-tight-latin.woff2'
-  weights: readonly [100, 200, 300, 400, 500, 600, 700, 800, 900]
+  url: string
+  weights: readonly number[]
   styles: readonly ['normal']
   weight: number
   style: 'normal'
@@ -31,36 +48,38 @@ export type TypographyResolutionResult =
   | { valid: true; value: ResolvedTypography }
   | { valid: false; errors: TypographyDiagnostic[] }
 
-const LOCAL_FONT_FAMILY = 'Inter Tight'
-const LOCAL_FONT_URL = '/creative-fonts/inter-tight-latin.woff2'
-const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
-const AVAILABLE_STYLES = ['normal'] as const
-const CONTROLLED_FAMILY_ALIASES = new Set(['Fraunces', 'Source Sans 3', 'Space Grotesk', 'Inter', 'Inter Tight'])
+function isRuntimeFontFamily(family: string): family is RuntimeFontFamily {
+  return Object.hasOwn(RUNTIME_FONT_REGISTRY, family)
+}
 
 function roleResult(role: TypographyRole, path: string): TypographyDiagnostic | ResolvedFontRole {
-  if (!CONTROLLED_FAMILY_ALIASES.has(role.family)) {
-    return { kind: 'typography_error', code: 'font_not_found', message: `No project-local font fixture is registered for "${role.family}"`, path }
+  if (!isRuntimeFontFamily(role.family)) {
+    return { kind: 'typography_error', code: 'font_not_found', message: `No project-local font is registered for "${role.family}"`, path }
   }
-  if (!AVAILABLE_WEIGHTS.includes(role.weight as typeof AVAILABLE_WEIGHTS[number])) {
-    return { kind: 'typography_error', code: 'weight_not_available', message: `Weight ${role.weight} is not available for the project-local Inter Tight fixture`, path: `${path}.weight` }
+  const registration = RUNTIME_FONT_REGISTRY[role.family]
+  if (!Object.hasOwn(registration.files, role.weight)) {
+    return { kind: 'typography_error', code: 'weight_not_available', message: `Weight ${role.weight} is not available for project-local ${role.family}`, path: `${path}.weight` }
   }
   if (role.style !== 'normal') {
-    return { kind: 'typography_error', code: 'style_not_available', message: `Style "${role.style}" is not available for the project-local Inter Tight fixture`, path: `${path}.style` }
+    return { kind: 'typography_error', code: 'style_not_available', message: `Style "${role.style}" is not available for project-local ${role.family}`, path: `${path}.style` }
   }
   return {
     requested_family: role.family,
-    family: LOCAL_FONT_FAMILY,
-    source: 'project_local',
-    url: LOCAL_FONT_URL,
-    weights: AVAILABLE_WEIGHTS,
-    styles: AVAILABLE_STYLES,
+    family: registration.family,
+    source: registration.source,
+    url: registration.files[role.weight],
+    weights: Object.keys(registration.files).map(Number).sort((a, b) => a - b),
+    styles: registration.styles,
     weight: role.weight,
     style: role.style,
   }
 }
 
-function cssText(): string {
-  return `@font-face{font-family:"${LOCAL_FONT_FAMILY}";font-style:normal;font-weight:100 900;font-display:block;src:url(/public${LOCAL_FONT_URL}) format("woff2"),url(${LOCAL_FONT_URL}) format("woff2");}`
+function cssText(roles: ResolvedFontRole[]): string {
+  const unique = new Map(roles.map((role) => [`${role.family}:${role.weight}:${role.style}`, role]))
+  return [...unique.values()]
+    .map((role) => `@font-face{font-family:"${role.family}";font-style:${role.style};font-weight:${role.weight};font-display:block;src:url(/public${role.url}) format("woff2"),url(${role.url}) format("woff2");}`)
+    .join('')
 }
 
 export function resolveTypography(tokens: VisualTokensSnapshot): TypographyResolutionResult {
@@ -78,7 +97,8 @@ export function resolveTypography(tokens: VisualTokensSnapshot): TypographyResol
     else resolved[name] = value
   }
   if (errors.length > 0 || !resolved.display || !resolved.body) return { valid: false, errors }
-  return { valid: true, value: { display: resolved.display, body: resolved.body, label: resolved.label, cssText: cssText() } }
+  const resolvedRoles = [resolved.display, resolved.body, ...(resolved.label ? [resolved.label] : [])]
+  return { valid: true, value: { display: resolved.display, body: resolved.body, label: resolved.label, cssText: cssText(resolvedRoles) } }
 }
 
 export function tokensWithResolvedTypography(tokens: VisualTokensSnapshot, typography: ResolvedTypography): VisualTokensSnapshot {
@@ -96,11 +116,15 @@ export function tokensWithResolvedTypography(tokens: VisualTokensSnapshot, typog
 export async function awaitTypographyReady(typography: ResolvedTypography): Promise<TypographyDiagnostic[]> {
   if (typeof document === 'undefined' || !document.fonts) return []
   try {
+    const testString = 'AaBbCcÇç0123456789'
     const roles = [typography.display, typography.body, ...(typography.label ? [typography.label] : [])]
-    await Promise.all(roles.map((font) => document.fonts.load(`${font.weight} 16px "${font.family}"`)))
+    const loaded = await Promise.all(roles.map((font) => document.fonts.load(`${font.weight} 16px "${font.family}"`, testString)))
     await document.fonts.ready
-    const missing = roles.filter((font) => !document.fonts.check(`${font.weight} 16px "${font.family}"`))
-    return missing.map((font) => ({ kind: 'typography_error' as const, code: 'font_load_failed' as const, message: `Font "${font.family}" did not become ready in the render document` }))
+    // Query check() too, but do not let an installed/system fallback satisfy readiness:
+    // document.fonts.load() must return the exact registered FontFace.
+    roles.forEach((font) => document.fonts.check(`${font.weight} 16px "${font.family}"`, testString))
+    const missing = roles.filter((_font, index) => (loaded[index] ?? []).length === 0)
+    return missing.map((font) => ({ kind: 'typography_error' as const, code: 'font_load_failed' as const, message: `Font "${font.family}" weight ${font.weight} did not become ready in the render document` }))
   } catch (error) {
     return [{ kind: 'typography_error', code: 'font_load_failed', message: error instanceof Error ? error.message : 'Font loading failed' }]
   }

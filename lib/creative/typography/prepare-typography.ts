@@ -15,10 +15,14 @@ export async function prepareTypography(tokens: VisualTokensSnapshot): Promise<
   const started = Date.now()
   const resolved = resolveTypography(tokens)
   if (!resolved.valid) return resolved
-  try {
-    await access(path.join(process.cwd(), 'public', resolved.value.display.url.replace(/^\//, '')))
-  } catch {
-    return { valid: false, errors: [{ kind: 'typography_error', code: 'font_not_found', message: `Local font file is missing: ${resolved.value.display.url}` }] }
+  const roles = [resolved.value.display, resolved.value.body, ...(resolved.value.label ? [resolved.value.label] : [])]
+  const urls = [...new Set(roles.map((role) => role.url))]
+  for (const url of urls) {
+    try {
+      await access(path.join(process.cwd(), 'public', url.replace(/^\//, '')))
+    } catch {
+      return { valid: false, errors: [{ kind: 'typography_error', code: 'font_not_found', message: `Local font file is missing: ${url}` }] }
+    }
   }
   return { valid: true, value: { typography: resolved.value, preparation_ms: Date.now() - started } }
 }
