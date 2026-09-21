@@ -1,8 +1,8 @@
 # Phase 1C — Real Portal Static Render Proof
 
 **Date:** 2026-09-21  
-**Scope:** read-only shared-development-preproduction verification and static render validation
-**Verdict:** `PASS_WITH_CONSTRAINTS`
+**Scope:** read-only shared-development-preproduction verification and live static render validation
+**Verdict:** `PASS`
 
 ## 1. Objective
 
@@ -10,7 +10,7 @@ This phase attempted the first end-to-end Content Studio → Project Identity �
 
 ## 2. Environment used
 
-The checkout was clean on branch `traycer/content-studio-ai-soft-yak`, at the prior verification commit `4b1521028b5a892cea079c1ae91ea37f51faa6cb`. The authorized environment label is `SHARED_DEVELOPMENT_PREPRODUCTION`, using Supabase ref `nuhdhnasuohizxtmyiju` through the read-only connector. No `.env*` file or local S3 variables were present. No production mutation or credential was used.
+The checkout was clean on branch `traycer/content-studio-ai-soft-yak`, at the prior verification commit `d6fce5f75c8d42a73457eea420ff8140e2404272`. The authorized environment label is `SHARED_DEVELOPMENT_PREPRODUCTION`, using Supabase ref `nuhdhnasuohizxtmyiju` through the read-only connector. Vercel project `fmultimans-projects/content-studio-ai` supplied the Development environment variables temporarily. No production mutation or credential was used.
 
 The official static path was run locally with the repository's existing Remotion adapter. Next build completed successfully.
 
@@ -21,8 +21,8 @@ The official static path was run locally with the repository's existing Remotion
 | Project row | **LIVE PASS** | Read-only connector selected active project `Alquimia Cibernética` (safe redacted ref `0b04df8b…e8187`) |
 | Project Identity row | **LIVE PASS** | Canonical `projects.identity` was read; textual fields were present |
 | LibraryFile row | **LIVE PASS** | Two non-deleted `image/png` rows belong to the same project |
-| S3/storage object | **BLOCKED_BY_ENVIRONMENT** | Local S3 helper has no authorized runtime configuration |
-| Chromium asset fetch | **NOT RUN** | No real readable URL could be prepared |
+| S3/storage object | **LIVE PASS** | Existing VPS S3-compatible storage, presign and GET succeeded |
+| Chromium asset fetch | **LIVE PASS** | Remotion Chromium loaded the real PNG URL |
 | Static renderer → PNG | **PASS** | Official `run-static-manifest` path produced 1080×1350 PNG |
 
 The Phase 1B report's “PASS” is therefore narrowed factually here: architectural integration was proven, while live DB/S3 integration remains pending.
@@ -47,6 +47,8 @@ The evidence was copied locally as `.tmp/creative/productization/phase-1c/portal
 
 ## 7. Security
 
+The live evidence is `.tmp/creative/productization/phase-1c-live/alquimia-cibernetica-documentary-card-live.png`, produced through the official `StaticRenderManifestStill` Remotion adapter with the real LibraryFile asset. Its redacted runtime summary is `execution-summary-redacted.json` in the same directory.
+
 No credentials, signed URL, token, or secret was written to source, documentation, or the execution summary. No database or storage mutation occurred. The creative core remains free of Supabase, AWS SDK, Next API, and database imports; integration details stay above it.
 
 ## 8. Measurements
@@ -55,10 +57,10 @@ No credentials, signed URL, token, or secret was written to source, documentatio
 |---|---:|
 | Identity fetch/preparation | Connector lookup/adaptation passed; timing not instrumented |
 | LibraryFile fetch | Connector lookup passed; timing not instrumented |
-| Presigned URL preparation | Blocked by missing S3 runtime configuration |
-| Asset access | Blocked by missing S3 runtime configuration |
-| Static render duration | 9,602 ms (canonical fixture control) |
-| Total live end-to-end | Not measured |
+| Presigned URL preparation | 35 ms |
+| Asset access | 3,392 ms (GET and body read) |
+| Static render duration | 2,178 ms |
+| Total live end-to-end | 44,564 ms (includes bundle) |
 
 ## 9. Failure behavior and dimensions
 
@@ -74,18 +76,21 @@ Existing adapter/tests cover missing storage path, unsupported/non-image MIME, m
 
 ## 11. Phase 1C gate
 
-`PASS_WITH_CONSTRAINTS` remains the factual gate. Project, Identity, and LibraryFile are now live-proven through the authorized connector. Real storage access, presigning, Chromium asset fetch, and a live PNG remain blocked by missing local S3 runtime configuration. This is an environment constraint, not an architecture change.
+`PASS` is now the factual gate. Project, Identity, LibraryFile, Vercel Development env delivery, real storage access, presigning, Chromium asset fetch, and the official static PNG all passed. No mutation or secret persistence occurred, and the Creative Core remained persistence- and renderer-agnostic.
 
 ## 12. Remaining constraints and recommendation
 
-Do not start async infrastructure. The remaining slice is to attach the already-authorized S3 runtime configuration through its normal environment mechanism, then run the same read-only orchestration and verify MIME/Chromium access before expiry. If credentials or policy require new authority, stop with `ARCHITECTURE / ENVIRONMENT ESCALATION REQUIRED`.
+Do not start async infrastructure. This Phase 1C proof is complete; any next slice must be decided separately.
 
 ## Live DEV Verification
 
 **Date:** 2026-09-21
-**Starting HEAD:** `4b1521028b5a892cea079c1ae91ea37f51faa6cb`
+**Starting HEAD:** `d6fce5f75c8d42a73457eea420ff8140e2404272`
 **Environment:** `SHARED_DEVELOPMENT_PREPRODUCTION`
 **Authorization mechanism:** Supabase read-only connector, explicitly authorized by the user for ref `nuhdhnasuohizxtmyiju`.
+**Vercel env source:** `LIVE` — linked project `fmultimans-projects/content-studio-ai`.
+**Vercel env scope:** `Development` (application classification remains `SHARED_DEVELOPMENT_PREPRODUCTION`).
+**Storage:** `SHARED_DEVELOPMENT_PREPRODUCTION_STORAGE` — existing VPS S3-compatible storage.
 
 The connector read only the required schema and rows. It selected the active project `Alquimia Cibernética` with a non-null Identity and two compatible image LibraryFiles in the same project. No write, mutation, or sensitive row dump was performed.
 
@@ -96,16 +101,17 @@ The connector read only the required schema and rows. It selected the active pro
 | Project Identity lookup | **PASS** |
 | Phase 1A adapter on live Identity | **PASS** |
 | LibraryFile lookup | **PASS** |
-| S3 presign/object access | **BLOCKED_BY_ENVIRONMENT** |
-| Chromium live asset fetch | **BLOCKED_BY_ENVIRONMENT** |
-| Live PNG | **NOT RUN** |
+| S3 configuration | **PASS** |
+| S3 presign/object access | **PASS** |
+| Chromium live asset fetch | **PASS** |
+| Live PNG | **PASS** — 1080×1350 PNG |
 
-The S3 helper returned no URL because the local process has none of the required S3 variables. The normal mechanism is the application environment (`S3_ENDPOINT`, `S3_BUCKET_NAME` or `S3_BUCKET`, `S3_ACCESS_KEY` or `S3_ACCESS_KEY_ID`, `S3_SECRET_KEY` or `S3_SECRET_ACCESS_KEY`, optional `S3_REGION`, `S3_FORCE_PATH_STYLE`, and `PUBLIC_STORAGE_BASE_URL`). No credentials were exported or searched for, no `.env` file was created, and no signed URL was persisted. The live happy-path stops at the approved storage boundary.
+The official Vercel pull made the Development variables available only to the local proof process. Presence was checked without printing values. `createPresignedReadUrl` generated the runtime-only URL; a real GET returned `image/png`, and Chromium consumed the same asset during render. The temporary `.env.local`, `.vercel` link, and runner were removed after execution. No credential or signed URL was persisted.
 
-**Live verification gate:** `S3_ACCESS_CONFIGURATION_REQUIRED` (`SUPABASE LIVE = PASS`, `PROJECT LIVE = PASS`, `PROJECT IDENTITY LIVE = PASS`, `LIBRARYFILE LIVE = PASS`, `S3 LIVE = BLOCKED_BY_ENVIRONMENT`).
+**Live verification gate:** `PASS` (`SUPABASE LIVE = PASS`, `PROJECT LIVE = PASS`, `PROJECT IDENTITY LIVE = PASS`, `LIBRARYFILE LIVE = PASS`, `S3 VPS = LIVE`, `S3 PRESIGN = PASS`, `S3 OBJECT ACCESS = PASS`, `CHROMIUM FETCH = PASS`, `STATIC PNG = PASS`).
 
 ### VPS storage verification
 
 **Storage environment:** `SHARED_DEVELOPMENT_PREPRODUCTION_STORAGE` (VPS)
 
-The provider and public endpoint/bucket are documented by versioned project configuration, but the access credentials are not available to this process. The required configuration must be supplied through the application's normal approved environment mechanism; it must not be pasted into chat or committed. No upload, delete, overwrite, bucket creation, or policy change was attempted.
+The provider is the existing VPS S3-compatible service at `https://s3.multihuman.com.br`, bucket `content-studio`. Vercel Development is the normal approved configuration mechanism. Only GET/presign behavior was used; no upload, delete, overwrite, bucket creation, or policy change was attempted.
