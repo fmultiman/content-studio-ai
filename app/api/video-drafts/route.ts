@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { VideoScene } from '@/lib/types'
+import {
+  collectLibraryFileIds,
+  validateSceneLibraryFileBindings,
+} from '@/lib/video-scene-library-bindings'
 
 async function validateProductionOwnership(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -20,6 +24,55 @@ async function validateProductionOwnership(
     return 'Production não pertence a este Projeto.'
   }
   return null
+}
+
+async function validateProjectOwnership(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: unknown,
+): Promise<boolean> {
+  if (typeof projectId !== 'string' || !projectId.trim()) return false
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .single()
+  return !error && Boolean(data)
+}
+
+async function validateSceneBindings(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string | null | undefined,
+  scenes: VideoScene[],
+) {
+  const ids = collectLibraryFileIds(scenes)
+  if (ids.length === 0) {
+    return validateSceneLibraryFileBindings(scenes, projectId, [])
+  }
+
+  const { data, error } = await supabase
+    .from('library_files')
+    .select('id, project_id, deleted_at')
+    .eq('user_id', userId)
+    .in('id', ids)
+
+  if (error) {
+    return {
+      valid: false as const,
+      error: {
+        code: 'LIBRARY_FILE_NOT_FOUND' as const,
+        message: 'Não foi possível validar os LibraryFiles das cenas.',
+      },
+    }
+  }
+
+  return validateSceneLibraryFileBindings(scenes, projectId, data || [])
+}
+
+function sceneBindingErrorResponse(error: { code: string; message: string }) {
+  return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
 }
 
 function getDraftName(name: unknown, scenes: VideoScene[]) {
@@ -148,6 +201,14 @@ export async function POST(request: Request) {
     if (body.projectId && typeof body.projectId === 'string' && body.projectId !== production.project_id) {
       return NextResponse.json({ error: 'Production não pertence a este Projeto.', code: 'PROJECT_PRODUCTION_MISMATCH' }, { status: 409 })
     }
+
+    const bindingValidation = await validateSceneBindings(
+      supabase,
+      user.id,
+      production.project_id,
+      scenes as VideoScene[],
+    )
+    if (!bindingValidation.valid) return sceneBindingErrorResponse(bindingValidation.error)
 
     const insertPayload: Record<string, unknown> = {
       user_id: user.id,
@@ -286,19 +347,61 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ draft: data })
     }
 
-    if (body.productionId) {
-      const validationError = await validateProductionOwnership(supabase, user.id, body.productionId, body.projectId)
-      if (validationError) {
-        return NextResponse.json({ error: validationError }, { status: 400 })
+    if (Object.hasOwn(body, 'productionId') && body.productionId !== null && body.productionId !== '' && typeof body.productionId !== 'string') {
+      return NextResponse.json({ error: 'productionId inválido.', code: 'INVALID_PRODUCTION_ID' }, { status: 400 })
+    }
+
+    const { data: existingDraft, error: existingDraftError } = await supabase
+      .from('video_drafts')
+      .select('project_id, production_id')
+      .eq('id', body.id)
+      .eq('user_id', user.id)
+      .single()
+    if (existingDraftError || !existingDraft) {
+      return NextResponse.json({ error: 'Rascunho não encontrado.' }, { status: 404 })
+    }
+
+    let authoritativeProjectId: string | null = existingDraft.project_id
+    if (Object.hasOwn(body, 'productionId') && body.productionId) {
+      const { data: production, error: productionError } = await supabase
+        .from('productions')
+        .select('id, project_id')
+        .eq('id', body.productionId)
+        .eq('user_id', user.id)
+        .single()
+      if (productionError || !production) {
+        return NextResponse.json({ error: 'Production não encontrada ou acesso negado.', code: 'PRODUCTION_NOT_FOUND' }, { status: 400 })
+      }
+      authoritativeProjectId = production.project_id
+      if (body.projectId && typeof body.projectId === 'string' && body.projectId !== authoritativeProjectId) {
+        return NextResponse.json({ error: 'Production não pertence a este Projeto.', code: 'PROJECT_PRODUCTION_MISMATCH' }, { status: 409 })
+      }
+    } else if (Object.hasOwn(body, 'projectId')) {
+      if (body.projectId === null || body.projectId === '') {
+        authoritativeProjectId = null
+      } else {
+        const projectOwned = await validateProjectOwnership(supabase, user.id, body.projectId)
+        if (!projectOwned) {
+          return NextResponse.json({ error: 'Projeto não encontrado ou acesso negado.', code: 'PROJECT_NOT_FOUND' }, { status: 400 })
+        }
+        authoritativeProjectId = body.projectId as string
       }
     }
 
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
 
+    const bindingValidation = await validateSceneBindings(
+      supabase,
+      user.id,
+      authoritativeProjectId,
+      scenes as VideoScene[],
+    )
+    if (!bindingValidation.valid) return sceneBindingErrorResponse(bindingValidation.error)
+
     const updatePayload: Record<string, unknown> = {
       name,
-      project_id: body.projectId || null,
+      project_id: authoritativeProjectId,
       scenes,
     }
     if (Object.hasOwn(body, 'productionId')) {

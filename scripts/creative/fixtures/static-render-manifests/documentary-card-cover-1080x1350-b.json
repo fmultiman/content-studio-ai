@@ -1,0 +1,35 @@
+{
+  "schema_version": "static-render.v0",
+  "manifest_id": "fixture:documentary-card:cover:1350:b",
+  "source": { "type": "fixture", "ref": "fixture:documentary-card" },
+  "context": {
+    "project_ref": "fixture:project:acme-labs",
+    "production_ref": "fixture:production:launch-week"
+  },
+  "template": {
+    "id": "editorial.documentary-card",
+    "version": "0.1.0",
+    "variant": "cover",
+    "scope": "system"
+  },
+  "canvas": { "width": 1080, "height": 1350, "unit": "px" },
+  "identity": {
+    "snapshot_ref": "fixture:identity:acme-labs:v1",
+    "token_profile": "default"
+  },
+  "sequence": { "index": 1, "total": 10 },
+  "content": {
+    "eyebrow": "Product notes",
+    "title": "Shipping a calmer launch",
+    "subtitle": "A small record of the decisions behind this release."
+  },
+  "assets": {
+    "hero": {
+      "type": "fixture",
+      "ref": "fixture:asset:acme-labs:hero-01",
+      "fit": "cover"
+    }
+  },
+  "output": { "format": "png", "role": "fixture" },
+  "metadata": { "fixture": true, "not_a_database_record": true, "fixture_purpose": "Wave 5 official static render input" }
+}

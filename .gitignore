@@ -24,3 +24,6 @@ node_modules
 # Local tooling / generated
 .mcp.json
 *.tsbuildinfo
+
+# Creative rendering spike — local render outputs (never committed)
+.tmp/

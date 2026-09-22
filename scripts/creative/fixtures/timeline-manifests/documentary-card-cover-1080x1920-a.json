@@ -1,0 +1,61 @@
+{
+  "schema_version": "timeline.v0",
+  "manifest_id": "fixture:timeline:documentary-card:cover-a:preview-v0",
+  "context": {
+    "project_ref": "fixture:project:comunidades-alternativas",
+    "production_ref": "fixture:production:terra-una-reel"
+  },
+  "specification": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration_frames": 180
+  },
+  "identity": {
+    "snapshot_ref": "fixture:identity:comunidades-alternativas:v1",
+    "token_profile": "default"
+  },
+  "tracks": [
+    { "id": "visual-main", "kind": "video", "order": 0 }
+  ],
+  "segments": [
+    {
+      "id": "cover-main",
+      "track_id": "visual-main",
+      "start_frame": 0,
+      "duration_frames": 180,
+      "kind": "template",
+      "payload": {
+        "template": {
+          "id": "editorial.documentary-card",
+          "version": "0.1.0",
+          "variant": "cover",
+          "scope": "system"
+        },
+        "content": {
+          "eyebrow": "Memória viva • Livros",
+          "title": "O que são comunidades alternativas?",
+          "subtitle": "Uma pergunta lançada num país em transição, enquanto outras formas de viver tentavam ganhar mais espaço.",
+          "source_line": "Publicado originalmente em 1983.",
+          "detail_note": "Edição apresentada: Nova Cultural / Brasiliense, 1985."
+        },
+        "assets": {
+          "hero": {
+            "type": "fixture",
+            "ref": "fixture:asset:documentary-card:hero-archival-01",
+            "fit": "cover"
+          }
+        },
+        "sequence": { "index": 1, "total": 10 },
+        "motion": { "preset": "slow_push", "intensity": 0.35 }
+      }
+    }
+  ],
+  "assets": {},
+  "render_intent": {
+    "purpose": "preview",
+    "container": "mp4",
+    "audio": false,
+    "captions": "none"
+  }
+}

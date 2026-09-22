@@ -57,6 +57,7 @@ import { WorkspaceIdentityContext } from '@/components/projects/inherited-projec
 import { resolveInheritedIdentitySummary, shouldShowEditorialIdentityContext } from '@/lib/inherited-project-identity'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { productionReturnPath } from '@/lib/ux-production-hardening'
+import { isStaticChannelPiece } from '@/lib/creative/context/static-authoring'
 
 // ---------------------------------------------------------------------------
 // Labels
@@ -793,6 +794,16 @@ export default function EditorialContentDetailPage() {
                           </Badge>
                         </div>
                         <div className="flex shrink-0 gap-1">
+                          {isStaticChannelPiece(cp.channel, cp.format) && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-8 gap-1.5 px-2 text-xs"
+                              onClick={() => router.push(`/projetos/${projectId}/conteudos/${ecId}/channel-pieces/${cp.id}/editar-visual`)}
+                            >
+                              Editar visual
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"

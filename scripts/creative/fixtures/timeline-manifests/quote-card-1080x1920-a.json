@@ -1,0 +1,24 @@
+{
+  "schema_version": "timeline.v0",
+  "manifest_id": "fixture:timeline:quote-card:default-proof-v0",
+  "context": { "project_ref": "fixture:project:comunidades-alternativas", "production_ref": "fixture:production:quote-proof" },
+  "specification": { "width": 1080, "height": 1920, "fps": 30, "duration_frames": 90 },
+  "identity": { "snapshot_ref": "fixture:identity:comunidades-alternativas:v1", "token_profile": "default" },
+  "tracks": [{ "id": "visual-main", "kind": "video", "order": 0 }],
+  "segments": [{
+    "id": "quote-main",
+    "track_id": "visual-main",
+    "start_frame": 0,
+    "duration_frames": 90,
+    "kind": "template",
+    "payload": {
+      "template": { "id": "editorial.quote-card", "version": "0.1.0", "variant": "default", "scope": "system" },
+      "content": { "eyebrow": "A small record", "quote": "The work becomes clearer when the questions stay visible.", "attribution": "Editorial notebook", "source_line": "Shared Creative Rendering · Wave 9A" },
+      "assets": {},
+      "sequence": { "index": 2, "total": 4 },
+      "motion": { "preset": "fade", "intensity": 0.2 }
+    }
+  }],
+  "assets": {},
+  "render_intent": { "purpose": "preview", "container": "mp4", "audio": false, "captions": "none" }
+}

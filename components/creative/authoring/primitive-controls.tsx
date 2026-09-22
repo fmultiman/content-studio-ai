@@ -1,0 +1,17 @@
+'use client'
+
+import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
+import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
+
+export function PrimitivePicker({ slot, label, primitives, selectedKey, onSelect, onReset }: { slot: 'paper' | 'tape'; label: string; primitives: PrimitiveListItem[]; selectedKey?: string; onSelect: (key: string | undefined) => void; onReset: () => void }) {
+  const available = primitives.filter((primitive) => primitive.category === slot)
+  return <div className="space-y-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{label}</span><button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={onReset}>Reset</button></div>{available.length === 0 ? <p className="text-xs text-muted-foreground">Nenhum primitive {slot} disponível.</p> : <div className="space-y-1">{available.map((primitive) => { const active = primitive.key === selectedKey; return <button key={primitive.key} type="button" className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-xs ${active ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/50'}`} onClick={() => onSelect(active ? undefined : primitive.key)}><span><span className="font-medium">{primitive.display_name}</span><span className="ml-2 text-muted-foreground">{primitive.category}</span></span>{active && <span>✓</span>}</button> })}</div>}</div>
+}
+
+function Slider({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+  return <label className="grid grid-cols-[5rem_1fr_3rem] items-center gap-2 text-xs text-muted-foreground"><span>{label}</span><input aria-label={label} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><output className="text-right tabular-nums text-foreground">{value.toFixed(2)}</output></label>
+}
+
+export function PrimitiveTransformControls({ slot, transforms, onChange, onReset }: { slot: 'paper' | 'tape'; transforms: PrimitiveTransforms; onChange: (field: keyof PrimitiveTransforms, value: number) => void; onReset: () => void }) {
+  return <div className="space-y-2 rounded-md border border-border/60 p-3"><div className="flex items-center justify-between text-xs font-medium"><span>{slot} transforms</span><button type="button" className="text-muted-foreground underline-offset-4 hover:underline" onClick={onReset}>Reset</button></div><Slider label="offset X" value={transforms.offsetX} min={-120} max={120} step={1} onChange={(value) => onChange('offsetX', value)} /><Slider label="offset Y" value={transforms.offsetY} min={-120} max={120} step={1} onChange={(value) => onChange('offsetY', value)} /><Slider label="rotation" value={transforms.rotation} min={-15} max={15} step={0.5} onChange={(value) => onChange('rotation', value)} /><Slider label="scale" value={transforms.scale} min={0.5} max={2} step={0.01} onChange={(value) => onChange('scale', value)} /><Slider label="opacity" value={transforms.opacity} min={0} max={1} step={0.01} onChange={(value) => onChange('opacity', value)} /></div>
+}

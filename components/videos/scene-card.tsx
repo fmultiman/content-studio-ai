@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,12 +15,16 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { GripVertical, Trash2, ImageIcon, Sparkles, Loader2, Upload, X } from 'lucide-react'
-import type { VideoScene } from '@/lib/types'
+import type { LibraryFile, VideoScene } from '@/lib/types'
+import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 
 interface SceneCardProps {
   scene: VideoScene
   sceneNumber: number
+  projectId: string | null
+  libraryFiles: LibraryFile[]
   onUpdate: (scene: VideoScene) => void
+  onLibraryFileChange: (libraryFileId: string | null) => void
   onDelete: () => void
   onGeneratePrompt: (scene: VideoScene, sceneNumber: number) => Promise<string>
 }
@@ -46,12 +51,14 @@ const durationOptions = [
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePrompt }: SceneCardProps) {
+export function SceneCard({ scene, sceneNumber, projectId, libraryFiles, onUpdate, onLibraryFileChange, onDelete, onGeneratePrompt }: SceneCardProps) {
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const selectedLibraryFile = libraryFiles.find((file) => file.id === scene.library_file_id) || null
 
   const handleGeneratePrompt = async () => {
     if (!scene.description) return
@@ -153,10 +160,12 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
             />
             {scene.image_url ? (
               <div className="relative h-24 overflow-hidden rounded-lg border border-border/50">
-                <img
+                <Image
                   src={scene.image_url}
                   alt={`Cena ${sceneNumber}`}
-                  className="h-full w-full object-cover"
+                  fill
+                  unoptimized
+                  className="object-cover"
                 />
                 <Button
                   variant="destructive"
@@ -191,6 +200,57 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
                 {imageError}
               </p>
             )}
+
+            <div className="space-y-2 rounded-lg border border-border/50 bg-background/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs">Mídia da Biblioteca</Label>
+                {scene.library_file_id && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => onLibraryFileChange(null)}
+                  >
+                    Remover da cena
+                  </Button>
+                )}
+              </div>
+              {selectedLibraryFile ? (
+                <div className="flex items-center gap-3">
+                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-border/50 bg-muted">
+                    {(selectedLibraryFile.thumbnail_url || selectedLibraryFile.public_url) ? (
+                      <Image
+                        src={selectedLibraryFile.thumbnail_url || selectedLibraryFile.public_url}
+                        alt={selectedLibraryFile.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : (
+                      <ImageIcon className="m-3 h-6 w-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-foreground">{selectedLibraryFile.name}</p>
+                    <p className="text-[11px] text-muted-foreground">Asset do Projeto</p>
+                  </div>
+                </div>
+              ) : scene.library_file_id ? (
+                <p className="text-xs text-muted-foreground">Asset selecionado indisponível neste Projeto.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Nenhum asset da Biblioteca selecionado.</p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setIsLibraryPickerOpen(true)}
+              >
+                {scene.library_file_id ? 'Trocar da Biblioteca' : 'Escolher da Biblioteca'}
+              </Button>
+            </div>
           </div>
 
           {/* Duration & Movement */}
@@ -283,6 +343,13 @@ export function SceneCard({ scene, sceneNumber, onUpdate, onDelete, onGeneratePr
           )}
         </div>
       </CardContent>
+      <ProjectLibraryAssetPicker
+        open={isLibraryPickerOpen}
+        onOpenChange={setIsLibraryPickerOpen}
+        projectId={projectId}
+        selectedId={scene.library_file_id}
+        onSelect={(file) => onLibraryFileChange(file.id)}
+      />
     </Card>
   )
 }

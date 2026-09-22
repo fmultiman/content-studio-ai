@@ -204,6 +204,8 @@ export interface VideoScene {
   description: string
   prompt: string | null
   image_url: string | null
+  /** Optional persistent identity of the scene's primary LibraryFile asset. */
+  library_file_id?: string | null
   duration: number // in seconds
   movement: string | null
 }
@@ -258,6 +260,31 @@ export interface VideoDraft {
   scenes: VideoScene[]
   created_at: string
   updated_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Render execution (Phase 2I-B1) — see
+// docs/productization/creative-rendering/PHASE_2I_B0_RENDER_EXECUTION_CONTRACT.md
+// ---------------------------------------------------------------------------
+
+export type RenderExecutionStatus = 'queued' | 'claimed' | 'completed' | 'failed'
+
+/** User-safe projection only — never includes claimed_by, lease_expires_at,
+ * input_snapshot, or error_detail (all internal-only, see B0 §16/§17). */
+export interface RenderExecutionSummary {
+  id: string
+  video_draft_id: string
+  status: RenderExecutionStatus
+  attempt: number
+  queued_at: string
+  claimed_at: string | null
+  completed_at: string | null
+  failed_at: string | null
+  output_mime_type: string | null
+  output_size_bytes: number | null
+  output_duration_ms: number | null
+  error_code: string | null
+  error_message: string | null
 }
 
 // ---------------------------------------------------------------------------
