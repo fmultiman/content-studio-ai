@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+/**
+ * Phase 2I-A1 — isolated Content Studio Remotion render-worker HTTP wrapper.
+ *
+ * Deliberately minimal, per the phase scope: no Supabase, no auth, no
+ * queue, no render_executions, no S3 upload, no retries, no cancellation,
+ * no progress percentages. It receives an already-prepared
+ * `ResolvedTimelineInput` (the same shape `prepareVideoDraftTimeline`
+ * already produces in the main app) and renders it with the SAME renderer
+ * calls `scripts/creative/render-timeline-manifest.ts`'s
+ * `renderResolvedTimelineInput` already uses in the main repo — this file
+ * does not reimplement rendering, it re-authors that one function's body in
+ * plain JS (no TypeScript toolchain) so Node can execute it directly,
+ * while still bundling the *actual* TimelineComposition/TemplateSegment/
+ * DocumentaryCard/QuoteCard source (copied verbatim by export.mjs) through
+ * `@remotion/bundler`, which transpiles their TS/TSX itself.
+ *
+ * Node module resolution: this file expects `remotion`, `@remotion/bundler`,
+ * `@remotion/renderer`, `react`, and `react-dom` to already be available via
+ * the normal node_modules parent-directory walk-up (the VPS base image
+ * already provides these under /app/node_modules; for the local proof, the
+ * main repo's own node_modules is used the same way).
+ */
+import { createServer } from 'node:http'
+import { mkdir } from 'node:fs/promises'
+import path from 'node:path'
+import os from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { bundle } from '@remotion/bundler'
+import { renderMedia, selectComposition } from '@remotion/renderer'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const entry = path.join(here, 'remotion-entry.tsx')
+const publicDir = path.join(here, 'public')
+const port = Number(process.env.PORT ?? 3456)
+const outputDir = process.env.RENDER_OUTPUT_DIR ?? path.join(os.tmpdir(), 'content-studio-render-worker')
+
+/** Cached across requests: bundling is the expensive, repeatable part. */
+let bundleLocationPromise
+
+function getBundleLocation() {
+  if (!bundleLocationPromise) {
+    bundleLocationPromise = bundle(entry, undefined, {
+      publicDir,
+      publicPath: '/',
+      webpackOverride: (config) => ({
+        ...config,
+        resolve: {
+          ...config.resolve,
+          alias: {
+            ...(config.resolve?.alias ?? {}),
+            '@': here,
+          },
+        },
+      }),
+    })
+  }
+  return bundleLocationPromise
+}
+
+/** Minimum required-input validation — deliberately not a full zod schema
+ * pass (the worker boundary starts from an already-resolved
+ * ResolvedTimelineInput; the producing side is responsible for schema
+ * correctness). This only guards against obviously malformed requests. */
+function validateResolvedInput(body) {
+  const errors = []
+  const resolvedInput = body?.resolvedInput
+  if (!resolvedInput || typeof resolvedInput !== 'object') {
+    errors.push('resolvedInput is required and must be an object')
+    return { valid: false, errors }
+  }
+  if (!resolvedInput.manifest?.specification) errors.push('resolvedInput.manifest.specification is required')
+  if (!Array.isArray(resolvedInput.resolvedTemplateSegments)) errors.push('resolvedInput.resolvedTemplateSegments must be an array')
+  if (!resolvedInput.tokens) errors.push('resolvedInput.tokens is required')
+  if (!resolvedInput.typography) errors.push('resolvedInput.typography is required')
+  return { valid: errors.length === 0, errors, resolvedInput }
+}
+
+async function readJsonBody(req) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  const raw = Buffer.concat(chunks).toString('utf8')
+  return raw.length > 0 ? JSON.parse(raw) : {}
+}
+
+function sendJson(res, statusCode, payload) {
+  const body = JSON.stringify(payload, null, 2)
+  res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) })
+  res.end(body)
+}
+
+async function handleRender(req, res) {
+  let body
+  try {
+    body = await readJsonBody(req)
+  } catch {
+    return sendJson(res, 400, { error: 'Request body must be valid JSON.' })
+  }
+
+  const { valid, errors, resolvedInput } = validateResolvedInput(body)
+  if (!valid) return sendJson(res, 400, { error: 'Invalid render request.', details: errors })
+
+  const startedAt = Date.now()
+  try {
+    const bundleLocation = await getBundleLocation()
+    const inputProps = { resolvedInput }
+    const composition = await selectComposition({ serveUrl: bundleLocation, id: 'TimelineManifestVideo', inputProps })
+
+    await mkdir(outputDir, { recursive: true })
+    const outputLocation = path.join(outputDir, `content-studio-proof-${randomUUID()}.mp4`)
+
+    await renderMedia({
+      composition,
+      serveUrl: bundleLocation,
+      codec: 'h264',
+      concurrency: 1,
+      inputProps,
+      outputLocation,
+    })
+
+    return sendJson(res, 200, {
+      status: 'succeeded',
+      output_path: outputLocation,
+      width: composition.width,
+      height: composition.height,
+      fps: composition.fps,
+      duration_frames: composition.durationInFrames,
+      duration_ms: Date.now() - startedAt,
+    })
+  } catch (error) {
+    return sendJson(res, 500, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      duration_ms: Date.now() - startedAt,
+    })
+  }
+}
+
+const server = createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/health') {
+    return sendJson(res, 200, { status: 'ok' })
+  }
+  if (req.method === 'POST' && req.url === '/render') {
+    return void handleRender(req, res)
+  }
+  return sendJson(res, 404, { error: 'Not found.' })
+})
+
+server.listen(port, () => {
+  console.log(`[content-studio-render-worker] listening on :${port}`)
+  console.log(`[content-studio-render-worker] output dir: ${outputDir}`)
+})
