@@ -30,12 +30,13 @@ import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { Project, Production, VideoScene, VideoDraft } from '@/lib/types'
+import type { LibraryFile, Project, Production, VideoScene, VideoDraft } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import { draftLoadingMessage } from '@/lib/ux-production-hardening'
+import { updateVideoSceneLibraryFile } from '@/lib/video-scene-state'
 import {
   buildVideoDraftHubCards,
   filterDraftHubCards,
@@ -56,6 +57,7 @@ function VideosPageContent() {
   const [productionTitle, setProductionTitle] = useState<string | null>(null)
   const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
+  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
   
   const [videoName, setVideoName] = useState('')
@@ -168,6 +170,30 @@ function VideosPageContent() {
   }, [searchParams, retryKey])
 
   useEffect(() => {
+    if (!selectedProject) {
+      setLibraryFiles([])
+      return
+    }
+
+    const controller = new AbortController()
+    fetch(`/api/library-files?projectId=${encodeURIComponent(selectedProject)}&kind=image`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar os assets do Projeto.')
+        setLibraryFiles(payload.files || [])
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.error('[v0] Video library files load error:', error)
+        setLibraryFiles([])
+      })
+
+    return () => controller.abort()
+  }, [selectedProject])
+
+  useEffect(() => {
     if (!isDataReady) return
 
     const autoSaveDraft = async () => {
@@ -250,6 +276,10 @@ function VideosPageContent() {
     const newScenes = [...scenes]
     newScenes[index] = updatedScene
     setScenes(newScenes)
+  }
+
+  const setSceneLibraryFile = (sceneId: string, libraryFileId: string | null) => {
+    setScenes((currentScenes) => updateVideoSceneLibraryFile(currentScenes, sceneId, libraryFileId))
   }
 
   const deleteScene = (index: number) => {
@@ -1072,7 +1102,10 @@ function VideosPageContent() {
                     <SceneCard
                       scene={scene}
                       sceneNumber={index + 1}
+                      projectId={selectedProject}
+                      libraryFiles={libraryFiles}
                       onUpdate={(updatedScene) => updateScene(index, updatedScene)}
+                      onLibraryFileChange={(libraryFileId) => setSceneLibraryFile(scene.id, libraryFileId)}
                       onDelete={() => deleteScene(index)}
                       onGeneratePrompt={handleGenerateScenePrompt}
                     />
