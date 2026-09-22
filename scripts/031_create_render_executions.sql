@@ -120,14 +120,19 @@ DROP POLICY IF EXISTS "render_executions_select_own" ON render_executions;
 CREATE POLICY "render_executions_select_own" ON render_executions
   FOR SELECT USING (auth.uid() = user_id);
 
--- INSERT: only via the authenticated creation route (POST
--- /api/video-drafts/:id/render), which uses the normal per-request
--- Supabase client (anon key + session) -- same as video_drafts.POST. RLS
--- still guarantees a forged user_id can never be inserted regardless of
--- what the route computes.
+-- INSERT: deliberately has NO authenticated policy.  A user-owned row is
+-- not enough authority to create an execution: `input_snapshot` is a
+-- server-derived immutable command for a future worker.  Creation is
+-- therefore restricted to the authenticated POST route's server-only
+-- service-role client, after it has loaded and validated the VideoDraft,
+-- Project, identity, and LibraryFile bindings itself.
 DROP POLICY IF EXISTS "render_executions_insert_own" ON render_executions;
-CREATE POLICY "render_executions_insert_own" ON render_executions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Defense in depth alongside the absent RLS INSERT policy.  Browser roles
+-- also lack table SELECT so they cannot bypass the API's safe projection;
+-- the server-only service-role client retains SELECT for the API.
+REVOKE SELECT, INSERT ON TABLE render_executions FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT ON TABLE render_executions TO service_role;
 
 -- Deliberately NO UPDATE or DELETE policy for `authenticated`/`anon`.
 -- Postgres RLS default-denies any command with no matching policy, so the

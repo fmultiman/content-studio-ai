@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
@@ -10,6 +11,23 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128
 
 type RouteContext = { params: Promise<{ id: string }> }
+
+/**
+ * Execution insertion is intentionally server-privileged: an execution
+ * snapshot is a future worker command and must never be insertable with the
+ * browser's authenticated Supabase client.  This function lives in a route
+ * module (not a client-importable library), and the key has no NEXT_PUBLIC_
+ * prefix, so it cannot enter a browser bundle.
+ */
+function createRenderExecutionWriteClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
 
 async function getAuthenticatedClient() {
   const supabase = await createClient()
@@ -66,12 +84,21 @@ export async function POST(request: Request, context: RouteContext) {
     }
     const idempotencyKey = idempotency.key
 
+    // Keep all execution-row reads and writes behind a server-only client.
+    // Browser roles cannot bypass the GET safe projection to inspect the
+    // immutable snapshot or worker/internal columns.
+    const executionAdmin = createRenderExecutionWriteClient()
+    if (!executionAdmin) {
+      console.error('[Video Draft Render POST] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      return NextResponse.json({ error: 'Servico de renderizacao indisponivel.', code: 'RENDER_EXECUTION_SERVICE_UNAVAILABLE' }, { status: 503 })
+    }
+
     // Idempotency fast path: an accidental double-submit of the SAME user
     // gesture (same key) reuses the existing row rather than creating a
     // duplicate. Two deliberate renders use two different keys (or omit the
     // key entirely) and are never deduplicated by this check.
     if (idempotencyKey) {
-      const { data: existing } = await supabase
+      const { data: existing } = await executionAdmin
         .from('render_executions')
         .select('id, status, queued_at')
         .eq('user_id', user.id)
@@ -168,10 +195,11 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    // 5. Insert one queued render_execution. RLS's own WITH CHECK
-    // (auth.uid() = user_id) is a second, independent guarantee against a
-    // forged owner even if this route computed one incorrectly.
-    const { data: execution, error: insertError } = await supabase
+    // 5. Insert through the server-only service-role client. The regular
+    // authenticated client above deliberately has no INSERT authority on
+    // this table: otherwise a browser could forge `input_snapshot` and
+    // enqueue worker work without passing through this validation boundary.
+    const { data: execution, error: insertError } = await executionAdmin
       .from('render_executions')
       .insert({
         user_id: user.id,
@@ -190,7 +218,7 @@ export async function POST(request: Request, context: RouteContext) {
       // key both pass the pre-check above; the unique index resolves the
       // conflict -- re-select and reuse rather than surface a 500.
       if (idempotencyKey && insertError.code === '23505') {
-        const { data: raced } = await supabase
+        const { data: raced } = await executionAdmin
           .from('render_executions')
           .select('id, status, queued_at')
           .eq('user_id', user.id)

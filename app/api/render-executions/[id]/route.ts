@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import type { RenderExecutionSummary } from '@/lib/types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type RouteContext = { params: Promise<{ id: string }> }
+
+function createRenderExecutionReadClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) return null
+  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
 
 /**
  * User-safe projection only. Deliberately EXCLUDES: claimed_by,
@@ -54,7 +64,13 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
 
-    const { data, error } = await supabase
+    const executionReader = createRenderExecutionReadClient()
+    if (!executionReader) {
+      console.error('[Render Execution GET] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      return NextResponse.json({ error: 'Servico de renderizacao indisponivel.', code: 'RENDER_EXECUTION_SERVICE_UNAVAILABLE' }, { status: 503 })
+    }
+
+    const { data, error } = await executionReader
       .from('render_executions')
       .select(SAFE_COLUMNS)
       .eq('id', id)
