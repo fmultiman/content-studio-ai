@@ -296,3 +296,16 @@ This implementation is **local only** — not pushed, not merged, not deployed, 
 ## 20. Final Verdict (This Mission, 2I-B4.1)
 
 **`READY_FOR_SYNCHRONIZED_FENCING_DEPLOYMENT`**
+
+
+---
+
+## 21. Deployment Closure (Phase 2I-B4.1A)
+
+- PR #29 was squash-merged successfully.
+- Final main SHA: \d9bbd9ae99089302d1548f241a00996df9aa3178\
+- Vercel production deployment: \dpl_HtGBsCvk3jTRCueQCNXEhfWjNA7B\ (READY)
+- Worker payload regenerated from final main (\infra/render-worker-runtime/dist/content-studio/\).
+- **Compatibility Window**: The new Vercel routes are live and require \ttempt\. The old coordinator bundle on the VPS is incompatible (it does not send \ttempt\), but production is safe because the coordinator is NOT resident and remained stopped. Once the human replaces the worker payload on the VPS, the new Control Plane and the new coordinator bundle become compatible. No render execution should be started before this replacement.
+- **Pending**: Manual VPS replacement, then the B4 live recovery proof.
+
