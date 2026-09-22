@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -159,10 +160,12 @@ export function SceneCard({ scene, sceneNumber, projectId, libraryFiles, onUpdat
             />
             {scene.image_url ? (
               <div className="relative h-24 overflow-hidden rounded-lg border border-border/50">
-                <img
+                <Image
                   src={scene.image_url}
                   alt={`Cena ${sceneNumber}`}
-                  className="h-full w-full object-cover"
+                  fill
+                  unoptimized
+                  className="object-cover"
                 />
                 <Button
                   variant="destructive"
@@ -215,12 +218,14 @@ export function SceneCard({ scene, sceneNumber, projectId, libraryFiles, onUpdat
               </div>
               {selectedLibraryFile ? (
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded border border-border/50 bg-muted">
+                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-border/50 bg-muted">
                     {(selectedLibraryFile.thumbnail_url || selectedLibraryFile.public_url) ? (
-                      <img
+                      <Image
                         src={selectedLibraryFile.thumbnail_url || selectedLibraryFile.public_url}
                         alt={selectedLibraryFile.name}
-                        className="h-full w-full object-cover"
+                        fill
+                        unoptimized
+                        className="object-cover"
                       />
                     ) : (
                       <ImageIcon className="m-3 h-6 w-6 text-muted-foreground" />

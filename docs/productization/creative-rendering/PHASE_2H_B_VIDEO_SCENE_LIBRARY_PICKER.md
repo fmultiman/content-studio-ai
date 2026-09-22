@@ -116,4 +116,20 @@ The Library asset picker is integrated into the real `/videos` `SceneCard` UI, s
 
 ## 18. Recommended Next Slice
 
+## Lint baseline closure (Phase 2H-B.1)
+
+The 49-warning result after Phase 2H-B contained four genuinely new warning
+instances in Phase 2H-B-touched files: three `@next/next/no-img-element`
+warnings at the picker card and two SceneCard previews, plus one
+`react-hooks/set-state-in-effect` warning from the picker's no-Project state
+reset. These were additional warning instances, so the baseline increase was
+real despite the warning classes existing elsewhere beforehand.
+
+The previews now use the repository's established `next/image` pattern with
+fill layout and `unoptimized`, preserving data URLs and existing Library URLs.
+The picker no longer writes redundant state when no Project is selected; it
+renders that deterministic message directly. Final lint is **0 errors / 45
+warnings**. No product architecture, renderer, autosave, API, or persistence
+behavior changed.
+
 Wire `scene.library_file_id` into `adaptVideoDraftToTimelineManifest`/`prepareTimelineLibraryFileAssets` (re-validating ownership/Project/soft-delete at that boundary, per Phase 2H0 §"Product preparation before adaptation/render") so a scene bound through this picker actually renders through the existing Timeline/Remotion path — the next deferred step named in both this phase and Phase 2H-A.

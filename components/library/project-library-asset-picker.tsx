@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -74,10 +75,12 @@ function LibraryAssetCard({
     >
       <div className="relative aspect-square bg-muted">
         {previewUrl && !imageError ? (
-          <img
+          <Image
             src={previewUrl}
             alt={file.name}
-            className="h-full w-full object-cover"
+            fill
+            unoptimized
+            className="object-cover"
             onError={() => setImageError(true)}
           />
         ) : (
@@ -116,8 +119,6 @@ export function ProjectLibraryAssetPicker({
   useEffect(() => {
     if (!open) return
     if (!projectId) {
-      setFiles([])
-      setError('Selecione um Projeto para escolher um asset da Biblioteca.')
       return
     }
 
@@ -160,8 +161,10 @@ export function ProjectLibraryAssetPicker({
             <div className="flex justify-center py-10">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : error ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">{error}</p>
+          ) : error || !projectId ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {error || 'Selecione um Projeto para escolher um asset da Biblioteca.'}
+            </p>
           ) : files.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               Nenhuma imagem disponível neste Projeto.
