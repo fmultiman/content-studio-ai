@@ -204,6 +204,8 @@ export interface VideoScene {
   description: string
   prompt: string | null
   image_url: string | null
+  /** Optional persistent identity of the scene's primary LibraryFile asset. */
+  library_file_id?: string | null
   duration: number // in seconds
   movement: string | null
 }
