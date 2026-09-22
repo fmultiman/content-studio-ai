@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { SceneCard } from '@/components/videos/scene-card'
 import { StoryboardModal } from '@/components/videos/storyboard-modal'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
+import { generateImagePrompt, PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -28,9 +29,9 @@ import {
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { LibraryFile, Project, Production, VideoScene, VideoDraft } from '@/lib/types'
+import type { LibraryFile, Project, Production, VideoScene, VideoDraft, RenderExecutionSummary } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
@@ -64,6 +65,11 @@ function VideosPageContent() {
   const [scenes, setScenes] = useState<VideoScene[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
+  
+  // Render execution state
+  const [renderExecution, setRenderExecution] = useState<RenderExecutionSummary | null>(null)
+  const [renderIdempotencyKey, setRenderIdempotencyKey] = useState<string>(() => crypto.randomUUID())
+  
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
@@ -135,6 +141,15 @@ function VideosPageContent() {
             setSelectedProject(draftData.project_id)
             if (draftData.production_id) setProductionId(draftData.production_id)
             setScenes(draftData.scenes || [])
+
+            // Fetch latest execution
+            const execRes = await fetch(`/api/render-executions?videoDraftId=${draftData.id}`)
+            if (execRes.ok && !cancelled) {
+              const execPayload = await execRes.json()
+              if (execPayload.execution) {
+                setRenderExecution(execPayload.execution)
+              }
+            }
           } else if (!draftResponse.ok) {
             console.error('[v0] Video draft load error:', draftPayload)
           }
@@ -429,6 +444,18 @@ function VideosPageContent() {
         .catch(() => null)
     }
     setScenes(draft.scenes || [])
+    
+    // Reset execution state, load new if exists
+    setRenderExecution(null)
+    setRenderIdempotencyKey(crypto.randomUUID())
+    fetch(`/api/render-executions?videoDraftId=${draft.id}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(payload => {
+        if (payload?.execution) {
+          setRenderExecution(payload.execution)
+        }
+      })
+      .catch(() => null)
 
     toast({
       title: 'Rascunho carregado',
@@ -436,42 +463,123 @@ function VideosPageContent() {
     })
   }
 
-  const handleGenerateVideo = async () => {
-    if (!videoName.trim()) {
-      toast({
-        title: 'Nome obrigatório',
-        description: 'Por favor, insira um nome para o vídeo.',
-        variant: 'destructive',
-      })
-      return
+  // Polling configuration
+  const pendingNotification = useRef(false)
+  
+  useEffect(() => {
+    let timeoutId: number | undefined
+    let cancelled = false
+    
+    const pollExecution = async () => {
+      if (!renderExecution?.id || cancelled) return
+      
+      // Stop polling on terminal states
+      if (renderExecution.status === 'completed' || renderExecution.status === 'failed') {
+        if (pendingNotification.current) {
+          pendingNotification.current = false
+          if (renderExecution.status === 'completed') {
+            toast({ title: 'Vídeo renderizado com sucesso.' })
+          } else {
+            toast({ title: 'A renderização falhou.', variant: 'destructive' })
+          }
+        }
+        return
+      }
+
+      try {
+        const res = await fetch(`/api/render-executions/${renderExecution.id}`)
+        if (res.ok && !cancelled) {
+          const payload = await res.json()
+          if (payload.execution) {
+            setRenderExecution(payload.execution)
+          }
+        }
+      } catch (err) {
+        console.error('[v0] Error polling render execution:', err)
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollExecution, 3000)
+      }
     }
 
-    if (scenes.length === 0) {
-      toast({
-        title: 'Sem cenas',
-        description: 'Adicione pelo menos uma cena ao vídeo.',
-        variant: 'destructive',
-      })
-      return
+    if (renderExecution?.status === 'queued' || renderExecution?.status === 'claimed') {
+      timeoutId = window.setTimeout(pollExecution, 3000)
     }
+
+    return () => {
+      cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [renderExecution, toast])
+
+  const handleGenerateVideo = async () => {
+    if (!videoName.trim() || scenes.length === 0) return
 
     setIsGenerating(true)
+    pendingNotification.current = true
+    
+    try {
+      // 1. Force a save first
+      const draft = await handleSaveDraft(false)
+      if (!draft) {
+        setIsGenerating(false)
+        pendingNotification.current = false
+        return
+      }
+      
+      // 2. Submit render request
+      const response = await fetch(`/api/video-drafts/${draft.id}/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idempotencyKey: renderIdempotencyKey })
+      })
+      
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Erro ao agendar renderização.')
+      }
+      
+      setRenderExecution({
+        id: payload.executionId,
+        video_draft_id: draft.id,
+        status: payload.status,
+        queued_at: payload.queuedAt,
+        attempt: 1,
+        claimed_at: null,
+        completed_at: null,
+        failed_at: null,
+        output_mime_type: null,
+        output_size_bytes: null,
+        output_duration_ms: null,
+        error_code: null,
+        error_message: null
+      })
+      
+    } catch (err) {
+      console.error('[v0] Render error:', err)
+      toast({
+        title: 'Erro de renderização',
+        description: err instanceof Error ? err.message : 'Nao foi possivel iniciar a renderizacao.',
+        variant: 'destructive',
+      })
+      pendingNotification.current = false
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
-    // Simulate video generation
-    await new Promise(resolve => setTimeout(resolve, 3000))
-
-    toast({
-      title: 'Vídeo em processamento!',
-      description: 'Este é um fluxo simulado. A integração com API real será adicionada em breve.',
-    })
-
-    setIsGenerating(false)
+  const handleRetryRender = () => {
+    setRenderIdempotencyKey(crypto.randomUUID())
+    handleGenerateVideo()
   }
 
   const clearForm = () => {
     setVideoName('')
     setScenes([])
     setCurrentDraftId(null)
+    setRenderExecution(null)
+    setRenderIdempotencyKey(crypto.randomUUID())
     // Production context and project are preserved intentionally:
     // creating a new video within a Production keeps the workspace context.
   }
@@ -972,16 +1080,16 @@ function VideosPageContent() {
                     Novo Vídeo
                   </Button>
                   <Button
-                    onClick={handleGenerateVideo}
-                    disabled={isGenerating || scenes.length === 0 || !videoName.trim()}
+                    onClick={handleRetryRender}
+                    disabled={isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed' || scenes.length === 0 || !videoName.trim()}
                     className="gap-2 bg-gradient-to-r from-pink-500 to-violet-500 text-white hover:from-pink-600 hover:to-violet-600"
                   >
-                    {isGenerating ? (
+                    {isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Play className="h-4 w-4" />
                     )}
-                    Gerar Vídeo
+                    {renderExecution?.status === 'completed' || renderExecution?.status === 'failed' ? 'Renderizar Novamente' : 'Gerar Vídeo'}
                   </Button>
                   <Button
                     variant="outline"
@@ -1054,6 +1162,91 @@ function VideosPageContent() {
               )}
             </CardContent>
           </Card>
+
+          {/* Inline Render Result Area */}
+          {(renderExecution || isGenerating) && (
+            <Card className="border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden">
+               <CardHeader className="bg-muted/50 pb-4">
+                 <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-2">
+                     <Video className="h-5 w-5 text-pink-400" />
+                     <CardTitle className="text-base font-semibold">
+                       Resultado
+                     </CardTitle>
+                   </div>
+                   <Badge 
+                     variant="outline" 
+                     className={
+                       isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed'
+                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                         : renderExecution?.status === 'completed'
+                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                         : renderExecution?.status === 'failed'
+                         ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                         : 'bg-muted'
+                     }
+                   >
+                     {isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed'
+                       ? 'Renderizando...'
+                       : renderExecution?.status === 'completed'
+                       ? 'Concluído'
+                       : renderExecution?.status === 'failed'
+                       ? 'Falhou'
+                       : 'Rascunho'}
+                   </Badge>
+                 </div>
+               </CardHeader>
+               
+               <CardContent className="p-6">
+                 {(isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed') && (
+                    <div className="flex flex-col items-center justify-center py-12 rounded-lg border border-dashed border-border/50 bg-background/50">
+                      <Loader2 className="mx-auto h-10 w-10 animate-spin text-pink-500" />
+                      <p className="mt-4 text-sm font-medium text-foreground">
+                        Processando no servidor...
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Você pode continuar editando suas cenas enquanto aguarda.
+                      </p>
+                    </div>
+                 )}
+
+                 {renderExecution?.status === 'completed' && (
+                    <div className="flex flex-col items-center justify-center py-12 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                      <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400 mb-4" />
+                      <h4 className="text-base font-semibold text-foreground mb-1">Último render concluído</h4>
+                      <p className="text-sm text-muted-foreground max-w-md text-center">
+                        O vídeo principal está pronto na nuvem. A interface de visualização da prévia renderizada (C2) será habilitada nesta mesma área em breve.
+                      </p>
+                    </div>
+                 )}
+                 
+                 {renderExecution?.status === 'failed' && (
+                    <div className="space-y-4 rounded-lg border border-red-500/30 bg-red-500/5 p-6">
+                      <div className="flex items-start gap-4">
+                        <AlertCircle className="mt-0.5 h-5 w-5 text-red-400" />
+                        <div className="flex-1 space-y-1">
+                          <h4 className="text-sm font-medium text-foreground">A renderização falhou</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {renderExecution.error_message || 'Um erro inesperado ocorreu durante a geração.'}
+                          </p>
+                          {renderExecution.error_code && (
+                             <p className="text-xs text-muted-foreground/75 font-mono bg-background/50 px-2 py-1 rounded inline-block mt-2">
+                               {renderExecution.error_code}
+                             </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="pl-9">
+                        <Button variant="outline" size="sm" onClick={handleRetryRender} className="gap-2">
+                          <RefreshCw className="h-3 w-3" />
+                          Tentar Novamente
+                        </Button>
+                      </div>
+                    </div>
+                 )}
+               </CardContent>
+            </Card>
+          )}
 
           {/* Scenes */}
           <div className="space-y-4">

@@ -1,0 +1,76 @@
+import { NextResponse } from 'next/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
+import type { RenderExecutionSummary } from '@/lib/types'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function createRenderExecutionReadClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) return null
+  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
+const SAFE_COLUMNS = [
+  'id',
+  'video_draft_id',
+  'status',
+  'attempt',
+  'queued_at',
+  'claimed_at',
+  'completed_at',
+  'failed_at',
+  'output_mime_type',
+  'output_size_bytes',
+  'output_duration_ms',
+  'error_code',
+  'error_message',
+].join(', ')
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const videoDraftId = searchParams.get('videoDraftId')
+    
+    if (!videoDraftId || !UUID_RE.test(videoDraftId)) {
+      return NextResponse.json({ error: 'videoDraftId invalido ou ausente.' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+    }
+
+    const executionReader = createRenderExecutionReadClient()
+    if (!executionReader) {
+      console.error('[Render Executions List GET] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      return NextResponse.json({ error: 'Servico de renderizacao indisponivel.' }, { status: 503 })
+    }
+
+    const { data, error } = await executionReader
+      .from('render_executions')
+      .select(SAFE_COLUMNS)
+      .eq('video_draft_id', videoDraftId)
+      .eq('user_id', user.id)
+      .order('queued_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) {
+      return NextResponse.json({ error: 'Erro ao buscar execucoes.' }, { status: 500 })
+    }
+
+    const execution = data as unknown as RenderExecutionSummary | null
+    return NextResponse.json({ execution })
+  } catch (error) {
+    console.error('[Render Executions List GET] Error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro interno' },
+      { status: 500 },
+    )
+  }
+}
