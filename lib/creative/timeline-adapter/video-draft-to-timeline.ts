@@ -34,7 +34,7 @@ const DOCUMENTARY_CARD_COVER_TEMPLATE = { id: 'editorial.documentary-card', vers
 
 const DEFAULT_RENDER_INTENT = { purpose: 'preview', container: 'mp4', audio: false, captions: 'none' } as const
 
-export type AdapterDiagnosticKind = 'motion_unsupported' | 'field_unused' | 'content_defaulted'
+export type AdapterDiagnosticKind = 'motion_unsupported' | 'field_unused' | 'content_defaulted' | 'asset_unresolved'
 
 export type AdapterDiagnostic = {
   kind: AdapterDiagnosticKind
@@ -49,8 +49,15 @@ export type AdaptVideoDraftInput = {
   identity: IdentitySnapshotRef
   /** Explicit, deterministic canvas/fps. Defaults to the proven 1080x1920 @ 30fps used by every existing timeline fixture. */
   canvas?: { width: number; height: number; fps?: number }
-  /** Fixture/real hero asset for every scene. Real per-scene asset resolution is deferred. */
+  /** Fixture/real hero asset used for any scene without an explicit binding in sceneAssets. */
   heroAssetRef?: AssetRef
+  /**
+   * Explicit, caller-supplied asset binding per scene (keyed by VideoScene.id).
+   * This is the seam Phase 2G-B uses to bind a real `library_file` AssetRef to
+   * a specific scene -- VideoScene.image_url itself is never interpreted as
+   * an asset contract (Phase 2G-A decision, preserved here).
+   */
+  sceneAssets?: Record<string, AssetRef>
 }
 
 export type AdaptVideoDraftResult = {
@@ -172,13 +179,14 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
   const fps = input.canvas?.fps ?? DEFAULT_TIMELINE_FPS
   const width = input.canvas?.width ?? DEFAULT_TIMELINE_CANVAS.width
   const height = input.canvas?.height ?? DEFAULT_TIMELINE_CANVAS.height
-  const heroAssetRef = input.heroAssetRef ?? DEFAULT_HERO_ASSET_REF
+  const defaultHeroAssetRef = input.heroAssetRef ?? DEFAULT_HERO_ASSET_REF
   const trackId = 'video-main'
 
   const diagnostics: AdapterDiagnostic[] = []
   const segments: TemplateSegment[] = []
   let cursor = 0
   for (const scene of draft.scenes) {
+    const heroAssetRef = input.sceneAssets?.[scene.id] ?? defaultHeroAssetRef
     const { segment, diagnostics: sceneDiagnostics } = sceneToSegment(scene, cursor, fps, trackId, draft.scenes.length, heroAssetRef)
     segments.push(segment)
     diagnostics.push(...sceneDiagnostics)
