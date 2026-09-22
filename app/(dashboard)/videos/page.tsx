@@ -29,7 +29,7 @@ import {
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw, Download, ExternalLink } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { LibraryFile, Project, Production, VideoScene, VideoDraft, RenderExecutionSummary } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -69,6 +69,7 @@ function VideosPageContent() {
   // Render execution state
   const [renderExecution, setRenderExecution] = useState<RenderExecutionSummary | null>(null)
   const [renderIdempotencyKey, setRenderIdempotencyKey] = useState<string>(() => crypto.randomUUID())
+  const [renderOutputUrl, setRenderOutputUrl] = useState<string | null>(null)
   
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
@@ -447,6 +448,7 @@ function VideosPageContent() {
     
     // Reset execution state, load new if exists
     setRenderExecution(null)
+    setRenderOutputUrl(null)
     setRenderIdempotencyKey(crypto.randomUUID())
     fetch(`/api/render-executions?videoDraftId=${draft.id}`)
       .then(res => res.ok ? res.json() : null)
@@ -466,6 +468,18 @@ function VideosPageContent() {
   // Polling configuration
   const pendingNotification = useRef(false)
   
+  const fetchOutputUrl = async (executionId: string) => {
+    try {
+      const res = await fetch(`/api/render-executions/${executionId}/output-url`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.url) setRenderOutputUrl(data.url)
+      }
+    } catch (err) {
+      console.error('[v0] Error fetching output url:', err)
+    }
+  }
+
   useEffect(() => {
     let timeoutId: number | undefined
     let cancelled = false
@@ -479,9 +493,13 @@ function VideosPageContent() {
           pendingNotification.current = false
           if (renderExecution.status === 'completed') {
             toast({ title: 'Vídeo renderizado com sucesso.' })
+            fetchOutputUrl(renderExecution.id)
           } else {
             toast({ title: 'A renderização falhou.', variant: 'destructive' })
           }
+        } else if (renderExecution.status === 'completed' && !renderOutputUrl && !cancelled) {
+          // Recover output URL on load if it's already completed
+          fetchOutputUrl(renderExecution.id)
         }
         return
       }
@@ -511,13 +529,14 @@ function VideosPageContent() {
       cancelled = true
       if (timeoutId) window.clearTimeout(timeoutId)
     }
-  }, [renderExecution, toast])
+  }, [renderExecution, renderOutputUrl, toast])
 
   const handleGenerateVideo = async () => {
     if (!videoName.trim() || scenes.length === 0) return
 
     setIsGenerating(true)
     pendingNotification.current = true
+    setRenderOutputUrl(null)
     
     try {
       // 1. Force a save first
@@ -569,6 +588,19 @@ function VideosPageContent() {
     }
   }
 
+  const handleDownloadOutput = async () => {
+    if (!renderExecution?.id) return
+    try {
+      const res = await fetch(`/api/render-executions/${renderExecution.id}/output-url?disposition=attachment`)
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch {
+      toast({ title: 'Erro ao baixar o vídeo.', variant: 'destructive' })
+    }
+  }
+
   const handleRetryRender = () => {
     setRenderIdempotencyKey(crypto.randomUUID())
     handleGenerateVideo()
@@ -579,6 +611,7 @@ function VideosPageContent() {
     setScenes([])
     setCurrentDraftId(null)
     setRenderExecution(null)
+    setRenderOutputUrl(null)
     setRenderIdempotencyKey(crypto.randomUUID())
     // Production context and project are preserved intentionally:
     // creating a new video within a Production keeps the workspace context.
@@ -1211,12 +1244,35 @@ function VideosPageContent() {
                  )}
 
                  {renderExecution?.status === 'completed' && (
-                    <div className="flex flex-col items-center justify-center py-12 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-                      <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-400 mb-4" />
-                      <h4 className="text-base font-semibold text-foreground mb-1">Último render concluído</h4>
-                      <p className="text-sm text-muted-foreground max-w-md text-center">
-                        O vídeo principal está pronto na nuvem. A interface de visualização da prévia renderizada (C2) será habilitada nesta mesma área em breve.
-                      </p>
+                    <div className="flex flex-col items-center justify-center p-2 rounded-lg border border-emerald-500/20 bg-background/50">
+                      <div className="w-full flex items-center justify-between mb-4 px-2 pt-2">
+                        <h4 className="text-base font-semibold text-foreground flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-emerald-400" /> Último render concluído
+                        </h4>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={handleDownloadOutput} className="gap-2">
+                            <Download className="h-4 w-4" /> Baixar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => router.push('/galeria')} className="gap-2">
+                            <ExternalLink className="h-4 w-4" /> Abrir na Galeria
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="w-full relative aspect-video bg-black rounded-md overflow-hidden">
+                        {renderOutputUrl ? (
+                          <video 
+                            src={renderOutputUrl} 
+                            controls 
+                            playsInline 
+                            className="w-full h-full object-contain"
+                            crossOrigin="anonymous"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
                     </div>
                  )}
                  

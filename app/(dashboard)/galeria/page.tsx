@@ -98,7 +98,7 @@ export default function GalleryPage() {
       try {
         const supabase = createClient()
 
-        const [imagesResult, draftsResult, projectsResult, productionsResult] = await Promise.all([
+        const [imagesResult, draftsResult, projectsResult, productionsResult, executionsResult, videoDraftsResult] = await Promise.all([
           supabase
             .from('images')
             .select('*')
@@ -115,13 +115,23 @@ export default function GalleryPage() {
             .from('productions')
             .select('*')
             .order('updated_at', { ascending: false }),
+          supabase
+            .from('render_executions')
+            .select('id, video_draft_id, status, completed_at, queued_at, attempt')
+            .eq('status', 'completed')
+            .order('updated_at', { ascending: false }),
+          supabase
+            .from('video_drafts')
+            .select('id, project_id, production_id, name, updated_at')
         ])
 
         const firstError =
           imagesResult.error ||
           draftsResult.error ||
           projectsResult.error ||
-          productionsResult.error
+          productionsResult.error ||
+          executionsResult.error ||
+          videoDraftsResult.error
 
         if (firstError) {
           throw new Error(firstError.message)
@@ -201,6 +211,16 @@ export default function GalleryPage() {
   const handleDownload = async (output: GalleryOutputItem) => {
     if (!output.downloadUrl) return
 
+    if (output.mediaType === 'video') {
+      const link = document.createElement('a')
+      link.href = output.downloadUrl
+      link.download = ''
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      return
+    }
+
     try {
       const response = await fetch(output.downloadUrl)
       if (!response.ok) return
@@ -220,7 +240,7 @@ export default function GalleryPage() {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(link)
     } catch {
-      setErrorMessage('Não foi possível baixar esta imagem agora.')
+      setErrorMessage('Não foi possível baixar o arquivo.')
     }
   }
 
@@ -687,8 +707,18 @@ function GalleryPreviewDialog({
             </DialogHeader>
 
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.8fr)]">
-              <div className="overflow-hidden rounded-md border bg-muted">
-                <GalleryImageFrame output={output} />
+              <div className="overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+                {output.mediaType === 'video' && output.downloadUrl ? (
+                  <video 
+                    src={output.downloadUrl}
+                    controls
+                    playsInline
+                    className="w-full h-full object-contain bg-black"
+                    crossOrigin="anonymous"
+                  />
+                ) : (
+                  <GalleryImageFrame output={output} />
+                )}
               </div>
 
               <div className="space-y-4">

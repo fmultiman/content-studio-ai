@@ -1,11 +1,13 @@
-import type { Image, ImageDraft, Production, Project } from '@/lib/types'
+import type { Image, ImageDraft, Production, Project, RenderExecutionSummary, VideoDraft } from '@/lib/types'
 import { productionHref } from '@/lib/draft-hub'
 import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 
 export type GalleryOutputStatus = 'generated' | 'approved' | 'rejected' | 'generating'
+export type GalleryMediaType = 'image' | 'video'
 
 export type GalleryOutputItem = {
   id: string
+  mediaType: GalleryMediaType
   title: string
   prompt: string
   projectId: string | null
@@ -53,6 +55,11 @@ type ImageDraftSource = Pick<
   'id' | 'project_id' | 'production_id' | 'name' | 'user_input' | 'current_image_id' | 'updated_at'
 >
 
+type VideoDraftSource = Pick<
+  VideoDraft,
+  'id' | 'project_id' | 'production_id' | 'name' | 'updated_at'
+>
+
 type ProjectSource = Pick<Project, 'id' | 'name'>
 type ProductionSource = Pick<Production, 'id' | 'project_id' | 'title' | 'intention'>
 type ImageSource = Pick<
@@ -69,6 +76,8 @@ type ImageSource = Pick<
   | 'created_at'
   | 'updated_at'
 >
+
+type ExecutionSource = Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'>
 
 const STATUS_LABELS: Record<GalleryOutputStatus, string> = {
   generated: 'Gerada',
@@ -102,11 +111,15 @@ export function buildGalleryOutputs({
   drafts = [],
   projects = [],
   productions = [],
+  executions = [],
+  videoDrafts = [],
 }: {
   images: ImageSource[]
   drafts?: ImageDraftSource[]
   projects?: ProjectSource[]
   productions?: ProductionSource[]
+  executions?: ExecutionSource[]
+  videoDrafts?: VideoDraftSource[]
 }): GalleryOutputItem[] {
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const productionById = new Map(productions.map((production) => [production.id, production]))
@@ -115,10 +128,11 @@ export function buildGalleryOutputs({
       .filter((draft) => draft.current_image_id)
       .map((draft) => [draft.current_image_id as string, draft]),
   )
+  const videoDraftById = new Map(videoDrafts.map((vd) => [vd.id, vd]))
 
-  return images
+  const imageItems = images
     .filter(isGeneratedVisualOutput)
-    .map((image) => {
+    .map((image): GalleryOutputItem => {
       const draft = draftByImageId.get(image.id) || null
       const projectId = draft?.project_id || image.project_id || null
       const productionId = draft?.production_id || null
@@ -140,6 +154,7 @@ export function buildGalleryOutputs({
 
       return {
         id: image.id,
+        mediaType: 'image',
         title,
         prompt,
         projectId,
@@ -158,13 +173,62 @@ export function buildGalleryOutputs({
         previewAlt: buildGalleryOutputAlt(title, project?.name || null, displayProductionTitle),
         productionHref: projectId && productionId ? productionHref(projectId, productionId) : null,
         sourceHref: buildGallerySourceHref({
+          mediaType: 'image',
           draftId: draft?.id || null,
           projectId,
           productionId,
         }),
       }
     })
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+
+  const videoItems = executions
+    .filter((exec) => exec.status === 'completed')
+    .map((exec): GalleryOutputItem => {
+      const draft = videoDraftById.get(exec.video_draft_id) || null
+      const projectId = draft?.project_id || null
+      const productionId = draft?.production_id || null
+      const project = projectId ? projectById.get(projectId) || null : null
+      const production = productionId ? productionById.get(productionId) || null : null
+      const status = 'generated'
+      const title = draft?.name?.trim() || 'Vídeo Renderizado'
+      const displayProductionTitle = production
+        ? resolveProductionDisplay({
+          title: production.title,
+          intention: production.intention,
+          projectName: project?.name,
+        }).title
+        : null
+        
+      return {
+        id: exec.id,
+        mediaType: 'video',
+        title,
+        prompt: 'Vídeo a partir de template e cenas',
+        projectId,
+        projectName: project?.name || null,
+        productionId,
+        productionName: displayProductionTitle,
+        draftId: exec.video_draft_id,
+        status,
+        statusLabel: galleryOutputStatusLabel(status),
+        generatedAt: exec.completed_at || exec.queued_at,
+        updatedAt: exec.completed_at || exec.queued_at,
+        imageUrl: null,
+        thumbnailUrl: null,
+        downloadUrl: `/api/render-executions/${exec.id}/output-url?disposition=attachment`,
+        canDownload: true,
+        previewAlt: buildGalleryOutputAlt(title, project?.name || null, displayProductionTitle),
+        productionHref: projectId && productionId ? productionHref(projectId, productionId) : null,
+        sourceHref: buildGallerySourceHref({
+          mediaType: 'video',
+          draftId: exec.video_draft_id,
+          projectId,
+          productionId,
+        }),
+      }
+    })
+
+  return [...imageItems, ...videoItems].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 }
 
 export function filterGalleryOutputs(
@@ -296,10 +360,12 @@ function buildGalleryOutputAlt(
 }
 
 function buildGallerySourceHref({
+  mediaType,
   draftId,
   projectId,
   productionId,
 }: {
+  mediaType: GalleryMediaType
   draftId: string | null
   projectId: string | null
   productionId: string | null
@@ -311,7 +377,8 @@ function buildGallerySourceHref({
   if (productionId) params.set('production', productionId)
 
   const query = params.toString()
-  return query ? `/imagens?${query}` : '/imagens'
+  const basePath = mediaType === 'video' ? '/videos' : '/imagens'
+  return query ? `${basePath}?${query}` : basePath
 }
 
 function withGalleryTimeout<T>(
