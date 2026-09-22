@@ -57,8 +57,24 @@ function resolveAssetSlots(
   return resolvedAssets
 }
 
+export type ResolveTimelineManifestOptions = {
+  /**
+   * Optional pre-resolved identity snapshot override.
+   *
+   * When supplied, the fixture-backed `resolveIdentitySnapshot` registry is
+   * bypassed and these tokens are used directly. This is the same override
+   * pattern already established by `resolveStaticRenderManifest` (see
+   * lib/creative/resolution/resolve-static-render.ts) and required by the
+   * Phase 2I-B2 claim-time resolver, which must use the frozen
+   * `identitySnapshot` from `render_executions.input_snapshot` rather than
+   * looking up an unknown real-Project ref in a fixture-only registry.
+   */
+  identitySnapshot?: VisualTokensSnapshot
+}
+
 export function resolveTimelineManifest(
   input: unknown,
+  options?: ResolveTimelineManifestOptions,
 ): ResolutionResult<ResolvedTimelineInput> {
   const parsed = TimelineManifestSchema.safeParse(input)
   if (!parsed.success) return resolutionResult(schemaDiagnostics(parsed.error))
@@ -74,7 +90,11 @@ export function resolveTimelineManifest(
   }
 
   const errors: RuntimeDiagnostic[] = []
-  const identity = resolveIdentitySnapshot(manifest.identity)
+  // Use the caller-supplied snapshot when present (Phase 2I-B2 claim-time
+  // path and any future context that has already resolved Project identity).
+  const identity = options?.identitySnapshot
+    ? { valid: true as const, value: options.identitySnapshot }
+    : resolveIdentitySnapshot(manifest.identity)
   if (!identity.valid) errors.push({ kind: 'identity_error', ...identity.error })
 
   const typography = identity.valid ? resolveTypography(identity.value) : { valid: false as const, errors: [] }
