@@ -16,6 +16,7 @@
 import { adaptLibraryFileToResolvedAsset, type ProductAssetAdapterContext } from '@/lib/creative/integration/library-file-adapter'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
+import type { ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import type { LibraryFile } from '@/lib/types'
 import type { AdapterDiagnostic } from './video-draft-to-timeline'
 
@@ -85,4 +86,34 @@ export async function prepareTimelineLibraryFileAssets(
   }
 
   return { resolvedAssets, diagnostics }
+}
+
+/**
+ * Merges a real-asset patch (from prepareTimelineLibraryFileAssets) into a
+ * ResolvedTimelineInput already produced by the neutral `resolveTimelineManifest`.
+ * The neutral resolver's own `resolvedAssets` for a `library_file` slot stays a
+ * placeholder (Phase 2G-B, §4) -- this is the one place that placeholder gets
+ * replaced with the real, runtime-prepared asset, and it happens entirely
+ * outside the neutral resolver. Pure data merge; no Remotion/Supabase/S3 here.
+ */
+export function patchResolvedTimelineAssets(
+  resolved: ResolvedTimelineInput,
+  patch: Record<string, ResolvedAsset>,
+): ResolvedTimelineInput {
+  if (Object.keys(patch).length === 0) return resolved
+  return {
+    ...resolved,
+    resolvedTemplateSegments: resolved.resolvedTemplateSegments.map((entry) => {
+      const patchedSlots: Record<string, ResolvedAsset> = { ...entry.resolvedAssets }
+      let touched = false
+      for (const slot of Object.keys(entry.resolvedAssets)) {
+        const key = `${entry.segment.id}:${slot}`
+        if (patch[key]) {
+          patchedSlots[slot] = patch[key]
+          touched = true
+        }
+      }
+      return touched ? { ...entry, resolvedAssets: patchedSlots } : entry
+    }),
+  }
 }

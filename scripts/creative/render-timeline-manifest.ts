@@ -114,7 +114,7 @@ function probeVideo(filePath: string): { codec: string; width: number; height: n
 }
 
 function extractFrame(videoPath: string, label: string, seekArgs: string[]): string {
-  const framePath = path.join(outputDir, `extracted-${label}.png`)
+  const framePath = path.join(path.dirname(videoPath), `extracted-${label}.png`)
   execFileSync('ffmpeg', [
     '-y', '-loglevel', 'error',
     ...seekArgs,
@@ -125,16 +125,25 @@ function extractFrame(videoPath: string, label: string, seekArgs: string[]): str
   return repoRelative(framePath)
 }
 
-export async function renderOfficialTimelineManifest(
-  fixturePath = defaultFixture,
+export type TimelineRenderMetrics = {
+  metadata: { codec: string; width: number; height: number; fps: number; durationSeconds: number }
+  extractedFrames: Array<{ label: string; frame_path: string }>
+}
+
+/**
+ * The reusable render-only primitive: bundle -> selectComposition -> renderMedia
+ * -> probe -> extract frames, against an ALREADY-RESOLVED ResolvedTimelineInput
+ * and an explicit output path. Extracted so callers with their own resolved
+ * input (e.g. one carrying a real, runtime-prepared LibraryFile asset instead
+ * of the neutral resolver's fixture/stub) can reuse the exact same Remotion
+ * bundle/composition/render/probe path instead of a second implementation.
+ */
+export async function renderResolvedTimelineInput(
+  resolvedInput: ResolvedTimelineInput,
+  targetOutputPath: string,
   options: VideoRenderOptions = DEFAULT_VIDEO_RENDER_OPTIONS,
-): Promise<TimelineVideoExecutionResult> {
-  const { manifest, sourcePath } = await readTimelineManifest(fixturePath)
-  const resolvedInput = resolveOfficialTimeline(manifest)
-  const typography = await prepareTypography(resolvedInput.tokens)
-  if (!typography.valid) throw new TimelineRenderValidationError('Typography could not be prepared for video render.', typography.errors)
-  const started = new Date()
-  await mkdir(outputDir, { recursive: true })
+): Promise<TimelineRenderMetrics> {
+  await mkdir(path.dirname(targetOutputPath), { recursive: true })
 
   const webpackOverride: WebpackOverrideFn = (config: WebpackConfiguration) => ({
     ...config,
@@ -163,15 +172,29 @@ export async function renderOfficialTimelineManifest(
     codec: options.codec,
     concurrency: options.concurrency,
     inputProps,
-    outputLocation: outputPath,
+    outputLocation: targetOutputPath,
   })
 
-  const metadata = probeVideo(outputPath)
+  const metadata = probeVideo(targetOutputPath)
   const extractedFrames = [
-    { label: 'start', frame_path: extractFrame(outputPath, 'start', []) },
-    { label: 'middle', frame_path: extractFrame(outputPath, 'middle', ['-ss', '3']) },
-    { label: 'end', frame_path: extractFrame(outputPath, 'end', ['-sseof', '-0.1']) },
+    { label: 'start', frame_path: extractFrame(targetOutputPath, 'start', []) },
+    { label: 'middle', frame_path: extractFrame(targetOutputPath, 'middle', ['-ss', '3']) },
+    { label: 'end', frame_path: extractFrame(targetOutputPath, 'end', ['-sseof', '-0.1']) },
   ]
+  return { metadata, extractedFrames }
+}
+
+export async function renderOfficialTimelineManifest(
+  fixturePath = defaultFixture,
+  options: VideoRenderOptions = DEFAULT_VIDEO_RENDER_OPTIONS,
+): Promise<TimelineVideoExecutionResult> {
+  const { manifest, sourcePath } = await readTimelineManifest(fixturePath)
+  const resolvedInput = resolveOfficialTimeline(manifest)
+  const typography = await prepareTypography(resolvedInput.tokens)
+  if (!typography.valid) throw new TimelineRenderValidationError('Typography could not be prepared for video render.', typography.errors)
+  const started = new Date()
+
+  const { metadata, extractedFrames } = await renderResolvedTimelineInput(resolvedInput, outputPath, options)
   const finished = new Date()
   const templateKeys = [...new Set(resolvedInput.resolvedTemplateSegments.map(({ resolvedTemplate }) => `${resolvedTemplate.ref.id}@${resolvedTemplate.ref.version}`))]
   const componentKeys = [...new Set(resolvedInput.resolvedTemplateSegments.map(({ resolvedTemplate }) => resolvedTemplate.descriptor.component_key))]
