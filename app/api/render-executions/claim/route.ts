@@ -148,6 +148,12 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     claimed: true,
     executionId: execution.id,
+    // userId is required by the worker (Phase 2I-B3) to compute the
+    // deterministic scratch output target (users/{userId}/renders/scratch/
+    // {executionId}/output.mp4, see lib/render-execution/scratch-output-target.ts)
+    // — it is not sensitive (an opaque UUID the worker already implicitly
+    // operates within the scope of for this one claimed execution).
+    userId: execution.user_id,
     attempt: execution.attempt,
     leaseExpiresAt: execution.lease_expires_at,
     warnings: resolution.warnings,

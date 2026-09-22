@@ -2,6 +2,8 @@
  * POST /api/render-executions/[id]/complete
  *
  * Phase 2I-B2 — worker-facing completion endpoint.
+ * Phase 2I-B3 — hardened to reject any output locator other than this
+ * execution's own deterministic scratch target (Task 1/2/8).
  *
  * AUTHENTICATION: worker secret only.
  *
@@ -10,18 +12,25 @@
  *   completed = render succeeded
  *             + MinIO scratch upload succeeded
  *             + authoritative scratch object exists
- *             + execution row contains verified output locator/metadata
+ *             + execution row contains verified output metadata
  *
- * B3 DEFERMENT:
- * The route contract is implemented here (validated, tested, ready) but
- * the worker MUST NOT call it in B2 after a local-only render. A locally
- * rendered MP4 in /tmp is NOT a completed execution. The route enforces
- * this by requiring real output metadata (outputBucket, outputStoragePath,
- * outputSizeBytes, outputDurationMs) — omitting them returns 400.
+ * OUTPUT TARGET AUTHORITY (Phase 2I-B3, Task 1/2/8):
+ * The worker MAY submit `outputBucket`/`outputStoragePath` (it needs to
+ * confirm what it actually uploaded to), but this route treats them as a
+ * confirmation to check, not as trusted input to persist verbatim. The
+ * server independently derives the ONE deterministic target this execution
+ * is allowed to have (`lib/render-execution/scratch-output-target.ts`,
+ * `buildScratchOutputTarget({ userId: execution.user_id, executionId: id })`)
+ * and requires an exact match — any other bucket, any other key (including
+ * another user's or another execution's own otherwise-valid scratch path)
+ * is rejected with `OUTPUT_TARGET_MISMATCH`. The row is always written with
+ * the SERVER-DERIVED target, never the worker-submitted strings directly —
+ * belt and suspenders even though they are required to match.
  *
- * The B2 worker coordination code keeps successful local renders in a
- * "locally rendered, not yet uploaded" state and does NOT call this route.
- * B3 will add the MinIO upload step that precedes calling complete.
+ * B2->B3: a locally rendered MP4 that was never uploaded still cannot
+ * satisfy this route — the required-field guard (outputBucket etc.) plus
+ * the new exact-match guard together mean the ONLY way to reach `completed`
+ * is a real upload to this execution's own scratch key.
  *
  * TRANSITION: claimed → completed.
  * Any other current status is rejected (409).
@@ -30,6 +39,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWorkerAuth } from '@/lib/render-execution/worker-auth'
 import { createWorkerApiDbClient } from '@/lib/render-execution/worker-db-client'
+import { isExpectedScratchOutputTarget } from '@/lib/render-execution/scratch-output-target'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_BUCKET_LENGTH = 255
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // ── 5. Load execution ─────────────────────────────────────────────────────
   const { data: execution, error: fetchError } = await db
     .from('render_executions')
-    .select('id, status')
+    .select('id, user_id, status')
     .eq('id', id)
     .maybeSingle()
 
@@ -157,7 +167,33 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
+  // ── 6A. Output target authority (Phase 2I-B3, Task 1/2/8) ─────────────────
+  // The worker-submitted bucket/path are a CONFIRMATION, never trusted
+  // input: the only value ever written is this execution's own
+  // server-derived deterministic target. Any other value — a different
+  // bucket, a different user's prefix, a different execution's key — is
+  // rejected outright, closed before any DB write happens.
+  if (
+    !isExpectedScratchOutputTarget({
+      userId: execution.user_id,
+      executionId: execution.id,
+      bucket: outputBucket,
+      key: outputStoragePath,
+    })
+  ) {
+    return NextResponse.json(
+      {
+        error: 'outputBucket/outputStoragePath do not match this execution\'s authoritative scratch target.',
+        code: 'OUTPUT_TARGET_MISMATCH',
+      },
+      { status: 400 },
+    )
+  }
+
   // ── 7. Record completion atomically ───────────────────────────────────────
+  // Written from the server-derived target (identical value at this point,
+  // since §6A already required an exact match) rather than re-trusting the
+  // request body a second time.
   const { error: updateError } = await db
     .from('render_executions')
     .update({

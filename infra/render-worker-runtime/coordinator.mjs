@@ -1,54 +1,82 @@
 #!/usr/bin/env node
 /**
- * Phase 2I-B2 — Content Studio render-worker coordination loop.
+ * Phase 2I-B2/B3 — Content Studio render-worker coordination loop.
  *
- * This file is a plain-Node ES Module that sits ALONGSIDE server.mjs but
- * does NOT replace it. server.mjs remains the local Remotion HTTP wrapper;
- * this file adds the control-plane polling loop that dispatches real renders.
+ * This file is the ENTRY POINT esbuild bundles at export time (see
+ * export.mjs) into a single self-contained `coordinator.bundle.cjs` — the
+ * form actually deployed to the VPS. It sits ALONGSIDE server.mjs but does
+ * NOT replace it. server.mjs remains the local Remotion HTTP wrapper
+ * (unbundled — its own dependency closure, `remotion`/`@remotion/*`, is
+ * already provided by the VPS base image's `/app/node_modules`, per
+ * README.md §2); this file adds the control-plane polling loop plus (as of
+ * Phase 2I-B3) the MinIO scratch upload step.
  *
  * ─── Responsibility boundaries ────────────────────────────────────────────
- *   server.mjs     : Remotion bundle + renderMedia (unchanged)
- *   coordinator.mjs: poll → claim → call server.mjs → fail-report
+ *   server.mjs      : Remotion bundle + renderMedia (unchanged)
+ *   coordinator.mjs  : poll → claim → call server.mjs → upload → complete/fail
+ *   minio-upload.mjs : the only file that imports @aws-sdk/client-s3
  *
- * Keeping them separate ensures coordination tests do not need Chromium and
- * the renderer can be exercised without a live control plane (Task 15).
+ * ─── Why bundling is required (Phase 2I-B3, Task 5) ───────────────────────
+ * Phase 2I-A1/B2 needed zero extra npm dependencies beyond what the VPS
+ * base image already provides. Phase 2I-B3 adds a real one
+ * (`@aws-sdk/client-s3`) that the base image does NOT provide. Rather than
+ * assume it will magically be resolvable via the base image's
+ * `/app/node_modules` (it will not be — that directory is fixed,
+ * base-image-owned, and does not contain it), export.mjs bundles this
+ * entry point (and everything it imports, including the shared
+ * `lib/render-execution/*.ts` helpers) into one dependency-free JS file
+ * with esbuild BEFORE copying anything to the VPS. Deploy
+ * `coordinator.bundle.cjs`, not this source file, to the VPS.
  *
- * ─── Safe B2 behavior for successfully rendered MP4s ──────────────────────
- * B3 is not yet implemented (MinIO upload). Therefore this coordinator runs
- * in PROOF_ONLY mode by default:
- *
- *   - It polls and claims exactly ONE execution per run.
- *   - It invokes the renderer (real Chromium, real MP4 output).
- *   - On render success it logs the local output path and records the
- *     locally-rendered proof, but does NOT call /complete, because
- *     completed requires an authoritative scratch-bucket locator.
- *   - On render failure it calls /fail so the server records the error.
- *   - After one execution (success or fail) the process exits.
- *
- * This prevents continuously claiming new work and stranding successful
- * executions in "claimed" state until lease expiry because upload is absent.
- *
- * When CONTENT_STUDIO_RENDER_LOOP=1 the coordinator runs a continuous polling
- * loop. This flag MUST NOT be set until B3 is in place and the loop calls
- * /complete after a successful upload.
+ * ─── Truthful completion (Phase 2I-B3) ────────────────────────────────────
+ * completed is now reachable, but ONLY through the real lifecycle:
+ *   render (server.mjs) -> confirm local file -> upload to MinIO scratch
+ *     -> only on upload success -> call /complete -> only on success ->
+ *     delete the local file.
+ * A render success with no successful upload never calls /complete — see
+ * lib/render-execution/worker-lifecycle.ts for the pure decision functions
+ * this file wires together (shouldCallComplete,
+ * shouldReportFailAfterUploadFailure, shouldRetryComplete,
+ * shouldDeleteLocalFileAfterSuccess, etc.), all independently unit-tested.
  *
  * ─── Environment contract ─────────────────────────────────────────────────
- *   CONTENT_STUDIO_CONTROL_PLANE_URL   required — Vercel deployment URL
- *   CONTENT_STUDIO_RENDER_WORKER_SECRET required — shared secret for Bearer
- *   CONTENT_STUDIO_RENDER_WORKER_ID    optional — stable worker identity
+ *   CONTENT_STUDIO_CONTROL_PLANE_URL     required — Vercel deployment URL
+ *   CONTENT_STUDIO_RENDER_WORKER_SECRET  required — shared secret for Bearer
+ *   CONTENT_STUDIO_RENDER_WORKER_ID      optional — stable worker identity
  *   CONTENT_STUDIO_RENDER_POLL_INTERVAL_MS optional (default 8000)
- *   CONTENT_STUDIO_RENDER_LOOP         optional — set to "1" for continuous
- *   PORT                               optional (default 3456) — renderer port
+ *   CONTENT_STUDIO_RENDER_LOOP           optional — "1" for continuous polling
+ *   CONTENT_STUDIO_MINIO_ENDPOINT        required for upload — e.g. http://minio:9000
+ *   CONTENT_STUDIO_MINIO_BUCKET          required for upload — e.g. content-studio
+ *   CONTENT_STUDIO_MINIO_ACCESS_KEY      required for upload
+ *   CONTENT_STUDIO_MINIO_SECRET_KEY      required for upload
+ *   CONTENT_STUDIO_MINIO_REGION          optional (default us-east-1)
+ *   PORT                                 optional (default 3456) — renderer port
  *
  * ─── Security notes ───────────────────────────────────────────────────────
  *   - No Supabase credential ever held by the worker.
- *   - The shared secret is sent header-only (Authorization: Bearer).
+ *   - The control-plane shared secret is sent header-only (Authorization: Bearer).
+ *   - The MinIO credential is a separate, worker-only secret — never sent to
+ *     the control plane, never logged, never included in any /complete or
+ *     /fail request body.
  *   - resolvedInput comes from the control plane — real presigned S3 URLs
  *     generated server-side from DB-verified LibraryFile records.
  *   - Worker identity goes into claimed_by for audit; it is not a secret.
  */
 
 import { randomUUID } from 'node:crypto'
+import { unlink } from 'node:fs/promises'
+import { uploadRenderOutputToScratch } from './minio-upload.mjs'
+import {
+  shouldCallComplete,
+  shouldReportFailAfterUploadFailure,
+  shouldRetryComplete,
+  completeRetryDelayMs,
+  isRetryableCompleteFailure,
+  shouldDeleteLocalFileAfterSuccess,
+  shouldDeleteLocalFileAfterUploadFailure,
+  shouldDeleteLocalFileAfterCompleteRetriesExhausted,
+  MAX_COMPLETE_RETRY_ATTEMPTS,
+} from '../../lib/render-execution/worker-lifecycle.ts'
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -77,16 +105,19 @@ console.log(`[coordinator] Worker ID    : ${WORKER_ID}`)
 console.log(`[coordinator] Control plane: ${CONTROL_PLANE_URL}`)
 console.log(`[coordinator] Renderer     : ${RENDERER_URL}`)
 console.log(`[coordinator] Mode         : ${CONTINUOUS_LOOP ? 'continuous loop' : 'proof-only (single execution)'}`)
-if (!CONTINUOUS_LOOP) {
-  console.log('[coordinator] NOTE: CONTENT_STUDIO_RENDER_LOOP is not set.')
-  console.log('              Complete API will NOT be called (B3 required for MinIO upload).')
-}
+console.log('[coordinator] Lifecycle    : render -> upload (MinIO scratch) -> complete')
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Makes a fetch request with the worker Authorization header.
  * Throws on network error; returns { ok, status, body } on HTTP success/failure.
+ *
+ * SECURITY: WORKER_SECRET appears ONLY inside the Authorization header value
+ * constructed here — it is never interpolated into any console.log/warn/error
+ * call anywhere in this file or minio-upload.mjs (verified statically by
+ * lib/render-execution/__tests__/worker-secret-not-logged.test.ts, which
+ * greps both source files for this invariant).
  */
 async function workerFetch(url, options = {}) {
   const headers = {
@@ -152,6 +183,49 @@ async function reportFail(executionId, errorCode, errorMessage, errorDetail) {
   }
 }
 
+// ─── Complete report (with bounded retry, Task 10) ─────────────────────────────
+
+/**
+ * Calls POST /api/render-executions/:id/complete with authoritative output
+ * metadata. Retries a bounded number of times (lib/render-execution/
+ * worker-lifecycle.ts's shouldRetryComplete/completeRetryDelayMs) ONLY for
+ * transient failures (network error or 5xx) — a 4xx (e.g. the execution is
+ * no longer 'claimed', or a validation rejection) stops immediately since
+ * retrying it can never succeed.
+ *
+ * Returns { ok: true } or { ok: false, transient, error }.
+ */
+async function reportCompleteWithRetry(executionId, outputMeta) {
+  for (let attempt = 1; attempt <= MAX_COMPLETE_RETRY_ATTEMPTS; attempt++) {
+    let outcome
+    try {
+      const result = await workerFetch(
+        `${CONTROL_PLANE_URL}/api/render-executions/${executionId}/complete`,
+        { method: 'POST', body: JSON.stringify(outputMeta) },
+      )
+      if (result.ok) {
+        console.log(`[coordinator] Completion recorded for ${executionId} (attempt ${attempt}).`)
+        return { ok: true }
+      }
+      const transient = result.status >= 500 || result.status === 0
+      outcome = { ok: false, transient, error: `HTTP ${result.status}: ${JSON.stringify(result.body).slice(0, 300)}` }
+    } catch (err) {
+      outcome = { ok: false, transient: true, error: err.message }
+    }
+
+    console.error(
+      `[coordinator] Complete report failed (attempt ${attempt}/${MAX_COMPLETE_RETRY_ATTEMPTS}):`,
+      outcome.error,
+    )
+
+    if (!isRetryableCompleteFailure(outcome) || !shouldRetryComplete(attempt)) {
+      return outcome
+    }
+    await sleep(completeRetryDelayMs(attempt))
+  }
+  return { ok: false, transient: true, error: 'Exhausted complete retry attempts.' }
+}
+
 // ─── Renderer call ────────────────────────────────────────────────────────────
 
 /**
@@ -179,13 +253,25 @@ async function invokeRenderer(resolvedInput) {
   }
 }
 
+// ─── Local cleanup ────────────────────────────────────────────────────────────
+
+async function deleteLocalFile(filePath) {
+  try {
+    await unlink(filePath)
+    console.log(`[coordinator] Deleted local render output: ${filePath}`)
+  } catch (err) {
+    console.warn(`[coordinator] Failed to delete local render output ${filePath}:`, err.message)
+  }
+}
+
 // ─── Sleep ────────────────────────────────────────────────────────────────────
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// ─── Exponential backoff state ────────────────────────────────────────────────
+// ─── Exponential backoff state (claim/network errors — unrelated to the
+// bounded complete-retry above, which has its own attempt cap) ─────────────────
 
 let consecutiveNetworkErrors = 0
 const MAX_BACKOFF_MS = 60_000
@@ -197,14 +283,15 @@ function backoffMs() {
 // ─── Single execution cycle ───────────────────────────────────────────────────
 
 /**
- * Runs one full poll-claim-render-report cycle.
- * Returns 'no_work' | 'rendered' | 'failed' | 'network_error'.
+ * Runs one full poll-claim-render-upload-complete cycle.
+ * Returns 'no_work' | 'completed' | 'failed' | 'network_error'.
  */
 async function runOneCycle() {
   // Concurrency guard: the coordinator never starts a second render while
   // one is in progress — this is enforced architecturally by the single-
-  // cycle loop exiting after one render in proof-only mode, and by the
-  // continuous loop awaiting each cycle sequentially.
+  // cycle loop exiting after one render (proof-only mode), and by the
+  // continuous loop awaiting each cycle sequentially end-to-end (render,
+  // upload, and complete all finish before the next claim is attempted).
   console.log(`[coordinator] Polling for work...`)
   const claim = await claimExecution()
 
@@ -221,7 +308,7 @@ async function runOneCycle() {
     return 'no_work'
   }
 
-  const { executionId, attempt, resolvedInput, warnings } = claim
+  const { executionId, userId, attempt, resolvedInput, warnings } = claim
   console.log(`[coordinator] Claimed execution ${executionId} (attempt ${attempt})`)
   if (warnings?.length) {
     console.warn('[coordinator] Resolution warnings:', warnings)
@@ -237,34 +324,61 @@ async function runOneCycle() {
     return 'failed'
   }
 
-  // ── Render succeeded ───────────────────────────────────────────────────────
   console.log(`[coordinator] Render succeeded for ${executionId}`)
   console.log(`[coordinator]   Output  : ${renderResult.outputPath}`)
   console.log(`[coordinator]   Duration: ${renderResult.durationMs}ms`)
-  console.log(`[coordinator]   NOTE: NOT calling /complete — MinIO upload (B3) required first.`)
-  console.log(`[coordinator]   The execution will remain in "claimed" state until lease expires.`)
-  console.log(`[coordinator]   This is the expected B2 safe-hold behavior before B3 is available.`)
 
-  // In proof-only mode (default) we do not call /complete. The row will
-  // expire and be re-claimable if B3 is not yet deployed, which is safe —
-  // idempotency of rendering is acceptable; false completions are not.
-  //
-  // B3 CONTRACT: after adding MinIO upload, replace this block with:
-  //   1. Upload renderResult.outputPath to MinIO scratch bucket
-  //   2. await reportComplete(executionId, { outputBucket, outputStoragePath,
-  //        outputSizeBytes, outputDurationMs })
-  //   3. return 'rendered'
+  // ── Upload to MinIO scratch (Phase 2I-B3) ──────────────────────────────────
+  const uploadOutcome = await uploadRenderOutputToScratch({
+    userId,
+    executionId,
+    localFilePath: renderResult.outputPath,
+  })
 
-  return 'rendered'
+  if (shouldReportFailAfterUploadFailure(uploadOutcome)) {
+    console.error(`[coordinator] Upload failed for ${executionId}:`, uploadOutcome.error)
+    await reportFail(executionId, 'OUTPUT_UPLOAD_FAILED', uploadOutcome.error, undefined)
+    if (shouldDeleteLocalFileAfterUploadFailure()) {
+      await deleteLocalFile(renderResult.outputPath)
+    }
+    return 'failed'
+  }
+
+  console.log(`[coordinator]   Uploaded: ${uploadOutcome.bucket}/${uploadOutcome.key} (${uploadOutcome.sizeBytes} bytes)`)
+
+  // ── Complete (only reachable after a successful upload) ────────────────────
+  if (!shouldCallComplete(uploadOutcome)) {
+    // Unreachable given the branch above, but keeps the decision function
+    // load-bearing rather than decorative — see worker-lifecycle.test.ts.
+    return 'failed'
+  }
+
+  const completeOutcome = await reportCompleteWithRetry(executionId, {
+    outputBucket: uploadOutcome.bucket,
+    outputStoragePath: uploadOutcome.key,
+    outputSizeBytes: uploadOutcome.sizeBytes,
+    outputDurationMs: renderResult.durationMs,
+    outputMimeType: 'video/mp4',
+  })
+
+  if (shouldDeleteLocalFileAfterSuccess(completeOutcome)) {
+    await deleteLocalFile(renderResult.outputPath)
+    return 'completed'
+  }
+
+  // Complete ultimately failed (retries exhausted or a non-retryable 4xx).
+  // The object is already durably in MinIO — see PHASE_2I_B3 docs §10 for
+  // the documented residual-failure/orphan-object behavior. The local file
+  // no longer has a further purpose (retries are exhausted); delete it to
+  // bound /tmp growth rather than accumulate it forever.
+  console.error(`[coordinator] Complete ultimately failed for ${executionId}:`, completeOutcome.error)
+  if (shouldDeleteLocalFileAfterCompleteRetriesExhausted()) {
+    await deleteLocalFile(renderResult.outputPath)
+  }
+  return 'failed'
 }
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
-
-if (CONTINUOUS_LOOP) {
-  console.warn('[coordinator] CONTINUOUS LOOP mode is active.')
-  console.warn('[coordinator] WARNING: Do not use this mode until B3 (MinIO upload) is implemented.')
-  console.warn('[coordinator] Successful renders will leave executions claimed until lease expiry.')
-}
 
 let running = true
 process.on('SIGTERM', () => { running = false; console.log('[coordinator] SIGTERM received — stopping after current cycle.') })
@@ -275,10 +389,10 @@ async function main() {
     const result = await runOneCycle()
 
     if (!CONTINUOUS_LOOP) {
-      // Proof-only mode: exit after the first execution (success, fail, or
-      // first non-empty response). On no_work or network_error we continue
-      // polling briefly so the proof can complete even under load.
-      if (result === 'rendered' || result === 'failed') {
+      // Proof-only mode: exit after the first execution (success or fail).
+      // On no_work or network_error we continue polling briefly so the
+      // proof can complete even under load.
+      if (result === 'completed' || result === 'failed') {
         console.log('[coordinator] Proof-only mode: exiting after one execution.')
         process.exit(0)
       }
