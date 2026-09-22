@@ -12,7 +12,7 @@ Implement, per B0 §5/§8/§16/§17: the `render_executions` table, the atomic `
 
 ## 3. Schema Actually Implemented
 
-Matches B0 §5 field-for-field (21 columns), with no speculative additions:
+Matches B0 §5 field-for-field (26 columns), with no speculative additions:
 
 - **Identity:** `id`, `user_id`, `project_id` (denormalized from `video_draft.project_id` at creation — same pattern `video_drafts.POST` already uses for `project_id` from `production_id`), `video_draft_id`.
 - **State machine (B0 §4):** `status TEXT CHECK (status IN ('queued','claimed','completed','failed'))` — four states, matching this schema's universal `TEXT + CHECK` convention (confirmed against `projects.status`, `channel_pieces.status`, `generation_tasks.status` — no real Postgres `ENUM` exists anywhere in this repo).
@@ -171,6 +171,113 @@ Per B0 §22 and this phase's own strict scope boundary, **nothing worker-facing 
 - **Migration reversible:** `scripts/031_create_render_executions.sql` ends with an explicit `-- ROLLBACK` comment block (`DROP FUNCTION`, `DROP TABLE`), matching the same convention `024_channel_piece_media_organization.sql` already uses.
 - **Claim function atomicity:** single `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *` — one statement, no application-level read-then-write race window.
 - **Working tree:** `git status --short` shows exactly `lib/types.ts` (modified, additive `RenderExecutionSummary` type) plus four new paths (`app/api/render-executions/`, `app/api/video-drafts/[id]/`, `lib/render-execution/`, `scripts/031_create_render_executions.sql`) — nothing else.
+
+## 15A. Database deployment gate
+
+### Migration order and final state
+
+Apply `scripts/031_create_render_executions.sql` first, immediately followed by `scripts/032_harden_render_execution_insert_authority.sql`. The current `031` is already hardened for fresh installs; `032` is a corrective/idempotent privilege-policy pass for an environment that may have run the earlier 031 revision. The final state is: `render_executions` with the 26 contract columns, four-state status check, foreign keys to `auth.users`, `projects`, and `video_drafts`, the user/project/draft/queue/stale-lease/idempotency indexes, RLS enabled, the ownership SELECT policy retained as defense in depth, no browser-role table SELECT/INSERT privilege, no UPDATE/DELETE policy, and `service_role`-only SELECT/INSERT. `claim_next_render_execution(text, integer)` remains `SECURITY DEFINER`, has a fixed `search_path`, a 300-second default lease, stale-claim reclaim, attempt increment only on reclaim, and EXECUTE granted only to `service_role`.
+
+The dependency audit found all repository-owned prerequisites in earlier migrations: `projects` and `update_updated_at_column()` in `001`, `video_drafts` in `002` plus `production_id` in `020`, and the built-in Supabase `auth.users`, `anon`, `authenticated`, and `service_role` roles. `make_interval`, `gen_random_uuid`, and `plpgsql` are PostgreSQL/Supabase runtime facilities. The role existence is the one hosted-platform assumption; the preflight role query below must return all four names before applying.
+
+### Transaction and failure behavior
+
+The supported repository procedure is manual SQL execution, not an application deploy hook: prior migration records specify Supabase SQL Editor or `psql` using `POSTGRES_URL_NON_POOLING`. Run both files as one controlled transaction with stop-on-error. This avoids a partially applied pair. `031` is re-executable for the expected schema (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`, `CREATE OR REPLACE FUNCTION`), but it does not reconcile a partially divergent pre-existing table; `032` assumes the table exists and will fail if `031` did not create it.
+
+If `031` commits and `032` fails, the current corrected `031` still leaves browser SELECT/INSERT revoked and the insert policy absent, so the secure boundary remains closed; however, the server/API may be unavailable if the service-role grants were not reached. Stop, inspect the error, and rerun `032` after correcting the dependency. If an older 031 revision was applied, do not proceed to B2 until `032` succeeds and the smoke proves the final state. If the pair is run in one transaction, any error rolls both back and the safe recovery is simply to correct the cause and rerun the pair. Do not use the commented rollback as an automatic production action: dropping this table/function is destructive and requires explicit approval and a data decision.
+
+### Application method (not executed in this gate)
+
+**Supabase Dashboard:** open the project's SQL Editor, paste `BEGIN;`, the complete contents of `031`, the complete contents of `032`, then `COMMIT;`; run with the editor's error output visible. If any statement errors, issue `ROLLBACK;` and do not continue to B2.
+
+**Supported CLI equivalent:** from a machine with `psql` and the project secret configured, run the following (the repository documents `POSTGRES_URL_NON_POOLING` for this purpose):
+
+```powershell
+psql "$env:POSTGRES_URL_NON_POOLING" --single-transaction --set=ON_ERROR_STOP=1 -f scripts/031_create_render_executions.sql -f scripts/032_harden_render_execution_insert_authority.sql
+```
+
+Neither method was executed during this audit; no remote mutation occurred.
+
+### Read-only preflight and post-apply smoke queries
+
+Run these in the SQL Editor or through a read-only `psql` session. Capture the `generation_tasks` column result before applying and compare it with the same query after applying.
+
+```sql
+-- A. Dependencies and hosted roles (preflight)
+SELECT to_regclass('public.projects')          AS projects,
+       to_regclass('public.video_drafts')      AS video_drafts,
+       to_regprocedure('public.update_updated_at_column()') AS updated_at_fn;
+SELECT rolname
+FROM pg_roles
+WHERE rolname IN ('anon', 'authenticated', 'service_role', 'supabase_admin')
+ORDER BY rolname;
+
+-- B. Table and exact column inventory
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'render_executions'
+ORDER BY ordinal_position;
+
+-- C. RLS and final policy set
+SELECT c.relrowsecurity, c.relforcerowsecurity
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'render_executions';
+SELECT policyname, cmd, roles, qual, with_check
+FROM pg_policies
+WHERE schemaname = 'public' AND tablename = 'render_executions'
+ORDER BY policyname;
+
+-- Expected policies: one SELECT ownership policy only;
+-- no INSERT, UPDATE, or DELETE policy.
+
+-- D. Effective table privileges (browser roles must have none here;
+-- service_role must have SELECT and INSERT for the API)
+SELECT grantee, privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public'
+  AND table_name = 'render_executions'
+  AND grantee IN ('anon', 'authenticated', 'service_role')
+ORDER BY grantee, privilege_type;
+SELECT has_table_privilege('anon', 'public.render_executions', 'SELECT')  AS anon_select,
+       has_table_privilege('anon', 'public.render_executions', 'INSERT')  AS anon_insert,
+       has_table_privilege('authenticated', 'public.render_executions', 'SELECT') AS authenticated_select,
+       has_table_privilege('authenticated', 'public.render_executions', 'INSERT') AS authenticated_insert,
+       has_table_privilege('service_role', 'public.render_executions', 'SELECT') AS service_select,
+       has_table_privilege('service_role', 'public.render_executions', 'INSERT') AS service_insert;
+-- Expected: the first four values false; the last two true.
+
+-- E. Claim function and grants
+SELECT p.oid::regprocedure, p.prosecdef, p.proconfig
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.proname = 'claim_next_render_execution';
+SELECT grantee, privilege_type
+FROM information_schema.routine_privileges
+WHERE routine_schema = 'public'
+  AND routine_name = 'claim_next_render_execution'
+  AND specific_name LIKE 'claim_next_render_execution%'
+ORDER BY grantee, privilege_type;
+-- Expected: SECURITY DEFINER, search_path includes public, EXECUTE only for service_role.
+
+-- F. Indexes and constraints
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public' AND tablename = 'render_executions'
+ORDER BY indexname;
+SELECT conname, contype, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'public.render_executions'::regclass
+ORDER BY conname;
+
+-- G. Non-regression capture (run before and after; results must match)
+SELECT ordinal_position, column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'generation_tasks'
+ORDER BY ordinal_position;
+```
+
+The privilege/policy result is the static proof that an authenticated browser cannot insert a forged snapshot, status, output, claim, error, cross-Project, or idempotency row and cannot raw-select around the GET safe projection. No write probe is included in the smoke because proving denial must not create test data in production. The migration pair does not reference `generation_tasks`; the before/after inventory query is the non-regression check.
 
 ## 16. Verdict
 
