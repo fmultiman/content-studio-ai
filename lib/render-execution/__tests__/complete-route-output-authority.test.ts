@@ -29,7 +29,10 @@ const ROUTE_PATH = path.resolve(
 )
 
 describe('complete route — output target authority wiring', () => {
-  const source = readFileSync(ROUTE_PATH, 'utf8')
+  // Normalize CRLF to LF: this file's on-disk line endings depend on the
+  // checkout's core.autocrlf state, but the literal `\n`-based searches
+  // below assert on logical adjacency, not on a specific line-ending byte.
+  const source = readFileSync(ROUTE_PATH, 'utf8').replace(/\r\n/g, '\n')
 
   it('imports the shared, tested isExpectedScratchOutputTarget helper', () => {
     expect(source).toContain("import { isExpectedScratchOutputTarget } from '@/lib/render-execution/scratch-output-target'")

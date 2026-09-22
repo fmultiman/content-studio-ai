@@ -4,6 +4,7 @@
  * Phase 2I-B2 — worker-facing completion endpoint.
  * Phase 2I-B3 — hardened to reject any output locator other than this
  * execution's own deterministic scratch target (Task 1/2/8).
+ * Phase 2I-B4.1 — hardened to reject a STALE claim attempt (Task 1).
  *
  * AUTHENTICATION: worker secret only.
  *
@@ -31,6 +32,25 @@
  * satisfy this route — the required-field guard (outputBucket etc.) plus
  * the new exact-match guard together mean the ONLY way to reach `completed`
  * is a real upload to this execution's own scratch key.
+ *
+ * STALE-ATTEMPT FENCING (Phase 2I-B4.1, per
+ * docs/productization/creative-rendering/PHASE_2I_B4_LEASE_RECOVERY_AUDIT.md):
+ * `claim_next_render_execution` increments `render_executions.attempt` every
+ * time a row is reclaimed after its lease expires. Before this fix, this
+ * route authorized any request bearing the shared worker secret plus
+ * `status = 'claimed'` — it never checked which claim attempt was calling,
+ * so a stale worker that claimed attempt 1, stalled past its lease, and only
+ * later woke up could still complete an execution a newer attempt 2 was
+ * actively working on. The worker must now echo the `attempt` it received
+ * from `/claim`; this route rejects a mismatch with `409 STALE_ATTEMPT`
+ * BEFORE any DB write, and the UPDATE's own WHERE clause independently
+ * requires `attempt = :attempt` (not just the application-level check) so a
+ * reclaim landing between the SELECT and the UPDATE still cannot slip
+ * through (the same TOCTOU-closing pattern already used for `status`).
+ * Deliberately NOT gated on `lease_expires_at > now()` — see the audit doc's
+ * §12: without a heartbeat, a legitimately slow render must still be able to
+ * complete as long as nothing has actually reclaimed the row; only an actual
+ * reclaim (observable as `attempt` changing) invalidates a prior attempt.
  *
  * TRANSITION: claimed → completed.
  * Any other current status is rejected (409).
@@ -76,6 +96,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch {
     return NextResponse.json(
       { error: 'Request body must be valid JSON.', code: 'INVALID_BODY' },
+      { status: 400 },
+    )
+  }
+
+  // attempt: required (Phase 2I-B4.1 stale-attempt fencing) — must be the
+  // exact attempt value the worker received from /claim for this execution.
+  const attempt = typeof body.attempt === 'number' ? body.attempt : null
+  if (attempt === null || !Number.isInteger(attempt) || attempt < 1) {
+    return NextResponse.json(
+      { error: 'attempt is required and must be a positive integer.', code: 'MISSING_ATTEMPT' },
       { status: 400 },
     )
   }
@@ -144,7 +174,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // ── 5. Load execution ─────────────────────────────────────────────────────
   const { data: execution, error: fetchError } = await db
     .from('render_executions')
-    .select('id, user_id, status')
+    .select('id, user_id, status, attempt')
     .eq('id', id)
     .maybeSingle()
 
@@ -167,7 +197,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
-  // ── 6A. Output target authority (Phase 2I-B3, Task 1/2/8) ─────────────────
+  // ── 6A. Stale-attempt fencing (Phase 2I-B4.1) ──────────────────────────────
+  // A reclaim (claim_next_render_execution, after lease expiry) increments
+  // `attempt`. If the row's current attempt no longer matches the one this
+  // request was issued for, a newer claim has already superseded this
+  // request's worker — reject before any further processing. Deliberately
+  // NOT a lease_expires_at check: see the audit doc's §12 — only an actual
+  // reclaim (observable via attempt) invalidates a prior attempt.
+  if (execution.attempt !== attempt) {
+    return NextResponse.json(
+      {
+        error: 'This claim attempt is no longer current for this execution.',
+        code: 'STALE_ATTEMPT',
+      },
+      { status: 409 },
+    )
+  }
+
+  // ── 6B. Output target authority (Phase 2I-B3, Task 1/2/8) ─────────────────
   // The worker-submitted bucket/path are a CONFIRMATION, never trusted
   // input: the only value ever written is this execution's own
   // server-derived deterministic target. Any other value — a different
@@ -192,9 +239,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   // ── 7. Record completion atomically ───────────────────────────────────────
   // Written from the server-derived target (identical value at this point,
-  // since §6A already required an exact match) rather than re-trusting the
-  // request body a second time.
-  const { error: updateError } = await db
+  // since §6B already required an exact match) rather than re-trusting the
+  // request body a second time. `.eq('attempt', attempt)` closes the TOCTOU
+  // gap between the §6A read and this write — even if a reclaim lands in
+  // between, zero rows match and this becomes a no-op update (Task 10).
+  const { data: updatedRows, error: updateError } = await db
     .from('render_executions')
     .update({
       status: 'completed',
@@ -208,12 +257,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
     })
     .eq('id', id)
     .eq('status', 'claimed') // atomicity guard
+    .eq('attempt', attempt) // stale-attempt fencing (Phase 2I-B4.1)
+    .select('id')
 
   if (updateError) {
     console.error('[render-executions/[id]/complete] update error:', updateError)
     return NextResponse.json(
       { error: 'Failed to record execution completion.', code: 'COMPLETE_RECORD_FAILED' },
       { status: 500 },
+    )
+  }
+
+  // Zero rows matched: the row changed (status and/or attempt) between the
+  // §5/§6A read and this write — a concurrent reclaim or completion won the
+  // race. Report the same conflict the read-time check would have, rather
+  // than a misleading 200.
+  if (!updatedRows || updatedRows.length === 0) {
+    return NextResponse.json(
+      {
+        error: 'This claim attempt is no longer current for this execution.',
+        code: 'STALE_ATTEMPT',
+      },
+      { status: 409 },
     )
   }
 

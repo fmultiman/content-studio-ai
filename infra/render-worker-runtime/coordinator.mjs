@@ -163,14 +163,21 @@ async function claimExecution() {
 
 /**
  * Reports a failure to POST /api/render-executions/:id/fail.
+ *
+ * `claimAttempt` MUST be the exact `attempt` value returned by this
+ * execution's own /claim response (Phase 2I-B4.1 stale-attempt fencing,
+ * see PHASE_2I_B4_LEASE_RECOVERY_AUDIT.md) — never recomputed, never
+ * defaulted. A stale/superseded attempt's fail report is rejected by the
+ * control plane with 409 STALE_ATTEMPT rather than terminalizing a row a
+ * newer claim now owns.
  */
-async function reportFail(executionId, errorCode, errorMessage, errorDetail) {
+async function reportFail(executionId, claimAttempt, errorCode, errorMessage, errorDetail) {
   try {
     const result = await workerFetch(
       `${CONTROL_PLANE_URL}/api/render-executions/${executionId}/fail`,
       {
         method: 'POST',
-        body: JSON.stringify({ errorCode, errorMessage, errorDetail }),
+        body: JSON.stringify({ attempt: claimAttempt, errorCode, errorMessage, errorDetail }),
       },
     )
     if (!result.ok) {
@@ -190,21 +197,27 @@ async function reportFail(executionId, errorCode, errorMessage, errorDetail) {
  * metadata. Retries a bounded number of times (lib/render-execution/
  * worker-lifecycle.ts's shouldRetryComplete/completeRetryDelayMs) ONLY for
  * transient failures (network error or 5xx) — a 4xx (e.g. the execution is
- * no longer 'claimed', or a validation rejection) stops immediately since
- * retrying it can never succeed.
+ * no longer 'claimed', a stale attempt, or a validation rejection) stops
+ * immediately since retrying it can never succeed.
+ *
+ * `claimAttempt` MUST be the exact `attempt` value returned by this
+ * execution's own /claim response (Phase 2I-B4.1 stale-attempt fencing) —
+ * never recomputed, never defaulted, and NOT the same thing as the local
+ * `retryAttempt` HTTP-retry counter below (which counts calls to THIS
+ * route, not claim attempts on the execution).
  *
  * Returns { ok: true } or { ok: false, transient, error }.
  */
-async function reportCompleteWithRetry(executionId, outputMeta) {
-  for (let attempt = 1; attempt <= MAX_COMPLETE_RETRY_ATTEMPTS; attempt++) {
+async function reportCompleteWithRetry(executionId, claimAttempt, outputMeta) {
+  for (let retryAttempt = 1; retryAttempt <= MAX_COMPLETE_RETRY_ATTEMPTS; retryAttempt++) {
     let outcome
     try {
       const result = await workerFetch(
         `${CONTROL_PLANE_URL}/api/render-executions/${executionId}/complete`,
-        { method: 'POST', body: JSON.stringify(outputMeta) },
+        { method: 'POST', body: JSON.stringify({ attempt: claimAttempt, ...outputMeta }) },
       )
       if (result.ok) {
-        console.log(`[coordinator] Completion recorded for ${executionId} (attempt ${attempt}).`)
+        console.log(`[coordinator] Completion recorded for ${executionId} (HTTP retry ${retryAttempt}).`)
         return { ok: true }
       }
       const transient = result.status >= 500 || result.status === 0
@@ -214,14 +227,14 @@ async function reportCompleteWithRetry(executionId, outputMeta) {
     }
 
     console.error(
-      `[coordinator] Complete report failed (attempt ${attempt}/${MAX_COMPLETE_RETRY_ATTEMPTS}):`,
+      `[coordinator] Complete report failed (HTTP retry ${retryAttempt}/${MAX_COMPLETE_RETRY_ATTEMPTS}):`,
       outcome.error,
     )
 
-    if (!isRetryableCompleteFailure(outcome) || !shouldRetryComplete(attempt)) {
+    if (!isRetryableCompleteFailure(outcome) || !shouldRetryComplete(retryAttempt)) {
       return outcome
     }
-    await sleep(completeRetryDelayMs(attempt))
+    await sleep(completeRetryDelayMs(retryAttempt))
   }
   return { ok: false, transient: true, error: 'Exhausted complete retry attempts.' }
 }
@@ -320,7 +333,7 @@ async function runOneCycle() {
   if (!renderResult.ok) {
     const errorMessage = renderResult.error?.slice(0, 500) ?? 'Unknown render error'
     console.error(`[coordinator] Render failed for ${executionId}:`, errorMessage)
-    await reportFail(executionId, 'RENDER_FAILED', errorMessage, renderResult.meta ? JSON.stringify(renderResult.meta).slice(0, 4000) : undefined)
+    await reportFail(executionId, attempt, 'RENDER_FAILED', errorMessage, renderResult.meta ? JSON.stringify(renderResult.meta).slice(0, 4000) : undefined)
     return 'failed'
   }
 
@@ -337,7 +350,7 @@ async function runOneCycle() {
 
   if (shouldReportFailAfterUploadFailure(uploadOutcome)) {
     console.error(`[coordinator] Upload failed for ${executionId}:`, uploadOutcome.error)
-    await reportFail(executionId, 'OUTPUT_UPLOAD_FAILED', uploadOutcome.error, undefined)
+    await reportFail(executionId, attempt, 'OUTPUT_UPLOAD_FAILED', uploadOutcome.error, undefined)
     if (shouldDeleteLocalFileAfterUploadFailure()) {
       await deleteLocalFile(renderResult.outputPath)
     }
@@ -353,7 +366,7 @@ async function runOneCycle() {
     return 'failed'
   }
 
-  const completeOutcome = await reportCompleteWithRetry(executionId, {
+  const completeOutcome = await reportCompleteWithRetry(executionId, attempt, {
     outputBucket: uploadOutcome.bucket,
     outputStoragePath: uploadOutcome.key,
     outputSizeBytes: uploadOutcome.sizeBytes,

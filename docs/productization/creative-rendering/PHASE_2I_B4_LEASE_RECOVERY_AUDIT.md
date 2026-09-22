@@ -239,6 +239,60 @@ Per the mission's explicit instruction, this replay is **not** to be executed ag
 
 No remote infrastructure was accessed this mission (no VPS, no Portainer, no MinIO, no Vercel env mutation, no Supabase mutation, no real execution created, no code deployed). §11's fix is a design only, pending explicit authorization to implement, per this mission's own instruction not to silently implement a concurrency fix.
 
-## 18. Final Verdict
+## 18. Original Audit Verdict (2I-B4.0)
 
 **`STALE_WORKER_FENCING_REQUIRED`**
+
+---
+
+## 19. Implementation Record (Phase 2I-B4.1)
+
+§11's design was implemented exactly as specified, with no deviation, and committed separately from this audit (audit: `7f3c248`; implementation: see this section's own commit once recorded by the closure report). **Local validation only — not yet deployed anywhere.**
+
+### 19.1 What changed
+
+- **`app/api/render-executions/[id]/complete/route.ts`:** requires `attempt` (positive integer) in the request body (`400 MISSING_ATTEMPT` otherwise); loads `attempt` alongside the existing `id, user_id, status` select; rejects a mismatch against the row's current `attempt` with `409 STALE_ATTEMPT` **before** the B3 output-target check and before any DB write; the `UPDATE`'s own `WHERE` clause gained `.eq('attempt', attempt)` alongside the pre-existing `.eq('id', id).eq('status', 'claimed')`; a zero-rows-affected `UPDATE` (the TOCTOU case — a reclaim landing between the read and the write) now returns the same `409 STALE_ATTEMPT` rather than a misleading success. All B3 output-target-authority (`OUTPUT_TARGET_MISMATCH`) and B2 transition (`INVALID_STATUS_TRANSITION`) checks are unchanged, just reordered to sit alongside the new one.
+- **`app/api/render-executions/[id]/fail/route.ts`:** identical shape — required `attempt`, `409 STALE_ATTEMPT` on mismatch (both at the application-level read and via the `UPDATE`'s `.eq('attempt', attempt)`), zero-rows-affected also mapped to `409 STALE_ATTEMPT`. Bounded/sanitized error fields (`MAX_ERROR_MESSAGE_LENGTH`/`MAX_ERROR_DETAIL_LENGTH`/`MAX_ERROR_CODE_LENGTH`) and the terminal-on-explicit-fail semantics are unchanged.
+- **`infra/render-worker-runtime/coordinator.mjs`:** `reportFail` and `reportCompleteWithRetry` each gained a required `claimAttempt` parameter (renamed to avoid shadowing `reportCompleteWithRetry`'s own pre-existing local HTTP-retry counter, itself renamed `retryAttempt` for clarity — a naming collision, not a semantic one). Both now send `attempt` in their JSON request bodies. All three existing call sites in `runOneCycle()` (render-failure → `/fail`, upload-failure → `/fail`, success → `/complete`) now pass the `attempt` value destructured directly from the `/claim` response (`const { executionId, userId, attempt, resolvedInput, warnings } = claim`, unchanged from B3) — never recomputed, never defaulted, no global mutable fallback.
+- **`app/api/render-executions/claim/route.ts`:** no change — it already returned `attempt` (confirmed by audit §1; Task 5 required only verification, which passed).
+- **No new table. No heartbeat. No queue/broker. No `lease_expires_at` check added anywhere in the mutation predicates** (verified by an explicit negative test — see §19.3).
+
+### 19.2 The Lease Rule, As Implemented
+
+Confirmed by code and by test: neither route's `UPDATE` `WHERE` clause nor its application-level check references `lease_expires_at` at all. A `claimed` row with a matching `attempt` is accepted regardless of how much wall-clock time has passed since its lease nominally expired — exactly §12's decision, now enforced, not merely documented.
+
+### 19.3 Test Coverage (Task 8, now implemented)
+
+New file `lib/render-execution/__tests__/stale-attempt-fencing.test.ts` (30 tests), covering, per the mission's task list:
+
+| Task | Coverage |
+|---|---|
+| 6 — same worker ID | An in-memory row model reclaims with an IDENTICAL `claimed_by` string across attempts 1→2; proves attempt-1 `/complete` and `/fail` are both rejected (predicate returns `null`) and attempt-2 `/complete` succeeds — correctness never touches `claimed_by`. |
+| 7 — different worker ID | Same shape with `worker-A`→`worker-B`; identical outcome, proving the fencing is worker-identity-agnostic. |
+| 8 — lease expired, no reclaim | A row left at `attempt=1` (no `reclaim()` call simulated) still accepts a `/complete` and a `/fail` request carrying `attempt=1` — proves no implicit wall-clock cutoff exists. |
+| 9 — reclaim / no duplicate row | `reclaim()` mutates the SAME row id and increments `attempt`; a completed row cannot be mutated again even by its own current attempt (status no longer `'claimed'`). |
+| 10 — TOCTOU | A reclaim simulated to land strictly between a "read" and the eventual "write" still yields zero rows matched for the stale write — the predicate is evaluated against current state, never a cached read. |
+| — | Static wiring proofs (matching the established `complete-route-output-authority.test.ts` pattern) confirm the REAL route source — not a reimplementation — selects `attempt`, requires it, checks it before the DB write, includes it in the `UPDATE` predicate, returns `409` (not 401/404/500) for `STALE_ATTEMPT`, and that the B2/B3 checks it sits alongside are untouched. |
+| — | Coordinator wiring proofs confirm `reportFail`/`reportCompleteWithRetry`'s actual call sites (distinguished from their own function declarations via an `await`-prefixed regex) pass the claim-derived `attempt` identifier, and that `attempt` itself is destructured directly from the claim response. |
+
+### 19.4 Validation
+
+- Focused fencing tests: 30/30 pass (`stale-attempt-fencing.test.ts`), full `lib/render-execution/**` subset: 124/124.
+- Full suite: **694 → 720** passing (62 test files).
+- Typecheck: PASS.
+- Lint: 0 errors / 45 pre-existing warnings — unchanged.
+- Build: PASS — no new routes (same three worker routes as B2/B3, contract changed, paths unchanged).
+- Worker export: PASS — `coordinator.bundle.cjs` regenerated; grep-confirmed it contains `JSON.stringify({ attempt: claimAttempt, errorCode, errorMessage, errorDetail })` and `JSON.stringify({ attempt: claimAttempt, ...outputMeta })` verbatim in the bundled output.
+- Portable dependency-load smoke test: PASS (unchanged mechanism from B3 — bundle still loads its full module graph outside the repo with an empty environment).
+
+### 19.5 B3 Regression Check
+
+Re-ran `worker-coordination-contracts.test.ts` and `complete-route-output-authority.test.ts` unmodified — both still pass, confirming the B3 output-target-authority hardening, the B2 status-transition guard, B1.1's browser-authority hardening (worker routes still gate exclusively on `verifyWorkerAuth`/service-role, never a Supabase session), the deterministic scratch-key convention, and the truthful-completion invariant (`OUTPUT_UPLOAD_FAILED` still never reaches `completed`) are all untouched by this fix — the new checks are additive, not replacements.
+
+### 19.6 Exact Synchronized Deployment Requirement (Unchanged From §14, Now Concrete)
+
+This implementation is **local only** — not pushed, not merged, not deployed, not copied to the VPS. Per §14's precondition: deploying the Control Plane routes without also redeploying the worker bundle would break the already-proven B3.1 positive path (server would reject every `/complete`/`/fail` call with `400 MISSING_ATTEMPT` since the currently-running production worker doesn't send it yet); deploying only the worker without the routes would leave every mutation rejected for the opposite reason once the old routes ignore the new field harmlessly but the race itself would remain open. Both sides must ship together, in one coordinated release, before any live B4 proof.
+
+## 20. Final Verdict (This Mission, 2I-B4.1)
+
+**`READY_FOR_SYNCHRONIZED_FENCING_DEPLOYMENT`**
