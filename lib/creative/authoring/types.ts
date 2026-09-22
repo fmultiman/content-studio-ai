@@ -133,7 +133,10 @@ import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 /** Per-slot transform overrides in the authoring layer. */
 export interface AuthoringPrimitiveTransforms {
   paper: PrimitiveTransforms
+  paperStrip: PrimitiveTransforms
   tape: PrimitiveTransforms
+  botanical: PrimitiveTransforms
+  pin: PrimitiveTransforms
 }
 
 /** Runtime-only context for product authoring; never persisted as a domain entity. */

@@ -35,7 +35,7 @@ export type DocumentaryCardProps = {
   materialAssets?: Partial<Record<MaterialName, ResolvedAsset>>
   /** Selected project-scoped primitive materials. Absent means explicit fixture control fallback. */
   primitiveMaterials?: Partial<Record<'paper' | 'tape', ResolvedAsset>>
-  primitiveTransforms?: Partial<Record<'paper' | 'tape', PrimitiveTransforms>>
+  primitiveTransforms?: Partial<Record<'paper' | 'paperStrip' | 'tape' | 'botanical' | 'pin', PrimitiveTransforms>>
   /**
    * Wave 6 authoring-only: runtime visual tuning applied on top of the default
    * artifact plan. NEVER serialised into a StaticRenderManifest.

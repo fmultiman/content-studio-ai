@@ -13,11 +13,14 @@ export type CardPalette = {
   ink: string
 }
 
-export type MaterialName = 'tornPaper' | 'tape'
+export type MaterialName = 'tornPaper' | 'paperStrip' | 'tape' | 'pin' | 'botanical'
 
 const MATERIAL_PATHS: Record<MaterialName, string> = {
-  tornPaper: 'torn-paper-cream-01.png',
-  tape: 'tape-kraft-01.png',
+  tornPaper: 'pack-b/paper-card-light-01.png',
+  paperStrip: 'pack-b/paper-strip-light-01.png',
+  tape: 'pack-b/tape-kraft-short-01.png',
+  pin: 'pack-b/pin-brass-01.png',
+  botanical: 'pack-b/botanical-dried-sprig-01.png'
 }
 
 export function materialUrl(name: MaterialName, baseUrl?: string, urls?: Partial<Record<MaterialName, string>>): string {
@@ -187,30 +190,49 @@ export function GrainOverlay({ color, style }: { color: string; style?: CSSPrope
   )
 }
 
-export function Pin({ color, style }: { color: string; style?: CSSProperties }) {
+export function Pin({ baseUrl, urls, primitiveTransform, style }: { baseUrl?: string; urls?: Partial<Record<MaterialName, string>>; primitiveTransform?: PrimitiveTransforms; style?: CSSProperties }) {
   return (
-    <span
+    <div
       aria-hidden="true"
       style={{
-        background: `radial-gradient(circle at 35% 30%, #fff8 0 10%, ${color} 12% 58%, #0008 60% 100%)`,
-        border: '1px solid #0005',
-        borderRadius: '50%',
-        boxShadow: '0 3px 6px #0004',
-        display: 'block',
-        height: 22,
-        width: 22,
+        backgroundImage: `url(${materialUrl('pin', baseUrl, urls)})`,
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: 'contain',
+        height: 60,
+        width: 60,
+        position: 'relative',
         ...style,
+        ...(primitiveTransform
+          ? {
+              opacity: primitiveTransform.opacity,
+              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
+            }
+          : {}),
       }}
     />
   )
 }
 
-export function Botanical({ color, style }: { color: string; style?: CSSProperties }) {
+export function Botanical({ baseUrl, urls, primitiveTransform, style }: { baseUrl?: string; urls?: Partial<Record<MaterialName, string>>; primitiveTransform?: PrimitiveTransforms; style?: CSSProperties }) {
   return (
-    <svg aria-hidden="true" viewBox="0 0 120 220" style={style}>
-      <path d="M58 216C55 158 62 92 71 10" fill="none" stroke={color} strokeLinecap="round" strokeWidth="3" />
-      <path d="M65 150C30 143 16 122 11 98c29 2 48 18 54 38M67 118c25-8 37-24 43-50-28 6-42 19-47 36M58 80C31 74 17 58 12 37c25 1 42 12 50 28M70 64c20-8 31-20 37-40-24 4-36 14-42 29" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-    </svg>
+    <div
+      aria-hidden="true"
+      style={{
+        backgroundImage: `url(${materialUrl('botanical', baseUrl, urls)})`,
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: 'contain',
+        position: 'absolute',
+        ...style,
+        ...(primitiveTransform
+          ? {
+              opacity: (style?.opacity as number | undefined ?? 1) * primitiveTransform.opacity,
+              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
+            }
+          : {}),
+      }}
+    />
   )
 }
 

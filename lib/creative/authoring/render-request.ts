@@ -59,7 +59,10 @@ const primitiveTransformsSchema = z.object({
 
 export const primitiveTransformsBySlotSchema = z.object({
   paper: primitiveTransformsSchema.optional(),
+  paperStrip: primitiveTransformsSchema.optional(),
   tape: primitiveTransformsSchema.optional(),
+  botanical: primitiveTransformsSchema.optional(),
+  pin: primitiveTransformsSchema.optional(),
 }).strict()
 
 export const authoringRenderRequestSchema = z.object({

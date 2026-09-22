@@ -27,7 +27,7 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(markup).toContain('1/10')
     expect(markup).toContain('Documentary hero evidence')
     expect(markup).toContain('Field notes')
-    expect(markup).toContain('torn-paper-cream-01.png')
+    expect(markup).toContain('paper-card-light-01.png')
   })
 
   it('renders info without a hero and preserves both fact cards', () => {

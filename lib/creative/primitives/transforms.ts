@@ -22,10 +22,16 @@ export const DEFAULT_PRIMITIVE_TRANSFORMS: PrimitiveTransforms = {
 
 export interface PrimitiveTransformsBySlot {
   paper: PrimitiveTransforms
+  paperStrip: PrimitiveTransforms
   tape: PrimitiveTransforms
+  botanical: PrimitiveTransforms
+  pin: PrimitiveTransforms
 }
 
 export const DEFAULT_PRIMITIVE_TRANSFORMS_STATE: PrimitiveTransformsBySlot = {
-  paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
-  tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS },
+  paper: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  paperStrip: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  tape: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  botanical: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  pin: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
 }

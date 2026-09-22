@@ -273,7 +273,7 @@ export function derivePrimitiveTransformsRequest(state: AuthoringState): Primiti
     return transform[field] === DEFAULT_PRIMITIVE_TRANSFORMS[field]
   })
   const primitiveTransforms = Object.fromEntries(
-    (['paper', 'tape'] as const)
+    (['paper', 'paperStrip', 'tape', 'botanical', 'pin'] as const)
       .filter((slot) => !isDefault(state.primitiveTransforms[slot]))
       .map((slot) => [slot, state.primitiveTransforms[slot]]),
   ) as PrimitiveTransformsRequest

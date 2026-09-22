@@ -102,11 +102,17 @@ describe('derivePrimitiveSelectionRequest', () => {
       ...state,
       primitiveTransforms: {
         paper: { offsetX: 64, offsetY: -38, rotation: 11, scale: 1.24, opacity: 1 },
+        paperStrip: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
         tape: { offsetX: -27, offsetY: 19, rotation: -8, scale: 0.82, opacity: 0.63 },
+        botanical: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+        pin: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
       },
     }
     const request = derivePrimitiveTransformsRequest(adjusted)
-    expect(request).toEqual(adjusted.primitiveTransforms)
+    expect(request).toEqual({
+      paper: adjusted.primitiveTransforms.paper,
+      tape: adjusted.primitiveTransforms.tape,
+    })
     expect(JSON.stringify(request)).not.toContain('signed')
     expect(JSON.stringify(request)).not.toContain('storage')
   })
