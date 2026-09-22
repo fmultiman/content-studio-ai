@@ -1,0 +1,77 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import type { RenderExecutionSummary } from '@/lib/types'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type RouteContext = { params: Promise<{ id: string }> }
+
+/**
+ * User-safe projection only. Deliberately EXCLUDES: claimed_by,
+ * lease_expires_at, attempt, max_attempts, retry_of_execution_id,
+ * idempotency_key, input_schema_version, input_snapshot, output_bucket,
+ * output_storage_path, error_detail. None of those are product-facing per
+ * PHASE_2I_B0_RENDER_EXECUTION_CONTRACT.md §16/§17 -- worker/lease
+ * internals, the full render input, and raw diagnostic detail are never
+ * returned to the browser.
+ */
+const SAFE_COLUMNS = [
+  'id',
+  'video_draft_id',
+  'status',
+  'attempt',
+  'queued_at',
+  'claimed_at',
+  'completed_at',
+  'failed_at',
+  'output_mime_type',
+  'output_size_bytes',
+  'output_duration_ms',
+  'error_code',
+  'error_message',
+].join(', ')
+
+/**
+ * GET /api/render-executions/:id
+ *
+ * Authenticated, ownership-scoped (user_id = auth.uid(), same single-owner
+ * model as every other table in this schema -- no team/membership concept
+ * exists to authorize by "associated Project" beyond that). No signed URL
+ * is generated here: this phase never produces an output, so there is
+ * nothing yet to retrieve (Task 9 explicitly prefers not adding output
+ * retrieval behavior before an output exists).
+ */
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const { id } = await context.params
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: 'ID invalido.' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+    }
+
+    const { data, error } = await supabase
+      .from('render_executions')
+      .select(SAFE_COLUMNS)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (error || !data) {
+      return NextResponse.json({ error: 'Execucao de renderizacao nao encontrada.' }, { status: 404 })
+    }
+
+    const execution = data as unknown as RenderExecutionSummary
+    return NextResponse.json({ execution })
+  } catch (error) {
+    console.error('[Render Execution GET] Error:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro interno' },
+      { status: 500 },
+    )
+  }
+}
