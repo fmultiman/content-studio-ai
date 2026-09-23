@@ -11,6 +11,8 @@ import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 /** Renderer-facing input shared by every registered template binding. */
 export type TemplateComponentInput = {
   variant: string
+  /** Rendering-style axis, independent of variant. Templates without a light/dark concept ignore it. */
+  appearance?: 'light' | 'dark'
   content: unknown
   assets: Record<string, ResolvedAsset>
   tokens: VisualTokensSnapshot
@@ -41,6 +43,7 @@ const COMPONENT_BINDINGS: Readonly<Record<string, TemplateComponentBinding>> = {
     component: DocumentaryCard as unknown as TemplateComponent,
     createProps: (input, runtime) => documentaryCardPropsFromRuntimeInput({
       variant: input.variant as DocumentaryCardProps['variant'],
+      appearance: input.appearance,
       content: input.content as DocumentaryCardProps['content'],
       assets: input.assets,
       tokens: input.tokens,

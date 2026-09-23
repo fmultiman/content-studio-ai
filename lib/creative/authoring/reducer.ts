@@ -1,9 +1,10 @@
 import { defaultContentForVariant } from './authoring-state'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAULT_TUNING } from './types'
-import type { AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
+import type { AuthoringAppearance, AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
 
 export type AuthoringAction =
   | { type: 'SET_VARIANT'; variant: AuthoringVariant }
+  | { type: 'SET_APPEARANCE'; appearance: AuthoringAppearance }
   | { type: 'SET_IDENTITY'; identity: AuthoringIdentity }
   | { type: 'SET_CANVAS'; canvas: AuthoringCanvas }
   | { type: 'SET_HERO_REF'; ref: AuthoringHeroRef | undefined }
@@ -23,6 +24,9 @@ export type AuthoringAction =
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
     case 'SET_VARIANT': return { ...state, variant: action.variant, heroRef: undefined, contentOverride: defaultContentForVariant(action.variant, state.identity) }
+    // Slice 1 — Portal Carousel V1: appearance is independent of variant, so
+    // switching variant deliberately does NOT touch it here.
+    case 'SET_APPEARANCE': return { ...state, appearance: action.appearance }
     case 'SET_IDENTITY': return { ...state, identity: action.identity, heroRef: undefined, contentOverride: defaultContentForVariant(state.variant, action.identity), primitiveSelection: action.identity === 'a' ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' } : {}, primitiveTransforms: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE } }
     case 'SET_CANVAS': return { ...state, canvas: action.canvas }
     case 'SET_HERO_REF': return { ...state, heroRef: action.ref }

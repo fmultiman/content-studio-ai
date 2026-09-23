@@ -58,6 +58,7 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
     variant: resolvedInput.resolvedTemplate.ref.variant,
+    appearance: resolvedInput.resolvedTemplate.ref.appearance,
     content: resolvedInput.manifest.content,
     assets: resolvedInput.resolvedAssets,
     tokens: resolvedInput.tokens,

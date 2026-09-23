@@ -7,7 +7,9 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
   const content = context.content as DocumentaryCardCoverContent
   const reel = context.canvas.height >= 1800
   const titleSize = reel ? 82 : 76
-  const isDark = palette.background.toLowerCase() === '#0b1020'
+  // Slice 1 — Portal Carousel V1: appearance is an explicit authoring input,
+  // not inferred from a magic background-hex match against the palette.
+  const isDark = context.resolvedAppearance === 'dark'
   const mutedInk = isDark ? '#f3ead8' : palette.ink
   const heroScale = context.mode === 'video' && context.motion?.preset === 'slow_push' ? 1 + (context.progress * 0.06) : 1
 

@@ -37,11 +37,18 @@ export type CanvasSpec = z.infer<typeof CanvasSpecSchema>
 
 export const TemplateScopeSchema = z.enum(['system', 'project'])
 
+// appearance is a rendering-style axis of the same template invocation — like
+// variant, it does not create a new template identity (scope + id + version
+// still does). Optional and renderer-defaulted: a template that has no notion
+// of light/dark simply ignores it.
+export const TemplateAppearanceSchema = z.enum(['light', 'dark'])
+
 export const TemplateRefSchema = z
   .object({
     id: z.string().trim().min(1),
     version: TemplateVersionSchema,
     variant: z.string().trim().min(1).optional(),
+    appearance: TemplateAppearanceSchema.optional(),
     scope: TemplateScopeSchema,
   })
   .strict()

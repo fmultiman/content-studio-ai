@@ -112,6 +112,52 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(markup).not.toContain('translate(42px')
   })
 
+  // ── Slice 1 — Portal Carousel V1: appearance independent of variant ─────────
+
+  it('defaults cover to dark and info to light when appearance is absent (legacy behavior preserved)', () => {
+    const cover = documentaryCardFixtures.cover45
+    const info = documentaryCardFixtures.info45
+    const coverMarkup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', content: cover.manifest.content as never, assets: cover.resolvedAssets,
+      tokens: cover.tokens, canvas: cover.manifest.canvas, mode: 'still', sequence: cover.manifest.sequence,
+    }))
+    const infoMarkup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', content: info.manifest.content as never, assets: info.resolvedAssets,
+      tokens: info.tokens, canvas: info.manifest.canvas, mode: 'still', sequence: info.manifest.sequence,
+    }))
+    expect(coverMarkup).toContain('background:#0b1020')
+    expect(infoMarkup).not.toContain('background:#0b1020')
+  })
+
+  it('renders a light cover when appearance="light" is explicit, overriding the legacy dark default', () => {
+    const input = documentaryCardFixtures.cover45
+    const dark = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', appearance: 'dark', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    const light = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', appearance: 'light', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    expect(dark).toContain('background:#0b1020')
+    expect(light).not.toContain('background:#0b1020')
+    expect(dark).not.toBe(light)
+  })
+
+  it('renders a dark info when appearance="dark" is explicit, proving appearance is not locked to cover', () => {
+    const input = documentaryCardFixtures.info45
+    const light = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', appearance: 'light', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    const dark = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', appearance: 'dark', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    expect(dark).toContain('background:#0b1020')
+    expect(light).not.toContain('background:#0b1020')
+  })
+
   it('applies resolved paper and tape transforms to the shared material slots', () => {
     const input = documentaryCardFixtures.cover45
     const markup = renderToStaticMarkup(createElement(DocumentaryCard, {

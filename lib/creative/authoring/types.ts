@@ -17,6 +17,13 @@
 export type AuthoringIdentity = 'a' | 'b'
 export type AuthoringVariant = 'cover' | 'info'
 export type AuthoringCanvas = 'portrait' | 'reel' // 1080×1350 | 1080×1920
+/**
+ * Slice 1 — Portal Carousel V1: rendering-style axis, independent of
+ * AuthoringVariant. Not a Project Identity selector — identity remains
+ * separate context (foundation/expression/governance), never the appearance
+ * switch for a slide.
+ */
+export type AuthoringAppearance = 'light' | 'dark'
 
 // ── Hero asset choices available in the fixture resolver ─────────────────────
 
@@ -170,6 +177,13 @@ export interface AuthoringState {
   canvas: AuthoringCanvas
   /** hero asset ref override (cover only; undefined uses fixture default) */
   heroRef?: AuthoringHeroRef
+
+  /**
+   * Slice 1 — Portal Carousel V1: explicit, independent of variant. cover can
+   * be light, info can be dark. Project Identity remains identity context,
+   * never the appearance selector.
+   */
+  appearance: AuthoringAppearance
 
   /** Content overrides applied on top of the fixture defaults */
   contentOverride: AuthoringContent

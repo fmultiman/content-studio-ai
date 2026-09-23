@@ -23,14 +23,36 @@ import {
   DEFAULT_TUNING,
   TUNING_BOUNDS,
   clampTuningValue,
+  createContextualAuthoringState,
   createInitialAuthoringState,
   defaultContentForVariant,
   deriveManifestFromState,
   resolvePreviewInput,
   type AuthoringCoverContent,
   type AuthoringInfoContent,
+  type AuthoringProductContext,
 } from '@/lib/creative/authoring'
 import { resolveTemplateComponent } from '@/lib/creative/templates/component-resolver'
+
+const productContextFixture: AuthoringProductContext = {
+  projectId: 'project-1',
+  projectName: 'Test Project',
+  productionId: null,
+  productionTitle: null,
+  editorialContentId: 'ec-1',
+  editorialContentTitle: 'Test EC',
+  channelPieceId: 'cp-1',
+  channel: 'instagram',
+  format: 'carousel',
+  projectIdentity: { schema_version: 1 } as AuthoringProductContext['projectIdentity'],
+  identitySnapshot: {
+    schema_version: 'visual-tokens.v0',
+    snapshot_ref: 'project:project-1:snapshot',
+    typography: { display: { family: 'Fraunces', weight: 700, style: 'normal' }, body: { family: 'Source Sans 3', weight: 400, style: 'normal' } },
+    colors: { background: '#F6F0E4', foreground: '#16352F' },
+    spacing: { unit: 8 },
+  },
+}
 
 // ── Initial state ─────────────────────────────────────────────────────────────
 
@@ -204,6 +226,31 @@ describe('deriveManifestFromState', () => {
     const state = { ...createInitialAuthoringState(), debugPanelOpen: true }
     const manifest = deriveManifestFromState(state)
     expect(JSON.stringify(manifest)).not.toContain('debugPanelOpen')
+  })
+
+  // ── Slice 1 — Portal Carousel V1 ────────────────────────────────────────────
+
+  it('defaults appearance to dark for cover and light for info (legacy behavior preserved)', () => {
+    expect(createInitialAuthoringState('cover', 'a').appearance).toBe('dark')
+    expect(createInitialAuthoringState('info', 'a').appearance).toBe('light')
+  })
+
+  it('carries an explicit appearance into the manifest template, independent of variant', () => {
+    const lightCover = { ...createInitialAuthoringState('cover', 'a'), appearance: 'light' as const }
+    const darkInfo = { ...createInitialAuthoringState('info', 'a'), appearance: 'dark' as const }
+    expect(deriveManifestFromState(lightCover).template).toMatchObject({ variant: 'cover', appearance: 'light' })
+    expect(deriveManifestFromState(darkInfo).template).toMatchObject({ variant: 'info', appearance: 'dark' })
+  })
+
+  it('defaults sequence to {index:1,total:1} for a real product ChannelPiece when no override is supplied', () => {
+    const state = createContextualAuthoringState(productContextFixture, 'portrait', createInitialAuthoringState().contentOverride)
+    expect(deriveManifestFromState(state).sequence).toEqual({ index: 1, total: 1 })
+  })
+
+  it('reflects a real ordered-slide collection when a sequence override is supplied', () => {
+    const state = createContextualAuthoringState(productContextFixture, 'portrait', createInitialAuthoringState().contentOverride)
+    expect(deriveManifestFromState(state, { index: 1, total: 2 }).sequence).toEqual({ index: 1, total: 2 })
+    expect(deriveManifestFromState(state, { index: 2, total: 2 }).sequence).toEqual({ index: 2, total: 2 })
   })
 })
 

@@ -1,6 +1,6 @@
-export type { AuthoringState, AuthoringVariant, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning, AuthoringPrimitiveSelection, AuthoringPrimitiveTransforms, AuthoringProductContext, PrimitiveTransforms } from './types'
+export type { AuthoringState, AuthoringVariant, AuthoringAppearance, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning, AuthoringPrimitiveSelection, AuthoringPrimitiveTransforms, AuthoringProductContext, PrimitiveTransforms } from './types'
 export { DEFAULT_TUNING, AUTHORING_HERO_ASSETS, DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE } from './types'
-export { createInitialAuthoringState, createContextualAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, projectRefForIdentity } from './authoring-state'
+export { createInitialAuthoringState, createContextualAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, defaultAppearanceForVariant, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, projectRefForIdentity } from './authoring-state'
 export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest, primitiveSelectionSchema, primitiveTransformsBySlotSchema } from './render-request'
 export type { AuthoringRenderRequest, AuthoringRenderOverrides, PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
 export { authoringReducer } from './reducer'
@@ -10,3 +10,13 @@ export { initialSaveStatus, isSavedForCurrent, canSave, startSaving, saveSucceed
 export type { SaveState, RenderSaveStatus } from './save-state'
 export { saveRenderToChannelPiece, CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE } from './save-render'
 export type { SaveRenderResult } from './save-render'
+export {
+  STATIC_AUTHORING_STATE_SCHEMA_VERSION,
+  PersistedAuthoredSlideSchema,
+  StaticAuthoringStateSchema,
+  sortedSlides,
+  authoringStateToPersistedSlide,
+  persistedSlideToAuthoringState,
+  defaultCarouselSlides,
+} from './carousel-state'
+export type { PersistedAuthoredSlide, StaticAuthoringStateContract } from './carousel-state'

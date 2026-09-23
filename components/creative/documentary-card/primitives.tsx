@@ -29,15 +29,22 @@ export function materialUrl(name: MaterialName, baseUrl?: string, urls?: Partial
   return `${baseUrl ?? '/creative-fixtures'}/${path}`
 }
 
-export function paletteFromTokens(tokens: VisualTokensSnapshot): CardPalette {
+/**
+ * Derives paper/paperAlt/ink from an EXPLICIT appearance flag. Slice 1 —
+ * Portal Carousel V1: this used to infer "dark" from a magic-hex equality
+ * check against tokens.colors.background, which coupled appearance to
+ * whatever identity tokens happened to resolve to. Appearance is now an
+ * authoring-layer input the caller resolves and passes in explicitly.
+ */
+export function paletteFromTokens(tokens: VisualTokensSnapshot, isDark: boolean): CardPalette {
   return {
     background: tokens.colors.background,
     foreground: tokens.colors.foreground,
     muted: tokens.colors.muted ?? tokens.colors.foreground,
     accent: tokens.colors.accent ?? tokens.colors.foreground,
-    paper: tokens.colors.background.toLowerCase() === '#0b1020' ? '#e9ddc6' : '#efe3ca',
-    paperAlt: tokens.colors.background.toLowerCase() === '#0b1020' ? '#b9a681' : '#d7c69d',
-    ink: tokens.colors.background.toLowerCase() === '#0b1020' ? '#111923' : tokens.colors.foreground,
+    paper: isDark ? '#e9ddc6' : '#efe3ca',
+    paperAlt: isDark ? '#b9a681' : '#d7c69d',
+    ink: isDark ? '#111923' : tokens.colors.foreground,
   }
 }
 

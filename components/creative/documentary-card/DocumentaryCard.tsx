@@ -13,6 +13,7 @@ function clamp(value: number, min: number, max: number): number {
 
 export function DocumentaryCard({
   variant,
+  appearance,
   content,
   assets,
   tokens,
@@ -28,8 +29,14 @@ export function DocumentaryCard({
   frame = 0,
   durationInFrames = 180,
 }: DocumentaryCardProps) {
-  const tokenPalette = paletteFromTokens(tokens)
-  const palette = variant === 'cover'
+  // Slice 1 — Portal Carousel V1: appearance is independent of structural
+  // variant. When absent (every manifest authored before this axis existed),
+  // fall back to the legacy per-variant default so nothing already rendered
+  // changes: cover was always forced dark, info always used token defaults.
+  const resolvedAppearance: NonNullable<DocumentaryCardProps['appearance']> = appearance ?? (variant === 'cover' ? 'dark' : 'light')
+  const isDark = resolvedAppearance === 'dark'
+  const tokenPalette = paletteFromTokens(tokens, isDark)
+  const palette = isDark
     ? { ...tokenPalette, background: '#0b1020', foreground: '#f3ead8', paper: '#efe3ca', paperAlt: '#b9a681', ink: '#111923' }
     : tokenPalette
   const progress = mode === 'video' ? clamp(frame / Math.max(durationInFrames - 1, 1), 0, 1) : 1
@@ -37,6 +44,8 @@ export function DocumentaryCard({
   const contentTranslateY = mode === 'video' && motion?.preset === 'fade' ? (1 - contentOpacity) * 18 : 0
   const context: DocumentaryCardVisualContext = {
     variant,
+    appearance,
+    resolvedAppearance,
     content,
     assets,
     tokens,
@@ -78,7 +87,7 @@ export function DocumentaryCard({
 
 export type DocumentaryCardRuntimeInput = Pick<
   DocumentaryCardProps,
-  'variant' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms'
+  'variant' | 'appearance' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms'
 >
 
 export type DocumentaryCardRuntimeOptions = Pick<
@@ -137,6 +146,7 @@ export function documentaryCardPropsFromResolvedInput(
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
   return documentaryCardPropsFromRuntimeInput({
     variant,
+    appearance: input.manifest.template.appearance,
     content: input.manifest.content as DocumentaryCardProps['content'],
     assets: input.resolvedAssets,
     tokens: input.tokens,

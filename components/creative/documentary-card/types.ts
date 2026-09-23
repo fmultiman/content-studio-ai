@@ -18,9 +18,16 @@ export type { DocumentaryCardPreviewTuning }
 export type DocumentaryCardVariant = 'cover' | 'info'
 export type DocumentaryCardMode = 'still' | 'video'
 export type DocumentaryCardContent = DocumentaryCardCoverContent | DocumentaryCardInfoContent
+/**
+ * Rendering-style axis, independent of structural variant (Slice 1 — Portal
+ * Carousel V1). Absent means the legacy default: dark for cover, light for
+ * info — preserving every render made before this axis existed.
+ */
+export type DocumentaryCardAppearance = 'light' | 'dark'
 
 export type DocumentaryCardProps = {
   variant: DocumentaryCardVariant
+  appearance?: DocumentaryCardAppearance
   content: DocumentaryCardContent
   assets: Record<string, ResolvedAsset>
   tokens: VisualTokensSnapshot
@@ -48,4 +55,6 @@ export type DocumentaryCardVisualContext = DocumentaryCardProps & {
   progress: number
   contentOpacity: number
   contentTranslateY: number
+  /** appearance with the legacy per-variant default already applied — never undefined. */
+  resolvedAppearance: DocumentaryCardAppearance
 }

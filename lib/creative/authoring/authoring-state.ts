@@ -6,13 +6,14 @@
  *  - PreviewTuning       → excluded; never reaches the manifest
  */
 
-import type { CanvasSpec } from '@/lib/schemas/creative/primitives'
+import type { CanvasSpec, SequenceContext } from '@/lib/schemas/creative/primitives'
 import type { StaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { resolveDocumentaryCardFixture, documentaryCardTemplate } from '@/lib/creative/fixtures/documentary-card-fixtures'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import {
+  type AuthoringAppearance,
   type AuthoringCanvas,
   type AuthoringContent,
   type AuthoringCoverContent,
@@ -25,7 +26,14 @@ import {
   DEFAULT_TUNING,
   DEFAULT_PRIMITIVE_TRANSFORMS,
   DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
-} from './types'// ── Canvas helpers ────────────────────────────────────────────────────────────
+} from './types'
+
+/** Legacy per-variant default, preserved so every pre-Slice-1 caller renders identically. */
+export function defaultAppearanceForVariant(variant: AuthoringVariant): AuthoringAppearance {
+  return variant === 'cover' ? 'dark' : 'light'
+}
+
+// ── Canvas helpers ────────────────────────────────────────────────────────────
 
 export function canvasSpecFromAuthoring(canvas: AuthoringCanvas): CanvasSpec {
   return canvas === 'portrait'
@@ -84,12 +92,14 @@ export function createInitialAuthoringState(
   variant: AuthoringVariant = 'cover',
   identity: AuthoringIdentity = 'a',
   canvas: AuthoringCanvas = 'portrait',
+  appearance: AuthoringAppearance = defaultAppearanceForVariant(variant),
 ): AuthoringState {
   return {
     variant,
     identity,
     canvas,
     heroRef: undefined,
+    appearance,
     contentOverride: defaultContentForVariant(variant, identity),
     primitiveSelection: {
       paper: 'paper-card-light-01',
@@ -101,15 +111,22 @@ export function createInitialAuthoringState(
   }
 }
 
-/** Builds the existing ephemeral state from a real product context. */
+/**
+ * Builds the existing ephemeral state from a real product context.
+ * Slice 1 — Portal Carousel V1: variant/appearance are now real parameters
+ * instead of being hardcoded to 'cover' — the single-card non-carousel call
+ * site simply omits them and keeps getting a cover/dark slide, unchanged.
+ */
 export function createContextualAuthoringState(
   context: NonNullable<AuthoringState['productContext']>,
   canvas: AuthoringCanvas,
   content: AuthoringContent,
   primitiveSelection: AuthoringPrimitiveSelection = {},
+  variant: AuthoringVariant = 'cover',
+  appearance: AuthoringAppearance = defaultAppearanceForVariant(variant),
 ): AuthoringState {
   return {
-    ...createInitialAuthoringState('cover', 'a', canvas),
+    ...createInitialAuthoringState(variant, 'a', canvas, appearance),
     contentOverride: content,
     primitiveSelection,
     productContext: context,
@@ -143,6 +160,7 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
           project_ref: state.productContext.projectId,
           ...(state.productContext.productionId ? { production_ref: state.productContext.productionId } : {}),
         },
+        template: { ...base.manifest.template, variant: state.variant, appearance: state.appearance },
         identity: { snapshot_ref: state.productContext.identitySnapshot.snapshot_ref, token_profile: 'default' },
         content: state.contentOverride as unknown as Record<string, unknown>,
         metadata: { source_verification_required_before_publication: true, locale: 'pt-BR', notes: 'contextual static authoring draft' },
@@ -154,6 +172,7 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
     ...base,
     manifest: {
       ...base.manifest,
+      template: { ...base.manifest.template, variant: state.variant, appearance: state.appearance },
       content: state.contentOverride as unknown as Record<string, unknown>,
       // Hero ref override: swap the resolved asset if a custom ref is chosen
       assets: state.heroRef
@@ -169,7 +188,12 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
  * PreviewTuning, debugPanelOpen and other ephemeral UI state are deliberately
  * excluded — they are not part of any manifest contract.
  */
-export function deriveManifestFromState(state: AuthoringState): StaticRenderManifest {
+/**
+ * @param sequenceOverride Slice 1 — Portal Carousel V1: lets a caller managing
+ * an ordered slide collection (e.g. a 2-slide carousel) report the slide's
+ * real position/count instead of the single-card default of {index:1,total:1}.
+ */
+export function deriveManifestFromState(state: AuthoringState, sequenceOverride?: SequenceContext): StaticRenderManifest {
   const canvasSpec = canvasSpecFromAuthoring(state.canvas)
   const identityRef = state.identity === 'a'
     ? { snapshot_ref: 'fixture:identity:comunidades-alternativas:v1', token_profile: 'default' as const }
@@ -203,10 +227,10 @@ export function deriveManifestFromState(state: AuthoringState): StaticRenderMani
         project_ref: state.productContext.projectId,
         ...(state.productContext.productionId ? { production_ref: state.productContext.productionId } : {}),
       },
-      template: { ...documentaryCardTemplate, variant: state.variant },
+      template: { ...documentaryCardTemplate, variant: state.variant, appearance: state.appearance },
       canvas: canvasSpec,
       identity: { snapshot_ref: state.productContext.identitySnapshot.snapshot_ref, token_profile: 'default' },
-      sequence: { index: 1, total: 1 },
+      sequence: sequenceOverride ?? { index: 1, total: 1 },
       content: state.contentOverride as unknown as Record<string, unknown>,
       assets,
       output: { format: 'png', role: 'channel_piece' },
@@ -222,10 +246,10 @@ export function deriveManifestFromState(state: AuthoringState): StaticRenderMani
       project_ref: state.identity === 'b' ? 'fixture:project:acme-labs' : 'fixture:project:comunidades-alternativas',
       production_ref: state.identity === 'b' ? 'fixture:production:launch-week' : 'fixture:production:terra-una',
     },
-    template: { ...documentaryCardTemplate, variant: state.variant },
+    template: { ...documentaryCardTemplate, variant: state.variant, appearance: state.appearance },
     canvas: canvasSpec,
     identity: identityRef,
-    sequence: { index: 1, total: 10 },
+    sequence: sequenceOverride ?? { index: 1, total: 10 },
     content: state.contentOverride as unknown as Record<string, unknown>,
     assets,
     output: { format: 'png' as const, role: 'fixture' as const },

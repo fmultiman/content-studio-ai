@@ -41,8 +41,12 @@ export type RegisteredTemplate = {
   variants: Record<string, BindingSchemas>
 }
 
+// variant is guaranteed defined post-resolution (checked below); appearance
+// and any other genuinely optional TemplateRef field keep their own
+// optionality — Required<TemplateRef> would wrongly force appearance to be
+// always-defined even for templates that never set it.
 export type ResolvedTemplate = {
-  ref: Required<TemplateRef>
+  ref: TemplateRef & { variant: string }
   descriptor: TemplateDescriptor
 }
 

@@ -384,6 +384,24 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
 }
 
 // ---------------------------------------------------------------------------
+// ChannelPieceStaticAuthoringState (Portal Carousel V1 — Slice 1)
+// Ordered persisted static-authoring slides for a ChannelPiece. `slides` is
+// validated in TypeScript by StaticAuthoringStateSchema
+// (lib/creative/authoring/carousel-state.ts) — the DB only enforces a
+// non-empty JSON array. See scripts/033_create_channel_piece_static_authoring_states.sql.
+// ---------------------------------------------------------------------------
+
+export interface ChannelPieceStaticAuthoringStateRow {
+  id: string
+  user_id: string
+  channel_piece_id: string
+  schema_version: string
+  slides: unknown[]
+  created_at: string
+  updated_at: string
+}
+
+// ---------------------------------------------------------------------------
 // API Response types
 // ---------------------------------------------------------------------------
 
