@@ -23,6 +23,7 @@
  */
 import { createServer } from 'node:http'
 import { mkdir } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -35,6 +36,40 @@ const entry = path.join(here, 'remotion-entry.tsx')
 const publicDir = path.join(here, 'public')
 const port = Number(process.env.PORT ?? 3456)
 const outputDir = process.env.RENDER_OUTPUT_DIR ?? path.join(os.tmpdir(), 'content-studio-render-worker')
+const coordinatorStatusFile = process.env.CONTENT_STUDIO_COORDINATOR_STATUS_FILE ?? path.join(outputDir, 'coordinator-status.json')
+
+/**
+ * Phase 2I — Production Video Operational Closure. Reads the small status
+ * file entrypoint.mjs (the resident supervisor) writes whenever it starts or
+ * loses the coordinator child. server.mjs and the supervisor are separate OS
+ * processes with no shared memory, so a file is the simplest boundary that
+ * doesn't require server.mjs to gain any new dependency or import a TS
+ * helper (it deliberately has none — see README.md §2/§9).
+ *
+ * Returns `null` when no status file exists (a local `node server.mjs` proof
+ * run started without the supervisor) — that case is NOT degraded, since
+ * server.mjs's own render capability is unaffected by the coordinator's
+ * absence; only reported explicitly so ops can tell the two situations apart.
+ */
+function readCoordinatorStatus() {
+  try {
+    const raw = readFileSync(coordinatorStatusFile, 'utf8')
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+/** Mirrors lib/render-execution/resident-supervisor-policy.ts's buildHealthPayload
+ * — duplicated here in plain JS (not imported) because server.mjs never
+ * bundles or resolves TypeScript source; see the module header for why. */
+function buildHealthPayload(coordinatorStatus) {
+  const coordinatorHealthy = coordinatorStatus === null || coordinatorStatus.running === true
+  return {
+    status: coordinatorHealthy ? 'ok' : 'degraded',
+    coordinator: coordinatorStatus,
+  }
+}
 
 /** Cached across requests: bundling is the expensive, repeatable part. */
 let bundleLocationPromise
@@ -139,7 +174,7 @@ async function handleRender(req, res) {
 
 const server = createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
-    return sendJson(res, 200, { status: 'ok' })
+    return sendJson(res, 200, buildHealthPayload(readCoordinatorStatus()))
   }
   if (req.method === 'POST' && req.url === '/render') {
     return void handleRender(req, res)

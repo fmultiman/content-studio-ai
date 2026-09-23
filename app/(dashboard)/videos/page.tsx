@@ -70,6 +70,7 @@ function VideosPageContent() {
   const [renderExecution, setRenderExecution] = useState<RenderExecutionSummary | null>(null)
   const [renderIdempotencyKey, setRenderIdempotencyKey] = useState<string>(() => crypto.randomUUID())
   const [renderOutputUrl, setRenderOutputUrl] = useState<string | null>(null)
+  const [renderOutputUrlError, setRenderOutputUrlError] = useState<string | null>(null)
   
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
@@ -449,6 +450,7 @@ function VideosPageContent() {
     // Reset execution state, load new if exists
     setRenderExecution(null)
     setRenderOutputUrl(null)
+    setRenderOutputUrlError(null)
     setRenderIdempotencyKey(crypto.randomUUID())
     fetch(`/api/render-executions?videoDraftId=${draft.id}`)
       .then(res => res.ok ? res.json() : null)
@@ -467,69 +469,91 @@ function VideosPageContent() {
 
   // Polling configuration
   const pendingNotification = useRef(false)
-  
+
   const fetchOutputUrl = async (executionId: string) => {
     try {
       const res = await fetch(`/api/render-executions/${executionId}/output-url`)
       if (res.ok) {
         const data = await res.json()
-        if (data.url) setRenderOutputUrl(data.url)
+        if (data.url) {
+          setRenderOutputUrl(data.url)
+          return
+        }
       }
+      setRenderOutputUrlError('Não foi possível carregar o vídeo para reprodução.')
     } catch (err) {
       console.error('[v0] Error fetching output url:', err)
+      setRenderOutputUrlError('Não foi possível carregar o vídeo para reprodução.')
     }
   }
 
+  // Terminal-state hydration: fires unconditionally whenever the execution
+  // reaches (or is already restored in) a terminal status — covering BOTH
+  // the live queued/claimed -> completed transition AND a page load that
+  // restores an already-completed execution. Previously this logic lived
+  // only inside the polling function below, which was never invoked at all
+  // for an execution that loaded already-completed (the poll scheduler only
+  // ever ran for queued/claimed), so the inline player never requested
+  // output-url on a normal page load — the reported "player stuck loading
+  // forever" bug.
   useEffect(() => {
-    let timeoutId: number | undefined
-    let cancelled = false
-    
-    const pollExecution = async () => {
-      if (!renderExecution?.id || cancelled) return
-      
-      // Stop polling on terminal states
-      if (renderExecution.status === 'completed' || renderExecution.status === 'failed') {
-        if (pendingNotification.current) {
-          pendingNotification.current = false
-          if (renderExecution.status === 'completed') {
-            toast({ title: 'Vídeo renderizado com sucesso.' })
-            fetchOutputUrl(renderExecution.id)
-          } else {
-            toast({ title: 'A renderização falhou.', variant: 'destructive' })
-          }
-        } else if (renderExecution.status === 'completed' && !renderOutputUrl && !cancelled) {
-          // Recover output URL on load if it's already completed
-          fetchOutputUrl(renderExecution.id)
-        }
-        return
-      }
+    if (!renderExecution?.id) return
+    if (renderExecution.status !== 'completed' && renderExecution.status !== 'failed') return
 
+    if (pendingNotification.current) {
+      pendingNotification.current = false
+      if (renderExecution.status === 'completed') {
+        toast({ title: 'Vídeo renderizado com sucesso.' })
+      } else {
+        toast({ title: 'A renderização falhou.', variant: 'destructive' })
+      }
+    }
+
+    if (renderExecution.status === 'completed' && !renderOutputUrl && !renderOutputUrlError) {
+      // Fire-and-forget data fetch, same accepted pattern as this file's own
+      // initial fetchData() effect above — all of its setState calls happen
+      // after the internal `await`, never synchronously in this effect body.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchOutputUrl(renderExecution.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderExecution?.id, renderExecution?.status])
+
+  // Polling: only while queued/claimed. One request in flight at a time (a
+  // single recursive setTimeout chain, never overlapping calls); stops the
+  // instant the execution reaches a terminal status because the effect
+  // condition below simply does not schedule anything for it.
+  useEffect(() => {
+    if (!renderExecution?.id) return
+    if (renderExecution.status !== 'queued' && renderExecution.status !== 'claimed') return
+
+    let cancelled = false
+    let timeoutId: number | undefined
+    const executionId = renderExecution.id
+
+    const poll = async () => {
+      if (cancelled) return
       try {
-        const res = await fetch(`/api/render-executions/${renderExecution.id}`)
+        const res = await fetch(`/api/render-executions/${executionId}`)
         if (res.ok && !cancelled) {
           const payload = await res.json()
-          if (payload.execution) {
-            setRenderExecution(payload.execution)
-          }
+          if (payload.execution) setRenderExecution(payload.execution)
         }
       } catch (err) {
         console.error('[v0] Error polling render execution:', err)
       }
-
       if (!cancelled) {
-        timeoutId = window.setTimeout(pollExecution, 3000)
+        timeoutId = window.setTimeout(poll, 3000)
       }
     }
 
-    if (renderExecution?.status === 'queued' || renderExecution?.status === 'claimed') {
-      timeoutId = window.setTimeout(pollExecution, 3000)
-    }
+    timeoutId = window.setTimeout(poll, 3000)
 
     return () => {
       cancelled = true
       if (timeoutId) window.clearTimeout(timeoutId)
     }
-  }, [renderExecution, renderOutputUrl, toast])
+  }, [renderExecution?.id, renderExecution?.status])
 
   const handleGenerateVideo = async () => {
     if (!videoName.trim() || scenes.length === 0) return
@@ -537,7 +561,8 @@ function VideosPageContent() {
     setIsGenerating(true)
     pendingNotification.current = true
     setRenderOutputUrl(null)
-    
+    setRenderOutputUrlError(null)
+
     try {
       // 1. Force a save first
       const draft = await handleSaveDraft(false)
@@ -612,6 +637,7 @@ function VideosPageContent() {
     setCurrentDraftId(null)
     setRenderExecution(null)
     setRenderOutputUrl(null)
+    setRenderOutputUrlError(null)
     setRenderIdempotencyKey(crypto.randomUUID())
     // Production context and project are preserved intentionally:
     // creating a new video within a Production keeps the workspace context.
@@ -1260,13 +1286,30 @@ function VideosPageContent() {
                       </div>
                       <div className="w-full relative aspect-video bg-black rounded-md overflow-hidden">
                         {renderOutputUrl ? (
-                          <video 
-                            src={renderOutputUrl} 
-                            controls 
-                            playsInline 
+                          <video
+                            src={renderOutputUrl}
+                            controls
+                            playsInline
                             className="w-full h-full object-contain"
                             crossOrigin="anonymous"
                           />
+                        ) : renderOutputUrlError ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+                            <AlertCircle className="h-8 w-8 text-red-400" />
+                            <p className="text-sm text-muted-foreground">{renderOutputUrlError}</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => {
+                                setRenderOutputUrlError(null)
+                                fetchOutputUrl(renderExecution.id)
+                              }}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Tentar novamente
+                            </Button>
+                          </div>
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1364,17 +1407,6 @@ function VideosPageContent() {
             )}
           </div>
 
-          
-
-          {/* Info Card */}
-          <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardContent className="p-4">
-              <p className="text-sm text-amber-200/80">
-                <strong>Nota:</strong> Este módulo está preparado para integração futura com APIs de geração de vídeo.
-                Atualmente, o fluxo é simulado para demonstrar a estrutura da interface.
-              </p>
-            </CardContent>
-          </Card>
           </>
           )}
         </DashboardPageContent>

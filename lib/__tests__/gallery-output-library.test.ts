@@ -12,7 +12,7 @@ import {
   resolveGalleryOutputStatus,
   type GalleryOutputItem,
 } from '../gallery-output-library'
-import type { Image, ImageDraft, Production, Project } from '../types'
+import type { Image, ImageDraft, Production, Project, RenderExecutionSummary, VideoDraft } from '../types'
 
 const projects: Pick<Project, 'id' | 'name'>[] = [
   { id: 'project-1', name: 'Portal Norte' },
@@ -129,6 +129,40 @@ const drafts: Pick<
 function buildOutputs() {
   return buildGalleryOutputs({ images, drafts, projects, productions })
 }
+
+const videoDrafts: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'name' | 'updated_at'>[] = [
+  {
+    id: 'video-draft-1',
+    project_id: 'project-1',
+    production_id: 'production-1',
+    name: 'Teaser Portal Norte',
+    updated_at: '2026-06-28T09:00:00.000Z',
+  },
+]
+
+const executions: Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'>[] = [
+  {
+    id: 'execution-completed',
+    video_draft_id: 'video-draft-1',
+    status: 'completed',
+    completed_at: '2026-06-28T09:05:00.000Z',
+    queued_at: '2026-06-28T09:00:00.000Z',
+  },
+  {
+    id: 'execution-failed',
+    video_draft_id: 'video-draft-1',
+    status: 'failed',
+    completed_at: null,
+    queued_at: '2026-06-28T08:00:00.000Z',
+  },
+  {
+    id: 'execution-queued',
+    video_draft_id: 'video-draft-1',
+    status: 'queued',
+    completed_at: null,
+    queued_at: '2026-06-28T07:00:00.000Z',
+  },
+]
 
 describe('UX-H3C gallery output library helpers', () => {
   it('lists only real visual outputs and excludes prompts without assets', () => {
@@ -367,5 +401,85 @@ describe('UX-H3C gallery output library helpers', () => {
     )
 
     expect(resolved).toEqual([images[0]])
+  })
+})
+
+describe('Phase 2I — video outputs in the Gallery (Task B1/B2)', () => {
+  it('includes only completed executions as generated video outputs — queued/claimed/failed are excluded', () => {
+    const outputs = buildGalleryOutputs({ images: [], projects, productions, executions, videoDrafts })
+
+    expect(outputs).toHaveLength(1)
+    expect(outputs[0]).toMatchObject({
+      id: 'execution-completed',
+      mediaType: 'video',
+      status: 'generated',
+      title: 'Teaser Portal Norte',
+    })
+  })
+
+  it('generated count includes completed videos alongside generated images', () => {
+    const outputs = buildGalleryOutputs({ images, drafts, projects, productions, executions, videoDrafts })
+    const generatedCount = outputs.filter((output) => output.status === 'generated').length
+
+    // image-generated (status 'draft' -> 'generated') + execution-completed
+    expect(generatedCount).toBe(2)
+  })
+
+  it('approved count never automatically includes a completed video — a video output is always "generated", never "approved"', () => {
+    const outputs = buildGalleryOutputs({ images, drafts, projects, productions, executions, videoDrafts })
+    const approvedVideos = outputs.filter((output) => output.mediaType === 'video' && output.status === 'approved')
+
+    expect(approvedVideos).toHaveLength(0)
+  })
+
+  it('video output download URL is the narrow output-url route, in attachment disposition', () => {
+    const outputs = buildGalleryOutputs({ images: [], projects, productions, executions, videoDrafts })
+
+    expect(outputs[0].downloadUrl).toBe('/api/render-executions/execution-completed/output-url?disposition=attachment')
+    expect(outputs[0].canDownload).toBe(true)
+  })
+
+  it('a video output with no matching VideoDraft still renders safely (no Project/Production context)', () => {
+    const outputs = buildGalleryOutputs({ images: [], projects, productions, executions, videoDrafts: [] })
+
+    expect(outputs[0]).toMatchObject({ projectId: null, productionId: null, title: 'Vídeo Renderizado' })
+  })
+})
+
+describe('Phase 2I — Gallery browser authority regression (Task B2)', () => {
+  const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
+
+  it('does not query render_executions directly from the browser (403 root cause)', () => {
+    expect(galleryPage).not.toMatch(/from\('render_executions'\)/)
+  })
+
+  it('fetches video outputs from the narrow server-authoritative route', () => {
+    expect(galleryPage).toContain("fetch('/api/gallery/video-outputs')")
+  })
+
+  it('isolates the video-outputs fetch from the core data fetch — a partial failure sets its own flag rather than throwing', () => {
+    expect(galleryPage).toContain('setVideoOutputsUnavailable(true)')
+    // The core-data try/catch must set errorMessage and return BEFORE the
+    // isolated video-outputs fetch runs — it must never be inside the same
+    // try block (which would let a video-outputs failure blank out
+    // images/Projects/Productions that already loaded successfully).
+    const coreCatchIndex = galleryPage.indexOf("setErrorMessage('Não foi possível carregar a Galeria agora.')")
+    const videoOutputsFetchIndex = galleryPage.indexOf("fetch('/api/gallery/video-outputs')")
+    expect(coreCatchIndex).toBeGreaterThan(-1)
+    expect(videoOutputsFetchIndex).toBeGreaterThan(coreCatchIndex)
+  })
+
+  it('still sets Projects/images from the core fetch even when video outputs are unavailable (no false "Crie um Project")', () => {
+    // setProjects must appear before the isolated video-outputs fetch block,
+    // proving Projects are committed to state independently of whether the
+    // video-outputs fetch below it later succeeds or fails.
+    const setProjectsIndex = galleryPage.indexOf('setProjects(')
+    const videoOutputsFetchIndex = galleryPage.indexOf("fetch('/api/gallery/video-outputs')")
+    expect(setProjectsIndex).toBeGreaterThan(-1)
+    expect(setProjectsIndex).toBeLessThan(videoOutputsFetchIndex)
+  })
+
+  it('passes executions and videoDrafts into buildGalleryOutputs', () => {
+    expect(galleryPage).toMatch(/buildGalleryOutputs\(\{ images, drafts, projects, productions, executions, videoDrafts \}\)/)
   })
 })

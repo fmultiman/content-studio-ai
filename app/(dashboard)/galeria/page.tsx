@@ -41,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Image as ImageType, ImageDraft, Production, Project } from '@/lib/types'
+import type { Image as ImageType, ImageDraft, Production, Project, RenderExecutionSummary, VideoDraft } from '@/lib/types'
 import {
   buildGalleryOutputs,
   filterGalleryOutputs,
@@ -61,12 +61,15 @@ export default function GalleryPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [productions, setProductions] = useState<Production[]>([])
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
+  const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
+  const [executions, setExecutions] = useState<Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'>[]>([])
   const [selectedProject, setSelectedProject] = useState('all')
   const [selectedProduction, setSelectedProduction] = useState('all')
   const [statusFilter, setStatusFilter] = useState<GalleryStatusFilter>('all')
   const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [videoOutputsUnavailable, setVideoOutputsUnavailable] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
   const [selectedOutput, setSelectedOutput] = useState<GalleryOutputItem | null>(null)
   const [viewMode, setViewMode] = useViewModePreference('gallery-output-view', 'card')
@@ -94,11 +97,15 @@ export default function GalleryPage() {
     const fetchGallery = async () => {
       setIsLoading(true)
       setErrorMessage(null)
+      setVideoOutputsUnavailable(false)
 
       try {
         const supabase = createClient()
 
-        const [imagesResult, draftsResult, projectsResult, productionsResult, executionsResult, videoDraftsResult] = await Promise.all([
+        // Core Gallery data (images, drafts, Projects, Productions, video
+        // draft metadata) — video_drafts itself is browser-readable and
+        // unaffected by the render_executions authority fix below.
+        const [imagesResult, draftsResult, projectsResult, productionsResult, videoDraftsResult] = await Promise.all([
           supabase
             .from('images')
             .select('*')
@@ -116,25 +123,19 @@ export default function GalleryPage() {
             .select('*')
             .order('updated_at', { ascending: false }),
           supabase
-            .from('render_executions')
-            .select('id, video_draft_id, status, completed_at, queued_at, attempt')
-            .eq('status', 'completed')
-            .order('updated_at', { ascending: false }),
-          supabase
             .from('video_drafts')
-            .select('id, project_id, production_id, name, updated_at')
+            .select('id, project_id, production_id, name, updated_at'),
         ])
 
-        const firstError =
+        const coreError =
           imagesResult.error ||
           draftsResult.error ||
           projectsResult.error ||
           productionsResult.error ||
-          executionsResult.error ||
           videoDraftsResult.error
 
-        if (firstError) {
-          throw new Error(firstError.message)
+        if (coreError) {
+          throw new Error(coreError.message)
         }
 
         const signedImages = await resolveGalleryDisplayImages(
@@ -146,20 +147,40 @@ export default function GalleryPage() {
         setDrafts((draftsResult.data || []) as ImageDraft[])
         setProjects((projectsResult.data || []) as Project[])
         setProductions((productionsResult.data || []) as Production[])
+        setVideoDrafts((videoDraftsResult.data || []) as VideoDraft[])
       } catch (error) {
         console.error('Erro ao carregar Galeria', error)
         setErrorMessage('Não foi possível carregar a Galeria agora.')
-      } finally {
         setIsLoading(false)
+        return
       }
+
+      // Video outputs come from a narrow, server-authoritative route — the
+      // browser has no SELECT policy on render_executions (intentional, see
+      // app/api/gallery/video-outputs/route.ts). This fetch is isolated from
+      // the core data above ON PURPOSE: a failure here must never blank out
+      // images/Projects/Productions that already loaded successfully, and
+      // must never be mistaken for "no Projects exist".
+      try {
+        const response = await fetch('/api/gallery/video-outputs')
+        if (!response.ok) throw new Error(`video-outputs fetch failed: ${response.status}`)
+        const payload = await response.json()
+        setExecutions(payload.executions || [])
+      } catch (error) {
+        console.error('Erro ao carregar outputs de video da Galeria', error)
+        setExecutions([])
+        setVideoOutputsUnavailable(true)
+      }
+
+      setIsLoading(false)
     }
 
     fetchGallery()
   }, [retryKey])
 
   const outputs = useMemo(
-    () => buildGalleryOutputs({ images, drafts, projects, productions }),
-    [drafts, images, productions, projects],
+    () => buildGalleryOutputs({ images, drafts, projects, productions, executions, videoDrafts }),
+    [drafts, executions, images, productions, projects, videoDrafts],
   )
 
   const availableProductions = useMemo(
@@ -354,6 +375,17 @@ export default function GalleryPage() {
               description={errorMessage}
               actionLabel="Tentar novamente"
               onAction={() => setRetryKey((value) => value + 1)}
+            />
+          )}
+
+          {!errorMessage && videoOutputsUnavailable && (
+            <StateMessage
+              tone="info"
+              title="Videos renderizados podem estar ausentes"
+              description="Nao foi possivel carregar os outputs de video agora. Imagens continuam disponiveis normalmente."
+              actionLabel="Tentar novamente"
+              onAction={() => setRetryKey((value) => value + 1)}
+              compact
             />
           )}
 

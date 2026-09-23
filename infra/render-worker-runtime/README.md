@@ -254,6 +254,28 @@ container:  /app/content-studio   (bind-mount of the above)
 `server.mjs` must end up at `/app/content-studio/server.mjs` so that its own
 `node_modules` walk-up reaches `/app/node_modules`.
 
+## 8.1. Resident service command (Phase 2I — Production Video Operational Closure)
+
+**The container/service start command is `node entrypoint.bundle.cjs`, not
+`node server.mjs`.** See
+`docs/productization/creative-rendering/PHASE_2I_PRODUCTION_VIDEO_OPERATIONAL_CLOSURE.md`
+for the full root-cause writeup. In short: `server.mjs` and `coordinator.mjs`
+were both only ever run manually, one command at a time, during proof
+sessions — nothing started the coordinator's continuous poll/claim/render
+loop automatically, so a queued `render_executions` row was never claimed in
+production. `entrypoint.bundle.cjs` is a new resident supervisor that:
+
+1. Spawns `server.mjs` (unchanged) and waits for `GET /health` to pass.
+2. Spawns `coordinator.bundle.cjs` with `CONTENT_STUDIO_RENDER_LOOP` forced
+   to `1` (the coordinator's existing continuous-loop mode).
+3. Restarts either child (bounded exponential backoff, never a busy loop) if
+   it exits unexpectedly, and stops both cleanly on SIGTERM/SIGINT.
+
+`GET /health` now also reports coordinator liveness:
+`{ "status": "ok" | "degraded", "coordinator": { running, restartCount, lastExitCode, lastExitSignal, lastStartedAt } | null }`.
+`coordinator: null` means no supervisor is present (e.g. a local
+`node server.mjs` proof run) — that is still `"ok"`, not `"degraded"`.
+
 ## 9. Dependency manifest — explicit answers (Task 8)
 
 | Question | Answer |

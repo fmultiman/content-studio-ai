@@ -27,7 +27,12 @@ describe('Videos Page Render UX', () => {
   it('stops polling at terminal states (completed/failed) and emits exactly one toast', () => {
     expect(pageSource).toMatch(/if \(pendingNotification\.current\)/)
     expect(pageSource).toMatch(/pendingNotification\.current = false/)
-    expect(pageSource).toMatch(/renderExecution\.status === 'completed' \|\| renderExecution\.status === 'failed'/)
+    // Phase 2I: the terminal-state guard now lives in its own effect (see
+    // c2-gallery-videos-product.test.ts for the reachability fix) as an
+    // early-return — De Morgan's equivalent of the old `=== || ===` guard,
+    // written this way specifically so it fires unconditionally rather than
+    // only from inside the poll-scheduling branch.
+    expect(pageSource).toMatch(/renderExecution\.status !== 'completed' && renderExecution\.status !== 'failed'/)
   })
 
   it('displays the inline result area', () => {

@@ -106,6 +106,7 @@ const WORKER_OWN_FILES = [
   { from: path.join(here, 'server.mjs'), to: 'server.mjs' },
   { from: path.join(here, 'coordinator.mjs'), to: 'coordinator.source.mjs' },
   { from: path.join(here, 'minio-upload.mjs'), to: 'minio-upload.source.mjs' },
+  { from: path.join(here, 'entrypoint.mjs'), to: 'entrypoint.source.mjs' },
 ]
 
 async function copyOne(relativePath) {
@@ -177,6 +178,40 @@ async function bundleCoordinator() {
 }
 
 /**
+ * Phase 2I — Production Video Operational Closure. Bundles the NEW resident
+ * supervisor entry point (`entrypoint.mjs`) the exact same way
+ * `bundleCoordinator()` already bundles `coordinator.mjs`: it imports the
+ * pure `lib/render-execution/resident-supervisor-policy.ts` helpers by
+ * relative path, which only resolves through esbuild's `.ts` loader — never
+ * directly via `node entrypoint.mjs` on the VPS (same constraint
+ * `coordinator.mjs`/`coordinator.source.mjs` already documents above).
+ * `entrypoint.bundle.cjs` is what the worker service's start command must
+ * run from now on — it spawns and supervises BOTH `server.mjs` (unbundled,
+ * unchanged) and `coordinator.bundle.cjs` as child processes, so a single
+ * command makes the whole resident lifecycle (render HTTP wrapper + queue
+ * consumer) start automatically together.
+ */
+async function bundleEntrypoint() {
+  const entry = path.join(here, 'entrypoint.mjs')
+  const outfile = path.join(distRoot, 'entrypoint.bundle.cjs')
+  const result = await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node18',
+    loader: { '.ts': 'ts' },
+    logLevel: 'silent',
+  })
+  if (result.warnings.length > 0) {
+    console.warn('[export] esbuild warnings while bundling entrypoint.mjs:')
+    for (const w of result.warnings) console.warn(`  ${w.text}`)
+  }
+  return outfile
+}
+
+/**
  * Task 15 — portable dependency-load smoke test. Runs the bundled
  * coordinator from a CWD OUTSIDE the repo entirely (os.tmpdir()) with a
  * deliberately empty environment (no CONTROL_PLANE_URL/WORKER_SECRET, and
@@ -219,6 +254,30 @@ async function smokeTestBundlePortability(outfile) {
   }
 }
 
+/**
+ * Portable dependency-load smoke test for entrypoint.bundle.cjs. Unlike
+ * coordinator.mjs (which fails fast on missing required env vars — a
+ * naturally cheap, deterministic exit this file reuses for its own smoke
+ * test), entrypoint.mjs's real startup path spawns child processes and
+ * waits on health checks/timers, which would make an executable smoke test
+ * slow and non-deterministic. Instead this uses the explicit,
+ * documented-as-test-only `CONTENT_STUDIO_SUPERVISOR_SELFTEST=1` escape
+ * hatch (see entrypoint.mjs) to prove the bundle's full module graph
+ * (including the pure resident-supervisor-policy.ts helpers) resolves and
+ * evaluates successfully outside the repo, with no real process spawning.
+ */
+async function smokeTestEntrypointPortability(outfile) {
+  const cwd = os.tmpdir()
+  const { stdout } = await execFileAsync(process.execPath, [outfile], {
+    cwd,
+    env: { PATH: process.env.PATH, CONTENT_STUDIO_SUPERVISOR_SELFTEST: '1' },
+    timeout: 15_000,
+  })
+  if (!/self-test: module graph loaded successfully/.test(stdout)) {
+    throw new Error(`[export] entrypoint smoke test FAILED — unexpected stdout:\n${stdout}`)
+  }
+}
+
 async function main() {
   await rm(distRoot, { recursive: true, force: true })
   await mkdir(distRoot, { recursive: true })
@@ -254,8 +313,17 @@ async function main() {
   await smokeTestBundlePortability(bundleOutfile)
   console.log('[export] Smoke test passed — coordinator.bundle.cjs loads its full module graph with no repo node_modules reachable.')
 
+  // Phase 2I — Production Video Operational Closure: bundle the resident
+  // supervisor entry point that makes the coordinator loop start
+  // automatically alongside the renderer. See bundleEntrypoint() above.
+  console.log('[export] Bundling entrypoint.mjs (+ resident-supervisor-policy.ts) with esbuild...')
+  const entrypointOutfile = await bundleEntrypoint()
+  console.log('[export] Bundled entrypoint.bundle.cjs. Running portable dependency-load smoke test (outside repo, empty env)...')
+  await smokeTestEntrypointPortability(entrypointOutfile)
+  console.log('[export] Smoke test passed — entrypoint.bundle.cjs loads its full module graph with no repo node_modules reachable.')
+
   console.log('[export] Done. Copy this directory to /opt/content-studio/render-worker on the VPS.')
-  console.log('[export] On the VPS, run: node coordinator.bundle.cjs (NOT coordinator.mjs directly).')
+  console.log('[export] On the VPS, run: node entrypoint.bundle.cjs (the new resident service command — starts + supervises BOTH server.mjs and coordinator.bundle.cjs automatically; do NOT run server.mjs or coordinator.bundle.cjs directly as the service command anymore).')
 }
 
 await main()
