@@ -844,3 +844,5 @@
 .creative-editor-dockview .dv-floating-overlay-host .dv-tab { flex: 1 1 auto; color: var(--foreground); background: transparent; cursor: grab; }
 .creative-editor-dockview .dv-floating-overlay-host .dv-tab .dv-default-tab-action { display: none; }
 .creative-editor-dockview .dv-floating-overlay-host .dv-groupview { border: 0; background: var(--card); }
+.dv-floating-overlay-host .dv-tab .dv-default-tab-action { display: none !important; }
+.dv-floating-overlay-host .dv-tabs-overflow-dropdown-default { display: none !important; }
