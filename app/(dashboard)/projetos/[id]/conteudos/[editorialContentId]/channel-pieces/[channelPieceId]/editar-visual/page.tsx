@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, Loader2, Play, RotateCcw, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
@@ -26,14 +27,15 @@ import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { StaticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
+import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
 
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
 type RenderResult = { image_data_url: string; duration_ms: number; output_identifier: string; diagnostics: unknown[] }
 type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; slides: PersistedAuthoredSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
-type ElementKey = 'title' | 'hero' | 'paper' | 'paperStrip' | 'tape' | 'botanical' | 'pin'
+type ElementKey = 'title' | 'hero' | 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'
 
-const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5]
+const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
 const AUTOSAVE_PREF_KEY = 'creative-editor:autosave-enabled'
 
 function readAutosavePreference(): boolean {
@@ -67,7 +69,7 @@ function canvasKind(context: ContextResponse): 'portrait' | 'reel' {
   return context.target.canvas.height === 1920 ? 'reel' : 'portrait'
 }
 
-/** Non-carousel single-slide default — the exact pre-Creative-Editor behavior, unchanged. */
+/** Non-carousel single-slide default â€” the exact pre-Creative-Editor behavior, unchanged. */
 function singleSlideDefault(context: ContextResponse, productContext: AuthoringProductContext): AuthoringSlide {
   const content = contextualContentForChannelPiece(context.editorialContent, context.channelPiece)
   const primitiveSelection = context.primitiveProjectRef ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' } : {}
@@ -81,12 +83,14 @@ function persistedSnapshot(slides: AuthoringSlide[]): string {
 
 function elementsForVariant(variant: AuthoringState['variant']): { key: ElementKey; label: string }[] {
   const shared: { key: ElementKey; label: string }[] = [
-    { key: 'title', label: 'Título' },
+    { key: 'title', label: 'TÃ­tulo' },
     { key: 'paper', label: 'Paper' },
-    { key: 'paperStrip', label: 'Faixa do título' },
-    { key: 'tape', label: 'Fita' },
+    { key: 'paperStrip', label: 'Faixa do tÃ­tulo' },
+    { key: 'tape1', label: 'Fita do título' },
+    { key: 'tape2', label: 'Fita da imagem' },
+    { key: 'tape3', label: 'Fita inferior' },
     { key: 'pin', label: 'Pin' },
-    { key: 'botanical', label: 'Botânica' },
+    { key: 'botanical', label: 'BotÃ¢nica' },
   ]
   return variant === 'cover' ? [shared[0], { key: 'hero', label: 'Hero' }, ...shared.slice(1)] : shared
 }
@@ -110,7 +114,9 @@ export default function StaticAuthoringProductPage() {
   // so reading localStorage here carries no hydration-mismatch risk.
   const [autosaveEnabled, setAutosaveEnabledState] = useState(() => readAutosavePreference())
   const [zoom, setZoom] = useState<'fit' | number>('fit')
-  const [containerWidth, setContainerWidth] = useState(0)
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  const [panelMinimized, setPanelMinimized] = useState(false)
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
   const skipNextAutosaveRef = useRef(true)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
 
@@ -128,8 +134,8 @@ export default function StaticAuthoringProductPage() {
     const el = previewContainerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (width) setContainerWidth(width)
+      const rect = entries[0]?.contentRect
+      if (rect) setPreviewSize({ width: rect.width, height: rect.height })
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -141,7 +147,7 @@ export default function StaticAuthoringProductPage() {
       const query = new URLSearchParams({ projectId: params.id, editorialContentId: params.editorialContentId, channelPieceId: params.channelPieceId })
       const response = await fetch(`/api/creative/static-authoring-context?${query.toString()}`)
       const payload = await response.json() as ContextResponse & { error?: string }
-      if (!response.ok) throw new Error(payload.error || 'Contexto indisponível.')
+      if (!response.ok) throw new Error(payload.error || 'Contexto indisponÃ­vel.')
       if (cancelled) return
       setContext(payload)
       const productContext = buildProductContext(payload)
@@ -167,7 +173,7 @@ export default function StaticAuthoringProductPage() {
       setCurrentSlideIndex(0)
       // Reload/read-back baseline: "saved" only reflects what the API actually
       // has today. A freshly-defaulted (never-saved) carousel has no baseline
-      // — the first explicit Save (or first autosave) establishes one.
+      // â€” the first explicit Save (or first autosave) establishes one.
       setLastSavedSnapshot(persisted && persisted.length > 0 ? persistedSnapshot(hydrated) : null)
     }
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Erro ao carregar contexto.'))
@@ -193,7 +199,7 @@ export default function StaticAuthoringProductPage() {
     }
   }
 
-  // Optional autosave — OFF by default (see docs/productization/creative-rendering/
+  // Optional autosave â€” OFF by default (see docs/productization/creative-rendering/
   // CREATIVE_EDITOR_STATIC_SHELL_FOUNDATION_V1.md for the previous always-on behavior
   // this replaces). Reuses the same 600ms debounce and the same PUT as explicit Save.
   useEffect(() => {
@@ -238,12 +244,12 @@ export default function StaticAuthoringProductPage() {
 
   function restoreSlideDefault() {
     if (!context || !currentSlide) return
-    if (typeof window !== 'undefined' && !window.confirm('Restaurar este slide para o padrão do template? As edições atuais deste slide serão perdidas ao salvar.')) return
     const defaults = defaultCarouselSlides(context.primitiveProjectRef)
     const matching = defaults.find((slide) => slide.order === currentSlide.order) ?? defaults[0]
     const productContext = buildProductContext(context)
     const nextState = persistedSlideToAuthoringState({ ...matching, id: currentSlide.id }, productContext, canvasKind(context))
     setSlides((current) => current ? current.map((slide, index) => index === currentSlideIndex ? { ...slide, state: nextState } : slide) : current)
+    setRestoreDialogOpen(false)
   }
 
   const previewInput = useMemo(() => state ? resolvePreviewInput(state) : null, [state])
@@ -285,14 +291,15 @@ export default function StaticAuthoringProductPage() {
   async function saveRenderOutput() {
     if (!renderResult || !context) return
     // Lazy import kept local: this action is independent of the AUTHORING
-    // save above — AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
+    // save above â€” AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
     const { saveRenderToChannelPiece } = await import('@/lib/creative/authoring')
     await saveRenderToChannelPiece({ imageDataUrl: renderResult.image_data_url, channelPieceId: context.channelPiece.id })
   }
 
   const canvasW = context?.target.canvas.width ?? 1080
   const canvasH = context?.target.canvas.height ?? 1350
-  const fitScale = containerWidth > 0 ? Math.min(containerWidth / canvasW, 1) : 1
+  const measuredFitScale = calculatePreviewFitScale(previewSize.width, previewSize.height, canvasW, canvasH)
+  const fitScale = measuredFitScale > 0 ? measuredFitScale : 0.33
   const effectiveScale = zoom === 'fit' ? fitScale : zoom
   function stepZoom(direction: 1 | -1) {
     const current = zoom === 'fit' ? fitScale : zoom
@@ -310,22 +317,22 @@ export default function StaticAuthoringProductPage() {
   return <DashboardPage><DashboardPageContent width="4xl">
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <Button variant="ghost" size="sm" className="mb-2 -ml-3 gap-2" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" />Voltar ao conteúdo</Button>
+        <Button variant="ghost" size="sm" className="mb-2 -ml-3 gap-2" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" />Voltar ao conteÃºdo</Button>
         <h1 className="text-2xl font-semibold">Creative Editor</h1>
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           <Badge variant="outline">Static</Badge>
           <span>{context.channelPiece.channel}:{context.channelPiece.format}</span>
           {isCarousel && <Badge variant="secondary">Slide {currentSlideIndex + 1} de {slides.length}</Badge>}
-          <span className="text-xs">· {context.project.name} · {context.production?.title || 'Sem Production'}</span>
+          <span className="text-xs">Â· {context.project.name} Â· {context.production?.title || 'Sem Production'}</span>
         </p>
       </div>
       <div className="flex items-center gap-2">
         {isCarousel && (
           <span className="text-xs text-muted-foreground">
             {!dirty && saveStatus === 'idle' && lastSavedSnapshot && 'Salvo'}
-            {!dirty && saveStatus === 'idle' && !lastSavedSnapshot && 'Ainda não salvo'}
-            {dirty && saveStatus !== 'saving' && 'Alterações não salvas'}
-            {saveStatus === 'saving' && 'Salvando…'}
+            {!dirty && saveStatus === 'idle' && !lastSavedSnapshot && 'Ainda nÃ£o salvo'}
+            {dirty && saveStatus !== 'saving' && 'AlteraÃ§Ãµes nÃ£o salvas'}
+            {saveStatus === 'saving' && 'Salvandoâ€¦'}
             {saveStatus === 'error' && 'Falha ao salvar'}
           </span>
         )}
@@ -335,37 +342,40 @@ export default function StaticAuthoringProductPage() {
             Salvar
           </Button>
         )}
-        <Button onClick={() => void render()} disabled={rendering} className="gap-2">{rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{rendering ? 'Renderizando…' : 'Gerar PNG'}</Button>
+        <Button onClick={() => void render()} disabled={rendering} className="gap-2">{rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{rendering ? 'Renderizandoâ€¦' : 'Gerar PNG'}</Button>
       </div>
     </div>
 
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div>
     <Card className="mb-3">
       <CardContent className="p-3">
-        <div ref={previewContainerRef} className="mx-auto overflow-auto rounded-md bg-muted/20" style={{ maxHeight: '62vh' }}>
+        <div ref={previewContainerRef} className="mx-auto overflow-auto rounded-md bg-muted/20" style={{ height: 'min(62vh, 60vw)', maxHeight: '62vh' }}>
           <div style={{ width: canvasW * effectiveScale, height: canvasH * effectiveScale }} className="mx-auto">
             <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left' }}>
               {cardProps ? <DocumentaryCard {...cardProps} /> : null}
             </div>
           </div>
         </div>
-        <div className="mt-2 flex items-center justify-center gap-1">
-          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><ZoomOut className="h-3.5 w-3.5" /></Button>
-          {ZOOM_LEVELS.map((level) => (
-            <Button key={level} size="sm" variant={zoom === level ? 'default' : 'outline'} className="px-2 text-xs" onClick={() => setZoom(level)}>{Math.round(level * 100)}%</Button>
-          ))}
-          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><ZoomIn className="h-3.5 w-3.5" /></Button>
+        <div className="mt-2 flex items-center justify-center gap-1.5">
+          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
+          <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}>
+            <option value="fit">Fit · {Math.round(fitScale * 100)}%</option>
+            {ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}
+          </select>
+          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="sm" variant={zoom === 'fit' ? 'default' : 'outline'} className="px-2 text-xs" onClick={() => setZoom('fit')}>Fit</Button>
         </div>
         {(renderResult || renderError || rendering) && (
           <div className="mt-3 border-t pt-3">
-            {rendering && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Renderizando…</p>}
+            {rendering && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Renderizandoâ€¦</p>}
             {renderError && <p className="flex items-start gap-2 text-xs text-destructive"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{renderError}</p>}
             {renderResult && !rendering && (
               <div className="flex items-center gap-3">
                 <Image alt="PNG renderizado" className="h-24 w-auto rounded border" height={200} src={renderResult.image_data_url} unoptimized width={160} />
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  <p className="flex items-center gap-1 text-foreground"><Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />Render concluído · {renderResult.duration_ms} ms</p>
-                  <Button size="sm" variant="outline" onClick={() => void saveRenderOutput()}>Salvar nesta peça</Button>
+                  <p className="flex items-center gap-1 text-foreground"><Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />Render concluÃ­do Â· {renderResult.duration_ms} ms</p>
+                  <Button size="sm" variant="outline" onClick={() => void saveRenderOutput()}>Salvar nesta peÃ§a</Button>
                 </div>
               </div>
             )}
@@ -380,10 +390,10 @@ export default function StaticAuthoringProductPage() {
         {slides.map((slide, index) => (
           <Button key={slide.id} size="sm" variant={index === currentSlideIndex ? 'default' : 'outline'} onClick={() => switchSlide(index)}>Slide {index + 1}</Button>
         ))}
-        <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slides.length - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slides.length - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
+        <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slides.length - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slides.length - 1} aria-label="PrÃ³ximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" className="gap-1.5" disabled={!dirty} onClick={revert}><Undo2 className="h-3.5 w-3.5" />Reverter</Button>
-          <Button size="sm" variant="ghost" className="gap-1.5" onClick={restoreSlideDefault}><RotateCcw className="h-3.5 w-3.5" />Restaurar padrão</Button>
+          <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setRestoreDialogOpen(true)}><RotateCcw className="h-3.5 w-3.5" />Restaurar padrÃ£o</Button>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />
             Auto-save
@@ -392,12 +402,18 @@ export default function StaticAuthoringProductPage() {
       </div>
     )}
 
-    <Card>
-      <CardContent className="p-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+    </div>
+
+    <Card className="lg:sticky lg:top-4">
+      <CardContent className="max-h-[calc(100vh-2rem)] overflow-y-auto p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-sm font-semibold">Inspector</span>
+          <Button size="icon-sm" variant="ghost" onClick={() => setPanelMinimized((value) => !value)} aria-label={panelMinimized ? "Expandir Inspector" : "Minimizar Inspector"}>{panelMinimized ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}</Button>
+        </div>
+        {!panelMinimized && <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="template">Template</TabsTrigger>
-            <TabsTrigger value="content">Conteúdo</TabsTrigger>
+            <TabsTrigger value="content">ConteÃºdo</TabsTrigger>
             <TabsTrigger value="assets">Assets</TabsTrigger>
             <TabsTrigger value="style">Style</TabsTrigger>
             <TabsTrigger value="element">Element</TabsTrigger>
@@ -409,16 +425,16 @@ export default function StaticAuthoringProductPage() {
               <Button size="sm" variant={state.variant === 'cover' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'cover' })}>Cover</Button>
               <Button size="sm" variant={state.variant === 'info' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'info' })}>Info</Button>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">DocumentaryCard — o template estático atual.</p>
+            <p className="mt-2 text-xs text-muted-foreground">DocumentaryCard â€” o template estÃ¡tico atual.</p>
           </TabsContent>
 
           <TabsContent value="content" className="space-y-3 pt-3">
-            <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
+            <div><Label htmlFor="visual-title">TÃ­tulo</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
             {state.variant === 'cover'
               ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div>
               : <>
-                  <div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div>
-                  <div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div>
+                  <div><Label htmlFor="visual-intro">IntroduÃ§Ã£o</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div>
+                  <div><Label htmlFor="visual-body">Corpo (um parÃ¡grafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div>
                 </>}
           </TabsContent>
 
@@ -426,13 +442,13 @@ export default function StaticAuthoringProductPage() {
             {context.primitiveProjectRef ? <>
               <PrimitivePicker slot="paper" label="Paper" primitives={context.primitives} selectedKey={state.primitiveSelection.paper} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_PAPER', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_PAPER' })} />
               <PrimitivePicker slot="tape" label="Tape" primitives={context.primitives} selectedKey={state.primitiveSelection.tape} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TAPE' })} />
-            </> : <p className="text-xs text-muted-foreground">Este Project não possui primitives registradas.</p>}
-            {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Hero: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
+            </> : <p className="text-xs text-muted-foreground">Este Project nÃ£o possui primitives registradas.</p>}
+            {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Hero: imagem padrÃ£o do template (sem seletor de imagem nesta versÃ£o).</p>}
           </TabsContent>
 
           <TabsContent value="style" className="pt-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AparÃªncia</span>
               <Button size="sm" variant={state.appearance === 'light' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'light' })}>Light</Button>
               <Button size="sm" variant={state.appearance === 'dark' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'dark' })}>Dark</Button>
             </div>
@@ -447,14 +463,22 @@ export default function StaticAuthoringProductPage() {
             <div className="rounded-md border border-border/60 p-3">
               {selectedElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
               {selectedElement === 'hero' && state.variant === 'cover' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
-              {(selectedElement === 'paper' || selectedElement === 'paperStrip' || selectedElement === 'tape' || selectedElement === 'botanical' || selectedElement === 'pin') && (
-                <PrimitiveTransformControls slot={selectedElement} transforms={state.primitiveTransforms[selectedElement]} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: selectedElement, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: selectedElement })} />
+              {(selectedElement === 'paper' || selectedElement === 'paperStrip' || selectedElement === 'tape1' || selectedElement === 'tape2' || selectedElement === 'tape3' || selectedElement === 'botanical' || selectedElement === 'pin') && (
+                <PrimitiveTransformControls slot={selectedElement} transforms={state.primitiveTransforms[selectedElement] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: selectedElement, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: selectedElement })} />
               )}
             </div>
           </TabsContent>
-        </Tabs>
+        </Tabs>}
       </CardContent>
     </Card>
+    </div>
+
+    <AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 

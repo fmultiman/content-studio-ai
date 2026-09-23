@@ -310,9 +310,9 @@ export function derivePrimitiveTransformsRequest(state: AuthoringState): Primiti
     return transform[field] === DEFAULT_PRIMITIVE_TRANSFORMS[field]
   })
   const primitiveTransforms = Object.fromEntries(
-    (['paper', 'paperStrip', 'tape', 'botanical', 'pin'] as const)
-      .filter((slot) => !isDefault(state.primitiveTransforms[slot]))
-      .map((slot) => [slot, state.primitiveTransforms[slot]]),
+    (['paper', 'paperStrip', 'tape', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const)
+      .filter((slot) => { const transform = state.primitiveTransforms[slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS; return !isDefault(transform) })
+      .map((slot) => [slot, state.primitiveTransforms[slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS]),
   ) as PrimitiveTransformsRequest
 
   return primitiveTransforms && Object.keys(primitiveTransforms).length > 0 ? primitiveTransforms : undefined

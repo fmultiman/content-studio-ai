@@ -61,6 +61,9 @@ export const primitiveTransformsBySlotSchema = z.object({
   paper: primitiveTransformsSchema.optional(),
   paperStrip: primitiveTransformsSchema.optional(),
   tape: primitiveTransformsSchema.optional(),
+  tape1: primitiveTransformsSchema.optional(),
+  tape2: primitiveTransformsSchema.optional(),
+  tape3: primitiveTransformsSchema.optional(),
   botanical: primitiveTransformsSchema.optional(),
   pin: primitiveTransformsSchema.optional(),
 }).strict()
@@ -89,7 +92,7 @@ export type PrimitiveSelectionRequest = {
   tape?: string
 }
 
-export type PrimitiveTransformsRequest = Partial<Record<'paper' | 'tape', PrimitiveTransforms>>
+export type PrimitiveTransformsRequest = Partial<Record<'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin', PrimitiveTransforms>>
 
 export type AuthoringRenderRequest = {
   manifest: z.infer<typeof StaticRenderManifestSchema>

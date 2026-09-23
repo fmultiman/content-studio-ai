@@ -31,7 +31,7 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
   const baseTitleStyle: CSSProperties = reel
     ? { left: '7%', minHeight: '20%', padding: '3% 4%', top: '19%', width: '70%' }
     : { left: '4%', minHeight: '27%', padding: '3% 4%', top: '25%', width: '61%' }
-  const titleStyle: CSSProperties = titleTuning
+  const titleTextStyle: CSSProperties = titleTuning
     ? {
         ...baseTitleStyle,
         transform: `translate(${titleTuning.offsetX}px, ${titleTuning.offsetY}px) rotate(${titleTuning.rotation}deg)`,
@@ -47,8 +47,8 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       <Botanical baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.botanical} style={{ bottom: reel ? '4%' : '3%', height: reel ? '30%' : '35%', opacity: 1, position: 'absolute', right: '2%', width: reel ? '26%' : '24%' }} />
       <Botanical baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.botanical} style={{ bottom: reel ? '18%' : '16%', height: reel ? '24%' : '29%', opacity: .8, position: 'absolute', left: '-2%', transform: 'scaleX(-1) rotate(-15deg)', width: '22%' }} />
       <PaperPlane color={palette.paperAlt} rotation={1.8} material="tornPaper" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paper} style={{ left: reel ? '10%' : '8%', opacity: .78, position: 'absolute', top: reel ? '23%' : '28%', width: reel ? '58%' : '47%', zIndex: 15 }} />
-      <PaperPlane color={palette.paper} rotation={reel ? -1.8 : -1.2} material="paperStrip" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paperStrip} style={{ ...titleStyle, position: 'absolute', zIndex: 20 }}>
-        <div style={{ color: palette.ink, fontFamily: context.tokens.typography.display.family, fontSize: titleSize, fontWeight: context.tokens.typography.display.weight, letterSpacing: '-.04em', lineHeight: .93, maxWidth: '100%', textTransform: 'uppercase' }}>{content.title}</div>
+      <PaperPlane color={palette.paper} rotation={reel ? -1.8 : -1.2} material="paperStrip" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paperStrip} style={{ ...baseTitleStyle, position: 'absolute', zIndex: 20 }}>
+        <div style={{ ...titleTextStyle, color: palette.ink, fontFamily: context.tokens.typography.display.family, fontSize: titleSize, fontWeight: context.tokens.typography.display.weight, letterSpacing: '-.04em', lineHeight: .93, maxWidth: '100%', textTransform: 'uppercase' }}>{content.title}</div>
       </PaperPlane>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: 25, fontWeight: 700, letterSpacing: '.14em', left: '7%', opacity: context.contentOpacity, position: 'absolute', textTransform: 'uppercase', top: reel ? '13%' : '20%', zIndex: 25 }}>{content.eyebrow}</div>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 31 : 29, left: '7%', lineHeight: 1.24, maxWidth: reel ? '68%' : '44%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '40%' : '60%', transform: `translateY(${context.contentTranslateY}px)`, zIndex: 25 }}>{content.subtitle}</div>
@@ -69,7 +69,7 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         <PaperPlane color={palette.paperAlt} rotation={reel ? 2.2 : 3.1} material="tornPaper" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paper} style={{ inset: 0, padding: reel ? 28 : 26, position: 'absolute' }}>
           <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', border: `1px solid ${palette.ink}55`, height: '100%', inset: 0, opacity: .98, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center', filter: 'saturate(.88) contrast(1.05)' }} />
         </PaperPlane>
-        <MaterialTape color={palette.paper} rotation={-9} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.tape} style={{ left: '50%', transform: 'translateX(-50%)', position: 'absolute', top: -22, zIndex: 2 }} />
+        <MaterialTape color={palette.paper} rotation={-9} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.tape1 ?? context.primitiveTransforms?.tape} style={{ left: '50%', transform: 'translateX(-50%)', position: 'absolute', top: -22, zIndex: 2 }} />
         <Pin baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.pin} style={{ position: 'absolute', right: 28, top: 22, zIndex: 3 }} />
       </div>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 21 : 20, fontStyle: 'italic', left: '7%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '84%' : '76%', zIndex: 35 }}>{content.source_line}</div>

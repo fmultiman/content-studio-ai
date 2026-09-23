@@ -18,8 +18,8 @@ export type AuthoringAction =
   | { type: 'SET_PRIMITIVE_TAPE'; key: string | undefined }
   | { type: 'RESET_PRIMITIVE_PAPER' }
   | { type: 'RESET_PRIMITIVE_TAPE' }
-  | { type: 'SET_PRIMITIVE_TRANSFORM'; slot: 'paper' | 'paperStrip' | 'tape' | 'botanical' | 'pin'; field: keyof PrimitiveTransforms; value: number }
-  | { type: 'RESET_PRIMITIVE_TRANSFORMS'; slot: 'paper' | 'paperStrip' | 'tape' | 'botanical' | 'pin' }
+  | { type: 'SET_PRIMITIVE_TRANSFORM'; slot: 'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'; field: keyof PrimitiveTransforms; value: number }
+  | { type: 'RESET_PRIMITIVE_TRANSFORMS'; slot: 'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin' }
 
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {

@@ -357,3 +357,17 @@ describe('deriveTuningOverrides', () => {
     expect(deriveTuningOverrides(state)).toEqual({ documentaryCard: state.tuning })
   })
 })
+
+import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
+
+describe('creative editor viewport fit', () => {
+  it('fits both dimensions and can go below 50 percent', () => {
+    expect(calculatePreviewFitScale(600, 300, 1080, 1350)).toBeCloseTo(0.2222, 3)
+    expect(calculatePreviewFitScale(1200, 1600, 1080, 1350)).toBe(1)
+  })
+  it('does not mutate logical output dimensions', () => {
+    const scale = calculatePreviewFitScale(540, 675, 1080, 1350)
+    expect(scale).toBe(0.5)
+    expect({ width: 1080, height: 1350 }).toEqual({ width: 1080, height: 1350 })
+  })
+})

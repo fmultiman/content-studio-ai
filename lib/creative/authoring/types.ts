@@ -143,6 +143,9 @@ export interface AuthoringPrimitiveTransforms {
   paper: PrimitiveTransforms
   paperStrip: PrimitiveTransforms
   tape: PrimitiveTransforms
+  tape1?: PrimitiveTransforms
+  tape2?: PrimitiveTransforms
+  tape3?: PrimitiveTransforms
   botanical: PrimitiveTransforms
   pin: PrimitiveTransforms
 }
