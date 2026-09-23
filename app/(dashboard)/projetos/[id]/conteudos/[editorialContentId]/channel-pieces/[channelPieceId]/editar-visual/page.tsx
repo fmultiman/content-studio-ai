@@ -329,7 +329,7 @@ export default function StaticAuthoringProductPage() {
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
       <TabsList className="flex w-full">
         {INSPECTOR_SECTIONS.map((section) => (
-          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1.5 text-[11px]" title={section.label}>
+          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label}>
             <span className="inspector-tab-full">{section.label}</span>
             <span className="inspector-tab-compact" aria-hidden="true">{section.compactLabel}</span>
           </TabsTrigger>

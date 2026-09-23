@@ -9,7 +9,8 @@
 export const FLOATING_WORKBENCH_MIN_VIEWPORT_WIDTH = 1024
 
 export const INSPECTOR_PALETTE_MIN = { width: 320, height: 220 } as const
-export const INSPECTOR_PALETTE_PREFERRED = { width: 340, height: 540 } as const
+/** 360px keeps the five full tab labels readable (measured ~324px of 11px text + padding). */
+export const INSPECTOR_PALETTE_PREFERRED = { width: 360, height: 540 } as const
 /** Gap kept between the palette and the workbench edges when placing it. */
 export const INSPECTOR_PALETTE_MARGIN = 12
 /** Share of the workbench height the palette may take by default, leaving room to move it vertically. */
