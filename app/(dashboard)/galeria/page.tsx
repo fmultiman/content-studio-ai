@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Download, ExternalLink, Eye, ImageIcon, Search } from 'lucide-react'
+import { AlertCircle, Download, ExternalLink, Eye, ImageIcon, Loader2, RefreshCw, Search, Video as VideoIcon } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   DashboardPage,
@@ -233,12 +233,24 @@ export default function GalleryPage() {
     if (!output.downloadUrl) return
 
     if (output.mediaType === 'video') {
-      const link = document.createElement('a')
-      link.href = output.downloadUrl
-      link.download = ''
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      // output.downloadUrl is the attachment-disposition ENDPOINT (returns
+      // { url, expiresAt } JSON), not a directly downloadable resource —
+      // it must be fetched first to obtain the real, transient signed URL.
+      try {
+        const response = await fetch(output.downloadUrl)
+        if (!response.ok) throw new Error('download url fetch failed')
+        const data = await response.json()
+        if (!data.url) throw new Error('download url missing')
+
+        const link = document.createElement('a')
+        link.href = data.url
+        link.download = ''
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } catch {
+        setErrorMessage('Não foi possível baixar o vídeo.')
+      }
       return
     }
 
@@ -673,6 +685,19 @@ function GalleryImageFrame({
   const [hasError, setHasError] = useState(false)
   const imageUrl = output.thumbnailUrl || output.imageUrl
 
+  // A completed video has no thumbnail/poster infrastructure (deliberately
+  // — no new thumbnail-generation backend, no fake thumbnail). It is a
+  // known, valid media item, not a broken/missing image, so it must never
+  // fall into the "Imagem indisponível" branch below.
+  if (output.mediaType === 'video' && !imageUrl) {
+    return (
+      <div className="relative flex aspect-square flex-col items-center justify-center gap-2 bg-muted p-4 text-center text-sm text-muted-foreground">
+        <VideoIcon className={compact ? 'h-5 w-5' : 'h-10 w-10'} />
+        {!compact && 'Vídeo renderizado'}
+      </div>
+    )
+  }
+
   return (
     <div className="relative aspect-square bg-muted">
       {imageUrl && !hasError ? (
@@ -726,6 +751,63 @@ function GalleryPreviewDialog({
   onDownload: (output: GalleryOutputItem) => void
   onNavigate: (href: string) => void
 }) {
+  // Transient client state only — never persisted, never reused across
+  // items. Cleared whenever the target item changes OR the dialog closes
+  // (output becomes null), and re-fetched fresh every time it reopens.
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null)
+  const [videoPreviewError, setVideoPreviewError] = useState<string | null>(null)
+  const [isLoadingVideoPreview, setIsLoadingVideoPreview] = useState(false)
+
+  const loadVideoPreview = (endpoint: string) => {
+    let cancelled = false
+    setVideoPreviewError(null)
+    setIsLoadingVideoPreview(true)
+
+    fetch(endpoint)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('preview url fetch failed')
+        const data = await response.json()
+        if (cancelled) return
+        if (!data.url) throw new Error('preview url missing')
+        setVideoPreviewUrl(data.url)
+      })
+      .catch(() => {
+        if (!cancelled) setVideoPreviewError('Não foi possível carregar a prévia do vídeo.')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingVideoPreview(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }
+
+  useEffect(() => {
+    // Always clear previous item's transient state first — a video URL (or
+    // an error) from a DIFFERENT item, or from before the dialog was
+    // closed, must never leak into the next one. Synchronous by design
+    // (this IS the "reset local state when a prop/id changes" pattern
+    // React's own docs describe as correct) — this repo already downgrades
+    // this specific React Compiler rule to a warning for exactly this
+    // reason (see eslint.config.mjs), so it's suppressed here explicitly.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVideoPreviewUrl(null)
+    setVideoPreviewError(null)
+    setIsLoadingVideoPreview(false)
+
+    if (!output || output.mediaType !== 'video' || !output.videoPreviewEndpoint) {
+      return
+    }
+
+    return loadVideoPreview(output.videoPreviewEndpoint)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [output?.id, output?.mediaType, output?.videoPreviewEndpoint])
+
+  const retryVideoPreview = () => {
+    if (output?.videoPreviewEndpoint) loadVideoPreview(output.videoPreviewEndpoint)
+  }
+
   return (
     <Dialog open={Boolean(output)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
@@ -740,16 +822,40 @@ function GalleryPreviewDialog({
 
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.8fr)]">
               <div className="overflow-hidden rounded-md border bg-muted flex items-center justify-center">
-                {output.mediaType === 'video' && output.downloadUrl ? (
-                  <video 
-                    src={output.downloadUrl}
-                    controls
-                    playsInline
-                    className="w-full h-full object-contain bg-black"
-                    crossOrigin="anonymous"
-                  />
+                {output.mediaType === 'video' ? (
+                  isLoadingVideoPreview ? (
+                    <div className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                      Carregando prévia...
+                    </div>
+                  ) : videoPreviewUrl ? (
+                    // Always the INLINE endpoint's signed URL — never the
+                    // attachment-disposition URL used by Download.
+                    <video
+                      key={output.id}
+                      src={videoPreviewUrl}
+                      controls
+                      playsInline
+                      className="w-full h-full object-contain bg-black"
+                      crossOrigin="anonymous"
+                    />
+                  ) : videoPreviewError ? (
+                    <div className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground">
+                      <AlertCircle className="h-8 w-8 text-red-400" />
+                      <p>{videoPreviewError}</p>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={retryVideoPreview}>
+                        <RefreshCw className="h-3 w-3" />
+                        Tentar novamente
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-muted-foreground">
+                      <VideoIcon className="h-10 w-10" />
+                      Prévia indisponível
+                    </div>
+                  )
                 ) : (
-                  <GalleryImageFrame output={output} />
+                  <GalleryImageFrame key={output.id} output={output} />
                 )}
               </div>
 

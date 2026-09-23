@@ -439,6 +439,21 @@ describe('Phase 2I — video outputs in the Gallery (Task B1/B2)', () => {
     expect(outputs[0].canDownload).toBe(true)
   })
 
+  it('Phase 2I-C2.2: video output carries a SEPARATE inline preview endpoint, never reusing the attachment URL', () => {
+    const outputs = buildGalleryOutputs({ images: [], projects, productions, executions, videoDrafts })
+
+    expect(outputs[0].videoPreviewEndpoint).toBe('/api/render-executions/execution-completed/output-url')
+    expect(outputs[0].videoPreviewEndpoint).not.toContain('disposition=attachment')
+    expect(outputs[0].videoPreviewEndpoint).not.toBe(outputs[0].downloadUrl)
+  })
+
+  it('Phase 2I-C2.2: an image output never carries a videoPreviewEndpoint', () => {
+    const outputs = buildGalleryOutputs({ images, drafts, projects, productions })
+    for (const output of outputs) {
+      expect(output.videoPreviewEndpoint).toBeNull()
+    }
+  })
+
   it('a video output with no matching VideoDraft still renders safely (no Project/Production context)', () => {
     const outputs = buildGalleryOutputs({ images: [], projects, productions, executions, videoDrafts: [] })
 

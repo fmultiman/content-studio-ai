@@ -26,6 +26,16 @@ export type GalleryOutputItem = {
   previewAlt: string
   productionHref: string | null
   sourceHref: string | null
+  /**
+   * Phase 2I-C2.2 — set ONLY for video items: the output-url endpoint to
+   * fetch a FRESH, transient, INLINE-disposition signed URL from when the
+   * Gallery preview modal opens. Deliberately separate from `downloadUrl`
+   * (which is the attachment-disposition endpoint) — the two must never be
+   * conflated, since an attachment-disposition signed URL is not guaranteed
+   * safe/correct for inline `<video>` playback. `null` for image items,
+   * which already carry a directly-usable URL in `imageUrl`/`downloadUrl`.
+   */
+  videoPreviewEndpoint: string | null
 }
 
 export type GalleryOutputFilters = {
@@ -178,6 +188,7 @@ export function buildGalleryOutputs({
           projectId,
           productionId,
         }),
+        videoPreviewEndpoint: null,
       }
     })
 
@@ -225,6 +236,9 @@ export function buildGalleryOutputs({
           projectId,
           productionId,
         }),
+        // Inline (no disposition param) — strictly separate from downloadUrl
+        // above, which carries the attachment-disposition endpoint.
+        videoPreviewEndpoint: `/api/render-executions/${exec.id}/output-url`,
       }
     })
 

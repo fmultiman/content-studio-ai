@@ -344,3 +344,123 @@ not deployed to the VPS and no Swarm command was run against production.
 ## Final verdict
 
 **READY_FOR_PRODUCTION_VIDEO_SMOKE**
+
+---
+
+## 15. Phase 2I-C2.2 — Gallery video preview correction (production smoke follow-up)
+
+A human production smoke run **after** the fixes above confirmed the
+resident worker and `/videos` live-completion fixes hold, and surfaced two
+further Gallery-specific issues (Gallery only — worker lifecycle, Swarm,
+render queue, MinIO upload, `render_executions` schema/RLS, and the
+`/videos` live player were explicitly out of scope for this follow-up and
+were not touched).
+
+### 15.1 Production smoke result
+
+| Area | Result |
+|---|---|
+| Resident worker (§3–5 above) | **PASS** — multiple new renders completed automatically with no manual `docker exec`/SSH step. |
+| `/videos` live completion + inline player (§7 above) | **PASS** on subsequent real renders — the player loads without requiring a page reload. |
+| Gallery "Visualizar" (preview) | **FAIL** — used the attachment-disposition endpoint; see §15.2. |
+| Gallery video card presentation | **FAIL** — showed "Imagem indisponível" for a known, valid video item; see §15.3. |
+| Remotion worker asset 404s (`/public/creative-fixtures`, `/creative-fixtures` Pack B assets) | **OPEN — separate follow-up, not addressed here.** This is a render-asset-resolution issue unrelated to Gallery preview/download plumbing; no trivial shared-path bug was encountered while working on the Gallery code in this patch, so per the mission's explicit instruction it was left untouched. |
+
+### 15.2 Gallery preview attachment-path bug (fixed)
+
+**Root cause:** the Gallery preview modal rendered
+`<video src={output.downloadUrl}>` directly. `output.downloadUrl` is not a
+video file — it is the **attachment-disposition endpoint**
+(`/api/render-executions/:id/output-url?disposition=attachment`), an API
+route that returns `{ url, expiresAt }` JSON. The `<video>` tag issued a GET
+to that endpoint (matching the reported Network evidence exactly) and could
+not decode the JSON response as media, producing a black player stuck at
+0:00 — while the same execution's MP4 played correctly from `/videos`,
+which already fetches the JSON first and assigns the resolved `url` to the
+player. The Gallery never did that two-step fetch at all for preview, and
+the equivalent Download code path had the identical bug (assigning the raw
+endpoint string as an anchor's `href`, which would navigate to a JSON
+response instead of downloading the file).
+
+**Fix:**
+- `lib/gallery-output-library.ts`'s `GalleryOutputItem` gains a new field,
+  `videoPreviewEndpoint` (the **inline**, no-`disposition`-param endpoint),
+  kept strictly separate from `downloadUrl` (the attachment endpoint) —
+  never conflated, never reused across the two flows.
+- The Gallery preview modal (`GalleryPreviewDialog`) now fetches
+  `videoPreviewEndpoint` when it opens (or when the target item changes),
+  and assigns the resolved, transient `url` from that JSON response to the
+  `<video src>` — never the raw endpoint, never the attachment URL.
+- `handleDownload`'s video branch now fetches `downloadUrl` (the attachment
+  endpoint) first, and only then navigates using the resolved `data.url` —
+  matching the same fetch-then-use pattern `/videos`' own download button
+  already used correctly.
+- Signed URLs remain transient client state (component `useState`, cleared
+  on close/switch, re-fetched on reopen) — nothing is persisted.
+
+### 15.3 Gallery video card presentation bug (fixed)
+
+**Root cause:** `GalleryImageFrame` (used for both grid/list cards and the
+modal's non-video fallback) always compared `output.thumbnailUrl ||
+output.imageUrl` against `null`/error state; a completed video has neither
+(deliberately — no thumbnail-generation backend exists), so it fell into
+the same "Imagem indisponível" branch used for a genuinely broken/missing
+image.
+
+**Fix:** `GalleryImageFrame` now checks `output.mediaType === 'video' &&
+!imageUrl` first and renders a small, honest, video-specific placeholder
+(a video icon + "Vídeo renderizado") instead — a known, valid media item is
+never presented as a broken one. No thumbnail-generation backend was added,
+and no fake/placeholder thumbnail image was introduced; if a real
+thumbnail/poster source is ever wired up for video items, this same
+`imageUrl` check already picks it up automatically (the video-specific
+branch only triggers when there is none).
+
+### 15.4 Gallery modal video-state lifecycle (audited, fixed)
+
+The shared Gallery dialog's video handling now follows exactly the required
+sequence: **open Visualizar → loading state → fetch fresh inline signed URL
+→ assign to `<video>` → playable.** Specifically, keyed off
+`output?.id`/`output?.mediaType`/`output?.videoPreviewEndpoint`:
+
+- Opening or switching to a different item **always clears** the previous
+  `videoPreviewUrl`/`videoPreviewError`/loading state first, before deciding
+  whether a new fetch is needed — a stale URL or error from a different item
+  (or from before the dialog was closed) can never leak into the next one.
+- **Closing** the modal sets the selected output to `null`, which re-runs
+  the same clearing effect and drops the transient signed URL entirely.
+- **Reopening** (a fresh `output?.id`) always re-fetches — no cached/stale
+  signed URL is ever reused across opens.
+- A **failed** preview fetch shows a bounded error card (message + "Tentar
+  novamente" retry action) instead of an infinite spinner or a silently
+  broken player; retrying re-runs the same fetch.
+- **Download remains independently available** regardless of preview
+  loading/error state — it is a wholly separate fetch against a different
+  (attachment) endpoint.
+- The non-video `GalleryImageFrame` preview is now explicitly `key`ed by
+  `output.id` inside the modal, fixing a related latent bug: without a key,
+  React reused one `GalleryImageFrame` instance across different Gallery
+  items, so its internal `hasError` flag (set after one item's image failed
+  to load) could incorrectly persist and hide a *different*, perfectly
+  loadable image on the next item.
+
+### 15.5 No schema change, no permission change, no worker/VPS deploy
+
+This patch touched only `lib/gallery-output-library.ts` and
+`app/(dashboard)/galeria/page.tsx` (plus their tests). No Supabase
+migration, no RLS change, no `render_executions` schema change, and no
+worker/VPS deployment action of any kind.
+
+### 15.6 Validation
+
+| Check | Result |
+|---|---|
+| Focused new/updated tests | 16 new/updated assertions across 2 files — all passing |
+| Full suite | 810 → **826** passed |
+| Typecheck | Clean |
+| Lint | 0 errors, 45 warnings (unchanged baseline) |
+| Build | Succeeds |
+
+### Follow-up verdict
+
+**READY_FOR_FINAL_GALLERY_VIDEO_SMOKE**
