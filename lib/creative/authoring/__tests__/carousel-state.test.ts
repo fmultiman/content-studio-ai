@@ -185,3 +185,34 @@ describe('sequence derives from the real slide collection', () => {
     expect(deriveManifestFromState(state).sequence).toEqual({ index: 1, total: 1 })
   })
 })
+
+describe('Creative Editor Static Shell V1 — tuning persistence', () => {
+  it('round-trips a non-default title/hero tuning through the persisted contract', () => {
+    const canvas = 'portrait' as const
+    const state = createContextualAuthoringState(productContext, canvas, { title: 'x' } as unknown as AuthoringCoverContent)
+    const edited = { ...state, tuning: { hero: { offsetX: 40, offsetY: -10, rotation: 1.5, scale: 1.05 }, title: { offsetX: -20, offsetY: 5, rotation: -0.5 } } }
+    const persisted = authoringStateToPersistedSlide(edited, 'slide-1', 0)
+    expect(persisted.tuning).toEqual(edited.tuning)
+
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides: [persisted] })
+    expect(parsed.success).toBe(true)
+
+    const reconstructed = persistedSlideToAuthoringState(persisted, productContext, canvas)
+    expect(reconstructed.tuning).toEqual(edited.tuning)
+  })
+
+  it('defaults tuning to DEFAULT_TUNING when reading a slide persisted before tuning existed', () => {
+    const canvas = 'portrait' as const
+    const [slideWithoutTuning] = defaultCarouselSlides(null)
+    const { tuning: _omitted, ...legacyShape } = slideWithoutTuning
+    const reconstructed = persistedSlideToAuthoringState(legacyShape as typeof slideWithoutTuning, productContext, canvas)
+    expect(reconstructed.tuning).toEqual({ hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 } })
+  })
+
+  it('rejects a tuning value outside the authoring UI bounds', () => {
+    const slides = defaultCarouselSlides(null)
+    const outOfBounds = { ...slides[0], tuning: { hero: { offsetX: 999, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 } } }
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides: [outOfBounds] })
+    expect(parsed.success).toBe(false)
+  })
+})

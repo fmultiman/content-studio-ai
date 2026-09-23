@@ -801,7 +801,7 @@ export default function EditorialContentDetailPage() {
                               className="h-8 gap-1.5 px-2 text-xs"
                               onClick={() => router.push(`/projetos/${projectId}/conteudos/${ecId}/channel-pieces/${cp.id}/editar-visual`)}
                             >
-                              Editar visual
+                              Abrir no Creative Editor
                             </Button>
                           )}
                           <Button

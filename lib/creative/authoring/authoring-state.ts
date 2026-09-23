@@ -22,6 +22,7 @@ import {
   type AuthoringPrimitiveSelection,
   type AuthoringState,
   type AuthoringVariant,
+  type DocumentaryCardPreviewTuning,
   type PrimitiveTransforms,
   DEFAULT_TUNING,
   DEFAULT_PRIMITIVE_TRANSFORMS,
@@ -255,6 +256,18 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
     output: { format: 'png' as const, role: 'fixture' as const },
     metadata: { fixture: true, not_a_database_record: true, notes: 'authoring-draft: visual overrides excluded' },
   }
+}
+
+/**
+ * Creative Editor Static Shell V1 — derives the render request's `overrides`
+ * field from the slide's persisted tuning. Returns undefined when tuning
+ * equals DEFAULT_TUNING (no template-sanctioned position refinement made),
+ * matching the same "absence means default" pattern already used by
+ * derivePrimitiveTransformsRequest.
+ */
+export function deriveTuningOverrides(state: AuthoringState): { documentaryCard: DocumentaryCardPreviewTuning } | undefined {
+  const isDefault = JSON.stringify(state.tuning) === JSON.stringify(DEFAULT_TUNING)
+  return isDefault ? undefined : { documentaryCard: state.tuning }
 }
 
 // ── Phase 2C: derive primitive selection for render request ───────────────────

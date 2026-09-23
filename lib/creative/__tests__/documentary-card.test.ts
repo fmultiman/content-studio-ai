@@ -173,4 +173,44 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(markup).toContain('opacity:0.8')
     expect(markup).toContain('opacity:0.63')
   })
+
+  // ── Creative Editor Static Shell V1: material overlay clipping fix ──────────
+
+  it('renders Tape/Pin as siblings of the hero card, not descendants of its clip-path', () => {
+    const input = documentaryCardFixtures.cover45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'cover', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    // The hero card's own div (clip-path) wraps exactly one child (AssetSurface,
+    // a leaf div with no children of its own) — so "</div></div>" immediately
+    // after the clip-path div's opening tag closes both of them. Tape/Pin must
+    // appear strictly after that point (siblings), never before it (which would
+    // mean they were still nested inside the clipped card).
+    const heroCardOpenIndex = markup.indexOf('clip-path:polygon')
+    expect(heroCardOpenIndex).toBeGreaterThan(-1)
+    const heroCardCloseIndex = markup.indexOf('</div></div>', heroCardOpenIndex)
+    expect(heroCardCloseIndex).toBeGreaterThan(-1)
+    const tapeIndex = markup.indexOf('tape-kraft-short-01.png')
+    const pinIndex = markup.indexOf('pin-brass-01.png')
+    expect(tapeIndex).toBeGreaterThan(heroCardCloseIndex)
+    expect(pinIndex).toBeGreaterThan(heroCardCloseIndex)
+  })
+
+  it('renders fact-card Tape/Pin as siblings of the card, not descendants of its clip-path (Info)', () => {
+    const input = documentaryCardFixtures.info45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+    }))
+    const firstCardOpenIndex = markup.indexOf('clip-path:polygon')
+    expect(firstCardOpenIndex).toBeGreaterThan(-1)
+    // The fact-card's PaperPlane wraps 3 leaf text divs (primary/secondary/tertiary),
+    // so its own close is the 4th "</div>" after the opening tag.
+    let closeIndex = firstCardOpenIndex
+    for (let i = 0; i < 4; i++) closeIndex = markup.indexOf('</div>', closeIndex + 1)
+    expect(closeIndex).toBeGreaterThan(-1)
+    const tapeIndex = markup.indexOf('tape-kraft-short-01.png')
+    expect(tapeIndex).toBeGreaterThan(closeIndex)
+  })
 })

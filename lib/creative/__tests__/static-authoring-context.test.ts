@@ -35,6 +35,14 @@ describe('static authoring product context', () => {
     })
   })
 
+  // Creative Editor Static Shell V1: null cta must OMIT detail_note, never send ''.
+  it('omits detail_note entirely when cta is null, instead of an invalid empty string', () => {
+    const withoutCta = { ...channelPiece, cta: null } as unknown as ChannelPiece
+    const content = contextualContentForChannelPiece(editorialContent, withoutCta)
+    expect(content).not.toHaveProperty('detail_note')
+    expect(content).toEqual({ eyebrow: 'instagram', title: 'Peça do carrossel', subtitle: 'Texto da peça', source_line: 'carousel' })
+  })
+
   it('initializes shared AuthoringState from real-shaped context and keeps fixture identity out of its manifest', () => {
     const context: AuthoringProductContext = {
       projectId: 'project-1', projectName: 'Portal', productionId: 'production-1', productionTitle: 'Produção',

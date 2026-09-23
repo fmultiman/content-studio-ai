@@ -27,6 +27,7 @@ import {
   createInitialAuthoringState,
   defaultContentForVariant,
   deriveManifestFromState,
+  deriveTuningOverrides,
   resolvePreviewInput,
   type AuthoringCoverContent,
   type AuthoringInfoContent,
@@ -340,5 +341,19 @@ describe('authoring module neutrality', () => {
     expect(inputA.resolvedTemplate.descriptor.component_key).toBe(inputB.resolvedTemplate.descriptor.component_key)
     // Different background color token (identity-specific)
     expect(inputA.tokens.colors.background).not.toBe(inputB.tokens.colors.background)
+  })
+})
+
+// ── Creative Editor Static Shell V1: tuning render overrides ─────────────────
+
+describe('deriveTuningOverrides', () => {
+  it('returns undefined when tuning equals DEFAULT_TUNING (no template-sanctioned refinement made)', () => {
+    const state = createInitialAuthoringState()
+    expect(deriveTuningOverrides(state)).toBeUndefined()
+  })
+
+  it('returns { documentaryCard: tuning } once the title or hero has been adjusted', () => {
+    const state = { ...createInitialAuthoringState(), tuning: { ...DEFAULT_TUNING, title: { offsetX: 12, offsetY: 0, rotation: 0 } } }
+    expect(deriveTuningOverrides(state)).toEqual({ documentaryCard: state.tuning })
   })
 })

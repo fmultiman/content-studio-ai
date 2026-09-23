@@ -52,11 +52,26 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       </PaperPlane>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: 25, fontWeight: 700, letterSpacing: '.14em', left: '7%', opacity: context.contentOpacity, position: 'absolute', textTransform: 'uppercase', top: reel ? '13%' : '20%', zIndex: 25 }}>{content.eyebrow}</div>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 31 : 29, left: '7%', lineHeight: 1.24, maxWidth: reel ? '68%' : '44%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '40%' : '60%', transform: `translateY(${context.contentTranslateY}px)`, zIndex: 25 }}>{content.subtitle}</div>
-      <PaperPlane color={palette.paperAlt} rotation={reel ? 2.2 : 3.1} material="tornPaper" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paper} style={{ ...heroStyle, padding: reel ? 28 : 26, position: 'absolute', zIndex: 30 }}>
-        <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', border: `1px solid ${palette.ink}55`, height: '100%', inset: 0, opacity: .98, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center', filter: 'saturate(.88) contrast(1.05)' }} />
+      {/*
+        Material overlays (Tape/Pin) are siblings of the hero PaperPlane, not
+        children of it. PaperPlane carries a clip-path (the card's own torn
+        shape) that clips its descendants — nesting Tape/Pin inside it meant
+        an authored offset that moved them past the card's edge got cut by
+        that clip-path. This wrapper occupies exactly the box PaperPlane used
+        to occupy (so existing Tape/Pin coordinates, authored relative to
+        that box, are unchanged); PaperPlane now fills the wrapper via
+        inset:0 and keeps its own clip-path + background, while Tape/Pin sit
+        beside it, free to cross the card's boundary. The canvas root
+        (DocumentaryCard's own overflow:hidden) remains the only clip that
+        still applies to them.
+      */}
+      <div style={{ ...heroStyle, position: 'absolute', zIndex: 30 }}>
+        <PaperPlane color={palette.paperAlt} rotation={reel ? 2.2 : 3.1} material="tornPaper" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paper} style={{ inset: 0, padding: reel ? 28 : 26, position: 'absolute' }}>
+          <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', border: `1px solid ${palette.ink}55`, height: '100%', inset: 0, opacity: .98, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center', filter: 'saturate(.88) contrast(1.05)' }} />
+        </PaperPlane>
         <MaterialTape color={palette.paper} rotation={-9} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.tape} style={{ left: '50%', transform: 'translateX(-50%)', position: 'absolute', top: -22, zIndex: 2 }} />
         <Pin baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.pin} style={{ position: 'absolute', right: 28, top: 22, zIndex: 3 }} />
-      </PaperPlane>
+      </div>
       <div style={{ color: mutedInk, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 21 : 20, fontStyle: 'italic', left: '7%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '84%' : '76%', zIndex: 35 }}>{content.source_line}</div>
       <div style={{ borderLeft: `2px solid ${palette.accent}`, color: mutedInk, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 19 : 18, left: '7%', lineHeight: 1.25, maxWidth: reel ? '52%' : '34%', opacity: context.contentOpacity, paddingLeft: 14, position: 'absolute', top: reel ? '88%' : '82%', zIndex: 35 }}>{content.detail_note}</div>
       <SequenceMarker color={palette.accent} ink={mutedInk} index={context.sequence?.index} total={context.sequence?.total} style={{ left: '7%', position: 'absolute', top: '7%', zIndex: 60 }} />

@@ -11,8 +11,15 @@
  *  - productContext (Project/Production/EditorialContent/ChannelPiece/Identity
  *    are re-derived fresh from the live context on every load — that is
  *    already correct and cheap, see AuthoringProductContext's own comment);
- *  - PreviewTuning (dev-only, never enters a manifest, never persisted);
  *  - signed URLs, rendered PNG bytes, or any other transient preview state.
+ *
+ * Creative Editor Static Shell V1 adds `tuning` (bounded X/Y/rotation/scale
+ * refinement of the template-defined title and hero elements) to the
+ * persisted contract. This reuses PreviewTuning's existing shape and the
+ * existing render `overrides` channel (authoringRenderOverridesSchema) —
+ * it does NOT enter the neutral StaticRenderManifest itself, matching the
+ * boundary PreviewTuning always had; what changes is that it now survives a
+ * reload and is sent with the render request instead of always defaulting.
  *
  * One row per ChannelPiece holds an ORDERED collection of slides. A
  * single-slide static ChannelPiece and a multi-slide carousel use the exact
@@ -22,6 +29,7 @@
 import { z } from 'zod'
 import {
   DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
+  DEFAULT_TUNING,
   type AuthoringAppearance,
   type AuthoringCanvas,
   type AuthoringContent,
@@ -32,7 +40,7 @@ import {
   type AuthoringState,
   type AuthoringVariant,
 } from './types'
-import { defaultContentForVariant } from './authoring-state'
+import { defaultContentForVariant, TUNING_BOUNDS } from './authoring-state'
 
 export const STATIC_AUTHORING_STATE_SCHEMA_VERSION = 'static-authoring-state.v1' as const
 
@@ -63,6 +71,33 @@ const primitiveSelectionSchema = z
   })
   .strict()
 
+// Bounded template-sanctioned position refinement for the title/hero
+// elements — same bounds as TUNING_BOUNDS (authoring-state.ts), so a
+// persisted value is always exactly what the UI could have produced.
+const heroTuningSchema = z
+  .object({
+    offsetX: z.number().finite().min(TUNING_BOUNDS.hero.offsetX.min).max(TUNING_BOUNDS.hero.offsetX.max),
+    offsetY: z.number().finite().min(TUNING_BOUNDS.hero.offsetY.min).max(TUNING_BOUNDS.hero.offsetY.max),
+    rotation: z.number().finite().min(TUNING_BOUNDS.hero.rotation.min).max(TUNING_BOUNDS.hero.rotation.max),
+    scale: z.number().finite().min(TUNING_BOUNDS.hero.scale.min).max(TUNING_BOUNDS.hero.scale.max),
+  })
+  .strict()
+
+const titleTuningSchema = z
+  .object({
+    offsetX: z.number().finite().min(TUNING_BOUNDS.title.offsetX.min).max(TUNING_BOUNDS.title.offsetX.max),
+    offsetY: z.number().finite().min(TUNING_BOUNDS.title.offsetY.min).max(TUNING_BOUNDS.title.offsetY.max),
+    rotation: z.number().finite().min(TUNING_BOUNDS.title.rotation.min).max(TUNING_BOUNDS.title.rotation.max),
+  })
+  .strict()
+
+const tuningSchema = z
+  .object({
+    hero: heroTuningSchema,
+    title: titleTuningSchema,
+  })
+  .strict()
+
 // Content stays opaque here, exactly like StaticRenderManifest's own
 // ContentBindingsSchema — the per-variant shape (cover vs info) is validated
 // where it already is, by the template registry at render time, not by this
@@ -79,6 +114,10 @@ export const PersistedAuthoredSlideSchema = z
     primitiveSelection: primitiveSelectionSchema,
     primitiveTransforms: primitiveTransformsBySlotSchema,
     heroRef: z.string().trim().min(1).optional(),
+    // Optional, not required: rows persisted before Creative Editor Static
+    // Shell V1 have no `tuning` at all. Absence means "template default",
+    // read back as DEFAULT_TUNING — no migration/backfill needed.
+    tuning: tuningSchema.optional(),
   })
   .strict()
 
@@ -125,6 +164,7 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
       pin: { ...state.primitiveTransforms.pin },
     },
     ...(state.heroRef ? { heroRef: state.heroRef } : {}),
+    tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title } },
   }
 }
 
@@ -155,7 +195,11 @@ export function persistedSlideToAuthoringState(
       pin: { ...slide.primitiveTransforms.pin },
     } as AuthoringPrimitiveTransforms,
     productContext,
-    tuning: { hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 } },
+    // Absent on rows persisted before tuning existed — defaults to no
+    // adjustment, identical to how those slides always rendered.
+    tuning: slide.tuning
+      ? { hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title } }
+      : { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
     debugPanelOpen: false,
   }
 }
@@ -184,6 +228,7 @@ export function defaultCarouselSlides(primitiveProjectRef: string | null): Persi
       botanical: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.botanical },
       pin: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.pin },
     },
+    tuning: { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
   })
   return [
     slideDefaults('cover', 'slide-1', 0, 'dark'),

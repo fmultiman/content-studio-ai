@@ -21,11 +21,15 @@ export function staticAuthoringTarget(channel: PublicationChannel, format: Publi
 }
 
 export function contextualContentForChannelPiece(editorialContent: EditorialContent, channelPiece: ChannelPiece) {
+  // DocumentaryCardCoverContentSchema's detail_note is optional but, when
+  // present, requires min(1) — an empty string is a present-but-invalid
+  // value, not an absent one. Omit the key entirely when there is no CTA,
+  // instead of sending '' and failing content validation at render time.
   return {
     eyebrow: channelPiece.channel,
     title: channelPiece.title || editorialContent.title,
     subtitle: channelPiece.body || editorialContent.body || '',
     source_line: channelPiece.format,
-    detail_note: channelPiece.cta || '',
+    ...(channelPiece.cta ? { detail_note: channelPiece.cta } : {}),
   }
 }

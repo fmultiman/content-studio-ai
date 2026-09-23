@@ -63,7 +63,8 @@ export interface AuthoringCoverContent {
   title: string
   subtitle: string
   source_line: string
-  detail_note: string
+  /** Optional — DocumentaryCardCoverContentSchema requires min(1) when present; omit rather than send ''. */
+  detail_note?: string
 }
 
 export interface AuthoringFactCard {
@@ -205,8 +206,12 @@ export interface AuthoringState {
   productContext?: AuthoringProductContext
 
   /**
-   * Preview-only visual tuning.
-   * NEVER serialised into a StaticRenderManifest.
+   * Bounded template-sanctioned position refinement for the title/hero
+   * elements. NEVER serialised into a StaticRenderManifest — it travels
+   * alongside it as a render request `overrides` field (same mechanism
+   * since Wave 6). Creative Editor Static Shell V1 persists this per slide
+   * (see PersistedAuthoredSlide.tuning) so refinements survive a reload;
+   * before that it was recomputed to DEFAULT_TUNING on every load.
    */
   tuning: DocumentaryCardPreviewTuning
 
