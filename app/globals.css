@@ -839,3 +839,8 @@
 .creative-editor-inspector-body [data-slot='tabs-list'] { min-width: 0; }
 .creative-editor-inspector-body [data-slot='tabs-trigger'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .creative-editor-inspector-body textarea, .creative-editor-inspector-body input, .creative-editor-inspector-body button { max-width: 100%; }
+.creative-editor-dockview .dv-floating-overlay-host .dv-tabs-and-actions-container { display: flex; height: 2.25rem; min-height: 2.25rem; background: var(--card); border-bottom: 1px solid color-mix(in oklch, var(--border) 65%, transparent); }
+.creative-editor-dockview .dv-floating-overlay-host .dv-tabs-container { overflow: hidden; }
+.creative-editor-dockview .dv-floating-overlay-host .dv-tab { flex: 1 1 auto; color: var(--foreground); background: transparent; cursor: grab; }
+.creative-editor-dockview .dv-floating-overlay-host .dv-tab .dv-default-tab-action { display: none; }
+.creative-editor-dockview .dv-floating-overlay-host .dv-groupview { border: 0; background: var(--card); }
