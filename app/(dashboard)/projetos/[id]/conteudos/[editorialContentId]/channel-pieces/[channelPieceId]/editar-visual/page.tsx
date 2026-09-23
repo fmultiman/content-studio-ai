@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitivePicker, PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
-import { INSPECTOR_SECTIONS, channelFormatLabel, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
+import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type ElementKey, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
@@ -36,7 +36,6 @@ type ContextResponse = { project: Project; production: Production | null; editor
 type RenderResult = { image_data_url: string; duration_ms: number; output_identifier: string; diagnostics: unknown[] }
 type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; slides: PersistedAuthoredSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
-type ElementKey = 'title' | 'hero' | 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'
 
 const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
 const AUTOSAVE_PREF_KEY = 'creative-editor:autosave-enabled'
@@ -84,25 +83,6 @@ function persistedSnapshot(slides: AuthoringSlide[]): string {
   return JSON.stringify(slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order)))
 }
 
-/**
- * Only elements the variant actually renders (DocumentaryCard Cover/Info):
- * Cover has one tape (`tape1`, on the hero image); Info has one tape per image
- * card (`tape1`, `tape2`) plus the lower tape (`tape3`). No variant tapes the title.
- */
-function elementsForVariant(variant: AuthoringState['variant']): { key: ElementKey; label: string }[] {
-  const tapes: { key: ElementKey; label: string }[] = variant === 'cover'
-    ? [{ key: 'tape1', label: 'Fita da imagem' }]
-    : [{ key: 'tape1', label: 'Fita da imagem 1' }, { key: 'tape2', label: 'Fita da imagem 2' }, { key: 'tape3', label: 'Fita inferior' }]
-  return [
-    { key: 'title', label: 'Título' },
-    ...(variant === 'cover' ? [{ key: 'hero' as const, label: 'Hero' }] : []),
-    { key: 'paper', label: 'Paper' },
-    { key: 'paperStrip', label: 'Faixa do título' },
-    ...tapes,
-    { key: 'pin', label: 'Pin' },
-    { key: 'botanical', label: 'Botânica' },
-  ]
-}
 
 export default function StaticAuthoringProductPage() {
   const params = useParams<{ id: string; editorialContentId: string; channelPieceId: string }>()
@@ -234,11 +214,11 @@ export default function StaticAuthoringProductPage() {
     ? current.map((slide, index) => index === currentSlideIndex ? { ...slide, state: authoringReducer(slide.state, action) } : slide)
     : current)
 
-  function setTuningField(group: 'hero' | 'title', field: string, value: number) {
+  function setTuningField(group: 'hero' | 'title' | 'source', field: string, value: number) {
     if (!state) return
     dispatch({ type: 'SET_TUNING', tuning: { ...state.tuning, [group]: { ...state.tuning[group], [field]: value } } })
   }
-  function resetTuningField(group: 'hero' | 'title') {
+  function resetTuningField(group: 'hero' | 'title' | 'source') {
     if (!state) return
     dispatch({ type: 'SET_TUNING', tuning: { ...state.tuning, [group]: { ...DEFAULT_TUNING[group] } } })
   }
@@ -359,6 +339,7 @@ export default function StaticAuthoringProductPage() {
         <div className="rounded-md border border-border/60 p-3">
           {activeElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
           {activeElement === 'hero' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
+          {activeElement === 'source' && <TitleTuningControls tuning={state.tuning.source} onChange={(field, value) => setTuningField('source', field, value)} onReset={() => resetTuningField('source')} />}
           {primitiveSlot && <PrimitiveTransformControls slot={primitiveSlot} transforms={state.primitiveTransforms[primitiveSlot] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: primitiveSlot, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: primitiveSlot })} />}
         </div>
       </TabsContent>

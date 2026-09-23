@@ -109,11 +109,19 @@ export interface TitleTuning {
 export interface DocumentaryCardPreviewTuning {
   hero: HeroTuning
   title: TitleTuning
+  /**
+   * Info variant's source/credit line ("Fonte"). Same bounded shape as
+   * TitleTuning — no parallel positioning system. Independent of `title`:
+   * fixes the Final Authoring Polish V2.1 coupling bug (InfoVariant used to
+   * spread the Title's own style object into this element too).
+   */
+  source: TitleTuning
 }
 
 export const DEFAULT_TUNING: DocumentaryCardPreviewTuning = {
   hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 },
   title: { offsetX: 0, offsetY: 0, rotation: 0 },
+  source: { offsetX: 0, offsetY: 0, rotation: 0 },
 }
 
 // ── Primitive selection — semantic keys, never signed URLs ────────────────────

@@ -187,10 +187,10 @@ describe('sequence derives from the real slide collection', () => {
 })
 
 describe('Creative Editor Static Shell V1 — tuning persistence', () => {
-  it('round-trips a non-default title/hero tuning through the persisted contract', () => {
+  it('round-trips a non-default title/hero/source tuning through the persisted contract', () => {
     const canvas = 'portrait' as const
     const state = createContextualAuthoringState(productContext, canvas, { title: 'x' } as unknown as AuthoringCoverContent)
-    const edited = { ...state, tuning: { hero: { offsetX: 40, offsetY: -10, rotation: 1.5, scale: 1.05 }, title: { offsetX: -20, offsetY: 5, rotation: -0.5 } } }
+    const edited = { ...state, tuning: { hero: { offsetX: 40, offsetY: -10, rotation: 1.5, scale: 1.05 }, title: { offsetX: -20, offsetY: 5, rotation: -0.5 }, source: { offsetX: 12, offsetY: -3, rotation: 0.8 } } }
     const persisted = authoringStateToPersistedSlide(edited, 'slide-1', 0)
     expect(persisted.tuning).toEqual(edited.tuning)
 
@@ -206,7 +206,23 @@ describe('Creative Editor Static Shell V1 — tuning persistence', () => {
     const [slideWithoutTuning] = defaultCarouselSlides(null)
     const { tuning: _omitted, ...legacyShape } = slideWithoutTuning
     const reconstructed = persistedSlideToAuthoringState(legacyShape as typeof slideWithoutTuning, productContext, canvas)
-    expect(reconstructed.tuning).toEqual({ hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 } })
+    expect(reconstructed.tuning).toEqual({ hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 }, source: { offsetX: 0, offsetY: 0, rotation: 0 } })
+  })
+
+  // Final Authoring Polish V2.1: rows persisted before this mission have
+  // `tuning.hero`/`tuning.title` but no `tuning.source` at all — the schema
+  // must accept them and read back DEFAULT_TUNING.source, not reject the row.
+  it('defaults only the source tuning when reading a slide persisted before source tuning existed', () => {
+    const canvas = 'portrait' as const
+    const preV21Tuning = { hero: { offsetX: 40, offsetY: -10, rotation: 1.5, scale: 1.05 }, title: { offsetX: -20, offsetY: 5, rotation: -0.5 } }
+    const [slide] = defaultCarouselSlides(null)
+    const preV21Slide = { ...slide, tuning: preV21Tuning }
+
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides: [preV21Slide] })
+    expect(parsed.success).toBe(true)
+
+    const reconstructed = persistedSlideToAuthoringState(preV21Slide as typeof slide, productContext, canvas)
+    expect(reconstructed.tuning).toEqual({ ...preV21Tuning, source: { offsetX: 0, offsetY: 0, rotation: 0 } })
   })
 
   it('rejects a tuning value outside the authoring UI bounds', () => {
@@ -214,5 +230,28 @@ describe('Creative Editor Static Shell V1 — tuning persistence', () => {
     const outOfBounds = { ...slides[0], tuning: { hero: { offsetX: 999, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 } } }
     const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides: [outOfBounds] })
     expect(parsed.success).toBe(false)
+  })
+
+  it('rejects a source tuning value outside the authoring UI bounds', () => {
+    const slides = defaultCarouselSlides(null)
+    const outOfBounds = { ...slides[0], tuning: { hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 }, title: { offsetX: 0, offsetY: 0, rotation: 0 }, source: { offsetX: 999, offsetY: 0, rotation: 0 } } }
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides: [outOfBounds] })
+    expect(parsed.success).toBe(false)
+  })
+})
+
+describe('Final Authoring Polish V2.1 — Title / Source independence', () => {
+  it('editing title tuning does not mutate source tuning', () => {
+    const canvas = 'portrait' as const
+    const state = createContextualAuthoringState(productContext, canvas, { title: 'x' } as unknown as AuthoringInfoContent)
+    const withTitle = { ...state, tuning: { ...state.tuning, title: { offsetX: 30, offsetY: -15, rotation: 1 } } }
+    expect(withTitle.tuning.source).toEqual({ offsetX: 0, offsetY: 0, rotation: 0 })
+  })
+
+  it('editing source tuning does not mutate title tuning', () => {
+    const canvas = 'portrait' as const
+    const state = createContextualAuthoringState(productContext, canvas, { title: 'x' } as unknown as AuthoringInfoContent)
+    const withSource = { ...state, tuning: { ...state.tuning, source: { offsetX: -18, offsetY: 22, rotation: -0.7 } } }
+    expect(withSource.tuning.title).toEqual({ offsetX: 0, offsetY: 0, rotation: 0 })
   })
 })

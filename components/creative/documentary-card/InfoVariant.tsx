@@ -19,6 +19,15 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
     ? { transform: `translate(${titleTuning.offsetX}px, ${titleTuning.offsetY}px) rotate(${titleTuning.rotation}deg)`, transformOrigin: 'top left' }
     : undefined
 
+  // Final Authoring Polish V2.1: source_line ("Fonte") used to spread the
+  // Title's own titleTextStyle, so moving Título also moved the source/credit
+  // line below it. It is a visually and semantically independent object —
+  // give it its own tuning slot, same bounded shape, no shared style object.
+  const sourceTuning = context.previewTuning?.source
+  const sourceTextStyle: CSSProperties | undefined = sourceTuning
+    ? { transform: `translate(${sourceTuning.offsetX}px, ${sourceTuning.offsetY}px) rotate(${sourceTuning.rotation}deg)`, transformOrigin: 'top left' }
+    : undefined
+
   return (
     <>
       <div style={{ background: `linear-gradient(145deg, ${palette.paper}, ${palette.background})`, inset: 0, position: 'absolute' }} />
@@ -49,7 +58,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
           </div>
         ))}
       </div>
-      <div style={{ ...titleTextStyle, color: ink, fontFamily: context.tokens.typography.body.family, fontSize: 18, fontStyle: 'italic', left: '9%', maxWidth: '46%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '87%' : '82%', zIndex: 40 }}>{content.source_line}</div>
+      <div style={{ ...sourceTextStyle, color: ink, fontFamily: context.tokens.typography.body.family, fontSize: 18, fontStyle: 'italic', left: '9%', maxWidth: '46%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '87%' : '82%', zIndex: 40 }}>{content.source_line}</div>
       <div style={{ color: palette.muted, fontFamily: context.tokens.typography.body.family, fontSize: 18, fontStyle: 'italic', maxWidth: '30%', opacity: context.contentOpacity, position: 'absolute', right: '8%', textAlign: 'right', top: reel ? '91%' : '85%', zIndex: 40 }}>{content.annotation}</div>
       <MaterialTape color={palette.paperAlt} rotation={-4} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.tape3 ?? context.primitiveTransforms?.tape} style={{ left: reel ? '18%' : '31%', opacity: .7, position: 'absolute', top: reel ? '95%' : '94%', zIndex: 35 }} />
       <SequenceMarker color={palette.accent} ink={ink} index={context.sequence?.index} total={context.sequence?.total} style={{ left: '8%', position: 'absolute', top: '6%', zIndex: 60 }} />

@@ -99,6 +99,10 @@ const tuningSchema = z
   .object({
     hero: heroTuningSchema,
     title: titleTuningSchema,
+    // Optional, not required: rows persisted before Final Authoring Polish
+    // V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source` at all.
+    // Absence means "template default", read back as DEFAULT_TUNING.source.
+    source: titleTuningSchema.optional(),
   })
   .strict()
 
@@ -171,7 +175,7 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
       pin: { ...state.primitiveTransforms.pin },
     },
     ...(state.heroRef ? { heroRef: state.heroRef } : {}),
-    tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title } },
+    tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source } },
   }
 }
 
@@ -206,10 +210,12 @@ export function persistedSlideToAuthoringState(
     } as AuthoringPrimitiveTransforms,
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
-    // adjustment, identical to how those slides always rendered.
+    // adjustment, identical to how those slides always rendered. `source`
+    // is independently defaulted: rows persisted before Final Authoring
+    // Polish V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source`.
     tuning: slide.tuning
-      ? { hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title } }
-      : { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
+      ? { hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) } }
+      : { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title }, source: { ...DEFAULT_TUNING.source } },
     debugPanelOpen: false,
   }
 }

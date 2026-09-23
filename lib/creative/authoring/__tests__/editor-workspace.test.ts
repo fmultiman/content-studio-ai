@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  INSPECTOR_PALETTE_MARGIN, INSPECTOR_PALETTE_MIN, INSPECTOR_SECTIONS, channelFormatLabel, constrainPaletteBox, initialInspectorPaletteBox,
+  INSPECTOR_PALETTE_MARGIN, INSPECTOR_PALETTE_MIN, INSPECTOR_SECTIONS, channelFormatLabel, constrainPaletteBox, elementsForVariant, initialInspectorPaletteBox,
 } from '../editor-workspace'
 
 describe('initialInspectorPaletteBox', () => {
@@ -48,5 +48,32 @@ describe('labels', () => {
   it('keeps five Inspector sections with correct UTF-8 labels', () => {
     expect(INSPECTOR_SECTIONS.map((section) => section.label)).toEqual(['Template', 'Conteúdo', 'Assets', 'Style', 'Element'])
     expect(INSPECTOR_SECTIONS.map((section) => section.compactLabel)).toEqual(['Tpl.', 'Conteúdo', 'Assets', 'Style', 'Elem.'])
+  })
+})
+
+describe('elementsForVariant', () => {
+  // Final Authoring Polish V2.1: Fonte (source/credit) only exists as an
+  // independently authored element on Info — Cover's source_line has no
+  // tuning slot, so exposing it there would offer a control that does nothing.
+  it('exposes Fonte only on the Info variant', () => {
+    expect(elementsForVariant('info').map((element) => element.key)).toContain('source')
+    expect(elementsForVariant('cover').map((element) => element.key)).not.toContain('source')
+  })
+
+  it('labels the Info Fonte element correctly', () => {
+    const source = elementsForVariant('info').find((element) => element.key === 'source')
+    expect(source?.label).toBe('Fonte')
+  })
+
+  it('exposes Hero only on the Cover variant', () => {
+    expect(elementsForVariant('cover').map((element) => element.key)).toContain('hero')
+    expect(elementsForVariant('info').map((element) => element.key)).not.toContain('hero')
+  })
+
+  it('never exposes raw primitive-instance ids as element labels', () => {
+    const labels = [...elementsForVariant('cover'), ...elementsForVariant('info')].map((element) => element.label)
+    expect(labels).not.toContain('tape1')
+    expect(labels).not.toContain('tape2')
+    expect(labels).not.toContain('tape3')
   })
 })

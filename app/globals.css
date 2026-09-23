@@ -837,11 +837,42 @@
 /* Base Canvas group: no tab strip, no IDE chrome. */
 .creative-editor-dockview .dv-tabs-and-actions-container { display: none; }
 /* Floating Inspector palette. Dockview mounts .dv-floating-overlay-host as a SIBLING of the
-   `.creative-editor-dockview` root inside .dv-shell, so palette rules are scoped to the workbench. */
-.creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container { border: 1px solid var(--border); border-radius: .75rem; overflow: hidden; box-shadow: 0 18px 45px rgba(0,0,0,.22); background: var(--card); }
+   `.creative-editor-dockview` root inside .dv-shell, so palette rules are scoped to the workbench.
+   `overflow: hidden` for the rounded-card look lives on `.dv-groupview` (an inner layer, sibling of
+   the resize handles), NOT on `.dv-resize-container` itself: the handles are children of the resize
+   container positioned at negative offsets straddling the border, and putting the clip on their own
+   parent silently cut off the outer half of every edge/corner handle (see resize-handle fix below). */
+.creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container { border: 1px solid var(--border); border-radius: .75rem; box-shadow: 0 18px 45px rgba(0,0,0,.22); background: var(--card); }
 .creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container:not(.creative-inspector-minimized) { min-width: 320px; min-height: 220px; }
-.creative-editor-workbench .dv-floating-overlay-host .dv-groupview { border: 0; background: var(--card); }
+.creative-editor-workbench .dv-floating-overlay-host .dv-groupview { border: 0; border-radius: .75rem; overflow: hidden; background: var(--card); }
 .creative-editor-workbench .dv-floating-overlay-host .dv-content-container { background: var(--card); }
+/* Resize handles: Dockview's own rule is `z-index: var(--dv-overlay-z-index)` with NO fallback
+   (unlike the container's `var(--dv-overlay-z-index, 999)`), and that custom property does not reach
+   these elements through inheritance here, so it computed to `auto` — the handles then lost every
+   stacking fight against sibling content (Canvas, the drag handle) and clicks fell through, even on
+   their own nominal hit-area. Give them the same explicit fallback so they reliably win. Also widen
+   the fine-pointer (mouse/trackpad) hit area: Dockview's un-clipped default there is 4px / 4x4px,
+   impractical to grab with a mouse; touch already gets a larger area via Dockview's own
+   `@media (pointer: coarse)` rules, left untouched. */
+.creative-editor-workbench .dv-floating-overlay-host .dv-resize-container [class^='dv-resize-handle'] { z-index: var(--dv-overlay-z-index, 999); }
+@media (pointer: fine) {
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-top,
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottom { height: 8px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-top { top: -4px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottom { bottom: -4px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-left,
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-right { width: 8px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-left { left: -4px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-right { right: -4px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-topleft,
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-topright,
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottomleft,
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottomright { width: 12px; height: 12px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-topleft { top: -6px; left: -6px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-topright { top: -6px; right: -6px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottomleft { bottom: -6px; left: -6px; }
+  .creative-editor-workbench .dv-floating-overlay-host .dv-resize-handle-bottomright { bottom: -6px; right: -6px; }
+}
 /* ONE header: the tab bar row. Its tab is hidden (no duplicate title / IDE tab); the void area is the drag handle and carries the label. */
 .creative-editor-workbench .dv-floating-overlay-host .dv-tabs-and-actions-container { display: flex; height: 2.25rem; min-height: 2.25rem; background: var(--card); border-bottom: 1px solid color-mix(in oklch, var(--border) 65%, transparent); }
 .creative-editor-workbench .dv-floating-overlay-host .dv-tabs-and-actions-container .dv-scrollable,

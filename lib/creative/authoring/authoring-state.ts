@@ -332,10 +332,16 @@ export const TUNING_BOUNDS = {
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
   },
+  // Same bounds as title — no parallel positioning system for the source/credit line.
+  source: {
+    offsetX: { min: -60, max: 60 },
+    offsetY: { min: -60, max: 60 },
+    rotation: { min: -2, max: 2 },
+  },
 } as const
 
 export function clampTuningValue(
-  group: 'hero' | 'title',
+  group: 'hero' | 'title' | 'source',
   field: string,
   value: number,
 ): number {

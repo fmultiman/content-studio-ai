@@ -4,6 +4,7 @@
  * UI-only helpers: nothing here enters authoring state, persisted slides,
  * StaticRenderManifest, template props or render overrides.
  */
+import type { AuthoringState } from './types'
 
 /** Below this viewport width the floating palette is replaced by a stacked Inspector. */
 export const FLOATING_WORKBENCH_MIN_VIEWPORT_WIDTH = 1024
@@ -73,3 +74,31 @@ export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: stri
   { value: 'style', label: 'Style', compactLabel: 'Style' },
   { value: 'element', label: 'Element', compactLabel: 'Elem.' },
 ]
+
+/** Authored ELEMENT instances the Element selector can target. Distinct from ASSET selection
+ * (Assets tab): an asset is which resource fills a template role; an element is an authored
+ * instance of that resource (or of a fixed text/image role) inside the composition. */
+export type ElementKey = 'title' | 'hero' | 'source' | 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'
+
+/**
+ * Only elements the variant actually renders (DocumentaryCard Cover/Info):
+ * Cover has one tape (`tape1`, on the hero image); Info has one tape per image
+ * card (`tape1`, `tape2`) plus the lower tape (`tape3`). No variant tapes the title.
+ * Fonte (source/credit line) is Info-only: Cover's source_line is not
+ * independently authored today, so the element genuinely does not exist there.
+ */
+export function elementsForVariant(variant: AuthoringState['variant']): { key: ElementKey; label: string }[] {
+  const tapes: { key: ElementKey; label: string }[] = variant === 'cover'
+    ? [{ key: 'tape1', label: 'Fita da imagem' }]
+    : [{ key: 'tape1', label: 'Fita da imagem 1' }, { key: 'tape2', label: 'Fita da imagem 2' }, { key: 'tape3', label: 'Fita inferior' }]
+  return [
+    { key: 'title', label: 'Título' },
+    ...(variant === 'cover' ? [{ key: 'hero' as const, label: 'Hero' }] : []),
+    ...(variant === 'info' ? [{ key: 'source' as const, label: 'Fonte' }] : []),
+    { key: 'paper', label: 'Paper' },
+    { key: 'paperStrip', label: 'Faixa do título' },
+    ...tapes,
+    { key: 'pin', label: 'Pin' },
+    { key: 'botanical', label: 'Botânica' },
+  ]
+}

@@ -29,9 +29,13 @@ const titleTuningSchema = z.object({
   rotation: z.number().finite().min(-2).max(2),
 }).strict()
 
+// Same bounded shape as title — Info variant's independent source/credit line.
+const sourceTuningSchema = titleTuningSchema
+
 export const documentaryCardPreviewTuningSchema = z.object({
   hero: heroTuningSchema,
   title: titleTuningSchema,
+  source: sourceTuningSchema,
 }).strict()
 
 export const authoringRenderOverridesSchema = z.object({

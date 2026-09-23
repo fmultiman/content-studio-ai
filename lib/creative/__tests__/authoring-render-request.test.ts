@@ -11,6 +11,7 @@ describe('AuthoringRenderRequest runtime boundary', () => {
     const tuning = {
       hero: { offsetX: 42, offsetY: -24, rotation: 2, scale: 1.08 },
       title: { offsetX: 9, offsetY: 4, rotation: -1 },
+      source: { offsetX: -5, offsetY: 3, rotation: 0.5 },
     }
     const request = parseAuthoringRenderRequest({
       manifest: deriveManifestFromState({ ...state, tuning }),

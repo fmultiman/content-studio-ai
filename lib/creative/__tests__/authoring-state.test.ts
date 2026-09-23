@@ -191,6 +191,7 @@ describe('deriveManifestFromState', () => {
       tuning: {
         hero: { offsetX: 42, offsetY: -30, rotation: 2.5, scale: 1.1 },
         title: { offsetX: 10, offsetY: 5, rotation: -1 },
+        source: { offsetX: -8, offsetY: 2, rotation: 0.5 },
       },
     }
     const manifest = deriveManifestFromState(tuned)

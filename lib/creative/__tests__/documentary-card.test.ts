@@ -97,6 +97,7 @@ describe('Wave 4 Documentary Card composition', () => {
       previewTuning: {
         hero: { offsetX: 42, offsetY: -24, rotation: 2, scale: 1.08 },
         title: { offsetX: 9, offsetY: 4, rotation: -1 },
+        source: { offsetX: 0, offsetY: 0, rotation: 0 },
       },
     }))
     expect(markup).toContain('translate(42px, -24px) rotate(2deg) scale(1.08)')
@@ -212,5 +213,40 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(closeIndex).toBeGreaterThan(-1)
     const tapeIndex = markup.indexOf('tape-kraft-short-01.png')
     expect(tapeIndex).toBeGreaterThan(closeIndex)
+  })
+
+  // Final Authoring Polish V2.1: InfoVariant used to spread the Title's own
+  // style object (`titleTextStyle`) into the Fonte/source_line element too,
+  // so moving Título also moved the source line. Each now gets its own
+  // tuning slot and its own style object — a shared transform string would
+  // print on BOTH elements (count 2); independent tuning prints it once.
+  it('moving Título does not move Fonte (Info)', () => {
+    const input = documentaryCardFixtures.info45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+      previewTuning: {
+        hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 },
+        title: { offsetX: 37, offsetY: -11, rotation: 1.3 },
+        source: { offsetX: 0, offsetY: 0, rotation: 0 },
+      },
+    }))
+    const titleTransform = 'translate(37px, -11px) rotate(1.3deg)'
+    expect(markup.split(titleTransform).length - 1).toBe(1)
+  })
+
+  it('moving Fonte does not move Título (Info)', () => {
+    const input = documentaryCardFixtures.info45
+    const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
+      variant: 'info', content: input.manifest.content as never, assets: input.resolvedAssets,
+      tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
+      previewTuning: {
+        hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 },
+        title: { offsetX: 0, offsetY: 0, rotation: 0 },
+        source: { offsetX: -22, offsetY: 14, rotation: -0.6 },
+      },
+    }))
+    const sourceTransform = 'translate(-22px, 14px) rotate(-0.6deg)'
+    expect(markup.split(sourceTransform).length - 1).toBe(1)
   })
 })
