@@ -95,10 +95,9 @@ function paletteElementFor(group: DockviewGroupPanel): HTMLElement | null {
   return group.element.closest<HTMLElement>('.dv-resize-container')
 }
 
-function boxRelativeTo(element: HTMLElement, container: HTMLElement): PaletteBox {
-  const rect = element.getBoundingClientRect()
-  const host = container.getBoundingClientRect()
-  return { top: rect.top - host.top, left: rect.left - host.left, width: rect.width, height: rect.height }
+/** Palette box in the same coordinate space dockview's `setBounds` writes (`style.top/left` of the overlay). */
+function paletteBox(palette: HTMLElement): PaletteBox {
+  return { top: palette.offsetTop, left: palette.offsetLeft, width: palette.offsetWidth, height: palette.offsetHeight }
 }
 
 function subscribeViewport(onChange: () => void) {
@@ -136,7 +135,7 @@ export function CreativeWorkbench({ canvas, inspector, className }: CreativeWork
     const host = hostRef.current
     const palette = group ? paletteElementFor(group) : null
     if (!api || !group || !host || !palette) { setMinimized(!minimized); return }
-    const box = boxRelativeTo(palette, host)
+    const box = paletteBox(palette)
     const floating = floatingWindowFor(api, group)
     let next: PaletteBox
     if (minimized) {
@@ -175,7 +174,7 @@ export function CreativeWorkbench({ canvas, inspector, className }: CreativeWork
       const group = inspectorGroup()
       const palette = group ? paletteElementFor(group) : null
       if (!api || !group || !palette || palette.classList.contains(MINIMIZED_CLASS)) return
-      const box = boxRelativeTo(palette, host)
+      const box = paletteBox(palette)
       const next = constrainPaletteBox(box, host.clientWidth, host.clientHeight)
       if (next.top !== box.top || next.left !== box.left || next.width !== box.width || next.height !== box.height) floatingWindowFor(api, group)?.position(next)
     })

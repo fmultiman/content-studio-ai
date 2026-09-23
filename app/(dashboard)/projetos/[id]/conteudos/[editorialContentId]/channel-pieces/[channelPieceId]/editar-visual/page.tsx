@@ -84,18 +84,24 @@ function persistedSnapshot(slides: AuthoringSlide[]): string {
   return JSON.stringify(slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order)))
 }
 
+/**
+ * Only elements the variant actually renders (DocumentaryCard Cover/Info):
+ * Cover has one tape (`tape1`, on the hero image); Info has one tape per image
+ * card (`tape1`, `tape2`) plus the lower tape (`tape3`). No variant tapes the title.
+ */
 function elementsForVariant(variant: AuthoringState['variant']): { key: ElementKey; label: string }[] {
-  const shared: { key: ElementKey; label: string }[] = [
+  const tapes: { key: ElementKey; label: string }[] = variant === 'cover'
+    ? [{ key: 'tape1', label: 'Fita da imagem' }]
+    : [{ key: 'tape1', label: 'Fita da imagem 1' }, { key: 'tape2', label: 'Fita da imagem 2' }, { key: 'tape3', label: 'Fita inferior' }]
+  return [
     { key: 'title', label: 'Título' },
+    ...(variant === 'cover' ? [{ key: 'hero' as const, label: 'Hero' }] : []),
     { key: 'paper', label: 'Paper' },
     { key: 'paperStrip', label: 'Faixa do título' },
-    { key: 'tape1', label: 'Fita do título' },
-    { key: 'tape2', label: 'Fita da imagem' },
-    { key: 'tape3', label: 'Fita inferior' },
+    ...tapes,
     { key: 'pin', label: 'Pin' },
     { key: 'botanical', label: 'Botânica' },
   ]
-  return variant === 'cover' ? [shared[0], { key: 'hero', label: 'Hero' }, ...shared.slice(1)] : shared
 }
 
 export default function StaticAuthoringProductPage() {
@@ -222,8 +228,6 @@ export default function StaticAuthoringProductPage() {
     setCurrentSlideIndex(index)
     setRenderResult(null)
     setRenderError(null)
-    const nextVariant = slides?.[index]?.state.variant
-    if (nextVariant !== 'cover' && selectedElement === 'hero') setSelectedElement('title')
   }
 
   const dispatch = (action: AuthoringAction) => setSlides((current) => current
@@ -323,7 +327,9 @@ export default function StaticAuthoringProductPage() {
   const elements = elementsForVariant(state.variant)
   const slideTotal = slides.length
   const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
-  const primitiveSlot = (['paper', 'paperStrip', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const).find((slot) => slot === selectedElement)
+  // A selection the active variant does not render (e.g. Hero or a second tape on Info/Cover) falls back to Título.
+  const activeElement: ElementKey = elements.some((element) => element.key === selectedElement) ? selectedElement : 'title'
+  const primitiveSlot = (['paper', 'paperStrip', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const).find((slot) => slot === activeElement)
 
   const inspector = (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
@@ -349,10 +355,10 @@ export default function StaticAuthoringProductPage() {
       </TabsContent>
       <TabsContent value="style" className="pt-3"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant={state.appearance === 'light' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'light' })}>Light</Button><Button size="sm" variant={state.appearance === 'dark' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'dark' })}>Dark</Button></div></TabsContent>
       <TabsContent value="element" className="space-y-3 pt-3">
-        <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={selectedElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elements.map((element) => <SelectItem key={element.key} value={element.key}>{element.label}</SelectItem>)}</SelectContent></Select></div>
+        <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={activeElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elements.map((element) => <SelectItem key={element.key} value={element.key}>{element.label}</SelectItem>)}</SelectContent></Select></div>
         <div className="rounded-md border border-border/60 p-3">
-          {selectedElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
-          {selectedElement === 'hero' && state.variant === 'cover' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
+          {activeElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
+          {activeElement === 'hero' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
           {primitiveSlot && <PrimitiveTransformControls slot={primitiveSlot} transforms={state.primitiveTransforms[primitiveSlot] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: primitiveSlot, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: primitiveSlot })} />}
         </div>
       </TabsContent>
