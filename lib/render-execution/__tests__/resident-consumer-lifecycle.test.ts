@@ -10,7 +10,7 @@
  * than exercising real child processes.
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -48,6 +48,22 @@ describe('resident loop starts automatically (no manual invocation required)', (
   it('export.mjs instructs the VPS service command to run the resident entrypoint, not a manual per-process command', () => {
     expect(exportSource).toMatch(/node entrypoint\.bundle\.cjs/)
     expect(exportSource).toMatch(/starts \+ supervises BOTH server\.mjs and coordinator\.bundle\.cjs automatically/)
+  })
+
+  it('exports every Pack B material path requested by DocumentaryCard', () => {
+    const packBAssets = [
+      'paper-card-light-01.png',
+      'paper-strip-light-01.png',
+      'tape-kraft-short-01.png',
+      'pin-brass-01.png',
+      'botanical-dried-sprig-01.png',
+    ]
+
+    for (const asset of packBAssets) {
+      const relativePath = `public/creative-fixtures/pack-b/${asset}`
+      expect(exportSource).toContain(`'${relativePath}'`)
+      expect(existsSync(path.resolve(WORKER_DIR, '..', '..', relativePath))).toBe(true)
+    }
   })
 })
 

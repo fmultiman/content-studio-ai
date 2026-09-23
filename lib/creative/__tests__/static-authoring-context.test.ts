@@ -27,6 +27,9 @@ describe('static authoring product context', () => {
     expect(isStaticChannelPiece(channelPiece.channel, channelPiece.format)).toBe(true)
     expect(staticAuthoringTarget(channelPiece.channel, channelPiece.format)).toMatchObject({ mode: 'static', canvas: { width: 1080, height: 1350 } })
     expect(staticAuthoringTarget('instagram', 'reel')).toBeNull()
+    expect(isStaticChannelPiece('instagram', 'reel')).toBe(false)
+    expect(isStaticChannelPiece('tiktok', 'reel')).toBe(false)
+    expect(isStaticChannelPiece('instagram', 'carousel')).toBe(true)
     expect(contextualContentForChannelPiece(editorialContent, channelPiece)).toEqual({
       eyebrow: 'instagram', title: 'Peça do carrossel', subtitle: 'Texto da peça', source_line: 'carousel', detail_note: 'Leia mais',
     })

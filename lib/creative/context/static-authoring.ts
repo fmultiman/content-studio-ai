@@ -3,8 +3,11 @@ import type { ChannelPiece, EditorialContent, PublicationChannel, PublicationFor
 
 export type StaticAuthoringTarget = { mode: 'static'; canvas: CanvasSpec; templateVariant: 'cover'; label: string }
 
+const VIDEO_FORMATS = new Set<PublicationFormat>(['reel', 'short', 'video_description'])
+
 export function isStaticChannelPiece(channel: PublicationChannel, format: PublicationFormat): boolean {
-  return !((channel === 'instagram' && format === 'reel') || format === 'short' || format === 'video_description')
+  void channel
+  return !VIDEO_FORMATS.has(format)
 }
 
 export function staticAuthoringTarget(channel: PublicationChannel, format: PublicationFormat): StaticAuthoringTarget | null {

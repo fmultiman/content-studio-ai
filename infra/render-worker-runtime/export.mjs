@@ -12,7 +12,7 @@
  * `infra/render-worker-runtime/dist/content-studio/`, preserving their
  * original relative paths, plus the two worker-only files that genuinely
  * are new (`remotion-entry.tsx`, `server.mjs`) and the static assets the
- * render path depends on (fonts + the two unconditional DocumentaryCard
+ * render path depends on (fonts + the unconditional DocumentaryCard
  * material textures). Re-run this script any time the source files change;
  * `dist/` is gitignored and always disposable/regeneratable.
  *
@@ -84,12 +84,16 @@ const REQUIRED_STATIC_ASSETS = [
   'public/creative-fonts/inter-400.woff2',
   'public/creative-fonts/inter-600.woff2',
   // Unconditional DocumentaryCard material textures (documentaryCardPropsFromRuntimeInput
-  // always falls back to these two fixture assets when no primitiveMaterials
-  // is supplied — true for every real render this worker performs, since the
+  // always falls back to these fixture assets when no primitiveMaterials is
+  // supplied — true for every real render this worker performs, since the
   // worker boundary starts from ResolvedTimelineInput and never receives
-  // primitiveMaterials/primitiveTransforms).
-  'public/creative-fixtures/torn-paper-cream-01.png',
-  'public/creative-fixtures/tape-kraft-01.png',
+  // primitiveMaterials/primitiveTransforms). Keep these paths aligned with
+  // MATERIAL_PATHS in components/creative/documentary-card/primitives.tsx.
+  'public/creative-fixtures/pack-b/paper-card-light-01.png',
+  'public/creative-fixtures/pack-b/paper-strip-light-01.png',
+  'public/creative-fixtures/pack-b/tape-kraft-short-01.png',
+  'public/creative-fixtures/pack-b/pin-brass-01.png',
+  'public/creative-fixtures/pack-b/botanical-dried-sprig-01.png',
 ]
 
 /**
