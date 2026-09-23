@@ -87,7 +87,7 @@ type ImageSource = Pick<
   | 'updated_at'
 >
 
-type ExecutionSource = Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'>
+type ExecutionSource = Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'> & Partial<Pick<RenderExecutionSummary, 'kind'>>
 
 const STATUS_LABELS: Record<GalleryOutputStatus, string> = {
   generated: 'Gerada',
@@ -193,7 +193,9 @@ export function buildGalleryOutputs({
     })
 
   const videoItems = executions
-    .filter((exec) => exec.status === 'completed')
+    // Defense in depth beside the route's kind='video' filter: a static
+    // still execution (Static Render Worker V1) is never a Gallery video.
+    .filter((exec): exec is typeof exec & { video_draft_id: string } => exec.status === 'completed' && exec.video_draft_id !== null && (exec.kind ?? 'video') === 'video')
     .map((exec): GalleryOutputItem => {
       const draft = videoDraftById.get(exec.video_draft_id) || null
       const projectId = draft?.project_id || null

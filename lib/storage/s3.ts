@@ -315,6 +315,24 @@ export async function createPresignedReadUrl(path: string, options: PresignedRea
   )
 }
 
+/**
+ * Server-side read of one object's bytes (Static Render Worker V1: streams a
+ * completed static PNG from private scratch to the owner through a
+ * same-origin, session-authorized route, so "Salvar nesta peca" can hand it
+ * to the existing upload route without any browser->MinIO CORS dependency).
+ * Callers are responsible for authorizing `path` first.
+ */
+export async function readS3Object(path: string, options: { maxBytes?: number } = {}) {
+  const config = getS3Config()
+  if (!config) return null
+  const client = createS3Client(config)
+  const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: path }))
+  if (!result.Body) return null
+  const bytes = await result.Body.transformToByteArray()
+  if (options.maxBytes && bytes.byteLength > options.maxBytes) throw new Error('Object exceeds the allowed size.')
+  return { bytes, contentType: result.ContentType ?? 'application/octet-stream' }
+}
+
 export type UploadedLibraryFile = {
   storagePath: string
   publicUrl: string

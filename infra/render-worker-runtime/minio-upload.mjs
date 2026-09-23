@@ -24,7 +24,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { readMinioClientConfig, buildPutObjectParams } from '../../lib/render-execution/minio-client-config.ts'
-import { buildScratchOutputTarget } from '../../lib/render-execution/scratch-output-target.ts'
+import { buildScratchOutputTarget, isRenderExecutionKind, RENDER_EXECUTION_OUTPUT_BY_KIND } from '../../lib/render-execution/scratch-output-target.ts'
 
 let cachedClient = null
 
@@ -56,7 +56,7 @@ function getClient(config) {
  * sanitized string (never a raw stack trace) — safe to pass through to the
  * bounded /fail report.
  */
-export async function uploadRenderOutputToScratch({ userId, executionId, localFilePath, env = process.env }) {
+export async function uploadRenderOutputToScratch({ userId, executionId, localFilePath, kind = 'video', env = process.env }) {
   const config = readMinioClientConfig(env)
   if (!config) {
     return { ok: false, error: 'MinIO client is not configured (CONTENT_STUDIO_MINIO_* env vars missing).' }
@@ -73,7 +73,12 @@ export async function uploadRenderOutputToScratch({ userId, executionId, localFi
     return { ok: false, error: 'Local render output is empty (0 bytes).' }
   }
 
-  const target = buildScratchOutputTarget({ userId, executionId })
+  // Static Render Worker V1: the kind picks output.png vs output.mp4 — the
+  // same shared helper the complete route uses to check it.
+  if (!isRenderExecutionKind(kind)) {
+    return { ok: false, error: `Unknown execution kind "${String(kind).slice(0, 40)}".` }
+  }
+  const target = buildScratchOutputTarget({ userId, executionId, kind })
   // The worker's own configured bucket must agree with the deterministic
   // target's expected bucket — if an operator misconfigures
   // CONTENT_STUDIO_MINIO_BUCKET to point somewhere else, fail loudly here
@@ -90,7 +95,7 @@ export async function uploadRenderOutputToScratch({ userId, executionId, localFi
   try {
     const client = getClient(config)
     const body = createReadStream(localFilePath)
-    const params = buildPutObjectParams({ bucket: target.bucket, key: target.key, sizeBytes, body })
+    const params = buildPutObjectParams({ bucket: target.bucket, key: target.key, sizeBytes, body, contentType: RENDER_EXECUTION_OUTPUT_BY_KIND[kind].mimeType })
     await client.send(new PutObjectCommand(params))
     return { ok: true, bucket: target.bucket, key: target.key, sizeBytes }
   } catch (err) {

@@ -100,3 +100,31 @@ export function shouldDeleteLocalFileAfterUploadFailure(): boolean {
 export function shouldDeleteLocalFileAfterCompleteRetriesExhausted(): boolean {
   return true
 }
+
+// ── Static Render Worker V1 — claim dispatch ──────────────────────────────────
+
+export type WorkerRenderDispatch =
+  | { ok: true; kind: 'video'; rendererPath: '/render'; body: { resolvedInput: unknown }; outputMimeType: 'video/mp4' }
+  | { ok: true; kind: 'static_still'; rendererPath: '/render-still'; body: { staticInput: unknown }; outputMimeType: 'image/png' }
+  | { ok: false; errorCode: 'UNSUPPORTED_EXECUTION_KIND' | 'MISSING_RENDER_INPUT'; errorMessage: string }
+
+/**
+ * Chooses the renderer path for one claimed execution from its explicit
+ * `kind` discriminator — never inferred from which payload fields happen to
+ * be present. A claim with no `kind` is a pre-034 control plane response
+ * and is treated as video (backward compatible: the worker can be deployed
+ * before the app). Static stills go to `/render-still` (renderStill -> PNG);
+ * video keeps `/render` (renderMedia -> MP4) exactly as before.
+ */
+export function dispatchClaimedExecution(claim: { kind?: unknown; resolvedInput?: unknown; staticInput?: unknown }): WorkerRenderDispatch {
+  const kind = claim.kind === undefined || claim.kind === null ? 'video' : claim.kind
+  if (kind === 'video') {
+    if (!claim.resolvedInput) return { ok: false, errorCode: 'MISSING_RENDER_INPUT', errorMessage: 'Video claim has no resolvedInput.' }
+    return { ok: true, kind: 'video', rendererPath: '/render', body: { resolvedInput: claim.resolvedInput }, outputMimeType: 'video/mp4' }
+  }
+  if (kind === 'static_still') {
+    if (!claim.staticInput) return { ok: false, errorCode: 'MISSING_RENDER_INPUT', errorMessage: 'Static claim has no staticInput.' }
+    return { ok: true, kind: 'static_still', rendererPath: '/render-still', body: { staticInput: claim.staticInput }, outputMimeType: 'image/png' }
+  }
+  return { ok: false, errorCode: 'UNSUPPORTED_EXECUTION_KIND', errorMessage: `Unsupported execution kind "${String(kind).slice(0, 40)}".` }
+}

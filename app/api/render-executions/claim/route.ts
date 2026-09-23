@@ -32,6 +32,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyWorkerAuth } from '@/lib/render-execution/worker-auth'
 import { createWorkerApiDbClient } from '@/lib/render-execution/worker-db-client'
 import { resolveRuntimeInput } from '@/lib/render-execution/resolve-runtime-input'
+import { resolveStaticRuntimeInput } from '@/lib/render-execution/resolve-static-runtime-input'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import type { LibraryFile } from '@/lib/types'
 
@@ -95,7 +96,11 @@ export async function POST(request: NextRequest) {
     id: string
     user_id: string
     project_id: string
-    video_draft_id: string
+    // Static Render Worker V1 (migration 034): discriminates the payload the
+    // worker receives. Rows created before 034 default to 'video'.
+    kind?: string | null
+    video_draft_id: string | null
+    channel_piece_id?: string | null
     status: string
     attempt: number
     claimed_by: string | null
@@ -124,7 +129,42 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── 4b. Resolve runtime input from frozen snapshot ────────────────────────
+  const kind = execution.kind ?? 'video'
+  console.log(`[render-executions/claim] claimed ${execution.id} kind=${kind} attempt=${execution.attempt}`)
+
+  // ── 4b-static. Static still: frozen StaticRenderManifest snapshot ─────────
+  // Never translated into a TimelineManifest — a separate contract rendered
+  // by the worker's renderStill path. Same SSRF boundary as video: only
+  // DB-loaded, project-scoped LibraryFiles are ever presigned.
+  if (kind === 'static_still') {
+    const staticResolution = await resolveStaticRuntimeInput({
+      rawSnapshot: execution.input_snapshot,
+      libraryFiles: (libraryFiles ?? []) as LibraryFile[],
+      createPresignedReadUrl: (path: string) => createPresignedReadUrl(path),
+    })
+    if (!staticResolution.ok) {
+      console.error('[render-executions/claim] static resolution failed:', execution.id, staticResolution.code, staticResolution.message)
+      await recordClaimTimeFail(db, execution.id, staticResolution.code, staticResolution.message)
+      return NextResponse.json({ error: staticResolution.message, code: staticResolution.code }, { status: 422 })
+    }
+    return NextResponse.json({
+      claimed: true,
+      kind: 'static_still',
+      executionId: execution.id,
+      userId: execution.user_id,
+      attempt: execution.attempt,
+      leaseExpiresAt: execution.lease_expires_at,
+      warnings: staticResolution.warnings,
+      staticInput: staticResolution.staticInput,
+    })
+  }
+
+  if (kind !== 'video') {
+    await recordClaimTimeFail(db, execution.id, 'UNSUPPORTED_EXECUTION_KIND', `Unsupported execution kind "${String(kind).slice(0, 40)}".`)
+    return NextResponse.json({ error: 'Unsupported execution kind.', code: 'UNSUPPORTED_EXECUTION_KIND' }, { status: 422 })
+  }
+
+  // ── 4b. Resolve runtime input from frozen snapshot (video) ────────────────
   const resolution = await resolveRuntimeInput({
     rawSnapshot: execution.input_snapshot,
     libraryFiles: (libraryFiles ?? []) as LibraryFile[],
@@ -147,6 +187,7 @@ export async function POST(request: NextRequest) {
   // persisted back to input_snapshot or any other column.
   return NextResponse.json({
     claimed: true,
+    kind: 'video',
     executionId: execution.id,
     // userId is required by the worker (Phase 2I-B3) to compute the
     // deterministic scratch output target (users/{userId}/renders/scratch/

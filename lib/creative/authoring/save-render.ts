@@ -20,14 +20,28 @@ export async function saveRenderToChannelPiece(input: {
   filename?: string
   fetchImpl?: typeof fetch
 }): Promise<SaveRenderResult> {
-  const doFetch = input.fetchImpl ?? fetch
   let file: File
   try {
     file = dataUrlToFile(input.imageDataUrl, input.filename ?? renderOutputFilename())
   } catch (cause) {
     return { ok: false, error: cause instanceof Error ? cause.message : 'Render invalido.' }
   }
+  return saveRenderFileToChannelPiece({ file, channelPieceId: input.channelPieceId, fetchImpl: input.fetchImpl })
+}
 
+/**
+ * Static Render Worker V1: same explicit "Salvar nesta peca" path, fed by a
+ * PNG File the editor fetched from its completed execution's same-origin
+ * `/api/render-executions/:id/output` stream (the async render no longer
+ * returns a data URL). Still only ever uses the existing upload route.
+ */
+export async function saveRenderFileToChannelPiece(input: {
+  file: File
+  channelPieceId: string
+  fetchImpl?: typeof fetch
+}): Promise<SaveRenderResult> {
+  const doFetch = input.fetchImpl ?? fetch
+  const file = input.file
   const formData = new FormData()
   formData.set('file', file)
   formData.set('channelPieceId', input.channelPieceId)

@@ -64,6 +64,9 @@ export async function GET() {
       .select(SAFE_COLUMNS)
       .eq('user_id', user.id)
       .eq('status', 'completed')
+      // Static Render Worker V1: static PNG scratch renders are not Gallery
+      // video outputs (and have no video_draft_id to federate by).
+      .eq('kind', 'video')
       .order('completed_at', { ascending: false })
 
     if (error) {

@@ -8,7 +8,7 @@ export type { AuthoringAction } from './reducer'
 export { dataUrlToFile, renderOutputFilename } from './render-output'
 export { initialSaveStatus, isSavedForCurrent, canSave, startSaving, saveSucceeded, saveFailed, resetForNewRender } from './save-state'
 export type { SaveState, RenderSaveStatus } from './save-state'
-export { saveRenderToChannelPiece, CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE } from './save-render'
+export { saveRenderToChannelPiece, saveRenderFileToChannelPiece, CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE } from './save-render'
 export type { SaveRenderResult } from './save-render'
 export {
   STATIC_AUTHORING_STATE_SCHEMA_VERSION,

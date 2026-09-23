@@ -28,6 +28,22 @@ export type ScratchOutputTarget = {
 }
 
 /**
+ * Static Render Worker V1 — the execution kinds this plane carries. The
+ * scratch key's filename is a strict function of the kind, so a video row
+ * can never be completed with a PNG key and vice versa.
+ */
+export type RenderExecutionKind = 'video' | 'static_still'
+
+export const RENDER_EXECUTION_OUTPUT_BY_KIND: Readonly<Record<RenderExecutionKind, { filename: string; mimeType: string }>> = {
+  video: { filename: 'output.mp4', mimeType: 'video/mp4' },
+  static_still: { filename: 'output.png', mimeType: 'image/png' },
+}
+
+export function isRenderExecutionKind(value: unknown): value is RenderExecutionKind {
+  return value === 'video' || value === 'static_still'
+}
+
+/**
  * The expected bucket name, server-side. Reuses the same env vars the main
  * app's own S3 helper (`lib/storage/s3.ts`) already reads for the one
  * physical bucket this repo has ever used, falling back to the literal name
@@ -44,21 +60,26 @@ export function getExpectedScratchBucket(env: Record<string, string | undefined>
 
 /**
  * Builds the deterministic scratch key for one execution:
- *   users/{userId}/renders/scratch/{executionId}/output.mp4
+ *   users/{userId}/renders/scratch/{executionId}/output.mp4   (kind 'video', the default)
+ *   users/{userId}/renders/scratch/{executionId}/output.png   (kind 'static_still')
  *
  * Both segments are validated as UUIDs — not because untrusted input flows
  * here directly (callers always supply DB-sourced values), but so that a
  * future caller mistake (e.g. accidentally passing a raw request field)
  * fails loudly instead of silently producing a path-traversal-shaped key.
  */
-export function buildScratchOutputKey(input: { userId: string; executionId: string }): string {
+export function buildScratchOutputKey(input: { userId: string; executionId: string; kind?: RenderExecutionKind }): string {
   if (!UUID_RE.test(input.userId)) {
     throw new Error('buildScratchOutputKey: userId must be a UUID')
   }
   if (!UUID_RE.test(input.executionId)) {
     throw new Error('buildScratchOutputKey: executionId must be a UUID')
   }
-  return `users/${input.userId}/renders/scratch/${input.executionId}/output.mp4`
+  const kind = input.kind ?? 'video'
+  if (!isRenderExecutionKind(kind)) {
+    throw new Error('buildScratchOutputKey: unknown execution kind')
+  }
+  return `users/${input.userId}/renders/scratch/${input.executionId}/${RENDER_EXECUTION_OUTPUT_BY_KIND[kind].filename}`
 }
 
 /**
@@ -71,7 +92,7 @@ export function buildScratchOutputKey(input: { userId: string; executionId: stri
  * always gets its own key — no cross-execution overwrite is possible).
  */
 export function buildScratchOutputTarget(
-  input: { userId: string; executionId: string },
+  input: { userId: string; executionId: string; kind?: RenderExecutionKind },
   env?: Record<string, string | undefined>,
 ): ScratchOutputTarget {
   return {
@@ -89,7 +110,7 @@ export function buildScratchOutputTarget(
  * destination.
  */
 export function isExpectedScratchOutputTarget(
-  input: { userId: string; executionId: string; bucket: string; key: string },
+  input: { userId: string; executionId: string; bucket: string; key: string; kind?: RenderExecutionKind },
   env?: Record<string, string | undefined>,
 ): boolean {
   try {

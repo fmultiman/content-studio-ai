@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { ContextMetadata } from '@/components/ui/context-metadata'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -31,9 +32,14 @@ import type { StaticAuthoringTarget } from '@/lib/creative/context/static-author
 import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
 import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
+import {
+  activeExecutionIds, applyExecutionUpdate, attachExecution, failEnqueue, hydrateRenderJobs, isActiveRenderPhase,
+  patchJobByExecution, renderPhaseLabel, startRenderJob, type StaticRenderJob, type StaticRenderJobs,
+} from '@/lib/creative/authoring/static-render-jobs'
+import type { RenderExecutionSummary } from '@/lib/types'
 
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
-type RenderResult = { image_data_url: string; duration_ms: number; output_identifier: string; diagnostics: unknown[] }
+const RENDER_POLL_INTERVAL_MS = 2000
 type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; slides: PersistedAuthoredSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
@@ -93,9 +99,12 @@ export default function StaticAuthoringProductPage() {
   const [selectedElement, setSelectedElement] = useState<ElementKey>('title')
   const [activeTab, setActiveTab] = useState<InspectorSection>('template')
   const [error, setError] = useState<string | null>(null)
-  const [rendering, setRendering] = useState(false)
-  const [renderResult, setRenderResult] = useState<RenderResult | null>(null)
-  const [renderError, setRenderError] = useState<string | null>(null)
+  // Static Render Worker V1: async "Gerar PNG" jobs, keyed by the slide that
+  // started them (see lib/creative/authoring/static-render-jobs.ts).
+  const [renderJobs, setRenderJobs] = useState<StaticRenderJobs>({})
+  const [previewJobSlideId, setPreviewJobSlideId] = useState<string | null>(null)
+  const requestedOutputUrlsRef = useRef(new Set<string>())
+  const hydratedRenderJobsRef = useRef<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
   // Lazy initializer, not an effect: this page's real content only paints
@@ -205,9 +214,8 @@ export default function StaticAuthoringProductPage() {
   const state = currentSlide?.state ?? null
 
   function switchSlide(index: number) {
+    // Render jobs are per-slide: switching never clears or rebinds them.
     setCurrentSlideIndex(index)
-    setRenderResult(null)
-    setRenderError(null)
   }
 
   const dispatch = (action: AuthoringAction) => setSlides((current) => current
@@ -250,42 +258,118 @@ export default function StaticAuthoringProductPage() {
   }, [previewInput, state, slides, currentSlideIndex])
 
   async function render() {
-    if (!state?.productContext || !slides) return
-    setRendering(true); setRenderResult(null); setRenderError(null)
+    if (!state?.productContext || !slides || !currentSlide) return
+    const slideRef = { id: currentSlide.id, index: currentSlideIndex + 1, total: slides.length }
+    const previous = renderJobs[slideRef.id]
+    if (previous && isActiveRenderPhase(previous.phase)) return
+    // Freeze the CURRENT authored state (unsaved edits included) at click
+    // time. Rendering never saves authoring and never rereads it later.
+    const selection = derivePrimitiveSelectionRequest(state)
+    const transforms = derivePrimitiveTransformsRequest(state)
+    const overrides = deriveTuningOverrides(state)
+    const sequence = slides.length > 1 ? { index: slideRef.index, total: slideRef.total } : undefined
+    const manifest = deriveManifestFromState(state, sequence)
+    const body = {
+      manifest,
+      context: { projectId: state.productContext.projectId, editorialContentId: state.productContext.editorialContentId, channelPieceId: state.productContext.channelPieceId },
+      ...(selection ? { primitiveSelection: selection } : {}),
+      ...(transforms ? { primitiveTransforms: transforms } : {}),
+      ...(overrides ? { overrides } : {}),
+      idempotencyKey: crypto.randomUUID(),
+      slide: slideRef,
+      ...(previous?.phase === 'failed' && previous.executionId ? { retryOfExecutionId: previous.executionId } : {}),
+    }
+    setRenderJobs((jobs) => startRenderJob(jobs, slideRef, Date.now()))
     try {
-      const selection = derivePrimitiveSelectionRequest(state)
-      const transforms = derivePrimitiveTransformsRequest(state)
-      const overrides = deriveTuningOverrides(state)
-      const sequence = slides.length > 1 ? { index: currentSlideIndex + 1, total: slides.length } : undefined
-      const manifest = deriveManifestFromState(state, sequence)
-      const response = await fetch('/api/creative/static-authoring/render', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          manifest,
-          context: { projectId: state.productContext.projectId, editorialContentId: state.productContext.editorialContentId, channelPieceId: state.productContext.channelPieceId },
-          identitySnapshot: state.productContext.identitySnapshot,
-          ...(selection ? { primitiveSelection: selection } : {}),
-          ...(transforms ? { primitiveTransforms: transforms } : {}),
-          ...(overrides ? { overrides } : {}),
-        }),
-      })
-      const payload = await response.json() as RenderResult & { error?: string; details?: string }
-      if (!response.ok) throw new Error(payload.error || 'Render falhou.')
-      setRenderResult(payload)
+      const response = await fetch('/api/creative/static-authoring/render', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      const payload = await response.json().catch(() => null) as { executionId?: string; status?: RenderExecutionSummary['status']; error?: string } | null
+      if (!response.ok || !payload?.executionId || !payload.status) throw new Error(payload?.error || 'Nao foi possivel enfileirar o render.')
+      setRenderJobs((jobs) => attachExecution(jobs, slideRef.id, payload.executionId as string, payload.status as RenderExecutionSummary['status']))
     } catch (cause: unknown) {
-      setRenderError(cause instanceof Error ? cause.message : 'Render falhou.')
-    } finally {
-      setRendering(false)
+      setRenderJobs((jobs) => failEnqueue(jobs, slideRef.id, cause instanceof Error ? cause.message : 'Nao foi possivel enfileirar o render.', Date.now()))
     }
   }
 
-  async function saveRenderOutput() {
-    if (!renderResult || !context) return
-    // Lazy import kept local: this action is independent of the AUTHORING
-    // save above — AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
-    const { saveRenderToChannelPiece } = await import('@/lib/creative/authoring')
-    await saveRenderToChannelPiece({ imageDataUrl: renderResult.image_data_url, channelPieceId: context.channelPiece.id })
+  // Poll every active execution by ID (one chain, one request per execution
+  // per tick, never overlapping); stops once nothing is queued/rendering.
+  const activeRenderKey = activeExecutionIds(renderJobs).join(',')
+  useEffect(() => {
+    if (!activeRenderKey) return
+    let cancelled = false
+    let timeoutId: number | undefined
+    const ids = activeRenderKey.split(',')
+    const poll = async () => {
+      await Promise.all(ids.map(async (executionId) => {
+        try {
+          const response = await fetch(`/api/render-executions/${executionId}`)
+          if (!response.ok || cancelled) return
+          const payload = await response.json() as { execution?: RenderExecutionSummary }
+          if (payload.execution && !cancelled) setRenderJobs((jobs) => applyExecutionUpdate(jobs, payload.execution as RenderExecutionSummary, Date.now()))
+        } catch {
+          // transient network error: the next tick retries
+        }
+      }))
+      if (!cancelled) timeoutId = window.setTimeout(poll, RENDER_POLL_INTERVAL_MS)
+    }
+    timeoutId = window.setTimeout(poll, RENDER_POLL_INTERVAL_MS)
+    return () => { cancelled = true; if (timeoutId) window.clearTimeout(timeoutId) }
+  }, [activeRenderKey])
+
+  // Ready jobs: fetch a short-lived presigned display URL once per execution.
+  useEffect(() => {
+    for (const job of Object.values(renderJobs)) {
+      if (job.phase !== 'ready' || !job.executionId || job.imageUrl || requestedOutputUrlsRef.current.has(job.executionId)) continue
+      const executionId = job.executionId
+      requestedOutputUrlsRef.current.add(executionId)
+      void (async () => {
+        try {
+          const response = await fetch(`/api/render-executions/${executionId}/output-url`)
+          const payload = await response.json().catch(() => null) as { url?: string } | null
+          if (response.ok && payload?.url) setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { imageUrl: payload.url as string }))
+        } catch {
+          requestedOutputUrlsRef.current.delete(executionId)
+        }
+      })()
+    }
+  }, [renderJobs])
+
+  // Refresh/reopen: rebind recent executions to the slides that created them.
+  const channelPieceIdForRenders = context?.channelPiece.id ?? null
+  const slideIdsKey = slides?.map((slide) => slide.id).join(',') ?? ''
+  useEffect(() => {
+    if (!channelPieceIdForRenders || !slideIdsKey || hydratedRenderJobsRef.current === channelPieceIdForRenders) return
+    hydratedRenderJobsRef.current = channelPieceIdForRenders
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await fetch(`/api/render-executions?channelPieceId=${channelPieceIdForRenders}`)
+        if (!response.ok) return
+        const payload = await response.json() as { executions?: RenderExecutionSummary[] }
+        if (!cancelled && payload.executions?.length) setRenderJobs((jobs) => hydrateRenderJobs(jobs, payload.executions ?? [], new Set(slideIdsKey.split(','))))
+      } catch {
+        // hydration is best-effort; rendering still works
+      }
+    })()
+    return () => { cancelled = true }
+  }, [channelPieceIdForRenders, slideIdsKey])
+
+  async function saveRenderOutput(job: StaticRenderJob) {
+    if (!context || !job.executionId || job.phase !== 'ready' || job.save === 'saving' || job.save === 'saved') return
+    // Explicit only: AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
+    const executionId = job.executionId
+    setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'saving', saveError: null }))
+    try {
+      const response = await fetch(`/api/render-executions/${executionId}/output`)
+      if (!response.ok) throw new Error('Nao foi possivel ler o PNG gerado.')
+      const blob = await response.blob()
+      const file = new File([blob], `slide-${job.slideIndex}-de-${job.slideTotal}-${executionId.slice(0, 8)}.png`, { type: 'image/png' })
+      const { saveRenderFileToChannelPiece } = await import('@/lib/creative/authoring')
+      const result = await saveRenderFileToChannelPiece({ file, channelPieceId: context.channelPiece.id })
+      if (!result.ok) throw new Error(result.error)
+      setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'saved' }))
+    } catch (cause: unknown) {
+      setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'error', saveError: cause instanceof Error ? cause.message : 'Falha ao salvar.' }))
+    }
   }
 
   const canvasW = context?.target.canvas.width ?? 1080
@@ -305,6 +389,11 @@ export default function StaticAuthoringProductPage() {
   if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
 
   const elements = elementsForVariant(state.variant)
+  // The CURRENT slide's own render job only — other slides' jobs keep running
+  // and stay bound to their slides (see static-render-jobs.ts).
+  const currentRenderJob = currentSlide ? renderJobs[currentSlide.id] : undefined
+  const currentRenderActive = Boolean(currentRenderJob && isActiveRenderPhase(currentRenderJob.phase))
+  const previewJob = previewJobSlideId ? renderJobs[previewJobSlideId] : undefined
   const slideTotal = slides.length
   const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
   // A selection the active variant does not render (e.g. Hero or a second tape on Info/Cover) falls back to Título.
@@ -400,17 +489,36 @@ export default function StaticAuthoringProductPage() {
         </DropdownMenu>
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        {rendering && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Renderizando…</span>}
-        {renderError && !rendering && <span className="flex max-w-[18rem] items-center gap-1 text-xs text-destructive" title={renderError} role="alert"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{renderError}</span></span>}
-        {renderResult && !rendering && <span className="flex items-center gap-2 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />Render · {renderResult.duration_ms} ms<Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => void saveRenderOutput()}>Salvar nesta peça</Button></span>}
+        {currentRenderJob && currentRenderActive && <span className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="render-status" data-phase={currentRenderJob.phase}><Loader2 className="h-3.5 w-3.5 animate-spin" />{renderPhaseLabel(currentRenderJob.phase)}</span>}
+        {currentRenderJob?.phase === 'failed' && <span className="flex max-w-[18rem] items-center gap-1 text-xs text-destructive" title={currentRenderJob.errorMessage ?? undefined} role="alert" data-testid="render-status" data-phase="failed"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{renderPhaseLabel('failed')}{currentRenderJob.errorMessage ? ` · ${currentRenderJob.errorMessage}` : ''}</span></span>}
+        {currentRenderJob?.phase === 'ready' && <span className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="render-status" data-phase="ready">
+          <button type="button" className="h-7 w-[22px] shrink-0 overflow-hidden rounded border border-border/60 bg-muted" onClick={() => setPreviewJobSlideId(currentRenderJob.slideId)} aria-label={`Ver PNG do slide ${currentRenderJob.slideIndex}/${currentRenderJob.slideTotal}`} title="Ver PNG">
+            {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
+            {currentRenderJob.imageUrl ? <img src={currentRenderJob.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
+          </button>
+          <Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />{renderPhaseLabel('ready')}{currentRenderJob.finishedAt ? ` · ${Math.max(1, Math.round((currentRenderJob.finishedAt - currentRenderJob.startedAt) / 1000))}s` : ''}
+          {currentRenderJob.save === 'saved'
+            ? <span className="flex items-center gap-1 text-foreground"><Check className="h-3.5 w-3.5" />Salvo nesta peça</span>
+            : <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={currentRenderJob.save === 'saving'} onClick={() => void saveRenderOutput(currentRenderJob)} title={currentRenderJob.saveError ?? undefined}>{currentRenderJob.save === 'saving' ? 'Salvando…' : currentRenderJob.save === 'error' ? 'Tentar salvar de novo' : 'Salvar nesta peça'}</Button>}
+        </span>}
         {isCarousel && <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>}
         {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()}>{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
-        <Button size="sm" onClick={() => void render()} disabled={rendering} className="gap-1.5">{rendering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{rendering ? 'Renderizando…' : 'Gerar PNG'}</Button>
+        <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5">{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
       </div>
     </header>
   )
 
-  const restoreDialog = <AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const restoreDialog = <><AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <Dialog open={Boolean(previewJob?.imageUrl)} onOpenChange={(open) => { if (!open) setPreviewJobSlideId(null) }}>
+      <DialogContent className="max-w-[min(92vw,540px)]">
+        <DialogHeader>
+          <DialogTitle>PNG · Slide {previewJob?.slideIndex}/{previewJob?.slideTotal}</DialogTitle>
+          <DialogDescription>Render gerado (rascunho). Use “Salvar nesta peça” para anexá-lo à peça.</DialogDescription>
+        </DialogHeader>
+        {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
+        {previewJob?.imageUrl ? <img src={previewJob.imageUrl} alt={`PNG do slide ${previewJob.slideIndex}/${previewJob.slideTotal}`} className="max-h-[70vh] w-full rounded border border-border/60 object-contain" data-testid="render-preview-image" /> : null}
+      </DialogContent>
+    </Dialog></>
 
   if (!floating) {
     return <DashboardPage><div className="min-w-0 px-4 py-3">{header}<StackedWorkbench canvas={canvas} inspector={inspector} />{restoreDialog}</div></DashboardPage>

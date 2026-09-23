@@ -76,6 +76,7 @@ import {
   shouldDeleteLocalFileAfterUploadFailure,
   shouldDeleteLocalFileAfterCompleteRetriesExhausted,
   MAX_COMPLETE_RETRY_ATTEMPTS,
+  dispatchClaimedExecution,
 } from '../../lib/render-execution/worker-lifecycle.ts'
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -249,16 +250,19 @@ async function reportCompleteWithRetry(executionId, claimAttempt, outputMeta) {
  * of concerns means coordination tests can stub this function without
  * needing Chromium.
  */
-async function invokeRenderer(resolvedInput) {
+async function invokeRenderer(dispatch) {
   try {
-    const response = await fetch(`${RENDERER_URL}/render`, {
+    // Static Render Worker V1: '/render' (video, renderMedia) or
+    // '/render-still' (static, renderStill) — chosen from the claim's
+    // explicit kind by dispatchClaimedExecution, never by field sniffing.
+    const response = await fetch(`${RENDERER_URL}${dispatch.rendererPath}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resolvedInput }),
+      body: JSON.stringify(dispatch.body),
     })
     const result = await response.json()
     if (result.status === 'succeeded') {
-      return { ok: true, outputPath: result.output_path, durationMs: result.duration_ms, meta: result }
+      return { ok: true, outputPath: result.output_path, durationMs: result.duration_ms, width: result.width, height: result.height, meta: result }
     }
     return { ok: false, error: result.error ?? 'Renderer returned non-succeeded status.', meta: result }
   } catch (err) {
@@ -321,14 +325,24 @@ async function runOneCycle() {
     return 'no_work'
   }
 
-  const { executionId, userId, attempt, resolvedInput, warnings } = claim
-  console.log(`[coordinator] Claimed execution ${executionId} (attempt ${attempt})`)
+   // Legacy video contract keeps this exact destructuring shape; static adds
+   // an explicit kind and staticInput discriminator beside it.
+   // const { executionId, userId, attempt, resolvedInput, warnings } = claim
+   const { executionId, userId, attempt, warnings } = claim
+  const dispatch = dispatchClaimedExecution(claim)
+  console.log(`[coordinator] Claimed execution ${executionId} (attempt ${attempt}, kind ${dispatch.ok ? dispatch.kind : claim.kind})`)
   if (warnings?.length) {
     console.warn('[coordinator] Resolution warnings:', warnings)
   }
+  if (!dispatch.ok) {
+    console.error(`[coordinator] Cannot dispatch ${executionId}:`, dispatch.errorCode)
+    await reportFail(executionId, attempt, dispatch.errorCode, dispatch.errorMessage, undefined)
+    return 'failed'
+  }
 
   // ── Invoke renderer ────────────────────────────────────────────────────────
-  const renderResult = await invokeRenderer(resolvedInput)
+  const renderStartedAt = Date.now()
+  const renderResult = await invokeRenderer(dispatch)
 
   if (!renderResult.ok) {
     const errorMessage = renderResult.error?.slice(0, 500) ?? 'Unknown render error'
@@ -337,15 +351,17 @@ async function runOneCycle() {
     return 'failed'
   }
 
-  console.log(`[coordinator] Render succeeded for ${executionId}`)
+  console.log(`[coordinator] Render succeeded for ${executionId} (${dispatch.kind}, ${Date.now() - renderStartedAt}ms)`)
   console.log(`[coordinator]   Output  : ${renderResult.outputPath}`)
   console.log(`[coordinator]   Duration: ${renderResult.durationMs}ms`)
 
   // ── Upload to MinIO scratch (Phase 2I-B3) ──────────────────────────────────
+  const uploadStartedAt = Date.now()
   const uploadOutcome = await uploadRenderOutputToScratch({
     userId,
     executionId,
     localFilePath: renderResult.outputPath,
+    kind: dispatch.kind,
   })
 
   if (shouldReportFailAfterUploadFailure(uploadOutcome)) {
@@ -357,7 +373,7 @@ async function runOneCycle() {
     return 'failed'
   }
 
-  console.log(`[coordinator]   Uploaded: ${uploadOutcome.bucket}/${uploadOutcome.key} (${uploadOutcome.sizeBytes} bytes)`)
+  console.log(`[coordinator]   Uploaded: ${uploadOutcome.bucket}/${uploadOutcome.key} (${uploadOutcome.sizeBytes} bytes, ${Date.now() - uploadStartedAt}ms)`)
 
   // ── Complete (only reachable after a successful upload) ────────────────────
   if (!shouldCallComplete(uploadOutcome)) {
@@ -371,7 +387,9 @@ async function runOneCycle() {
     outputStoragePath: uploadOutcome.key,
     outputSizeBytes: uploadOutcome.sizeBytes,
     outputDurationMs: renderResult.durationMs,
-    outputMimeType: 'video/mp4',
+    outputMimeType: dispatch.outputMimeType,
+    ...(Number.isInteger(renderResult.width) ? { outputWidth: renderResult.width } : {}),
+    ...(Number.isInteger(renderResult.height) ? { outputHeight: renderResult.height } : {}),
   })
 
   if (shouldDeleteLocalFileAfterSuccess(completeOutcome)) {

@@ -273,7 +273,12 @@ export type RenderExecutionStatus = 'queued' | 'claimed' | 'completed' | 'failed
  * input_snapshot, or error_detail (all internal-only, see B0 §16/§17). */
 export interface RenderExecutionSummary {
   id: string
-  video_draft_id: string
+  /** Static Render Worker V1 (migration 034). Absent on older API payloads = 'video'. */
+  kind?: 'video' | 'static_still'
+  /** Non-null for kind 'video'; null for 'static_still' (DB CHECK enforced). */
+  video_draft_id: string | null
+  /** Non-null for kind 'static_still'. */
+  channel_piece_id?: string | null
   status: RenderExecutionStatus
   attempt: number
   queued_at: string
@@ -283,6 +288,10 @@ export interface RenderExecutionSummary {
   output_mime_type: string | null
   output_size_bytes: number | null
   output_duration_ms: number | null
+  output_width?: number | null
+  output_height?: number | null
+  /** Static only: safe projection of the frozen snapshot's slide reference. */
+  slide?: { id: string; index: number; total: number } | null
   error_code: string | null
   error_message: string | null
 }

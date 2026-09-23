@@ -16,6 +16,9 @@ function createRenderExecutionReadClient() {
 
 const SAFE_COLUMNS = [
   'id',
+  // Static Render Worker V1: discriminator + static subject. Never the snapshot.
+  'kind',
+  'channel_piece_id',
   'video_draft_id',
   'status',
   'attempt',
@@ -26,13 +29,56 @@ const SAFE_COLUMNS = [
   'output_mime_type',
   'output_size_bytes',
   'output_duration_ms',
+  'output_width',
+  'output_height',
   'error_code',
   'error_message',
 ].join(', ')
 
+/** Static Render Worker V1: how far back the Creative Editor rehydrates slide renders. */
+const STATIC_HYDRATION_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * GET /api/render-executions?channelPieceId=... (Static Render Worker V1)
+ *
+ * Recent STATIC executions for one owned ChannelPiece, newest first, with
+ * the safe `slide` projection so the Creative Editor can rebind each result
+ * to the slide that produced it after a refresh. Ownership: the session
+ * user must own the ChannelPiece AND the rows (double-scoped).
+ */
+async function listStaticExecutionsForChannelPiece(channelPieceId: string) {
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+
+  const { data: channelPiece } = await supabase.from('channel_pieces').select('id').eq('id', channelPieceId).eq('user_id', user.id).maybeSingle()
+  if (!channelPiece) return NextResponse.json({ error: 'ChannelPiece nao encontrada.' }, { status: 404 })
+
+  const executionReader = createRenderExecutionReadClient()
+  if (!executionReader) return NextResponse.json({ error: 'Servico de renderizacao indisponivel.' }, { status: 503 })
+
+  const since = new Date(Date.now() - STATIC_HYDRATION_WINDOW_MS).toISOString()
+  const { data, error } = await executionReader
+    .from('render_executions')
+    .select(`${SAFE_COLUMNS}, slide:input_snapshot->slide`)
+    .eq('user_id', user.id)
+    .eq('kind', 'static_still')
+    .eq('channel_piece_id', channelPieceId)
+    .gte('queued_at', since)
+    .order('queued_at', { ascending: false })
+    .limit(30)
+  if (error) return NextResponse.json({ error: 'Erro ao buscar execucoes.' }, { status: 500 })
+  return NextResponse.json({ executions: data ?? [] })
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
+    const channelPieceId = searchParams.get('channelPieceId')
+    if (channelPieceId !== null) {
+      if (!UUID_RE.test(channelPieceId)) return NextResponse.json({ error: 'channelPieceId invalido.' }, { status: 400 })
+      return listStaticExecutionsForChannelPiece(channelPieceId)
+    }
     const videoDraftId = searchParams.get('videoDraftId')
     
     if (!videoDraftId || !UUID_RE.test(videoDraftId)) {

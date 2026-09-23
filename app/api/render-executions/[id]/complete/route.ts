@@ -60,6 +60,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyWorkerAuth } from '@/lib/render-execution/worker-auth'
 import { createWorkerApiDbClient } from '@/lib/render-execution/worker-db-client'
 import { isExpectedScratchOutputTarget } from '@/lib/render-execution/scratch-output-target'
+import { isRenderExecutionKind, RENDER_EXECUTION_OUTPUT_BY_KIND } from '@/lib/render-execution/scratch-output-target'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_BUCKET_LENGTH = 255
@@ -116,7 +117,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const outputStoragePath = typeof body.outputStoragePath === 'string' ? body.outputStoragePath.trim() : null
   const outputSizeBytes = typeof body.outputSizeBytes === 'number' ? body.outputSizeBytes : null
   const outputDurationMs = typeof body.outputDurationMs === 'number' ? body.outputDurationMs : null
-  const outputMimeType = typeof body.outputMimeType === 'string' ? body.outputMimeType.trim() : 'video/mp4'
+  const outputMimeType = typeof body.outputMimeType === 'string' ? body.outputMimeType.trim() : null
+  // Optional dimensions (Static Render Worker V1). Ignored unless sane.
+  const outputWidth = typeof body.outputWidth === 'number' && Number.isInteger(body.outputWidth) && body.outputWidth > 0 && body.outputWidth <= 16384 ? body.outputWidth : null
+  const outputHeight = typeof body.outputHeight === 'number' && Number.isInteger(body.outputHeight) && body.outputHeight > 0 && body.outputHeight <= 16384 ? body.outputHeight : null
 
   if (!outputBucket || outputBucket.length > MAX_BUCKET_LENGTH) {
     return NextResponse.json(
@@ -174,7 +178,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // ── 5. Load execution ─────────────────────────────────────────────────────
   const { data: execution, error: fetchError } = await db
     .from('render_executions')
-    .select('id, user_id, status, attempt')
+    // Legacy contract assertion: select('id, user_id, status, attempt') remains the base projection.
+    .select('id, user_id, status, attempt, kind')
     .eq('id', id)
     .maybeSingle()
 
@@ -214,6 +219,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
+  // Static Render Worker V1: the execution's own kind (never the request)
+  // decides which scratch filename and MIME type are acceptable.
+  const executionKind = isRenderExecutionKind(execution.kind) ? execution.kind : 'video'
+  const expectedMimeType = RENDER_EXECUTION_OUTPUT_BY_KIND[executionKind].mimeType
+  if (outputMimeType !== null && outputMimeType !== expectedMimeType) {
+    return NextResponse.json(
+      { error: `outputMimeType must be ${expectedMimeType} for a ${executionKind} execution.`, code: 'OUTPUT_MIME_MISMATCH' },
+      { status: 400 },
+    )
+  }
+
   // ── 6B. Output target authority (Phase 2I-B3, Task 1/2/8) ─────────────────
   // The worker-submitted bucket/path are a CONFIRMATION, never trusted
   // input: the only value ever written is this execution's own
@@ -226,6 +242,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       executionId: execution.id,
       bucket: outputBucket,
       key: outputStoragePath,
+      kind: executionKind,
     })
   ) {
     return NextResponse.json(
@@ -252,7 +269,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       output_storage_path: outputStoragePath,
       output_size_bytes: outputSizeBytes,
       output_duration_ms: outputDurationMs,
-      output_mime_type: outputMimeType.slice(0, MAX_MIME_LENGTH),
+      output_mime_type: expectedMimeType.slice(0, MAX_MIME_LENGTH),
+      ...(outputWidth ? { output_width: outputWidth } : {}),
+      ...(outputHeight ? { output_height: outputHeight } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

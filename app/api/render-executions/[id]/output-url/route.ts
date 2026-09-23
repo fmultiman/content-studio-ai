@@ -42,7 +42,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     const { data: execution, error } = await executionReader
       .from('render_executions')
-      .select('id, user_id, status, output_storage_path')
+      .select('id, user_id, status, output_storage_path, kind')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -66,7 +66,8 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Output storage path security constraint violation.', code: 'INVALID_STORAGE_PATH' }, { status: 500 })
     }
 
-    const filename = disposition === 'attachment' ? `render-${id}.mp4` : undefined
+    const extension = execution.kind === 'static_still' ? 'png' : 'mp4'
+    const filename = disposition === 'attachment' ? `render-${id}.${extension}` : undefined
     const url = await createPresignedReadUrl(execution.output_storage_path, { disposition, filename })
 
     if (!url) {

@@ -62,6 +62,7 @@ const REQUIRED_WORKER_SOURCE = [
   'remotion/timeline/frame-model.ts',
   'remotion/DocumentaryCardComposition.tsx',
   'remotion/TypographyReadyBoundary.tsx',
+  'remotion/RenderAssetsReadyBoundary.tsx',
   'lib/creative/templates/component-resolver.ts',
   'lib/creative/typography/resolve-typography.ts',
   'lib/creative/assets/resolve-asset.ts',
@@ -94,6 +95,14 @@ const REQUIRED_STATIC_ASSETS = [
   'public/creative-fixtures/pack-b/tape-kraft-short-01.png',
   'public/creative-fixtures/pack-b/pin-brass-01.png',
   'public/creative-fixtures/pack-b/botanical-dried-sprig-01.png',
+  // Static Render Worker V1 — every fixture asset a StaticRenderManifest can
+  // bind (lib/creative/assets/resolve-asset.ts FIXTURE_ASSETS): the Creative
+  // Editor's default Cover hero + the Portal logo, plus the remaining
+  // registered fixtures so a static render never 404s a template asset.
+  'public/creative-fixtures/documentary-card-hero-01.webp',
+  'public/creative-fixtures/comunidades-alternativas-logo-v1.svg',
+  'public/creative-fixtures/terra-una-documentary-photo-01.svg',
+  'public/creative-fixtures/acme-labs-hero-01.svg',
 ]
 
 /**

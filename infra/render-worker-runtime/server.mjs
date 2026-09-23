@@ -29,7 +29,7 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { bundle } from '@remotion/bundler'
-import { renderMedia, selectComposition } from '@remotion/renderer'
+import { renderMedia, renderStill, selectComposition } from '@remotion/renderer'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const entry = path.join(here, 'remotion-entry.tsx')
@@ -172,12 +172,89 @@ async function handleRender(req, res) {
   }
 }
 
+/**
+ * Static Render Worker V1 — minimum shape guard for a claimed static still.
+ * The control plane already validated + resolved the frozen
+ * StaticRenderManifest at claim time; this only rejects malformed calls.
+ */
+function validateStaticInput(body) {
+  const errors = []
+  const staticInput = body?.staticInput
+  if (!staticInput || typeof staticInput !== 'object') {
+    errors.push('staticInput is required and must be an object')
+    return { valid: false, errors }
+  }
+  const canvas = staticInput.resolvedInput?.manifest?.canvas
+  if (!canvas || !Number.isInteger(canvas.width) || !Number.isInteger(canvas.height)) errors.push('staticInput.resolvedInput.manifest.canvas is required')
+  if (!staticInput.resolvedInput?.resolvedTemplate?.descriptor?.component_key) errors.push('staticInput.resolvedInput.resolvedTemplate is required')
+  if (!staticInput.resolvedInput?.typography) errors.push('staticInput.resolvedInput.typography is required')
+  return { valid: errors.length === 0, errors, staticInput }
+}
+
+/**
+ * POST /render-still — real Remotion `renderStill` of the SAME
+ * `StaticRenderManifestStill` composition the app's Root registers. Never a
+ * one-frame MP4. Produces a PNG in the local output dir; the coordinator
+ * uploads it to the execution's private scratch key.
+ */
+async function handleRenderStill(req, res) {
+  let body
+  try {
+    body = await readJsonBody(req)
+  } catch {
+    return sendJson(res, 400, { error: 'Request body must be valid JSON.' })
+  }
+
+  const { valid, errors, staticInput } = validateStaticInput(body)
+  if (!valid) return sendJson(res, 400, { error: 'Invalid static render request.', details: errors })
+
+  const startedAt = Date.now()
+  try {
+    const bundleLocation = await getBundleLocation()
+    const inputProps = {
+      resolvedInput: staticInput.resolvedInput,
+      overrides: staticInput.overrides,
+      primitiveMaterials: staticInput.primitiveMaterials,
+      primitiveTransforms: staticInput.primitiveTransforms,
+    }
+    const composition = await selectComposition({ serveUrl: bundleLocation, id: 'StaticRenderManifestStill', inputProps })
+
+    await mkdir(outputDir, { recursive: true })
+    const outputLocation = path.join(outputDir, `content-studio-still-${randomUUID()}.png`)
+
+    await renderStill({
+      composition,
+      serveUrl: bundleLocation,
+      output: outputLocation,
+      inputProps,
+      imageFormat: 'png',
+    })
+
+    return sendJson(res, 200, {
+      status: 'succeeded',
+      output_path: outputLocation,
+      width: composition.width,
+      height: composition.height,
+      duration_ms: Date.now() - startedAt,
+    })
+  } catch (error) {
+    return sendJson(res, 500, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      duration_ms: Date.now() - startedAt,
+    })
+  }
+}
+
 const server = createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
     return sendJson(res, 200, buildHealthPayload(readCoordinatorStatus()))
   }
   if (req.method === 'POST' && req.url === '/render') {
     return void handleRender(req, res)
+  }
+  if (req.method === 'POST' && req.url === '/render-still') {
+    return void handleRenderStill(req, res)
   }
   return sendJson(res, 404, { error: 'Not found.' })
 })

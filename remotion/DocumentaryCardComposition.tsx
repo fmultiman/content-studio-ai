@@ -6,6 +6,19 @@ import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolv
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { TypographyReadyBoundary } from './TypographyReadyBoundary'
+import { RenderAssetsReadyBoundary } from './RenderAssetsReadyBoundary'
+import { materialUrl, type MaterialName } from '@/components/creative/documentary-card/primitives'
+
+/**
+ * Remotion serves the bundled publicDir under `/public/` (the same prefix
+ * resolve-typography already uses for fonts). DocumentaryCard's material
+ * fallback base is the Next.js web root (`/creative-fixtures`), which 404s
+ * inside a Remotion render — so paperStrip / pin / botanical (Pack B)
+ * silently disappeared from every Remotion output. Only this Remotion
+ * adapter changes the base; the web preview keeps its own.
+ */
+const REMOTION_MATERIAL_BASE_URL = '/public/creative-fixtures'
+const DOCUMENTARY_CARD_MATERIALS: readonly MaterialName[] = ['tornPaper', 'paperStrip', 'tape', 'pin', 'botanical']
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
@@ -24,7 +37,16 @@ export function remotionTemplateProps<T>(props: T): T {
   const materialUrls = value.materialUrls && typeof value.materialUrls === 'object'
     ? Object.fromEntries(Object.entries(value.materialUrls).map(([name, url]) => [name, typeof url === 'string' && url.startsWith('/creative-fixtures/') ? `/public${url}` : url]))
     : value.materialUrls
-  return { ...value, assets: normalizedAssets, materialUrls } as T
+  const isDocumentaryCard = 'materialUrls' in value
+  const materialBaseUrl = isDocumentaryCard && typeof value.materialBaseUrl !== 'string' ? REMOTION_MATERIAL_BASE_URL : value.materialBaseUrl
+  return { ...value, assets: normalizedAssets, materialUrls, ...(isDocumentaryCard ? { materialBaseUrl } : {}) } as T
+}
+
+/** Every image URL a DocumentaryCard still will paint (materials + bound assets), post-normalization. */
+export function documentaryCardImageUrls(props: DocumentaryCardProps): string[] {
+  const materials = DOCUMENTARY_CARD_MATERIALS.map((name) => materialUrl(name, props.materialBaseUrl, props.materialUrls))
+  const assets = Object.values(props.assets ?? {}).map((asset) => (asset && typeof asset === 'object' ? asset.url : undefined))
+  return [...materials, ...assets].filter((url): url is string => typeof url === 'string' && url.length > 0)
 }
 
 export function remotionProps(props: DocumentaryCardProps): DocumentaryCardProps {
@@ -67,5 +89,12 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     primitiveMaterials,
     primitiveTransforms,
   }, { mode: 'still', overrides })
-  return <TypographyReadyBoundary typography={resolvedInput.typography}>{binding.component(remotionTemplateProps(props))}</TypographyReadyBoundary>
+  const renderProps = remotionTemplateProps(props)
+  // A still is one captured frame: hold it until every painted image loaded.
+  const imageUrls = 'materialUrls' in (renderProps as object) ? documentaryCardImageUrls(renderProps as DocumentaryCardProps) : []
+  return (
+    <TypographyReadyBoundary typography={resolvedInput.typography}>
+      <RenderAssetsReadyBoundary urls={imageUrls}>{binding.component(renderProps)}</RenderAssetsReadyBoundary>
+    </TypographyReadyBoundary>
+  )
 }

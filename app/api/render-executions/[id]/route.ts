@@ -27,6 +27,9 @@ function createRenderExecutionReadClient() {
  */
 const SAFE_COLUMNS = [
   'id',
+  // Static Render Worker V1: discriminator + static subject. Never the snapshot.
+  'kind',
+  'channel_piece_id',
   'video_draft_id',
   'status',
   'attempt',
@@ -37,6 +40,8 @@ const SAFE_COLUMNS = [
   'output_mime_type',
   'output_size_bytes',
   'output_duration_ms',
+  'output_width',
+  'output_height',
   'error_code',
   'error_message',
 ].join(', ')
@@ -72,7 +77,9 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const { data, error } = await executionReader
       .from('render_executions')
-      .select(SAFE_COLUMNS)
+      // `slide` is a safe projection of the frozen static snapshot's slide
+      // reference ({ id, index, total }) — never the snapshot itself.
+      .select(`${SAFE_COLUMNS}, slide:input_snapshot->slide`)
       .eq('id', id)
       .eq('user_id', user.id)
       .single()

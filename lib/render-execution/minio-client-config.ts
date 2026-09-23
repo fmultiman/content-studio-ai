@@ -62,12 +62,14 @@ export function buildPutObjectParams(input: {
   key: string
   sizeBytes: number
   body: unknown
+  /** Static Render Worker V1: 'image/png' for static stills; defaults to the original video/mp4. */
+  contentType?: string
 }) {
   return {
     Bucket: input.bucket,
     Key: input.key,
     Body: input.body,
-    ContentType: 'video/mp4',
+    ContentType: input.contentType ?? 'video/mp4',
     ContentLength: input.sizeBytes,
   }
 }
