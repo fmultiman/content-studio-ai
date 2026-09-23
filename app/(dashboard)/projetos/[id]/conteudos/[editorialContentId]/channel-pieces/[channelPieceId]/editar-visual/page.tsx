@@ -1,22 +1,22 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { DockviewReact } from 'dockview-react'
-import type { DockviewReadyEvent } from 'dockview-react'
-import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
+import { ContextMetadata } from '@/components/ui/context-metadata'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitivePicker, PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
+import { INSPECTOR_SECTIONS, channelFormatLabel, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
@@ -72,7 +72,7 @@ function canvasKind(context: ContextResponse): 'portrait' | 'reel' {
   return context.target.canvas.height === 1920 ? 'reel' : 'portrait'
 }
 
-/** Non-carousel single-slide default â€” the exact pre-Creative-Editor behavior, unchanged. */
+/** Non-carousel single-slide default — the exact pre-Creative-Editor behavior, unchanged. */
 function singleSlideDefault(context: ContextResponse, productContext: AuthoringProductContext): AuthoringSlide {
   const content = contextualContentForChannelPiece(context.editorialContent, context.channelPiece)
   const primitiveSelection = context.primitiveProjectRef ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' } : {}
@@ -105,7 +105,7 @@ export default function StaticAuthoringProductPage() {
   const [slides, setSlides] = useState<AuthoringSlide[] | null>(null)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
   const [selectedElement, setSelectedElement] = useState<ElementKey>('title')
-  const [activeTab, setActiveTab] = useState('template')
+  const [activeTab, setActiveTab] = useState<InspectorSection>('template')
   const [error, setError] = useState<string | null>(null)
   const [rendering, setRendering] = useState(false)
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null)
@@ -118,10 +118,12 @@ export default function StaticAuthoringProductPage() {
   const [autosaveEnabled, setAutosaveEnabledState] = useState(() => readAutosavePreference())
   const [zoom, setZoom] = useState<'fit' | number>('fit')
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const [panelMinimized, setPanelMinimized] = useState(false)
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
+  const floating = useFloatingWorkbench()
   const skipNextAutosaveRef = useRef(true)
-  const previewContainerRef = useRef<HTMLDivElement | null>(null)
+  // Callback-ref state, not useRef: in the floating workbench the Canvas mounts inside a Dockview
+  // portal AFTER this component's effects run, so a ref read in an effect could miss it (Fit stuck at fallback).
+  const [previewContainer, setPreviewContainer] = useState<HTMLDivElement | null>(null)
 
   const isCarousel = context?.channelPiece.format === 'carousel'
   // Derived, not stored: comparing the live slides against the last-saved
@@ -134,7 +136,7 @@ export default function StaticAuthoringProductPage() {
   }
 
   useEffect(() => {
-    const el = previewContainerRef.current
+    const el = previewContainer
     if (!el || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect
@@ -142,7 +144,7 @@ export default function StaticAuthoringProductPage() {
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [context])
+  }, [previewContainer])
 
   useEffect(() => {
     let cancelled = false
@@ -176,7 +178,7 @@ export default function StaticAuthoringProductPage() {
       setCurrentSlideIndex(0)
       // Reload/read-back baseline: "saved" only reflects what the API actually
       // has today. A freshly-defaulted (never-saved) carousel has no baseline
-      // â€” the first explicit Save (or first autosave) establishes one.
+      // — the first explicit Save (or first autosave) establishes one.
       setLastSavedSnapshot(persisted && persisted.length > 0 ? persistedSnapshot(hydrated) : null)
     }
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Erro ao carregar contexto.'))
@@ -202,7 +204,7 @@ export default function StaticAuthoringProductPage() {
     }
   }
 
-  // Optional autosave â€” OFF by default (see docs/productization/creative-rendering/
+  // Optional autosave — OFF by default (see docs/productization/creative-rendering/
   // CREATIVE_EDITOR_STATIC_SHELL_FOUNDATION_V1.md for the previous always-on behavior
   // this replaces). Reuses the same 600ms debounce and the same PUT as explicit Save.
   useEffect(() => {
@@ -297,7 +299,7 @@ export default function StaticAuthoringProductPage() {
   async function saveRenderOutput() {
     if (!renderResult || !context) return
     // Lazy import kept local: this action is independent of the AUTHORING
-    // save above â€” AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
+    // save above — AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
     const { saveRenderToChannelPiece } = await import('@/lib/creative/authoring')
     await saveRenderToChannelPiece({ imageDataUrl: renderResult.image_data_url, channelPieceId: context.channelPiece.id })
   }
@@ -319,64 +321,122 @@ export default function StaticAuthoringProductPage() {
   if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
 
   const elements = elementsForVariant(state.variant)
+  const slideTotal = slides.length
+  const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
+  const primitiveSlot = (['paper', 'paperStrip', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const).find((slot) => slot === selectedElement)
 
-  const elementOptions = elements.map((element) => ({ value: element.key, label: element.label }))
-  const renderInspector = () => (
-    <div className="creative-editor-inspector-body">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-semibold">Inspector</span>
-        <Button size="icon-sm" variant="ghost" onClick={() => setPanelMinimized((value) => !value)} aria-label={panelMinimized ? 'Expandir Inspector' : 'Minimizar Inspector'}>
-          {panelMinimized ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-        </Button>
+  const inspector = (
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
+      <TabsList className="flex w-full">
+        {INSPECTOR_SECTIONS.map((section) => (
+          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1.5 text-[11px]" title={section.label}>
+            <span className="inspector-tab-full">{section.label}</span>
+            <span className="inspector-tab-compact" aria-hidden="true">{section.compactLabel}</span>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      <TabsContent value="template" className="pt-3">
+        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span><Button size="sm" variant={state.variant === 'cover' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'cover' })}>Cover</Button><Button size="sm" variant={state.variant === 'info' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'info' })}>Info</Button></div>
+        <p className="mt-2 text-xs text-muted-foreground">DocumentaryCard · o template estático atual.</p>
+      </TabsContent>
+      <TabsContent value="content" className="space-y-3 pt-3">
+        <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
+        {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
+      </TabsContent>
+      <TabsContent value="assets" className="space-y-4 pt-3">
+        {context.primitiveProjectRef ? <><PrimitivePicker slot="paper" label="Paper" primitives={context.primitives} selectedKey={state.primitiveSelection.paper} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_PAPER', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_PAPER' })} /><PrimitivePicker slot="tape" label="Tape" primitives={context.primitives} selectedKey={state.primitiveSelection.tape} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TAPE' })} /></> : <p className="text-xs text-muted-foreground">Este Project não possui primitives registradas.</p>}
+        {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Hero: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
+      </TabsContent>
+      <TabsContent value="style" className="pt-3"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant={state.appearance === 'light' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'light' })}>Light</Button><Button size="sm" variant={state.appearance === 'dark' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'dark' })}>Dark</Button></div></TabsContent>
+      <TabsContent value="element" className="space-y-3 pt-3">
+        <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={selectedElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elements.map((element) => <SelectItem key={element.key} value={element.key}>{element.label}</SelectItem>)}</SelectContent></Select></div>
+        <div className="rounded-md border border-border/60 p-3">
+          {selectedElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
+          {selectedElement === 'hero' && state.variant === 'cover' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
+          {primitiveSlot && <PrimitiveTransformControls slot={primitiveSlot} transforms={state.primitiveTransforms[primitiveSlot] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: primitiveSlot, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: primitiveSlot })} />}
+        </div>
+      </TabsContent>
+    </Tabs>
+  )
+
+  // Floor the scaled box so Fit never overflows its viewport by a sub-pixel and summons scrollbars.
+  const scaledWidth = Math.floor(canvasW * effectiveScale)
+  const scaledHeight = Math.floor(canvasH * effectiveScale)
+  const canvas = (
+    <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
+      <div ref={setPreviewContainer} className={floating ? 'flex min-h-0 flex-1 overflow-auto p-3' : 'flex h-[min(62vh,560px)] overflow-auto p-2'} data-testid="canvas-viewport">
+        <div className="m-auto shrink-0 overflow-hidden" style={{ width: scaledWidth, height: scaledHeight }}>
+          <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
+        </div>
       </div>
-      {!panelMinimized && <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 gap-0 overflow-hidden">
-          <TabsTrigger value="template" className="min-w-0 px-1.5 text-[11px]">Template</TabsTrigger>
-          <TabsTrigger value="content" className="min-w-0 px-1.5 text-[11px]">Conteúdo</TabsTrigger>
-          <TabsTrigger value="assets" className="min-w-0 px-1.5 text-[11px]">Assets</TabsTrigger>
-          <TabsTrigger value="style" className="min-w-0 px-1.5 text-[11px]">Style</TabsTrigger>
-          <TabsTrigger value="element" className="min-w-0 px-1.5 text-[11px]">Element</TabsTrigger>
-        </TabsList>
-        <TabsContent value="template" className="pt-3">
-          <div className="flex items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span><Button size="sm" variant={state.variant === 'cover' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'cover' })}>Cover</Button><Button size="sm" variant={state.variant === 'info' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'info' })}>Info</Button></div>
-          <p className="mt-2 text-xs text-muted-foreground">DocumentaryCard · o template estático atual.</p>
-        </TabsContent>
-        <TabsContent value="content" className="space-y-3 pt-3">
-          <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
-          {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
-        </TabsContent>
-        <TabsContent value="assets" className="space-y-4 pt-3">
-          {context.primitiveProjectRef ? <><PrimitivePicker slot="paper" label="Paper" primitives={context.primitives} selectedKey={state.primitiveSelection.paper} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_PAPER', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_PAPER' })} /><PrimitivePicker slot="tape" label="Tape" primitives={context.primitives} selectedKey={state.primitiveSelection.tape} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TAPE' })} /></> : <p className="text-xs text-muted-foreground">Este Project não possui primitives registradas.</p>}
-          {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Hero: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
-        </TabsContent>
-        <TabsContent value="style" className="pt-3"><div className="flex items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant={state.appearance === 'light' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'light' })}>Light</Button><Button size="sm" variant={state.appearance === 'dark' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'dark' })}>Dark</Button></div></TabsContent>
-        <TabsContent value="element" className="space-y-3 pt-3">
-          <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={selectedElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elementOptions.map((element) => <SelectItem key={element.value} value={element.value}>{element.label}</SelectItem>)}</SelectContent></Select></div>
-          <div className="rounded-md border border-border/60 p-3">
-            {selectedElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
-            {selectedElement === 'hero' && state.variant === 'cover' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
-            {(['paper', 'paperStrip', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const).includes(selectedElement as never) && <PrimitiveTransformControls slot={selectedElement as 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'} transforms={state.primitiveTransforms[selectedElement as keyof typeof state.primitiveTransforms] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: selectedElement as 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin', field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: selectedElement as 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin' })} />}
-          </div>
-        </TabsContent>
-      </Tabs>}
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
+        {isCarousel && slideTotal > 1 && <div className="flex items-center gap-1" role="group" aria-label="Slides">
+          <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
+          {slides.map((slide, index) => <Button key={slide.id} size="sm" className="px-2.5 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} onClick={() => switchSlide(index)}>{index + 1}/{slideTotal}</Button>)}
+          <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
+        </div>}
+        <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
+          <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}><option value="fit">Fit · {Math.round(fitScale * 100)}%</option>{ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}</select>
+          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
+        </div>
+        {isCarousel && <div className="flex items-center gap-1" role="group" aria-label="Estado do slide">
+          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty || !lastSavedSnapshot} onClick={revert}><Undo2 className="h-3 w-3" />Reverter</Button>
+          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" onClick={() => setRestoreDialogOpen(true)}><RotateCcw className="h-3 w-3" />Restaurar padrão</Button>
+          <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
+        </div>}
+      </div>
     </div>
   )
 
-  const renderCanvas = () => <div className="creative-editor-canvas-surface flex h-full min-h-0 flex-col items-center overflow-hidden px-2 pt-2">
-    <div ref={previewContainerRef} className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-md bg-muted/20" style={{ minHeight: 0 }}>
-      <div style={{ width: canvasW * effectiveScale, height: canvasH * effectiveScale, flex: '0 0 auto' }}>
-        <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
+  const saveStatusLabel = saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Falha ao salvar' : dirty ? 'Alterações não salvas' : lastSavedSnapshot ? 'Salvo' : 'Ainda não salvo'
+  const contextItems = [
+    { label: 'Project', value: context.project.name },
+    { label: 'Production', value: context.production?.title || 'Sem Production' },
+    { label: 'EditorialContent', value: context.editorialContent.title, fullWidth: true },
+    { label: 'ChannelPiece', value: context.channelPiece.title || `${context.channelPiece.channel}:${context.channelPiece.format}`, fullWidth: true },
+    { label: 'Identity', value: context.projectIdentity.expression?.visual_identity || 'Project Identity V1', fullWidth: true },
+  ]
+
+  const header = (
+    <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 pb-2" data-testid="editor-header">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Button variant="ghost" size="icon-sm" className="-ml-2 shrink-0" onClick={() => router.back()} aria-label="Voltar ao conteúdo" title="Voltar ao conteúdo"><ArrowLeft className="h-4 w-4" /></Button>
+        <h1 className="shrink-0 text-base font-semibold">Creative Editor</h1>
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="truncate">Static · {channelFormatLabel(context.channelPiece.channel, context.channelPiece.format)}</span>
+          {isCarousel && <><span aria-hidden="true">·</span><span className="shrink-0 font-medium text-foreground" data-testid="header-slide-indicator" aria-label={`Slide ${currentSlideIndex + 1} de ${slideTotal}`}>{slideLabel}</span></>}
+        </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1 px-2 text-xs text-muted-foreground">Contexto<ChevronDown className="h-3 w-3" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-3"><ContextMetadata items={contextItems} dense /></DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </div>
-    <div className="flex h-10 shrink-0 items-center justify-center gap-1.5"><Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button><select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}><option value="fit">Fit · {Math.round(fitScale * 100)}%</option>{ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}</select><Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button><Button size="sm" variant={zoom === 'fit' ? 'default' : 'outline'} className="px-2 text-xs" onClick={() => setZoom('fit')}>Fit</Button></div>
-    <div className="flex min-h-12 w-full shrink-0 flex-wrap items-center justify-center gap-2 border-t border-border/30 px-2 py-1">
-      {isCarousel && slides.length > 1 && <><Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>{slides.map((slide, index) => <Button key={slide.id} size="sm" variant={index === currentSlideIndex ? 'default' : 'outline'} onClick={() => switchSlide(index)}>{index + 1}/{slides.length}</Button>)}<Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slides.length - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slides.length - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button></>}
-      {isCarousel && <div className="ml-auto flex items-center gap-1"><Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty} onClick={revert}><Undo2 className="h-3 w-3" />Reverter</Button><Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" onClick={() => setRestoreDialogOpen(true)}><RotateCcw className="h-3 w-3" />Restaurar padrão</Button><label className="flex items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label></div>}
-    </div>
-    {(renderResult || renderError || rendering) && <div className="flex min-h-8 w-full shrink-0 items-center gap-2 px-3 pb-1 text-xs">{rendering && <span className="flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Renderizando…</span>}{renderError && <span className="flex items-center gap-1 text-destructive"><AlertCircle className="h-3.5 w-3.5" />{renderError}</span>}{renderResult && !rendering && <span className="flex items-center gap-2 text-muted-foreground"><Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />Render concluído · {renderResult.duration_ms} ms<Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => void saveRenderOutput()}>Salvar nesta peça</Button></span>}</div>}
-  </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        {rendering && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Renderizando…</span>}
+        {renderError && !rendering && <span className="flex max-w-[18rem] items-center gap-1 text-xs text-destructive" title={renderError} role="alert"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{renderError}</span></span>}
+        {renderResult && !rendering && <span className="flex items-center gap-2 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />Render · {renderResult.duration_ms} ms<Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => void saveRenderOutput()}>Salvar nesta peça</Button></span>}
+        {isCarousel && <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>}
+        {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()}>{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
+        <Button size="sm" onClick={() => void render()} disabled={rendering} className="gap-1.5">{rendering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{rendering ? 'Renderizando…' : 'Gerar PNG'}</Button>
+      </div>
+    </header>
+  )
 
-  const dockviewReady = (event: DockviewReadyEvent) => { event.api.addPanel({ id: 'canvas', component: 'canvas', title: 'Canvas', floating: false, position: { direction: 'right' } }); event.api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', floating: { x: 0, y: 56, width: 360, height: 620 }, initialWidth: 360, initialHeight: 620 }) }
-  return <DashboardPage><DashboardPageContent width="full" className="creative-editor-page"><div className="mb-3 flex flex-wrap items-start justify-between gap-3"><div><Button variant="ghost" size="sm" className="mb-1 -ml-3 gap-2" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" />Voltar ao conteúdo</Button><h1 className="text-2xl font-semibold">Creative Editor</h1><p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"><Badge variant="outline">Static</Badge><span>{context.channelPiece.channel}:{context.channelPiece.format}</span>{isCarousel && <Badge variant="secondary">Slide {currentSlideIndex + 1} de {slides.length}</Badge>}<span className="text-xs">· {context.project.name} · {context.production?.title || 'Sem Production'}</span></p></div><div className="flex items-center gap-2">{isCarousel && <span className="text-xs text-muted-foreground">{!dirty && saveStatus === 'idle' && lastSavedSnapshot && 'Salvo'}{!dirty && saveStatus === 'idle' && !lastSavedSnapshot && 'Ainda não salvo'}{dirty && saveStatus !== 'saving' && 'Alterações não salvas'}{saveStatus === 'saving' && 'Salvando…'}{saveStatus === 'error' && 'Falha ao salvar'}</span>}{isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()}>{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}<Button onClick={() => void render()} disabled={rendering} className="gap-2">{rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{rendering ? 'Renderizando…' : 'Gerar PNG'}</Button></div></div><div className="creative-editor-workspace relative h-[calc(100vh-13rem)] min-h-[500px] overflow-hidden rounded-lg border border-border/50 bg-background"><DockviewReact className="creative-editor-dockview h-full w-full" components={{ canvas: () => renderCanvas(), inspector: () => renderInspector() }} onReady={dockviewReady} floatingGroupBounds="boundedWithinViewport" floatingGroupDragHandle="titlebar" disableFloatingGroups={false} dndEdges={false} onWillDrop={(event) => { event.preventDefault() }} /></div><details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer select-none">Contexto</summary><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1"><span>EditorialContent: {context.editorialContent.title}</span><span>ChannelPiece: {context.channelPiece.title || context.channelPiece.format}</span><span>Identity: {context.projectIdentity.expression?.visual_identity || 'Project Identity V1'}</span></div></details><AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DashboardPageContent></DashboardPage>
+  const restoreDialog = <AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
+  if (!floating) {
+    return <DashboardPage><div className="min-w-0 px-4 py-3">{header}<StackedWorkbench canvas={canvas} inspector={inspector} />{restoreDialog}</div></DashboardPage>
+  }
+
+  // Desktop: the editor owns exactly the viewport below the global top bar — no page scroll in the edit loop.
+  return (
+    <DashboardPage>
+      <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
+        {header}
+        <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} />
+        {restoreDialog}
+      </div>
+    </DashboardPage>
+  )
 }
