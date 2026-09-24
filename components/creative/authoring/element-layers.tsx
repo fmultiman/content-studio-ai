@@ -38,7 +38,7 @@ export function ElementLayers({
   onRestoreDefault: () => void
 }) {
   const listRef = useRef<HTMLOListElement>(null)
-  const [drag, setDrag] = useState<{ id: string; from: number; to: number; startY: number; rowHeight: number } | null>(null)
+  const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
   const display = [...order].reverse()
   // While dragging, preview the prospective order so the list reflows live.
   const shown = drag ? moveElementInOrder(display, drag.from, drag.to) : display
@@ -53,15 +53,30 @@ export function ElementLayers({
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const row = event.currentTarget.closest('li')
-    setDrag({ id, from: index, to: index, startY: event.clientY, rowHeight: row?.getBoundingClientRect().height || 28 })
+    setDrag({ id, from: index, to: index })
+  }
+
+  /**
+   * Target = the row currently under the pointer (by live row rects), not a
+   * clientY delta from the press: the list may scroll mid-drag (wheel, or
+   * auto-scroll), which moves rows under a stationary pointer.
+   */
+  function targetIndexAt(clientY: number, fallback: number): number {
+    const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLLIElement>(':scope > li')] : []
+    if (rows.length === 0) return fallback
+    for (let index = 0; index < rows.length; index++) {
+      const rect = rows[index].getBoundingClientRect()
+      // In a gap above this row (or above the first row): land here.
+      if (clientY < rect.top) return index
+      if (clientY <= rect.bottom) return index
+    }
+    return rows.length - 1
   }
 
   function onPointerMove(event: PointerEvent<HTMLButtonElement>) {
     if (!drag) return
     event.stopPropagation()
-    const steps = Math.round((event.clientY - drag.startY) / drag.rowHeight)
-    const to = Math.min(display.length - 1, Math.max(0, drag.from + steps))
+    const to = targetIndexAt(event.clientY, drag.to)
     if (to !== drag.to) setDrag({ ...drag, to })
   }
 
@@ -69,7 +84,7 @@ export function ElementLayers({
     if (!drag) return
     event.stopPropagation()
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    commitDisplayMove(drag.from, drag.to)
+    commitDisplayMove(drag.from, targetIndexAt(event.clientY, drag.to))
     setDrag(null)
   }
 

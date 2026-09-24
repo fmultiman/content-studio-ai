@@ -31,6 +31,18 @@ function Harness({ onParentPointerDown }: { onParentPointerDown?: () => void }) 
   )
 }
 
+/** Lay rows out 28px tall from `offset` (a scroll position), by their live DOM order. */
+function layoutRows(offset = 0) {
+  const items = within(screen.getByTestId('element-layers')).getAllByRole('listitem')
+  items.forEach((row) => {
+    vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => {
+      const index = [...(row.parentElement?.children ?? [])].indexOf(row)
+      const top = index * 28 - offset
+      return { top, bottom: top + 28, height: 28, left: 0, right: 300, width: 300, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
+  })
+}
+
 const rows = () => within(screen.getByTestId('element-layers')).getAllByRole('listitem').map((row) => row.getAttribute('data-layer-id'))
 const grip = (label: string) => screen.getByRole('button', { name: `Mover ${label} (setas para cima/baixo)` })
 
@@ -46,15 +58,26 @@ describe('ElementLayers (Camadas)', () => {
 
   it('dragging a row with the mouse reorders the stack (Imagem principal above Fita da imagem)', () => {
     render(<Harness />)
-    const handle = grip('Imagem principal')
-    const row = handle.closest('li') as HTMLElement
-    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ height: 28 } as DOMRect)
-    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 })
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 72 })
-    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 72 })
+    layoutRows()
+    const handle = grip('Imagem principal') // shown row 2 (y 56–84)
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 70 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 42 }) // over row 1
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 42 })
     expect(rows()).toEqual(['title', 'hero', 'tape1', 'paper'])
     // Paint order (back -> front) is what gets persisted.
     expect(screen.getByTestId('order').textContent).toBe('paper,tape1,hero,title')
+  })
+
+  it('targets the row under the pointer even when the list scrolls mid-drag (stationary pointer)', () => {
+    render(<Harness />)
+    layoutRows()
+    const handle = grip('Imagem principal') // row 2 at y 56–84
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 70 })
+    // The list scrolls by one row: y 70 is now over shown row 3 (Papel do título).
+    layoutRows(28)
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 70 })
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 70 })
+    expect(rows()).toEqual(['title', 'tape1', 'paper', 'hero'])
   })
 
   it('never lets a row drag reach the Inspector (propagation stopped)', () => {
