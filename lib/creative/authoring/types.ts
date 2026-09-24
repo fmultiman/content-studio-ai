@@ -147,6 +147,13 @@ import {
 } from '@/lib/creative/primitives/transforms'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
+
+/** A Project LibraryFile chosen for a slot (identity only). */
+export interface AuthoringAssetOverride {
+  libraryFileId: string
+}
+export type AuthoringAssetOverrides = Partial<Record<AuthoringAssetSlotId, AuthoringAssetOverride>>
 
 /** Per-slot transform overrides in the authoring layer. */
 export interface AuthoringPrimitiveTransforms {
@@ -243,6 +250,14 @@ export interface AuthoringState {
    * lib/creative/templates/element-stack.ts before rendering.
    */
   elementOrder?: string[]
+
+  /**
+   * Authoring Usability Completion V1 — slot -> Project LibraryFile chosen in
+   * Assets ("Trocar"). Covers template material slots AND the content image
+   * ('hero'). Absent slot = the Project primitive (paper/tape catalog) or the
+   * Template default. Identity only (LibraryFile id): never a URL or path.
+   */
+  assetOverrides?: AuthoringAssetOverrides
 
   /** UI-only: which debug panel tabs are open */
   debugPanelOpen: boolean

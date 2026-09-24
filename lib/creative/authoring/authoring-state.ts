@@ -329,6 +329,12 @@ export function derivePrimitiveTransformsRequest(state: AuthoringState): Primiti
  * has no authored override), so the frozen snapshot records exactly what the
  * Editor painted. Normalized again server-side; the helper is idempotent.
  */
+/** The slide's Project resource choices as sent with a render request (identity only). */
+export function deriveAssetOverridesRequest(state: AuthoringState): AuthoringState['assetOverrides'] | undefined {
+  const entries = Object.entries(state.assetOverrides ?? {}).filter(([, value]) => value?.libraryFileId)
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
 export function deriveElementOrderRequest(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): string[] {
   return resolveElementStack(templateId, state.variant, state.elementOrder).order
 }

@@ -843,7 +843,7 @@
    container positioned at negative offsets straddling the border, and putting the clip on their own
    parent silently cut off the outer half of every edge/corner handle (see resize-handle fix below). */
 .creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container { border: 1px solid var(--border); border-radius: .75rem; box-shadow: 0 18px 45px rgba(0,0,0,.22); background: var(--card); }
-.creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container:not(.creative-inspector-minimized) { min-width: 320px; min-height: 220px; }
+.creative-editor-workbench .dv-floating-overlay-host > .dv-resize-container:not(.creative-inspector-minimized) { min-width: 272px; min-height: 220px; }
 .creative-editor-workbench .dv-floating-overlay-host .dv-groupview { border: 0; border-radius: .75rem; overflow: hidden; background: var(--card); }
 .creative-editor-workbench .dv-floating-overlay-host .dv-content-container { background: var(--card); }
 /* Resize handles: Dockview's own rule is `z-index: var(--dv-overlay-z-index)` with NO fallback
@@ -889,7 +889,7 @@
 .creative-editor-inspector-body [data-slot='tabs-trigger'] { min-width: 0; overflow: hidden; white-space: nowrap; }
 .creative-editor-inspector-body textarea, .creative-editor-inspector-body input, .creative-editor-inspector-body button { max-width: 100%; }
 .creative-editor-inspector-body .inspector-tab-compact { display: none; }
-@container inspector (max-width: 330px) {
+@container inspector (max-width: 310px) {
   .creative-editor-inspector-body .inspector-tab-full { display: none; }
   .creative-editor-inspector-body .inspector-tab-compact { display: inline; }
 }

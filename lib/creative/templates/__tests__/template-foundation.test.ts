@@ -236,7 +236,7 @@ describe('Preview / worker parity wiring (one normalizer, one renderer)', () => 
   it('the enqueue route re-normalizes and freezes the order into the snapshot', () => {
     const route = read('app', 'api', 'creative', 'static-authoring', 'render', 'route.ts')
     expect(route).toMatch(/const elementOrder = normalizeElementOrder\(layout, input\.elementOrder\)/)
-    expect(route).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*slide,/)
+    expect(route).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*assetOverrides,\s*\n\s*slide,/)
     expect(route).toMatch(/template\.renderer\.templateRef\.id !== manifest\.template\.id/)
   })
 

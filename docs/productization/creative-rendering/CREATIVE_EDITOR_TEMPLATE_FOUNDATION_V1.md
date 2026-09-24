@@ -63,7 +63,7 @@ API: `listTemplateDefinitions`, `getTemplateDefinition` (strict), `resolveAuthor
 
 Multiple elements may share a slot. All tapes share slot `tape` (the Pack B references use one kraft tape everywhere), and *Faixa escura do título* shares `paperDark` with *Cartão 1*. Different elements may also use different slots: *Cartão 1* uses `paperDark` while *Cartão 2* uses `paper`.
 
-**Project assets vs Template assets vs Content media.** Slots `paper` and `tape` are Project-selectable, backed by the two Portal LibraryFiles through the existing primitive catalog. Every other slot uses a template-bundled default under `public/creative-fixtures/pack-b/` (a future "Template Asset"). The hero is content media: the fixture hero, with no picker yet. Global Template Asset infrastructure is deferred; storage was not redesigned.
+**Project assets vs Template assets vs Content media.** Slots `paper` and `tape` are Project-selectable, backed by the two Portal LibraryFiles through the existing primitive catalog. Every other slot uses a template-bundled default under `public/creative-fixtures/pack-b/` (a future "Template Asset"). The hero is content media: the fixture hero, with no picker yet *(superseded: Authoring Usability Completion V1 made the hero and every slot replaceable with a Project LibraryFile — see `CREATIVE_EDITOR_AUTHORING_USABILITY_COMPLETION_V1.md`)*. Global Template Asset infrastructure is deferred; storage was not redesigned.
 
 ## 5. Element stack order
 

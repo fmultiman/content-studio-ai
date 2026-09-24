@@ -12,6 +12,7 @@ import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
 import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
 import type { ElementStack } from '@/lib/creative/templates/element-stack'
+import type { AssetSlotId } from '@/lib/creative/templates/template-definitions'
 import type { MaterialName } from './primitives'
 
 export type { DocumentaryCardPreviewTuning }
@@ -41,8 +42,14 @@ export type DocumentaryCardProps = {
   materialBaseUrl?: string
   materialUrls?: Partial<Record<MaterialName, string>>
   materialAssets?: Partial<Record<MaterialName, ResolvedAsset>>
-  /** Selected project-scoped primitive materials. Absent means explicit fixture control fallback. */
-  primitiveMaterials?: Partial<Record<'paper' | 'tape', ResolvedAsset>>
+  /**
+   * Project-provided resources filling template slots (slot id -> resolved
+   * LibraryFile). Absent slot = the template-bundled default. An asset with
+   * `fit: 'contain'` is a replacement whose alpha bounds are unknown.
+   */
+  primitiveMaterials?: Partial<Record<AssetSlotId, ResolvedAsset>>
+  /** Derived from primitiveMaterials: materials to fit whole (contain) instead of by default metrics. */
+  materialContain?: Partial<Record<MaterialName, boolean>>
   primitiveTransforms?: Partial<Record<PrimitiveTransformSlot, PrimitiveTransforms>>
   /**
    * Creative Editor Template Foundation V1 — the authoring Template and this

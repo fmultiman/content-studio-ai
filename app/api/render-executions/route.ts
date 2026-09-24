@@ -68,7 +68,35 @@ async function listStaticExecutionsForChannelPiece(channelPieceId: string) {
     .order('queued_at', { ascending: false })
     .limit(30)
   if (error) return NextResponse.json({ error: 'Erro ao buscar execucoes.' }, { status: 500 })
-  return NextResponse.json({ executions: data ?? [] })
+
+  // Authoring Usability Completion V1 — server-authoritative "Salvo nesta
+  // peça": an execution is attached when a live LibraryFile it produced
+  // (source_render_execution_id) is linked to THIS piece by a
+  // ChannelPieceMedia row. Survives reload; never browser memory.
+  const executions = (data ?? []) as unknown as { id: string }[]
+  const attached = new Set<string>()
+  if (executions.length > 0) {
+    const { data: renderFiles } = await supabase
+      .from('library_files')
+      .select('id, source_render_execution_id')
+      .eq('user_id', user.id)
+      .in('source_render_execution_id', executions.map((execution) => execution.id))
+      .is('deleted_at', null)
+    const fileToExecution = new Map((renderFiles ?? []).map((file) => [file.id as string, file.source_render_execution_id as string]))
+    if (fileToExecution.size > 0) {
+      const { data: media } = await supabase
+        .from('channel_piece_media')
+        .select('library_file_id')
+        .eq('user_id', user.id)
+        .eq('channel_piece_id', channelPieceId)
+        .in('library_file_id', [...fileToExecution.keys()])
+      for (const row of media ?? []) {
+        const executionId = fileToExecution.get(row.library_file_id as string)
+        if (executionId) attached.add(executionId)
+      }
+    }
+  }
+  return NextResponse.json({ executions: executions.map((execution) => ({ ...execution, attached_to_piece: attached.has(execution.id) })) })
 }
 
 export async function GET(request: Request) {

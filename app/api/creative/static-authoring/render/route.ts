@@ -34,6 +34,7 @@ import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
 import { normalizeElementOrder } from '@/lib/creative/templates/element-stack'
+import type { FrozenAssetOverrides } from '@/lib/render-execution/static-snapshot'
 import {
   StaticRenderSlideRefSchema,
   assertStaticSnapshotHasNoSignedUrl,
@@ -48,6 +49,8 @@ export const dynamic = 'force-dynamic'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128
 const PRIMITIVE_FILE_IDS = ['afa6868e-a2d6-473d-9df7-bbf713ad8b02', '3f593474-05c0-4de3-a537-de50a1abb906']
+/** Image types a slot override may use (the renderer paints them as CSS backgrounds). */
+const OVERRIDE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 /** Server-only: execution rows are never insertable with the browser's session client (see 031/032). */
 function createRenderExecutionWriteClient() {
@@ -183,8 +186,35 @@ export async function POST(request: Request) {
         }
       }
     }
+    // Authoring Usability Completion V1 — Assets "Trocar": each chosen
+    // LibraryFile must be the user's own, in THIS project, not trashed, and an
+    // image; its immutable id is frozen (never a URL/path).
+    const assetOverrides: FrozenAssetOverrides = {}
+    const overrideEntries = Object.entries(input.assetOverrides ?? {}).filter(([, value]) => value?.libraryFileId) as [keyof FrozenAssetOverrides, { libraryFileId: string }][]
+    if (overrideEntries.length > 0) {
+      const ids = [...new Set(overrideEntries.map(([, value]) => value.libraryFileId))]
+      const { data: files } = await supabase
+        .from('library_files')
+        .select('id, name, kind, mime_type, deleted_at')
+        .in('id', ids)
+        .eq('user_id', user.id)
+        .eq('project_id', project.id)
+      for (const [slot, value] of overrideEntries) {
+        const file = files?.find((candidate) => candidate.id === value.libraryFileId)
+        if (!file || file.deleted_at || file.kind !== 'image' || !OVERRIDE_IMAGE_MIME_TYPES.has(file.mime_type ?? '')) {
+          return fail(403, 'ASSET_OVERRIDE_FORBIDDEN', 'Arquivo de asset invalido ou fora do Projeto.')
+        }
+        assetOverrides[slot] = { libraryFileId: file.id, mimeType: file.mime_type as string, name: file.name }
+      }
+    }
+    const heroOverride = assetOverrides.hero
+    const manifestAssets = heroOverride && input.manifest.template.variant === 'cover'
+      ? { ...input.manifest.assets, hero: { type: 'library_file' as const, ref: heroOverride.libraryFileId, fit: 'cover' as const } }
+      : input.manifest.assets
+
     const manifest = {
       ...input.manifest,
+      assets: manifestAssets,
       source: { type: 'channel_piece' as const, ref: channelPiece.id },
       context: { project_ref: project.id, ...(editorialContent.production_id ? { production_ref: editorialContent.production_id } : {}) },
       identity: { snapshot_ref: identitySnapshot.snapshot_ref, token_profile: 'default' },
@@ -216,6 +246,7 @@ export async function POST(request: Request) {
       primitiveTransforms: input.primitiveTransforms,
       templateId,
       elementOrder,
+      assetOverrides,
       slide,
     })
     assertStaticSnapshotHasNoSignedUrl(snapshot)

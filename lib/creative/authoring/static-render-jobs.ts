@@ -28,6 +28,13 @@ export type StaticRenderJob = {
   /** Client clock, for the "PNG pronto · Ns" readout only. */
   startedAt: number
   finishedAt: number | null
+  /**
+   * Authoring Usability Completion V1 — the slide's authored state this render
+   * stands for: the exact state at "Gerar PNG" for a render started in this
+   * session, or the state at load for a hydrated one (any later edit is then
+   * provably absent from it). `null` = unknown, never shown as stale.
+   */
+  authoredSignature: string | null
 }
 
 export type StaticRenderJobs = Readonly<Record<string, StaticRenderJob>>
@@ -60,7 +67,16 @@ export function safeRenderErrorMessage(execution: Pick<RenderExecutionSummary, '
   return 'O render nao foi concluido. Tente novamente.'
 }
 
-export function startRenderJob(jobs: StaticRenderJobs, slide: { id: string; index: number; total: number }, now: number): StaticRenderJobs {
+/**
+ * True when the slide's current authored state is not what its visible render
+ * represents ("Alterações ainda não renderizadas"). Only for a finished render
+ * with a known signature; never auto-re-renders and never invalidates storage.
+ */
+export function isRenderStale(job: StaticRenderJob | undefined, currentSignature: string): boolean {
+  return Boolean(job && job.phase === 'ready' && job.authoredSignature !== null && job.authoredSignature !== currentSignature)
+}
+
+export function startRenderJob(jobs: StaticRenderJobs, slide: { id: string; index: number; total: number }, now: number, authoredSignature: string | null = null): StaticRenderJobs {
   return {
     ...jobs,
     [slide.id]: {
@@ -75,6 +91,7 @@ export function startRenderJob(jobs: StaticRenderJobs, slide: { id: string; inde
       saveError: null,
       startedAt: now,
       finishedAt: null,
+      authoredSignature,
     },
   }
 }
@@ -134,8 +151,10 @@ export function activeExecutionIds(jobs: StaticRenderJobs): string[] {
  */
 export function hydrateRenderJobs(
   jobs: StaticRenderJobs,
-  executions: readonly (Pick<RenderExecutionSummary, 'id' | 'status' | 'queued_at' | 'completed_at' | 'failed_at' | 'error_message' | 'error_code' | 'slide'>)[],
+  executions: readonly (Pick<RenderExecutionSummary, 'id' | 'status' | 'queued_at' | 'completed_at' | 'failed_at' | 'error_message' | 'error_code' | 'slide' | 'attached_to_piece'>)[],
   existingSlideIds: ReadonlySet<string>,
+  /** Slide id -> authored signature at load: the baseline a hydrated render is compared against. */
+  signaturesAtLoad: Readonly<Record<string, string>> = {},
 ): StaticRenderJobs {
   const next: Record<string, StaticRenderJob> = { ...jobs }
   const newestFirst = [...executions].sort((a, b) => Date.parse(b.queued_at) - Date.parse(a.queued_at))
@@ -152,10 +171,12 @@ export function hydrateRenderJobs(
       phase,
       errorMessage: phase === 'failed' ? safeRenderErrorMessage(execution) : null,
       imageUrl: null,
-      save: 'idle',
+      // Server-authoritative: this execution's PNG is already attached to the piece.
+      save: execution.attached_to_piece ? 'saved' : 'idle',
       saveError: null,
       startedAt: Date.parse(execution.queued_at),
       finishedAt: finished ? Date.parse(finished) : null,
+      authoredSignature: signaturesAtLoad[slide.id] ?? null,
     }
   }
   return next

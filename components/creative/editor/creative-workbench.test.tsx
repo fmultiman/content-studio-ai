@@ -5,10 +5,10 @@
  * clicks landed but Dockview-hosted panels were frozen on their first render.
  */
 import { useState } from 'react'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CreativeWorkbench } from './creative-workbench'
+import { CreativeWorkbench, bindTitlebarDoubleClick } from './creative-workbench'
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -118,5 +118,78 @@ describe('CreativeWorkbench (Dockview integration)', () => {
     expect(palette.classList.contains('creative-inspector-minimized')).toBe(false)
     // Section state belongs to the page, not the palette: restore keeps it.
     expect(screen.getByText('template-panel')).toBeTruthy()
+  })
+
+  // Authoring Usability Completion V1 — titlebar double-click.
+  function clickAt(element: HTMLElement, x: number, y: number, pointerId: number, moveTo?: { x: number; y: number }) {
+    fireEvent.pointerDown(element, { pointerId, button: 0, clientX: x, clientY: y })
+    if (moveTo) fireEvent.pointerMove(window, { pointerId, clientX: moveTo.x, clientY: moveTo.y })
+    fireEvent.pointerUp(window, { pointerId, clientX: moveTo?.x ?? x, clientY: moveTo?.y ?? y })
+    fireEvent.click(element, { clientX: moveTo?.x ?? x, clientY: moveTo?.y ?? y })
+  }
+
+  it('double-click on the titlebar minimizes, and again restores; drag still works after restore', async () => {
+    const { palette } = await renderWorkbench()
+    const titlebar = palette.querySelector<HTMLElement>('.dv-void-container')!
+    clickAt(titlebar, 20, 10, 11)
+    clickAt(titlebar, 20, 10, 12)
+    fireEvent.doubleClick(titlebar, { clientX: 20, clientY: 10 })
+    expect(palette.classList.contains('creative-inspector-minimized')).toBe(true)
+    clickAt(titlebar, 20, 10, 13)
+    clickAt(titlebar, 20, 10, 14)
+    fireEvent.doubleClick(titlebar, { clientX: 20, clientY: 10 })
+    expect(palette.classList.contains('creative-inspector-minimized')).toBe(false)
+    expect(screen.getByTestId('inspector-body')).toBeTruthy()
+    fireEvent.pointerDown(titlebar, { pointerId: 15, button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(window, { pointerId: 15, clientX: 60, clientY: 80 })
+    expect(palette.classList.contains('dv-resize-container-dragging')).toBe(true)
+    fireEvent.pointerUp(window, { pointerId: 15 })
+  })
+
+  it('a single click on the titlebar does nothing special', async () => {
+    const { palette } = await renderWorkbench()
+    const titlebar = palette.querySelector<HTMLElement>('.dv-void-container')!
+    clickAt(titlebar, 20, 10, 21)
+    expect(palette.classList.contains('creative-inspector-minimized')).toBe(false)
+  })
+
+  it('double-clicking inside the Inspector content never minimizes', async () => {
+    const { palette } = await renderWorkbench()
+    fireEvent.doubleClick(screen.getByTestId('inner-control'))
+    fireEvent.doubleClick(screen.getByText('template-panel'))
+    expect(palette.classList.contains('creative-inspector-minimized')).toBe(false)
+  })
+})
+
+describe('bindTitlebarDoubleClick', () => {
+  it('ignores a double-click whose clicks ended a drag (moved beyond the slop)', () => {
+    const titlebar = document.createElement('div')
+    const onToggle = vi.fn()
+    const unbind = bindTitlebarDoubleClick(titlebar, onToggle)
+    const press = (x: number, y: number, upX: number, upY: number) => {
+      titlebar.dispatchEvent(new MouseEvent('pointerdown', { clientX: x, clientY: y, bubbles: true }))
+      titlebar.dispatchEvent(new MouseEvent('click', { clientX: upX, clientY: upY, bubbles: true }))
+    }
+    press(10, 10, 80, 60) // a drag that ended as a click
+    press(80, 60, 80, 60)
+    titlebar.dispatchEvent(new MouseEvent('dblclick', { clientX: 80, clientY: 60, bubbles: true }))
+    expect(onToggle).not.toHaveBeenCalled()
+    press(80, 60, 81, 60)
+    press(81, 60, 81, 60)
+    titlebar.dispatchEvent(new MouseEvent('dblclick', { clientX: 81, clientY: 60, bubbles: true }))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    unbind()
+    titlebar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores double-clicks on header controls (buttons)', () => {
+    const titlebar = document.createElement('div')
+    const button = document.createElement('button')
+    titlebar.appendChild(button)
+    const onToggle = vi.fn()
+    bindTitlebarDoubleClick(titlebar, onToggle)
+    button.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(onToggle).not.toHaveBeenCalled()
   })
 })

@@ -172,6 +172,62 @@ export async function POST(request: Request) {
       if (!execution || execution.kind !== 'static_still' || execution.status !== 'completed' || execution.channel_piece_id !== channelPieceId) {
         return NextResponse.json({ error: 'Render nao encontrado para esta peca.' }, { status: 404 })
       }
+
+      // Authoring Usability Completion V1 — idempotent per render output:
+      // ONE durable LibraryFile per render execution. If this execution was
+      // already saved, never upload a second copy: return the existing
+      // attachment, or re-attach the existing LibraryFile if its media row
+      // was removed from this piece. Identity = the execution, not pixels,
+      // so a NEW render of identical content can still be saved.
+      const { data: existingFile } = await supabase
+        .from('library_files')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('source_render_execution_id', renderExecutionId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (existingFile) {
+        const { data: existingMedia } = await supabase
+          .from('channel_piece_media')
+          .select('*')
+          .eq('channel_piece_id', channelPieceId)
+          .eq('library_file_id', existingFile.id)
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle()
+        if (existingMedia) {
+          const resolvedExisting = { ...existingMedia, ...(await resolveMediaSource(supabase, existingMedia)) }
+          return NextResponse.json({ channelPieceMedium: resolvedExisting, libraryFile: existingFile, alreadyAttached: true }, { status: 200 })
+        }
+        const { data: siblings } = await supabase
+          .from('channel_piece_media')
+          .select('position, role')
+          .eq('channel_piece_id', channelPieceId)
+          .eq('user_id', user.id)
+        const items = (siblings ?? []) as { position: number; role: string }[]
+        const { data: reattached, error: reattachError } = await supabase
+          .from('channel_piece_media')
+          .insert({
+            user_id: user.id,
+            channel_piece_id: channelPieceId,
+            image_id: null,
+            library_file_id: existingFile.id,
+            position: items.length > 0 ? Math.max(...items.map((item) => item.position)) + 1 : 0,
+            role: items.some((item) => item.role === 'primary') ? 'carousel_item' : 'primary',
+            alt_text: null,
+          })
+          .select()
+          .single()
+        if (reattachError || !reattached) {
+          const mapped = reattachError ? mapPgError(reattachError.code, reattachError.message) : null
+          if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status })
+          return NextResponse.json({ error: 'Nao foi possivel adicionar a midia a versao. Tente novamente.' }, { status: 500 })
+        }
+        const resolvedReattached = { ...reattached, ...(await resolveMediaSource(supabase, reattached)) }
+        return NextResponse.json({ channelPieceMedium: resolvedReattached, libraryFile: existingFile, reattached: true }, { status: 201 })
+      }
     }
 
     // Step 1: Upload to S3 (Caso A — failure here leaves no residue)

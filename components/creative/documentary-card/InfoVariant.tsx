@@ -65,30 +65,30 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       <GrainOverlay color={isDark ? '#f0d9a8' : '#6b5a3a'} style={{ inset: 0, position: 'absolute' }} />
 
       {/* Authored elements — painted from the normalized stack. */}
-      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} box={{ left: x(650), top: y(660), width: x(560) }} rotation={87} transform={transforms?.archival} zIndex={z('archival', 11)} filter="sepia(.35)" shadow />
-      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} box={{ left: x(-176), top: y(246), width: x(420) }} rotation={-42} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} />
-      <AssetLayer label="Fita do ramo 1" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(26), top: y(456), width: x(128) }} rotation={-20} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 13)} filter="saturate(.7) brightness(1.08)" />
-      <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} filter="saturate(.7) brightness(1.08)" />
-      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
+      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(650), top: y(660), width: x(560) }} rotation={87} transform={transforms?.archival} zIndex={z('archival', 11)} filter="sepia(.35)" shadow />
+      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-176), top: y(246), width: x(420) }} rotation={-42} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} />
+      <AssetLayer label="Fita do ramo 1" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(26), top: y(456), width: x(128) }} rotation={-20} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 13)} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
 
       {content.fact_cards[0] ? (
-        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} shadow>
+        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} shadow>
           {factCard(content.fact_cards[0], cream)}
         </AssetLayer>
       ) : null}
-      <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} />
+      <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} />
       {content.fact_cards[1] ? (
-        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} shadow>
+        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} shadow>
           {factCard(content.fact_cards[1], green)}
         </AssetLayer>
       ) : null}
-      <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} />
-      <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} filter="saturate(.8)" />
+      <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} />
+      <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} filter="saturate(.8)" />
 
       {/* Título: light strip (first clause) over which the dark strip (rest) sits. */}
-      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} box={{ left: x(116), top: y(152), width: x(748), height: y(170) }} rotation={-1} transform={transforms?.paperStrip} zIndex={z('paperStrip', 21)} shadow />
+      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(116), top: y(152), width: x(748), height: y(170) }} rotation={-1} transform={transforms?.paperStrip} zIndex={z('paperStrip', 21)} shadow />
       {titleLineTwo ? (
-        <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} shadow />
+        <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} shadow />
       ) : null}
       <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), transform: titleTransform, transformOrigin: 'top left' }}>
         <div style={{ color: green, fontSize: x(86), left: x(152), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(196), transform: 'rotate(-1deg)', whiteSpace: 'nowrap' }}>{titleLineOne}</div>
@@ -126,14 +126,14 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
         <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126) }}>{content.annotation}</div>
       ) : null}
       <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: STACK_TOP_Z + 1 }}>
-        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow>
+        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow>
           {content.intro ? (
             <div style={{ alignItems: 'center', color: '#d9c79b', display: 'flex', fontFamily: display.family, fontSize: x(19), inset: 0, justifyContent: 'center', letterSpacing: '.16em', lineHeight: 1.5, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center', textTransform: 'uppercase' }}>{content.intro}</div>
           ) : null}
         </AssetLayer>
       </div>
       <div style={{ ...fixedText, right: x(-16), top: y(-18) }}>
-        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
+        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
         <BrandMark asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58) }} />
       </div>
     </>

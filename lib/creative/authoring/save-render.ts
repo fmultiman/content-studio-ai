@@ -11,7 +11,7 @@ import { dataUrlToFile, renderOutputFilename } from './render-output'
 export const CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE = '/api/channel-piece-media/upload'
 
 export type SaveRenderResult =
-  | { ok: true; libraryFileId: string; channelPieceMediaId: string }
+  | { ok: true; libraryFileId: string; channelPieceMediaId: string; alreadyAttached?: boolean }
   | { ok: false; error: string }
 
 export async function saveRenderToChannelPiece(input: {
@@ -56,7 +56,7 @@ export async function saveRenderFileToChannelPiece(input: {
   try {
     const response = await doFetch(CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE, { method: 'POST', body: formData })
     const payload = await response.json().catch(() => null) as
-      | { channelPieceMedium?: { id?: string }; libraryFile?: { id?: string }; error?: string }
+      | { channelPieceMedium?: { id?: string }; libraryFile?: { id?: string }; error?: string; alreadyAttached?: boolean }
       | null
     if (!response.ok || !payload) {
       return { ok: false, error: payload?.error || 'Nao foi possivel salvar nesta peca.' }
@@ -66,7 +66,7 @@ export async function saveRenderFileToChannelPiece(input: {
     if (!libraryFileId || !channelPieceMediaId) {
       return { ok: false, error: 'Resposta inesperada ao salvar nesta peca.' }
     }
-    return { ok: true, libraryFileId, channelPieceMediaId }
+    return { ok: true, libraryFileId, channelPieceMediaId, ...(payload.alreadyAttached ? { alreadyAttached: true } : {}) }
   } catch (cause) {
     return { ok: false, error: cause instanceof Error ? cause.message : 'Falha de rede ao salvar.' }
   }

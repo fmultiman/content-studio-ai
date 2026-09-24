@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Creative Editor Template Foundation V1 — Camadas (element stack) list.
+ * Creative Editor — Camadas as THE element navigator (inline single-open
+ * accordion) + stack-order editor. Authoring Usability Completion V1.
  */
 import { useState } from 'react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { ElementLayers } from './element-layers'
+import { PrimitiveTransformControls, TitleTuningControls } from './primitive-controls'
 
 beforeAll(() => {
   // jsdom lacks pointer capture.
@@ -18,15 +20,30 @@ afterEach(cleanup)
 
 const LABELS = { paper: 'Papel do título', hero: 'Imagem principal', tape1: 'Fita da imagem', title: 'Título' }
 const DEFAULT = ['paper', 'hero', 'tape1', 'title']
+const TRANSFORM = { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 }
 
-function Harness({ onParentPointerDown }: { onParentPointerDown?: () => void }) {
-  const [order, setOrder] = useState<string[]>(DEFAULT)
-  const [selected, setSelected] = useState('title')
+function Harness({ onParentPointerDown, elements = LABELS, defaultOrder = DEFAULT }: { onParentPointerDown?: () => void; elements?: Record<string, string>; defaultOrder?: string[] }) {
+  const [order, setOrder] = useState<string[]>(defaultOrder)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [log, setLog] = useState<string[]>([])
+  // Mirrors the page: an open id the current element set lacks is treated as closed.
+  const open = openId && openId in elements ? openId : null
   return (
     <div onPointerDown={onParentPointerDown}>
-      <ElementLayers order={order} labels={LABELS} selectedId={selected} isDefault={order.join() === DEFAULT.join()} onSelect={setSelected} onReorder={setOrder} onRestoreDefault={() => setOrder(DEFAULT)} />
+      <ElementLayers
+        order={order}
+        labels={elements}
+        openId={open}
+        isDefault={order.join() === defaultOrder.join()}
+        onToggle={(id) => setOpenId((current) => (current === id ? null : id))}
+        onReorder={setOrder}
+        onRestoreDefault={() => setOrder(defaultOrder)}
+        renderPanel={(id) => id === 'title'
+          ? <TitleTuningControls tuning={{ offsetX: 0, offsetY: 0, rotation: 0 }} onChange={(field, value) => setLog((l) => [...l, `${id}.${field}=${value}`])} onReset={() => setLog((l) => [...l, `${id}.reset`])} />
+          : <PrimitiveTransformControls slot="tape1" transforms={TRANSFORM} onChange={(field, value) => setLog((l) => [...l, `${id}.${field}=${value}`])} onReset={() => setLog((l) => [...l, `${id}.reset`])} />}
+      />
       <output data-testid="order">{order.join(',')}</output>
-      <output data-testid="selected">{selected}</output>
+      <output data-testid="log">{log.join('|')}</output>
     </div>
   )
 }
@@ -45,27 +62,129 @@ function layoutRows(offset = 0) {
 
 const rows = () => within(screen.getByTestId('element-layers')).getAllByRole('listitem').map((row) => row.getAttribute('data-layer-id'))
 const grip = (label: string) => screen.getByRole('button', { name: `Mover ${label} (setas para cima/baixo)` })
+const toggle = (label: string) => screen.getByRole('button', { name: label })
+const panels = () => screen.queryAllByRole('region').filter((region) => region.hasAttribute('data-layer-panel'))
+const openRows = () => within(screen.getByTestId('element-layers')).getAllByRole('listitem').filter((row) => row.getAttribute('data-open') === 'true').map((row) => row.getAttribute('data-layer-id'))
 
-describe('ElementLayers (Camadas)', () => {
-  it('shows the front-most element on top with product labels and Frente/Trás cues, never raw ids or z-index numbers', () => {
+describe('ElementLayers — element navigator (accordion)', () => {
+  it('lists the front-most element on top with product labels and Frente/Trás cues, never raw ids or z-index numbers', () => {
     render(<Harness />)
     expect(rows()).toEqual(['title', 'tape1', 'hero', 'paper'])
     expect(screen.getByText('Frente')).toBeTruthy()
     expect(screen.getByText('Trás')).toBeTruthy()
-    expect(screen.getByText('Fita da imagem')).toBeTruthy()
     expect(screen.getByTestId('element-layers').textContent).not.toMatch(/tape1|z-index|\b\d{2}\b/)
   })
 
-  it('dragging a row with the mouse reorders the stack (Imagem principal above Fita da imagem)', () => {
+  it('has no separate element dropdown and no standalone transformation block', () => {
+    render(<Harness />)
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('slider')).toBeNull() // nothing expanded yet -> no controls anywhere
+  })
+
+  it('clicking a collapsed row selects + expands it, with its controls inline under it', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Título'))
+    expect(openRows()).toEqual(['title'])
+    expect(toggle('Título').getAttribute('aria-expanded')).toBe('true')
+    const panel = screen.getByRole('region', { name: 'Título' })
+    expect(within(panel).getByRole('slider', { name: 'Posição X' })).toBeTruthy()
+    expect(within(panel).getByRole('button', { name: 'Restaurar elemento' })).toBeTruthy()
+  })
+
+  it('clicking the same expanded row collapses it', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Título'))
+    fireEvent.click(toggle('Título'))
+    expect(openRows()).toEqual([])
+    expect(panels()).toHaveLength(0)
+  })
+
+  it('opening another row closes the first — only one open at a time', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Título'))
+    fireEvent.click(toggle('Fita da imagem'))
+    expect(openRows()).toEqual(['tape1'])
+    expect(panels()).toHaveLength(1)
+  })
+
+  it('renders element-specific controls (Título: X/Y/rotação; Fita: + escala/opacidade)', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Título'))
+    const title = screen.getByRole('region', { name: 'Título' })
+    expect(within(title).getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação'])
+    fireEvent.click(toggle('Fita da imagem'))
+    const tape = screen.getByRole('region', { name: 'Fita da imagem' })
+    expect(within(tape).getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala', 'Opacidade'])
+  })
+
+  it('discloses with the keyboard (native button: Enter/Space)', () => {
+    render(<Harness />)
+    const body = toggle('Título')
+    body.focus()
+    fireEvent.click(body) // Enter/Space on a native <button> dispatch click
+    expect(openRows()).toEqual(['title'])
+  })
+
+  it('a row-body click never reorders', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Imagem principal'))
+    expect(screen.getByTestId('order').textContent).toBe(DEFAULT.join(','))
+  })
+
+  it('a slider inside an open panel never reorders and never reaches the Inspector', () => {
+    const parent = vi.fn()
+    render(<Harness onParentPointerDown={parent} />)
+    fireEvent.click(toggle('Título'))
+    layoutRows()
+    const slider = screen.getByRole('slider', { name: 'Posição X' })
+    fireEvent.pointerDown(slider, { button: 0, pointerId: 3, clientY: 20 })
+    fireEvent.pointerMove(slider, { pointerId: 3, clientY: 90 })
+    fireEvent.pointerUp(slider, { pointerId: 3, clientY: 90 })
+    fireEvent.change(slider, { target: { value: '12' } })
+    expect(screen.getByTestId('order').textContent).toBe(DEFAULT.join(','))
+    expect(screen.getByTestId('log').textContent).toBe('title.offsetX=12')
+    expect(parent).not.toHaveBeenCalled()
+  })
+
+  it('Restaurar elemento resets only that element (not the stack)', () => {
+    render(<Harness />)
+    fireEvent.keyDown(grip('Papel do título'), { key: 'ArrowUp' })
+    fireEvent.click(toggle('Título'))
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar elemento' }))
+    expect(screen.getByTestId('log').textContent).toBe('title.reset')
+    expect(screen.getByTestId('order').textContent).not.toBe(DEFAULT.join(','))
+  })
+
+  it('an expanded element that the new layout lacks is simply closed (no invalid open state)', () => {
+    const { rerender } = render(<Harness />)
+    fireEvent.click(toggle('Imagem principal'))
+    expect(openRows()).toEqual(['hero'])
+    const infoLike = { paper: 'Cartão 2', title: 'Título' }
+    rerender(<Harness elements={infoLike} defaultOrder={['paper', 'title']} />)
+    expect(panels()).toHaveLength(0)
+  })
+})
+
+describe('ElementLayers — stack order (grip only)', () => {
+  it('dragging the grip reorders without toggling the accordion', () => {
     render(<Harness />)
     layoutRows()
     const handle = grip('Imagem principal') // shown row 2 (y 56–84)
     fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 70 })
     fireEvent.pointerMove(handle, { pointerId: 1, clientY: 42 }) // over row 1
     fireEvent.pointerUp(handle, { pointerId: 1, clientY: 42 })
+    fireEvent.click(handle) // the click that follows a real mouse drag
     expect(rows()).toEqual(['title', 'hero', 'tape1', 'paper'])
-    // Paint order (back -> front) is what gets persisted.
     expect(screen.getByTestId('order').textContent).toBe('paper,tape1,hero,title')
+    expect(openRows()).toEqual([])
+  })
+
+  it('keeps an expanded element open (same identity) while it is reordered', () => {
+    render(<Harness />)
+    fireEvent.click(toggle('Imagem principal'))
+    fireEvent.keyDown(grip('Imagem principal'), { key: 'ArrowUp' })
+    expect(rows()).toEqual(['title', 'hero', 'tape1', 'paper'])
+    expect(openRows()).toEqual(['hero'])
   })
 
   it('targets the row under the pointer even when the list scrolls mid-drag (stationary pointer)', () => {
@@ -80,7 +199,7 @@ describe('ElementLayers (Camadas)', () => {
     expect(rows()).toEqual(['title', 'tape1', 'paper', 'hero'])
   })
 
-  it('never lets a row drag reach the Inspector (propagation stopped)', () => {
+  it('never lets a grip drag reach the Inspector (propagation stopped)', () => {
     const parent = vi.fn()
     render(<Harness onParentPointerDown={parent} />)
     fireEvent.pointerDown(grip('Título'), { button: 0, pointerId: 1, clientY: 10 })
@@ -95,19 +214,15 @@ describe('ElementLayers (Camadas)', () => {
     expect(rows()).toEqual(['title', 'tape1', 'paper', 'hero'])
   })
 
-  it('clicking a row selects that element for editing', () => {
-    render(<Harness />)
-    fireEvent.click(screen.getByRole('button', { name: 'Fita da imagem' }))
-    expect(screen.getByTestId('selected').textContent).toBe('tape1')
-  })
-
-  it('Ordem padrão restores the template stack and is disabled while already default', () => {
+  it('Ordem padrão restores only the template stack and is disabled while already default', () => {
     render(<Harness />)
     const restore = screen.getByRole('button', { name: 'Ordem padrão' }) as HTMLButtonElement
     expect(restore.disabled).toBe(true)
+    expect(restore.title).toBe('Restaurar ordem de camadas do Template')
     fireEvent.keyDown(grip('Papel do título'), { key: 'ArrowUp' })
     expect(restore.disabled).toBe(false)
     fireEvent.click(restore)
     expect(screen.getByTestId('order').textContent).toBe(DEFAULT.join(','))
+    expect(screen.getByTestId('log').textContent).toBe('')
   })
 })

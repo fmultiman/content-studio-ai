@@ -2,6 +2,7 @@ import { defaultContentForVariant } from './authoring-state'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAULT_TUNING } from './types'
 import type { AuthoringAppearance, AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
 import type { PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
+import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 
 export type AuthoringAction =
   | { type: 'SET_VARIANT'; variant: AuthoringVariant }
@@ -25,6 +26,10 @@ export type AuthoringAction =
   | { type: 'SET_ELEMENT_ORDER'; order: string[] }
   /** Back to the template layout's default stack. */
   | { type: 'RESET_ELEMENT_ORDER' }
+  /** Assets "Trocar": a Project LibraryFile fills this slot. */
+  | { type: 'SET_ASSET_OVERRIDE'; slot: AuthoringAssetSlotId; libraryFileId: string }
+  /** Assets "Usar padrão": drop the slot's Project resource (override AND catalog primitive) -> Template default. */
+  | { type: 'USE_TEMPLATE_DEFAULT_ASSET'; slot: AuthoringAssetSlotId }
 
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
@@ -50,6 +55,15 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
     case 'RESET_PRIMITIVE_TRANSFORMS': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
     case 'SET_ELEMENT_ORDER': return { ...state, elementOrder: [...action.order] }
     case 'RESET_ELEMENT_ORDER': return { ...state, elementOrder: undefined }
+    case 'SET_ASSET_OVERRIDE': return { ...state, assetOverrides: { ...(state.assetOverrides ?? {}), [action.slot]: { libraryFileId: action.libraryFileId } } }
+    case 'USE_TEMPLATE_DEFAULT_ASSET': {
+      const { [action.slot]: _removed, ...rest } = state.assetOverrides ?? {}
+      void _removed
+      const primitiveSelection = action.slot === 'paper' || action.slot === 'tape'
+        ? Object.fromEntries(Object.entries(state.primitiveSelection).filter(([key]) => key !== action.slot))
+        : state.primitiveSelection
+      return { ...state, primitiveSelection, assetOverrides: Object.keys(rest).length > 0 ? rest : undefined }
+    }
     default: return state
   }
 }

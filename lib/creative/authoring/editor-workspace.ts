@@ -9,14 +9,20 @@ import {
   DEFAULT_TEMPLATE_ID,
   getTemplateDefinition,
   getTemplateLayout,
-  type AssetSlotId,
+  type AuthoringAssetSlotId,
   type TemplateElementControl,
 } from '@/lib/creative/templates/template-definitions'
 
 /** Below this viewport width the floating palette is replaced by a stacked Inspector. */
 export const FLOATING_WORKBENCH_MIN_VIEWPORT_WIDTH = 1024
 
-export const INSPECTOR_PALETTE_MIN = { width: 320, height: 220 } as const
+/**
+ * Authoring Usability Completion V1: 320 -> 272 px. Gate: at 272 the body
+ * content box (~246 px) still fits the compact tabs, Posição/Rotação sliders
+ * (label + track + value), the Camadas grip + label + chevron and the asset
+ * cards without horizontal overflow. Keep in sync with app/globals.css.
+ */
+export const INSPECTOR_PALETTE_MIN = { width: 272, height: 220 } as const
 /** 360px keeps the five full tab labels readable (measured ~324px of 11px text + padding). */
 export const INSPECTOR_PALETTE_PREFERRED = { width: 360, height: 540 } as const
 /** Gap kept between the palette and the workbench edges when placing it. */
@@ -76,10 +82,10 @@ export type InspectorSection = 'template' | 'content' | 'assets' | 'style' | 'el
 /** Deterministic full/compact labels; compact is used when the palette is narrow, never horizontal scroll. */
 export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: string; compactLabel: string }[] = [
   { value: 'template', label: 'Template', compactLabel: 'Tpl.' },
-  { value: 'content', label: 'Conteúdo', compactLabel: 'Conteúdo' },
+  { value: 'content', label: 'Conteúdo', compactLabel: 'Cont.' },
   { value: 'assets', label: 'Assets', compactLabel: 'Assets' },
-  { value: 'style', label: 'Style', compactLabel: 'Style' },
-  { value: 'element', label: 'Element', compactLabel: 'Elem.' },
+  { value: 'style', label: 'Estilo', compactLabel: 'Estilo' },
+  { value: 'element', label: 'Elementos', compactLabel: 'Elem.' },
 ]
 
 /** Authored ELEMENT instances the Element selector can target. Distinct from ASSET selection
@@ -88,7 +94,7 @@ export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: stri
  * Creative Editor Template Foundation V1: element ids are template-scoped strings. */
 export type ElementKey = string
 
-export type EditorElement = { key: ElementKey; label: string; control: TemplateElementControl; assetSlot?: AssetSlotId }
+export type EditorElement = { key: ElementKey; label: string; control: TemplateElementControl; assetSlot?: AuthoringAssetSlotId }
 
 /**
  * The active layout's authored elements, exactly as the Template defines

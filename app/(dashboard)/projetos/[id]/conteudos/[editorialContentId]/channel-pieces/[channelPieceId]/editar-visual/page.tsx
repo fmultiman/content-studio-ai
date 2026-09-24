@@ -15,18 +15,22 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
-import { PrimitivePicker, PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
+import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy } from '@/components/creative/authoring/inspector-panels'
+import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
+import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
-import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type ElementKey, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
+import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
 import {
   DEFAULT_TEMPLATE_ID, getTemplateLayout, isAppearanceSupported, layoutAssetSlots, listTemplateDefinitions, resolveAuthoringTemplate,
+  type AuthoringAssetSlotId,
 } from '@/lib/creative/templates/template-definitions'
 import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
-  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, resolvePreviewInput, DEFAULT_TUNING,
+  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_TUNING,
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide,
@@ -38,10 +42,13 @@ import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
 import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
 import {
-  activeExecutionIds, applyExecutionUpdate, attachExecution, failEnqueue, hydrateRenderJobs, isActiveRenderPhase,
+  activeExecutionIds, applyExecutionUpdate, attachExecution, failEnqueue, hydrateRenderJobs, isActiveRenderPhase, isRenderStale,
   patchJobByExecution, renderPhaseLabel, startRenderJob, type StaticRenderJob, type StaticRenderJobs,
 } from '@/lib/creative/authoring/static-render-jobs'
-import type { RenderExecutionSummary } from '@/lib/types'
+import type { LibraryFile, RenderExecutionSummary } from '@/lib/types'
+
+/** Image types a slot replacement may use (what the renderer paints as a CSS background). */
+const SLOT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
 
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
 const RENDER_POLL_INTERVAL_MS = 2000
@@ -105,7 +112,11 @@ export default function StaticAuthoringProductPage() {
   const [templateId, setTemplateId] = useState<string>(DEFAULT_TEMPLATE_ID)
   const [templateFallback, setTemplateFallback] = useState(false)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
-  const [selectedElement, setSelectedElement] = useState<ElementKey>('title')
+  // Camadas accordion: the single expanded element. Editor UI state only — never persisted.
+  const [openElementId, setOpenElementId] = useState<string | null>(null)
+  // Project image LibraryFiles (signed display URLs) for slot thumbnails, previews and "Trocar".
+  const [projectImages, setProjectImages] = useState<ReadonlyMap<string, SlotLibraryFile>>(new Map())
+  const [assetPickerSlot, setAssetPickerSlot] = useState<AuthoringAssetSlotId | null>(null)
   const [activeTab, setActiveTab] = useState<InspectorSection>('template')
   const [error, setError] = useState<string | null>(null)
   // Static Render Worker V1: async "Gerar PNG" jobs, keyed by the slide that
@@ -192,6 +203,29 @@ export default function StaticAuthoringProductPage() {
     return () => { cancelled = true }
   }, [params.channelPieceId, params.editorialContentId, params.id])
 
+  // Project images for Assets (thumbnails, "Trocar") and for painting overrides in the preview.
+  const projectIdForImages = context?.project.id ?? null
+  useEffect(() => {
+    if (!projectIdForImages) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await fetch(`/api/library-files?projectId=${encodeURIComponent(projectIdForImages)}&kind=image`)
+        if (!response.ok) return
+        const payload = await response.json() as { files?: LibraryFile[] }
+        if (!cancelled) setProjectImages(new Map((payload.files ?? []).map((file) => [file.id, file])))
+      } catch {
+        // best-effort: slots still show names/origins from authored state
+      }
+    })()
+    return () => { cancelled = true }
+  }, [projectIdForImages])
+
+  /** Authored state of one slide as the render/stale comparison sees it (not UI state). */
+  function slideSignature(slideState: AuthoringState): string {
+    return JSON.stringify(authoringStateToPersistedSlide(slideState, 'slide', 0, templateId))
+  }
+
   async function saveNow() {
     if (!isCarousel || !slides || !context) return
     setSaveStatus('saving')
@@ -268,10 +302,18 @@ export default function StaticAuthoringProductPage() {
   const cardProps = useMemo(() => {
     if (!previewInput || !state) return null
     const sequence = slides && slides.length > 1 ? { index: currentSlideIndex + 1, total: slides.length } : { index: 1, total: 1 }
-    const previewWithSequence = { ...previewInput, manifest: { ...previewInput.manifest, sequence } }
+    // Slot overrides painted with the same shapes the claim-time resolver gives the worker.
+    const overrideAssets = previewOverrideAssets(state.assetOverrides, projectImages)
+    const heroAsset = state.variant === 'cover' && overrideAssets.hero ? overrideAssets.hero : undefined
+    const previewWithSequence = {
+      ...previewInput,
+      resolvedAssets: heroAsset ? { ...previewInput.resolvedAssets, hero: heroAsset } : previewInput.resolvedAssets,
+      manifest: { ...previewInput.manifest, sequence },
+    }
+    const materials = Object.keys(overrideAssets.materials).length > 0 ? overrideAssets.materials : undefined
     // Same templateId + element stack the render request freezes; DocumentaryCard normalizes both identically in preview and worker.
-    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, undefined, undefined, { templateId, elementOrder: state.elementOrder }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
-  }, [previewInput, state, slides, currentSlideIndex, templateId])
+    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
+  }, [previewInput, state, slides, currentSlideIndex, templateId, projectImages])
 
   async function render() {
     if (!state?.productContext || !slides || !currentSlide) return
@@ -285,6 +327,7 @@ export default function StaticAuthoringProductPage() {
     const overrides = deriveTuningOverrides(state)
     const sequence = slides.length > 1 ? { index: slideRef.index, total: slideRef.total } : undefined
     const manifest = deriveManifestFromState(state, sequence)
+    const assetOverrides = deriveAssetOverridesRequest(state)
     const body = {
       manifest,
       context: { projectId: state.productContext.projectId, editorialContentId: state.productContext.editorialContentId, channelPieceId: state.productContext.channelPieceId },
@@ -293,11 +336,12 @@ export default function StaticAuthoringProductPage() {
       ...(overrides ? { overrides } : {}),
       templateId,
       elementOrder: deriveElementOrderRequest(state, templateId),
+      ...(assetOverrides ? { assetOverrides } : {}),
       idempotencyKey: crypto.randomUUID(),
       slide: slideRef,
       ...(previous?.phase === 'failed' && previous.executionId ? { retryOfExecutionId: previous.executionId } : {}),
     }
-    setRenderJobs((jobs) => startRenderJob(jobs, slideRef, Date.now()))
+    setRenderJobs((jobs) => startRenderJob(jobs, slideRef, Date.now(), slideSignature(state)))
     try {
       const response = await fetch('/api/creative/static-authoring/render', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       const payload = await response.json().catch(() => null) as { executionId?: string; status?: RenderExecutionSummary['status']; error?: string } | null
@@ -351,6 +395,9 @@ export default function StaticAuthoringProductPage() {
     }
   }, [renderJobs])
 
+  const slidesRef = useRef<AuthoringSlide[] | null>(null)
+  useEffect(() => { slidesRef.current = slides }, [slides])
+
   // Refresh/reopen: rebind recent executions to the slides that created them.
   const channelPieceIdForRenders = context?.channelPiece.id ?? null
   const slideIdsKey = slides?.map((slide) => slide.id).join(',') ?? ''
@@ -363,12 +410,16 @@ export default function StaticAuthoringProductPage() {
         const response = await fetch(`/api/render-executions?channelPieceId=${channelPieceIdForRenders}`)
         if (!response.ok) return
         const payload = await response.json() as { executions?: RenderExecutionSummary[] }
-        if (!cancelled && payload.executions?.length) setRenderJobs((jobs) => hydrateRenderJobs(jobs, payload.executions ?? [], new Set(slideIdsKey.split(','))))
+        // Baseline for "Alterações ainda não renderizadas": the authored state at load. Any later edit is provably absent from these older renders.
+        const signaturesAtLoad = Object.fromEntries((slidesRef.current ?? []).map((slide) => [slide.id, slideSignature(slide.state)]))
+        if (!cancelled && payload.executions?.length) setRenderJobs((jobs) => hydrateRenderJobs(jobs, payload.executions ?? [], new Set(slideIdsKey.split(',')), signaturesAtLoad))
       } catch {
         // hydration is best-effort; rendering still works
       }
     })()
     return () => { cancelled = true }
+    // Runs once per piece on purpose; slideSignature only reads the load-time state it is meant to capture.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelPieceIdForRenders, slideIdsKey])
 
   async function saveRenderOutput(job: StaticRenderJob) {
@@ -413,17 +464,27 @@ export default function StaticAuthoringProductPage() {
   // and stay bound to their slides (see static-render-jobs.ts).
   const currentRenderJob = currentSlide ? renderJobs[currentSlide.id] : undefined
   const currentRenderActive = Boolean(currentRenderJob && isActiveRenderPhase(currentRenderJob.phase))
+  const currentRenderStale = isRenderStale(currentRenderJob, slideSignature(state))
   const previewJob = previewJobSlideId ? renderJobs[previewJobSlideId] : undefined
   const slideTotal = slides.length
   const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
-  // A selection the active layout does not have (e.g. Hero on Info) falls back to Título.
-  const activeElement: ElementKey = elements.some((element) => element.key === selectedElement) ? selectedElement : 'title'
-  const activeElementDef = elements.find((element) => element.key === activeElement)
-  const activeControl = activeElementDef?.control
+  // An expanded element the active layout does not have (layout switch) is simply closed.
+  const openElement = openElementId && elements.some((element) => element.key === openElementId) ? openElementId : null
   const elementLabels = Object.fromEntries(elements.map((element) => [element.key, element.label]))
   const stack = resolveElementStack(template.id, state.variant, state.elementOrder)
   const stackIsDefault = layout ? isDefaultElementOrder(layout, stack.order) : true
   const slotsInUse = layout ? layoutAssetSlots(template, layout) : []
+  const pickerSlot = assetPickerSlot ? slotsInUse.find(({ slot }) => slot.id === assetPickerSlot)?.slot ?? null : null
+
+  /** The open element's own controls — exactly what its Template control contract supports. */
+  function renderElementPanel(id: string) {
+    const control = elements.find((element) => element.key === id)?.control
+    if (!control || !state) return null
+    if (control.type === 'tuning' && control.group === 'hero') return <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />
+    if (control.type === 'tuning') { const group = control.group; return <TitleTuningControls tuning={state.tuning[group]} onChange={(field, value) => setTuningField(group, field, value)} onReset={() => resetTuningField(group)} /> }
+    const key = control.key
+    return <PrimitiveTransformControls slot={key} transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })} />
+  }
 
   const inspector = (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
@@ -447,37 +508,40 @@ export default function StaticAuthoringProductPage() {
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>{template.layouts.map((option) => <Button key={option.id} size="sm" variant={state.variant === option.id ? 'default' : 'outline'} onClick={() => { if (state.variant !== option.id) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }}>{option.label}</Button>)}</div>
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>{(layout?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={state.appearance === appearance ? 'default' : 'outline'} onClick={() => { if (isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}</div>
         <p className="text-xs text-muted-foreground">{template.description}</p>
+        {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
         <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
         {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
       </TabsContent>
-      <TabsContent value="assets" className="space-y-3 pt-3">
-        {/* Assets = which resource fills each semantic slot. Placement/stacking lives in Element. */}
+      <TabsContent value="assets" className="space-y-2 pt-3">
+        {/* Assets = which resource fills each semantic slot. Placement/stacking live in Elementos. */}
+        <p className="text-[11px] text-muted-foreground">Recurso que preenche cada papel visual deste layout. Posição e camadas ficam em Elementos.</p>
         {slotsInUse.map(({ slot, elements: users }) => (
-          <div key={slot.id} className="space-y-1.5 rounded-md border border-border/60 p-2" data-asset-slot={slot.id}>
-            {slot.projectCategory && context.primitiveProjectRef
-              ? <PrimitivePicker slot={slot.projectCategory} label={slot.label} primitives={context.primitives} selectedKey={state.primitiveSelection[slot.projectCategory]} onSelect={(key) => dispatch(slot.projectCategory === 'paper' ? { type: 'SET_PRIMITIVE_PAPER', key } : { type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch(slot.projectCategory === 'paper' ? { type: 'RESET_PRIMITIVE_PAPER' } : { type: 'RESET_PRIMITIVE_TAPE' })} />
-              : <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium">{slot.label}</span><span className="truncate text-xs text-muted-foreground" title="Asset padrão do template">{slot.defaultAsset.label}</span></div>}
-            <p className="text-[11px] text-muted-foreground">Usado por: {users.map((element) => element.label).join(', ')}</p>
-          </div>
+          <AssetSlotCard
+            key={slot.id}
+            slot={slot}
+            resource={resolveSlotResource(slot, state, projectImages, context.primitives)}
+            usedBy={users.map((element) => element.label)}
+            onReplace={() => setAssetPickerSlot(slot.id)}
+            onUseDefault={() => dispatch({ type: 'USE_TEMPLATE_DEFAULT_ASSET', slot: slot.id })}
+          />
         ))}
-        {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Imagem principal: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
       </TabsContent>
-      <TabsContent value="style" className="space-y-2 pt-3">
-        <p className="text-xs text-muted-foreground">Tipografia e cores vêm da Identidade do Projeto.</p>
-        <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1 text-xs"><dt className="text-muted-foreground">Títulos</dt><dd className="truncate">{state.productContext?.identitySnapshot.typography.display.family ?? '—'}</dd><dt className="text-muted-foreground">Texto</dt><dd className="truncate">{state.productContext?.identitySnapshot.typography.body.family ?? '—'}</dd></dl>
-        <div className="flex flex-wrap gap-1.5">{Object.entries(state.productContext?.identitySnapshot.colors ?? {}).map(([name, value]) => <span key={name} title={`${name}: ${value}`} className="h-5 w-5 rounded border border-border/60" style={{ background: value }} />)}</div>
+      <TabsContent value="style" className="pt-3">
+        <StyleSourcePanel tokens={state.productContext?.identitySnapshot} />
       </TabsContent>
-      <TabsContent value="element" className="space-y-3 pt-3">
-        <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={activeElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elements.map((element) => <SelectItem key={element.key} value={element.key}>{element.label}</SelectItem>)}</SelectContent></Select></div>
-        <div className="rounded-md border border-border/60 p-3">
-          {activeControl?.type === 'tuning' && activeControl.group === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
-          {activeControl?.type === 'tuning' && activeControl.group === 'hero' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
-          {activeControl?.type === 'tuning' && activeControl.group === 'source' && <TitleTuningControls tuning={state.tuning.source} onChange={(field, value) => setTuningField('source', field, value)} onReset={() => resetTuningField('source')} />}
-          {activeControl?.type === 'transform' && <PrimitiveTransformControls slot={activeControl.key} transforms={state.primitiveTransforms[activeControl.key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: activeControl.key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: activeControl.key })} />}
-        </div>
-        <ElementLayers order={stack.order} labels={elementLabels} selectedId={activeElement} isDefault={stackIsDefault} onSelect={(id) => setSelectedElement(id)} onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })} onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })} />
+      <TabsContent value="element" className="pt-3">
+        <ElementLayers
+          order={stack.order}
+          labels={elementLabels}
+          openId={openElement}
+          isDefault={stackIsDefault}
+          onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
+          onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })}
+          onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })}
+          renderPanel={renderElementPanel}
+        />
       </TabsContent>
     </Tabs>
   )
@@ -504,8 +568,8 @@ export default function StaticAuthoringProductPage() {
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
         </div>
         {isCarousel && <div className="flex items-center gap-1" role="group" aria-label="Estado do slide">
-          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty || !lastSavedSnapshot} onClick={revert}><Undo2 className="h-3 w-3" />Reverter</Button>
-          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" onClick={() => setRestoreDialogOpen(true)}><RotateCcw className="h-3 w-3" />Restaurar padrão</Button>
+          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
+          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button>
           <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
         </div>}
       </div>
@@ -545,17 +609,34 @@ export default function StaticAuthoringProductPage() {
           </button>
           <Check className="h-3.5 w-3.5 text-[var(--indicator-success,theme(colors.green.600))]" />{renderPhaseLabel('ready')}{currentRenderJob.finishedAt ? ` · ${Math.max(1, Math.round((currentRenderJob.finishedAt - currentRenderJob.startedAt) / 1000))}s` : ''}
           {currentRenderJob.save === 'saved'
-            ? <span className="flex items-center gap-1 text-foreground"><Check className="h-3.5 w-3.5" />Salvo nesta peça</span>
-            : <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={currentRenderJob.save === 'saving'} onClick={() => void saveRenderOutput(currentRenderJob)} title={currentRenderJob.saveError ?? undefined}>{currentRenderJob.save === 'saving' ? 'Salvando…' : currentRenderJob.save === 'error' ? 'Tentar salvar de novo' : 'Salvar nesta peça'}</Button>}
+            ? <span className="flex items-center gap-1 text-foreground" data-testid="render-attached" title="Este PNG já está anexado à peça (Galeria / Imagens geradas).">✓ Salvo nesta peça</span>
+            : <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={currentRenderJob.save === 'saving'} onClick={() => void saveRenderOutput(currentRenderJob)} title={currentRenderJob.saveError ?? 'Anexar este PNG à peça (fica disponível na Galeria / Imagens geradas).'}>{currentRenderJob.save === 'saving' ? 'Salvando…' : currentRenderJob.save === 'error' ? 'Tentar salvar de novo' : 'Salvar nesta peça'}</Button>}
         </span>}
+        {currentRenderStale && <span className="text-xs text-amber-600 dark:text-amber-400" data-testid="render-stale" title="O PNG atual não inclui as alterações feitas depois dele. Gere um novo PNG para incluí-las.">Alterações ainda não renderizadas</span>}
         {isCarousel && <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>}
-        {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()}>{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
-        <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5">{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
+        {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()} title="Salvar o estado de autoria (não gera PNG nem anexa mídia).">{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
+        <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5" title="Gerar um PNG do estado atual deste slide (não salva a autoria).">{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
       </div>
     </header>
   )
 
-  const restoreDialog = <><AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar slide?</AlertDialogTitle><AlertDialogDescription>As alterações atuais deste slide serão substituídas pelo padrão do template. Esta alteração só será persistida quando você clicar em Salvar.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const restoreDialog = <><AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados ao slide atual. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <ProjectLibraryAssetPicker
+      open={Boolean(pickerSlot)}
+      onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}
+      projectId={context.project.id}
+      selectedId={pickerSlot ? state.assetOverrides?.[pickerSlot.id]?.libraryFileId ?? null : null}
+      allowedKinds={['image']}
+      allowedMimeTypes={SLOT_IMAGE_MIME_TYPES}
+      groupByOrigin
+      title={pickerSlot ? `Trocar: ${pickerSlot.label}` : 'Trocar asset'}
+      description="Escolha uma imagem do Projeto para este papel visual. O arquivo é referenciado, não copiado."
+      onSelect={(file) => {
+        if (!pickerSlot) return
+        setProjectImages((current) => new Map(current).set(file.id, file))
+        dispatch({ type: 'SET_ASSET_OVERRIDE', slot: pickerSlot.id, libraryFileId: file.id })
+      }}
+    />
     <Dialog open={Boolean(previewJob?.imageUrl)} onOpenChange={(open) => { if (!open) setPreviewJobSlideId(null) }}>
       <DialogContent className="max-w-[min(92vw,540px)]">
         <DialogHeader>

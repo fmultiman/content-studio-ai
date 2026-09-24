@@ -7,6 +7,8 @@ import { paletteFromTokens } from './primitives'
 import type { DocumentaryCardProps, DocumentaryCardVisualContext } from './types'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
 import { resolveElementStack } from '@/lib/creative/templates/element-stack'
+import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, type AssetSlotId } from '@/lib/creative/templates/template-definitions'
+import type { MaterialName } from './primitives'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -25,6 +27,7 @@ export function DocumentaryCard({
   materialBaseUrl,
   materialUrls,
   materialAssets,
+  materialContain,
   primitiveTransforms,
   templateId,
   elementOrder,
@@ -61,6 +64,7 @@ export function DocumentaryCard({
     materialBaseUrl,
     materialUrls,
     materialAssets,
+    materialContain,
     primitiveTransforms,
     templateId,
     elementOrder,
@@ -126,6 +130,18 @@ export function documentaryCardPropsFromRuntimeInput(
     }),
   ) as NonNullable<DocumentaryCardProps['materialAssets']>
 
+  // Every other Project-filled slot (Authoring Usability Completion V1): its
+  // material URL comes from the resolved LibraryFile; absent slots keep the
+  // template-bundled default resolved by materialUrl().
+  const slotMaterialUrls: Partial<Record<MaterialName, string>> = {}
+  const materialContain: Partial<Record<MaterialName, boolean>> = {}
+  for (const [slotId, asset] of Object.entries(input.primitiveMaterials ?? {}) as [AssetSlotId, NonNullable<DocumentaryCardProps['primitiveMaterials']>[AssetSlotId]][]) {
+    const slot = EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE.assetSlots[slotId]
+    if (!slot || !asset?.url) continue
+    slotMaterialUrls[slot.material] = asset.url
+    if (asset.fit === 'contain') materialContain[slot.material] = true
+  }
+
   return {
     ...input,
     mode: options.mode,
@@ -135,7 +151,9 @@ export function documentaryCardPropsFromRuntimeInput(
     durationInFrames: options.durationInFrames,
     materialAssets: resolvedMaterialAssets,
     primitiveMaterials: input.primitiveMaterials,
+    materialContain,
     materialUrls: {
+      ...slotMaterialUrls,
       tornPaper: resolvedMaterialAssets.tornPaper?.url,
       tape: resolvedMaterialAssets.tape?.url,
     },

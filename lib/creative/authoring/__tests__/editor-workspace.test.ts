@@ -19,7 +19,7 @@ describe('initialInspectorPaletteBox', () => {
   })
 
   it('never goes below the readable minimum size', () => {
-    const box = initialInspectorPaletteBox(300, 200)
+    const box = initialInspectorPaletteBox(280, 200)
     expect(box.width).toBe(INSPECTOR_PALETTE_MIN.width)
     expect(box.height).toBe(INSPECTOR_PALETTE_MIN.height)
     expect(box.left).toBe(0)
@@ -46,8 +46,8 @@ describe('labels', () => {
   })
 
   it('keeps five Inspector sections with correct UTF-8 labels', () => {
-    expect(INSPECTOR_SECTIONS.map((section) => section.label)).toEqual(['Template', 'Conteúdo', 'Assets', 'Style', 'Element'])
-    expect(INSPECTOR_SECTIONS.map((section) => section.compactLabel)).toEqual(['Tpl.', 'Conteúdo', 'Assets', 'Style', 'Elem.'])
+    expect(INSPECTOR_SECTIONS.map((section) => section.label)).toEqual(['Template', 'Conteúdo', 'Assets', 'Estilo', 'Elementos'])
+    expect(INSPECTOR_SECTIONS.map((section) => section.compactLabel)).toEqual(['Tpl.', 'Cont.', 'Assets', 'Estilo', 'Elem.'])
   })
 })
 

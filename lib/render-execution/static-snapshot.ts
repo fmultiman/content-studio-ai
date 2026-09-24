@@ -20,6 +20,7 @@
  */
 import { z } from 'zod'
 import { StaticRenderManifestSchema, type StaticRenderManifest } from '@/lib/schemas/creative/static-render'
+import { AUTHORING_ASSET_SLOT_IDS, type AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import {
   authoringRenderOverridesSchema,
@@ -42,6 +43,19 @@ const FrozenPrimitiveAssetSchema = z.object({
 }).strict()
 
 export type FrozenPrimitiveAsset = z.infer<typeof FrozenPrimitiveAssetSchema>
+
+/**
+ * Authoring Usability Completion V1 — a Project LibraryFile the author chose
+ * for a slot (Assets "Trocar"), frozen at enqueue by immutable id. Claim-time
+ * resolution only presigns THIS id (project/user scoped); it never re-picks.
+ */
+export const FrozenLibraryAssetSchema = z.object({
+  libraryFileId: z.string().uuid(),
+  mimeType: z.string().regex(/^image\/(png|jpeg|webp|gif)$/),
+  name: z.string().min(1).max(255),
+}).strict()
+export type FrozenLibraryAsset = z.infer<typeof FrozenLibraryAssetSchema>
+export type FrozenAssetOverrides = Partial<Record<AuthoringAssetSlotId, FrozenLibraryAsset>>
 export type FrozenPrimitiveAssets = { paper?: FrozenPrimitiveAsset; tape?: FrozenPrimitiveAsset }
 
 export const STATIC_RENDER_EXECUTION_SNAPSHOT_SCHEMA_VERSION = 'static-render-execution-snapshot.v0' as const
@@ -77,6 +91,7 @@ export const StaticRenderExecutionSnapshotSchema = z
     // frozen before them still parses (absent = default template / stack).
     templateId: templateIdSchema.optional(),
     elementOrder: elementOrderSchema.optional(),
+    assetOverrides: z.record(z.enum(AUTHORING_ASSET_SLOT_IDS as [AuthoringAssetSlotId, ...AuthoringAssetSlotId[]]), FrozenLibraryAssetSchema).optional(),
     slide: StaticRenderSlideRefSchema.nullable(),
     output: z
       .object({
@@ -100,6 +115,8 @@ export type StaticRenderExecutionSnapshot = {
   templateId?: string
   /** Frozen, already-normalized paint order (back -> front) the Editor showed at click time. */
   elementOrder?: string[]
+  /** Frozen Project LibraryFiles per slot (Assets "Trocar"); hero included. */
+  assetOverrides?: FrozenAssetOverrides
   slide: StaticRenderSlideRef | null
   output: { format: 'png'; width: number; height: number }
 }
@@ -113,6 +130,7 @@ export function buildStaticRenderExecutionSnapshot(input: {
   primitiveTransforms?: PrimitiveTransformsRequest
   templateId?: string
   elementOrder?: string[]
+  assetOverrides?: FrozenAssetOverrides
   slide: StaticRenderSlideRef | null
 }): StaticRenderExecutionSnapshot {
   // Deep-clone through JSON so the frozen snapshot can never alias a caller
@@ -128,6 +146,7 @@ export function buildStaticRenderExecutionSnapshot(input: {
     ...(input.primitiveTransforms ? { primitiveTransforms: input.primitiveTransforms } : {}),
     ...(input.templateId ? { templateId: input.templateId } : {}),
     ...(input.elementOrder ? { elementOrder: input.elementOrder } : {}),
+    ...(input.assetOverrides && Object.keys(input.assetOverrides).length > 0 ? { assetOverrides: input.assetOverrides } : {}),
     slide: input.slide,
     output: { format: 'png', width: input.manifest.canvas.width, height: input.manifest.canvas.height },
   })) as StaticRenderExecutionSnapshot

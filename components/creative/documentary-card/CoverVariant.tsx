@@ -43,9 +43,9 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       ))}
 
       {/* Authored elements — painted from the normalized stack. */}
-      <AssetLayer label="Ornamento celeste" url={url('ornament')} metrics={materialMetrics('ornament')} box={{ left: x(478), top: y(-26), width: x(380) }} transform={transforms?.ornament} zIndex={z('ornament', 11)} filter={isDark ? undefined : 'brightness(.7)'} />
-      <AssetLayer label="Fragmento de mapa" url={url('archival')} metrics={materialMetrics('archival')} box={{ left: x(826), top: y(1054), width: x(430) }} rotation={90} transform={transforms?.archival} zIndex={z('archival', 12)} shadow />
-      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} box={{ left: x(405), top: y(842), width: x(280) }} rotation={-8} flipX transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 13)} />
+      <AssetLayer label="Ornamento celeste" url={url('ornament')} metrics={materialMetrics('ornament')} contain={context.materialContain?.ornament} box={{ left: x(478), top: y(-26), width: x(380) }} transform={transforms?.ornament} zIndex={z('ornament', 11)} filter={isDark ? undefined : 'brightness(.7)'} />
+      <AssetLayer label="Fragmento de mapa" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(826), top: y(1054), width: x(430) }} rotation={90} transform={transforms?.archival} zIndex={z('archival', 12)} shadow />
+      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(405), top: y(842), width: x(280) }} rotation={-8} flipX transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 13)} />
 
       {/* Hero ("Imagem principal"): the content image in a pale photo border, tilted like the Pack B book. */}
       <div
@@ -69,21 +69,21 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         </div>
       </div>
 
-      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} box={{ left: x(968), top: y(498), width: x(190) }} rotation={14} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
-      <AssetLayer label="Fita da imagem" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(742), top: y(176), width: x(158) }} rotation={6} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 16)} filter="saturate(.85)" />
+      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(498), width: x(190) }} rotation={14} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
+      <AssetLayer label="Fita da imagem" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(176), width: x(158) }} rotation={6} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 16)} filter="saturate(.85)" />
 
       {/* Nota da edição: detail_note on its own paper scrap. */}
-      <AssetLayer label="Nota da edição" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('note', 17)} shadow>
+      <AssetLayer label="Nota da edição" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('note', 17)} shadow>
         {content.detail_note ? (
           <div style={{ color: titleInk, fontFamily: context.tokens.typography.body.family, fontSize: x(21), left: '11%', lineHeight: 1.34, position: 'absolute', right: '9%', top: '25%' }}>
             {noteBody ? <><div style={{ fontWeight: 700 }}>{noteLabel}:</div><div>{noteBody}</div></> : content.detail_note}
           </div>
         ) : null}
       </AssetLayer>
-      <AssetLayer label="Fita da nota" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(694), top: y(880), width: x(138) }} rotation={-3} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 18)} filter="saturate(.85)" />
+      <AssetLayer label="Fita da nota" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(694), top: y(880), width: x(138) }} rotation={-3} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 18)} filter="saturate(.85)" />
 
       {/* Papel do título + Título: siblings, so each owns its own layer. */}
-      <AssetLayer label="Papel do título" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} box={{ left: x(12), top: y(228), width: x(586), height: y(356) }} rotation={-1} transform={transforms?.paper} zIndex={z('paper', 19)} shadow />
+      <AssetLayer label="Papel do título" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(12), top: y(228), width: x(586), height: y(356) }} rotation={-1} transform={transforms?.paper} zIndex={z('paper', 19)} shadow />
       <div
         style={{
           color: titleInk,

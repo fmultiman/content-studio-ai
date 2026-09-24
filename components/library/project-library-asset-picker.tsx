@@ -21,6 +21,13 @@ type ProjectLibraryAssetPickerProps = {
   selectedId?: string | null
   allowedKinds?: LibraryFileKind[]
   onSelect: (file: LibraryFile) => void
+  /** Creative Editor Assets "Trocar": copy tailored to the slot being filled. */
+  title?: string
+  description?: string
+  /** Show uploads ("Arquivos do projeto") and saved studio renders ("Imagens geradas") as separate groups. */
+  groupByOrigin?: boolean
+  /** Only files of these MIME types are offered (e.g. images the renderer can paint). */
+  allowedMimeTypes?: readonly string[]
 }
 
 const DEFAULT_ALLOWED_KINDS: LibraryFileKind[] = ['image']
@@ -111,6 +118,10 @@ export function ProjectLibraryAssetPicker({
   selectedId,
   allowedKinds = DEFAULT_ALLOWED_KINDS,
   onSelect,
+  title = 'Escolher asset da Biblioteca',
+  description = 'Selecione uma imagem do Projeto atual. O asset será associado à cena, sem copiar o arquivo.',
+  groupByOrigin = false,
+  allowedMimeTypes,
 }: ProjectLibraryAssetPickerProps) {
   const [files, setFiles] = useState<LibraryFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -147,14 +158,20 @@ export function ProjectLibraryAssetPicker({
     return () => controller.abort()
   }, [allowedKinds, open, projectId])
 
+  const visibleFiles = allowedMimeTypes ? files.filter((file) => allowedMimeTypes.includes(file.mime_type ?? '')) : files
+  const groups = groupByOrigin
+    ? [
+        { key: 'upload', label: 'Arquivos do projeto', files: visibleFiles.filter((file) => file.origin !== 'studio_render') },
+        { key: 'studio_render', label: 'Imagens geradas', files: visibleFiles.filter((file) => file.origin === 'studio_render') },
+      ]
+    : [{ key: 'all', label: null, files: visibleFiles }]
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[80vh] max-w-3xl flex-col gap-0 p-0">
         <DialogHeader className="px-6 pb-3 pt-6">
-          <DialogTitle>Escolher asset da Biblioteca</DialogTitle>
-          <DialogDescription>
-            Selecione uma imagem do Projeto atual. O asset será associado à cena, sem copiar o arquivo.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
           {isLoading ? (
@@ -165,24 +182,29 @@ export function ProjectLibraryAssetPicker({
             <p className="py-10 text-center text-sm text-muted-foreground">
               {error || 'Selecione um Projeto para escolher um asset da Biblioteca.'}
             </p>
-          ) : files.length === 0 ? (
+          ) : visibleFiles.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               Nenhuma imagem disponível neste Projeto.
             </p>
           ) : (
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-              {files.map((file) => (
-                <LibraryAssetCard
-                  key={file.id}
-                  file={file}
-                  selected={file.id === selectedId}
-                  onSelect={() => {
-                    onSelect(file)
-                    onOpenChange(false)
-                  }}
-                />
-              ))}
-            </div>
+            groups.map((group) => group.files.length === 0 ? null : (
+              <section key={group.key} className="mb-4 space-y-2" data-picker-group={group.key}>
+                {group.label ? <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</h3> : null}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {group.files.map((file) => (
+                    <LibraryAssetCard
+                      key={file.id}
+                      file={file}
+                      selected={file.id === selectedId}
+                      onSelect={() => {
+                        onSelect(file)
+                        onOpenChange(false)
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))
           )}
           <Button type="button" variant="ghost" className="mt-4" onClick={() => onOpenChange(false)}>
             Cancelar

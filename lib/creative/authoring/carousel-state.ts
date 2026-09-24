@@ -44,10 +44,12 @@ import {
 import { defaultContentForVariant, TUNING_BOUNDS } from './authoring-state'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import {
+  AUTHORING_ASSET_SLOT_IDS,
   DEFAULT_TEMPLATE_ID,
   getTemplateDefinition,
   getTemplateLayout,
   isRegisteredTemplateId,
+  type AuthoringAssetSlotId,
 } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder } from '@/lib/creative/templates/element-stack'
 
@@ -123,6 +125,11 @@ const tuningSchema = z
   })
   .strict()
 
+export const AssetOverridesSchema = z.record(
+  z.enum(AUTHORING_ASSET_SLOT_IDS as [AuthoringAssetSlotId, ...AuthoringAssetSlotId[]]),
+  z.object({ libraryFileId: z.string().uuid() }).strict(),
+)
+
 // Content stays opaque here, exactly like StaticRenderManifest's own
 // ContentBindingsSchema — the per-variant shape (cover vs info) is validated
 // where it already is, by the template registry at render time, not by this
@@ -147,6 +154,9 @@ export const PersistedAuthoredSlideSchema = z
     // order, back -> front) for THIS slide only. Absent = template default.
     // Unknown/duplicate ids are tolerated here and normalized on read.
     elementOrder: z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH).optional(),
+    // Authoring Usability Completion V1 — Project LibraryFile per slot
+    // (identity only). Absent = Project primitive / Template default.
+    assetOverrides: AssetOverridesSchema.optional(),
   })
   .strict()
 
@@ -207,7 +217,12 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source } },
     // Only an authored override is persisted; absence keeps following the template default.
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
+    ...(state.assetOverrides && Object.keys(state.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(state.assetOverrides) } : {}),
   }
+}
+
+function copyOverrides(overrides: NonNullable<AuthoringState['assetOverrides']>): NonNullable<AuthoringState['assetOverrides']> {
+  return Object.fromEntries(Object.entries(overrides).filter(([, value]) => value?.libraryFileId).map(([slot, value]) => [slot, { libraryFileId: (value as { libraryFileId: string }).libraryFileId }]))
 }
 
 /**
@@ -239,6 +254,7 @@ export function persistedSlideToAuthoringState(
     primitiveSelection: { ...slide.primitiveSelection } as AuthoringPrimitiveSelection,
     primitiveTransforms: completeTransforms(slide.primitiveTransforms as Partial<AuthoringPrimitiveTransforms>),
     ...(slide.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, slide.elementOrder) } : {}),
+    ...(slide.assetOverrides && Object.keys(slide.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(slide.assetOverrides) } : {}),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
     // adjustment, identical to how those slides always rendered. `source`

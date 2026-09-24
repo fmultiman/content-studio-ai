@@ -48,6 +48,18 @@ export type AssetSlotId =
   | 'botanicalLeaf'
   | 'ornament'
 
+/**
+ * Authoring Usability Completion V1 — a slot the author can fill from the
+ * Project Library: every material slot plus the layout's content image
+ * ('hero', the Cover's Imagem principal). Content images are not template
+ * materials: they render through the manifest's `assets.hero`, never through
+ * `materialUrls`.
+ */
+export type AuthoringAssetSlotId = AssetSlotId | 'hero'
+export const AUTHORING_ASSET_SLOT_IDS: readonly AuthoringAssetSlotId[] = [
+  'hero', 'paper', 'paperStrip', 'paperDark', 'paperScrap', 'archival', 'tape', 'pin', 'botanical', 'botanicalLeaf', 'ornament',
+]
+
 /** Pixel metrics of an asset file: full size + the visible (alpha) bounding box. */
 export type AssetMetrics = {
   width: number
@@ -92,7 +104,7 @@ export type TemplateElementDefinition = {
   /** Product-facing label — the only name users ever see. */
   label: string
   kind: 'text' | 'image' | 'material'
-  assetSlot?: AssetSlotId
+  assetSlot?: AuthoringAssetSlotId
   control: TemplateElementControl
 }
 
@@ -106,6 +118,22 @@ export type TemplateLayoutDefinition = {
   defaultStackOrder: readonly string[]
 }
 
+/** A content-image slot (Imagem principal): filled by content media, default = the template's example image. */
+export type ContentImageSlotDefinition = {
+  id: 'hero'
+  label: string
+  defaultAsset: { key: string; label: string; path: string }
+}
+
+/** Uniform read-only view of any slot a layout uses (Template anatomy, Assets tab). */
+export type AuthoringSlotView = {
+  id: AuthoringAssetSlotId
+  label: string
+  role: 'material' | 'content'
+  defaultAsset: { key: string; label: string; path: string }
+  projectCategory?: 'paper' | 'tape'
+}
+
 export type TemplateDefinition = {
   id: string
   name: string
@@ -114,6 +142,7 @@ export type TemplateDefinition = {
   /** Code-backed renderer this template is drawn by (StaticRenderManifest template ref + component binding). */
   renderer: { componentKey: string; templateRef: { id: string; version: string; scope: 'system' } }
   assetSlots: Readonly<Record<AssetSlotId, AssetSlotDefinition>>
+  contentImageSlots: Readonly<Record<'hero', ContentImageSlotDefinition>>
   layouts: readonly TemplateLayoutDefinition[]
 }
 
@@ -173,7 +202,7 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
-    { id: 'hero', label: 'Imagem principal', kind: 'image', control: { type: 'tuning', group: 'hero' } },
+    { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita da imagem', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'note', label: 'Nota da edição', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
     { id: 'tape2', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape2') },
@@ -217,6 +246,9 @@ export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   description: 'Colagem documental editorial: papéis rasgados, fitas, pins e botânicas sobre uma composição de memória.',
   renderer: { componentKey: 'editorial.documentary-card', templateRef: { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } },
   assetSlots: ASSET_SLOTS,
+  contentImageSlots: {
+    hero: { id: 'hero', label: 'Imagem principal', defaultAsset: { key: 'documentary-card-hero-01', label: 'Imagem de exemplo do template', path: 'documentary-card-hero-01.webp' } },
+  },
   layouts: [COVER_LAYOUT, INFO_LAYOUT],
 }
 
@@ -263,14 +295,34 @@ export function getLayoutElement(layout: TemplateLayoutDefinition, elementId: st
   return layout.elements.find((element) => element.id === elementId) ?? null
 }
 
-/** Asset slots actually used by a layout's elements, in first-use order, with the elements that use each. */
-export function layoutAssetSlots(template: TemplateDefinition, layout: TemplateLayoutDefinition): { slot: AssetSlotDefinition; elements: TemplateElementDefinition[] }[] {
-  const bySlot = new Map<AssetSlotId, TemplateElementDefinition[]>()
+export function slotView(template: TemplateDefinition, slotId: AuthoringAssetSlotId): AuthoringSlotView {
+  if (slotId === 'hero') {
+    const slot = template.contentImageSlots.hero
+    return { id: slot.id, label: slot.label, role: 'content', defaultAsset: slot.defaultAsset }
+  }
+  const slot = template.assetSlots[slotId]
+  return {
+    id: slot.id,
+    label: slot.label,
+    role: 'material',
+    defaultAsset: { key: slot.defaultAsset.key, label: slot.defaultAsset.label, path: slot.defaultAsset.path },
+    ...(slot.projectCategory ? { projectCategory: slot.projectCategory } : {}),
+  }
+}
+
+/** Slots actually used by a layout's elements, in first-use order, with the elements that use each. */
+export function layoutAssetSlots(template: TemplateDefinition, layout: TemplateLayoutDefinition): { slot: AuthoringSlotView; elements: TemplateElementDefinition[] }[] {
+  const bySlot = new Map<AuthoringAssetSlotId, TemplateElementDefinition[]>()
   for (const element of layout.elements) {
     if (!element.assetSlot) continue
     bySlot.set(element.assetSlot, [...(bySlot.get(element.assetSlot) ?? []), element])
   }
-  return [...bySlot.entries()].map(([slotId, elements]) => ({ slot: template.assetSlots[slotId], elements }))
+  return [...bySlot.entries()].map(([slotId, elements]) => ({ slot: slotView(template, slotId), elements }))
+}
+
+/** Elements of a layout front-most first (the order the Camadas list and the anatomy show). */
+export function layoutElementsFrontFirst(layout: TemplateLayoutDefinition): TemplateElementDefinition[] {
+  return [...layout.defaultStackOrder].reverse().map((id) => getLayoutElement(layout, id)).filter((element): element is TemplateElementDefinition => Boolean(element))
 }
 
 export const ELEMENT_TRANSFORM_KEYS: readonly ElementTransformKey[] = [

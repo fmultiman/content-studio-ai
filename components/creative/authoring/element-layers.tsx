@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { GripVertical } from 'lucide-react'
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { moveElementInOrder } from '@/lib/creative/templates/element-stack'
 
 /** Paint order (back -> front) index for a row shown at `displayIndex` in the front-first list. */
@@ -10,32 +10,49 @@ function orderIndex(length: number, displayIndex: number): number {
 }
 
 /**
- * Creative Editor Template Foundation V1 — "Camadas": the active slide's
- * element stack as a compact reorderable list. Top row = FRONT (painted
- * last). Never shows numeric z-index values.
+ * Creative Editor — "Camadas": THE element navigator and stack-order editor
+ * (Authoring Usability Completion V1 replaced the separate Element dropdown
+ * and standalone Transformation block with it).
  *
- * Drag uses pointer events with pointer capture on the grip only — no HTML5
- * drag-and-drop, which Dockview listens to for its own panel docking — and
- * stops propagation, so a row drag can never move the floating Inspector
- * (only its header can). ArrowUp/ArrowDown on a focused grip reorders by one.
+ * Each row is an inline disclosure. Single-open: opening a row closes the
+ * previous one; the open panel shows ONLY that element's own controls
+ * (`renderPanel`). Open/closed is editor UI state owned by the caller and is
+ * never persisted.
+ *
+ * Interaction targets are separate on purpose:
+ *  - the grip (≡) is the ONLY thing that reorders — pointer drag with capture,
+ *    or ArrowUp/ArrowDown when focused — and never toggles the disclosure;
+ *  - the row body toggles the disclosure and never reorders;
+ *  - controls inside an open panel never start a reorder (they are outside
+ *    the grip) and stop pointer propagation so they cannot reach the Inspector.
+ * Drag uses pointer events, not HTML5 drag-and-drop (Dockview uses that for
+ * docking), and the drop target is the row actually under the pointer, even
+ * if the list scrolls mid-drag (Template Foundation V1 production fix).
+ *
+ * Top row = FRONT (painted last). Never shows numeric z-index values.
  */
 export function ElementLayers({
   order,
   labels,
-  selectedId,
+  openId,
   isDefault,
-  onSelect,
+  onToggle,
   onReorder,
   onRestoreDefault,
+  renderPanel,
 }: {
   /** Normalized paint order, back -> front. */
   order: readonly string[]
   labels: Readonly<Record<string, string>>
-  selectedId?: string
+  /** The single expanded element, or null. */
+  openId: string | null
   isDefault: boolean
-  onSelect: (id: string) => void
+  /** Row body click: open this element (closing any other), or close it if already open. */
+  onToggle: (id: string) => void
   onReorder: (order: string[]) => void
   onRestoreDefault: () => void
+  /** The open element's own controls. */
+  renderPanel: (id: string) => ReactNode
 }) {
   const listRef = useRef<HTMLOListElement>(null)
   const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
@@ -88,7 +105,7 @@ export function ElementLayers({
     setDrag(null)
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+  function onGripKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
     event.preventDefault()
     const to = event.key === 'ArrowUp' ? index - 1 : index + 1
@@ -102,32 +119,57 @@ export function ElementLayers({
     <section className="space-y-1.5" aria-label="Camadas" data-testid="element-layers">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Camadas</span>
-        <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar a ordem padrão do template">Ordem padrão</button>
+        <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar ordem de camadas do Template">Ordem padrão</button>
       </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">Clique em um elemento para ajustá-lo. Arraste ≡ para trazer à frente ou levar para trás.</p>
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Frente</p>
-      <ol ref={listRef} className="max-h-60 min-w-0 space-y-0.5 overflow-y-auto overflow-x-hidden" data-dragging={drag ? 'true' : undefined}>
+      <ol ref={listRef} className="min-w-0 space-y-0.5 overflow-x-hidden" data-dragging={drag ? 'true' : undefined}>
         {shown.map((id, index) => {
-          const selected = id === selectedId
+          const open = id === openId
           const dragging = drag?.id === id
+          const label = labels[id] ?? id
+          const panelId = `element-panel-${id}`
           return (
-            <li key={id} data-layer-id={id} className={`flex min-w-0 items-center gap-1 rounded-md border text-xs ${selected ? 'border-primary bg-primary/10' : 'border-border/60'} ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
-              <button
-                type="button"
-                data-layer-grip
-                aria-label={`Mover ${labels[id] ?? id} (setas para cima/baixo)`}
-                title="Arraste para reordenar"
-                className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
-                onPointerDown={(event) => onPointerDown(event, id, index)}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={() => setDrag(null)}
-                onKeyDown={(event) => onKeyDown(event, index)}
-              >
-                <GripVertical className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" className="min-w-0 flex-1 truncate py-1 pr-2 text-left" onClick={() => onSelect(id)} aria-pressed={selected}>
-                {labels[id] ?? id}
-              </button>
+            <li key={id} data-layer-id={id} data-open={open ? 'true' : undefined} className={`min-w-0 rounded-md border text-xs ${open ? 'border-primary/70 bg-primary/5' : 'border-border/60'} ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
+              <div className="flex min-w-0 items-center gap-1">
+                <button
+                  type="button"
+                  data-layer-grip
+                  aria-label={`Mover ${label} (setas para cima/baixo)`}
+                  title="Arraste para reordenar"
+                  className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+                  onPointerDown={(event) => onPointerDown(event, id, index)}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={() => setDrag(null)}
+                  onKeyDown={(event) => onGripKeyDown(event, index)}
+                >
+                  <GripVertical className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center justify-between gap-1 py-1 pr-2 text-left"
+                  onClick={() => onToggle(id)}
+                  aria-expanded={open}
+                  aria-controls={open ? panelId : undefined}
+                  data-layer-toggle
+                >
+                  <span className="min-w-0 truncate">{label}</span>
+                  {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                </button>
+              </div>
+              {open ? (
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-label={label}
+                  data-layer-panel
+                  className="min-w-0 border-t border-border/60 px-2 pb-2 pt-2"
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  {renderPanel(id)}
+                </div>
+              ) : null}
             </li>
           )
         })}

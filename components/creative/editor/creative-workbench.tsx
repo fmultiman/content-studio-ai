@@ -91,6 +91,42 @@ function floatingWindowFor(api: DockviewApi, group: DockviewGroupPanel): Floatin
   return component?.getFloatingWindowForGroup?.(group)
 }
 
+/** Pointer travel (px) above which a titlebar press counts as a drag, not a click. */
+const TITLEBAR_CLICK_SLOP = 4
+
+/**
+ * Authoring Usability Completion V1 — double-click on the palette titlebar
+ * (the drag handle only; never header actions or panel content) toggles
+ * minimize/restore. A click that moved (i.e. ended a drag) disqualifies the
+ * double-click, so dragging the palette can never minimize it by accident.
+ * Uses the browser's own dblclick detection — no timers.
+ */
+export function bindTitlebarDoubleClick(titlebar: HTMLElement, onToggle: () => void): () => void {
+  let pressAt: { x: number; y: number } | null = null
+  const clickMoved: boolean[] = []
+  const onPointerDown = (event: PointerEvent) => { pressAt = { x: event.clientX, y: event.clientY } }
+  const onClick = (event: MouseEvent) => {
+    const moved = pressAt ? Math.hypot(event.clientX - pressAt.x, event.clientY - pressAt.y) > TITLEBAR_CLICK_SLOP : false
+    clickMoved.push(moved)
+    if (clickMoved.length > 2) clickMoved.shift()
+  }
+  const onDoubleClick = (event: MouseEvent) => {
+    const target = event.target as HTMLElement | null
+    if (target && target !== titlebar && target.closest('button, a, input, select, textarea, [role="tab"]')) return
+    if (clickMoved.some(Boolean)) return
+    event.preventDefault()
+    onToggle()
+  }
+  titlebar.addEventListener('pointerdown', onPointerDown)
+  titlebar.addEventListener('click', onClick)
+  titlebar.addEventListener('dblclick', onDoubleClick)
+  return () => {
+    titlebar.removeEventListener('pointerdown', onPointerDown)
+    titlebar.removeEventListener('click', onClick)
+    titlebar.removeEventListener('dblclick', onDoubleClick)
+  }
+}
+
 function paletteElementFor(group: DockviewGroupPanel): HTMLElement | null {
   return group.element.closest<HTMLElement>('.dv-resize-container')
 }
@@ -126,6 +162,8 @@ export function CreativeWorkbench({ canvas, inspector, className }: CreativeWork
   const hostRef = useRef<HTMLDivElement | null>(null)
   const apiRef = useRef<DockviewApi | null>(null)
   const expandedHeightRef = useRef<number | null>(null)
+  const toggleRef = useRef<() => void>(() => {})
+  const unbindTitlebarRef = useRef<(() => void) | null>(null)
 
   const inspectorGroup = useCallback(() => apiRef.current?.getPanel(INSPECTOR_PANEL_ID)?.group ?? null, [])
 
@@ -152,6 +190,9 @@ export function CreativeWorkbench({ canvas, inspector, className }: CreativeWork
     setMinimized(!minimized)
   }, [inspectorGroup, minimized])
 
+  useEffect(() => { toggleRef.current = toggleMinimized }, [toggleMinimized])
+  useEffect(() => () => { unbindTitlebarRef.current?.() }, [])
+
   const onReady = useCallback((event: DockviewReadyEvent) => {
     apiRef.current = event.api
     const host = hostRef.current
@@ -163,6 +204,11 @@ export function CreativeWorkbench({ canvas, inspector, className }: CreativeWork
       title: INSPECTOR_TITLE,
       floating: { position: { top: box.top, left: box.left }, width: box.width, height: box.height },
     })
+    // The palette's titlebar = its drag handle (the tab bar's void area).
+    const group = event.api.getPanel(INSPECTOR_PANEL_ID)?.group
+    const titlebar = group ? paletteElementFor(group)?.querySelector<HTMLElement>('.dv-void-container') : null
+    unbindTitlebarRef.current?.()
+    unbindTitlebarRef.current = titlebar ? bindTitlebarDoubleClick(titlebar, () => toggleRef.current()) : null
   }, [])
 
   // Keep the palette reachable when the workbench shrinks (window resize).

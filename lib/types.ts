@@ -302,6 +302,8 @@ export interface RenderExecutionSummary {
   output_height?: number | null
   /** Static only: safe projection of the frozen snapshot's slide reference. */
   slide?: { id: string; index: number; total: number } | null
+  /** Static only (Authoring Usability Completion V1): this render's durable PNG is attached to the piece. */
+  attached_to_piece?: boolean
   error_code: string | null
   error_message: string | null
 }

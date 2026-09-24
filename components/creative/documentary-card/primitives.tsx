@@ -122,11 +122,18 @@ export function AssetLayer({
   zIndex,
   filter,
   shadow = false,
+  contain = false,
   label,
   children,
 }: {
   url: string
   metrics: AssetMetrics
+  /**
+   * Authoring Usability Completion V1: a Project image replacing a template
+   * slot has unknown visible (alpha) bounds, so it is fitted whole inside the
+   * element's visible box instead of being placed by the default's metrics.
+   */
+  contain?: boolean
   box: LayerBox
   rotation?: number
   transform?: PrimitiveTransforms
@@ -140,7 +147,16 @@ export function AssetLayer({
   const height = box.height ?? (box.width * metrics.visible.height) / metrics.visible.width
   const scaleX = box.width / metrics.visible.width
   const scaleY = height / metrics.visible.height
-  const imageStyle: CSSProperties = {
+  const imageStyle: CSSProperties = contain ? {
+    backgroundImage: `url(${url})`,
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: 'contain',
+    inset: 0,
+    position: 'absolute',
+    ...(flipX ? { transform: 'scaleX(-1)' } : {}),
+    ...(filter || shadow ? { filter: [shadow ? 'drop-shadow(0 14px 22px rgba(0, 0, 0, .28))' : '', filter ?? ''].join(' ').trim() } : {}),
+  } : {
     backgroundImage: `url(${url})`,
     backgroundRepeat: 'no-repeat',
     backgroundSize: '100% 100%',

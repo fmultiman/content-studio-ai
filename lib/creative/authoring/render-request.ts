@@ -15,7 +15,7 @@ import { StaticRenderManifestSchema } from '@/lib/schemas/creative/static-render
 import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { DocumentaryCardPreviewTuning } from './types'
 import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
-import { isRegisteredTemplateId } from '@/lib/creative/templates/template-definitions'
+import { AUTHORING_ASSET_SLOT_IDS, isRegisteredTemplateId, type AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH } from '@/lib/creative/templates/element-stack'
 
 const heroTuningSchema = z.object({
@@ -84,6 +84,12 @@ export const primitiveTransformsBySlotSchema = z.object({
 /** Template Foundation V1: which registered Template authored this slide (renderer identity stays manifest.template). */
 export const templateIdSchema = z.string().trim().min(1).refine(isRegisteredTemplateId, { message: 'templateId is not a registered template' })
 
+/** Authoring Usability Completion V1: slot -> Project LibraryFile (identity only), validated + frozen server-side. */
+export const assetOverridesRequestSchema = z.record(
+  z.enum(AUTHORING_ASSET_SLOT_IDS as [AuthoringAssetSlotId, ...AuthoringAssetSlotId[]]),
+  z.object({ libraryFileId: z.string().uuid() }).strict(),
+)
+
 /** Template Foundation V1: element stack, paint order back -> front. Normalized server-side before freezing. */
 export const elementOrderSchema = z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH)
 
@@ -95,6 +101,7 @@ export const authoringRenderRequestSchema = z.object({
   primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
   templateId: templateIdSchema.optional(),
   elementOrder: elementOrderSchema.optional(),
+  assetOverrides: assetOverridesRequestSchema.optional(),
   context: z.object({
     projectId: z.string().min(1),
     editorialContentId: z.string().min(1),
@@ -122,6 +129,7 @@ export type AuthoringRenderRequest = {
   primitiveTransforms?: PrimitiveTransformsRequest
   templateId?: string
   elementOrder?: string[]
+  assetOverrides?: Partial<Record<AuthoringAssetSlotId, { libraryFileId: string }>>
   context?: { projectId: string; editorialContentId: string; channelPieceId: string }
   identitySnapshot?: VisualTokensSnapshot
 }
