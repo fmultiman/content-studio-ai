@@ -1,6 +1,6 @@
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import type { createClient } from '@/lib/supabase/server'
-import type { ChannelPieceMediaResolved, LibraryFileKind } from '@/lib/types'
+import type { ChannelPieceMediaResolved, LibraryFileKind, LibraryFileOrigin } from '@/lib/types'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -49,7 +49,7 @@ export async function resolveMediaSource(
   if (row.library_file_id) {
     const { data: lf } = await supabase
       .from('library_files')
-      .select('kind, name, file_size, mime_type, storage_path, public_url, thumbnail_url, deleted_at')
+      .select('kind, name, file_size, mime_type, storage_path, public_url, thumbnail_url, deleted_at, origin')
       .eq('id', row.library_file_id)
       .single()
 
@@ -70,6 +70,7 @@ export async function resolveMediaSource(
       mime_type: (lf.mime_type as string | null) ?? null,
       name: lf.name as string,
       source_deleted: lf.deleted_at !== null,
+      library_origin: (lf.origin as LibraryFileOrigin | undefined) ?? 'upload',
     }
   }
 

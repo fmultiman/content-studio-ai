@@ -495,6 +495,6 @@ describe('Phase 2I — Gallery browser authority regression (Task B2)', () => {
   })
 
   it('passes executions and videoDrafts into buildGalleryOutputs', () => {
-    expect(galleryPage).toMatch(/buildGalleryOutputs\(\{ images, drafts, projects, productions, executions, videoDrafts \}\)/)
+    expect(galleryPage).toMatch(/buildGalleryOutputs\(\{ images, drafts, projects, productions, executions, videoDrafts, studioRenders \}\)/)
   })
 })

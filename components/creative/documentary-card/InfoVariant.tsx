@@ -1,68 +1,141 @@
-import type { CSSProperties } from 'react'
-import type { DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
-import { Botanical, BrandMark, GrainOverlay, MaterialTape, PaperPlane, Pin, SequenceMarker, type CardPalette } from './primitives'
+import type { CSSProperties, ReactNode } from 'react'
+import type { DocumentaryCardFactCard, DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
+import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
+import { AssetLayer, BrandMark, GrainOverlay, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
+/**
+ * Pack B Slide 2 sets its title on two strips: the first clause on a light
+ * strip, the rest on a dark one ("UMA PERGUNTA," / "DUAS EDIÇÕES"). Splits
+ * after the first comma; without one, splits the words in half.
+ */
+export function splitInfoTitle(title: string): [string, string] {
+  const trimmed = title.trim()
+  const comma = trimmed.indexOf(',')
+  if (comma > 0 && comma < trimmed.length - 1) return [trimmed.slice(0, comma + 1).trim(), trimmed.slice(comma + 1).trim()]
+  const words = trimmed.split(/\s+/)
+  if (words.length < 2) return [trimmed, '']
+  const half = Math.ceil(words.length / 2)
+  return [words.slice(0, half).join(' '), words.slice(half).join(' ')]
+}
+
+/**
+ * Editorial Documentary Collage · layout "info" — reconstructed from Pack B
+ * Slide 2 (docs/discovery/creative-rendering/visual-reference-pack/pack-b/02.png)
+ * out of the template's transparent asset slots. Same conventions as
+ * CoverVariant: 1080×1350 reference coordinates, z-index from the
+ * normalized element stack, template text on the fixed top layer.
+ */
 export function InfoVariant({ context, palette }: { context: DocumentaryCardVisualContext; palette: CardPalette }) {
   const content = context.content as DocumentaryCardInfoContent
-  const titleSize = context.canvas.height >= 1800 ? 74 : 68
-  const cardSize = context.canvas.height >= 1800 ? 210 : 190
-  const reel = context.canvas.height >= 1800
-  const ink = palette.ink
-  const cardStyle: CSSProperties = { color: ink, fontFamily: context.tokens.typography.body.family, padding: 24, position: 'relative' }
+  const sx = context.canvas.width / 1080
+  const sy = context.canvas.height / 1350
+  const x = (value: number) => value * sx
+  const y = (value: number) => value * sy
+  const isDark = context.resolvedAppearance === 'dark'
+  const ink = isDark ? '#efe4cc' : '#1d2a22'
+  const green = '#23382c'
+  const cream = '#f1e7d2'
+  const gold = '#b8923f'
+  const z = (id: string, fallback: number) => context.stack.zIndex[id] ?? fallback
+  const transforms = context.primitiveTransforms
+  const url = (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls)
+  const fixedText: CSSProperties = { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z }
 
-  // Same bounded template-sanctioned title refinement as CoverVariant — one
-  // shared PreviewTuning shape, no parallel positioning system for Info.
   const titleTuning = context.previewTuning?.title
-  const baseTitleStyle: CSSProperties = { left: '7%', padding: '3% 4%', position: 'absolute', top: reel ? '15%' : '16%', width: reel ? '86%' : '81%', zIndex: 20 }
-  const titleTextStyle: CSSProperties | undefined = titleTuning
-    ? { transform: `translate(${titleTuning.offsetX}px, ${titleTuning.offsetY}px) rotate(${titleTuning.rotation}deg)`, transformOrigin: 'top left' }
-    : undefined
-
-  // Final Authoring Polish V2.1: source_line ("Fonte") used to spread the
-  // Title's own titleTextStyle, so moving Título also moved the source/credit
-  // line below it. It is a visually and semantically independent object —
-  // give it its own tuning slot, same bounded shape, no shared style object.
   const sourceTuning = context.previewTuning?.source
-  const sourceTextStyle: CSSProperties | undefined = sourceTuning
-    ? { transform: `translate(${sourceTuning.offsetX}px, ${sourceTuning.offsetY}px) rotate(${sourceTuning.rotation}deg)`, transformOrigin: 'top left' }
-    : undefined
+  const [titleLineOne, titleLineTwo] = splitInfoTitle(content.title)
+  const titleTransform = `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${titleTuning?.rotation ?? 0}deg)`
+  const display = context.tokens.typography.display
+  const body = context.tokens.typography.body.family
+
+  const factCard = (fact: DocumentaryCardFactCard | undefined, color: string): ReactNode => fact ? (
+    <div style={{ alignItems: 'center', color, display: 'flex', flexDirection: 'column', inset: 0, justifyContent: 'center', paddingTop: y(26), position: 'absolute', textAlign: 'center' }}>
+      <div style={{ fontFamily: display.family, fontSize: x(84), fontWeight: display.weight, lineHeight: 1 }}>{fact.primary}</div>
+      <div aria-hidden="true" style={{ background: gold, height: 2, margin: `${y(16)}px 0 ${y(12)}px`, width: x(46) }} />
+      {fact.secondary ? <div style={{ fontFamily: body, fontSize: x(30), lineHeight: 1.18, maxWidth: '82%' }}>{fact.secondary}</div> : null}
+      {fact.tertiary ? <div style={{ fontFamily: body, fontSize: x(30), lineHeight: 1.18, marginTop: y(4) }}>{fact.tertiary}</div> : null}
+    </div>
+  ) : null
 
   return (
     <>
-      <div style={{ background: `linear-gradient(145deg, ${palette.paper}, ${palette.background})`, inset: 0, position: 'absolute' }} />
-      <GrainOverlay color={palette.ink} style={{ inset: 0, position: 'absolute' }} />
-      <div style={{ border: `1px solid ${palette.paperAlt}88`, inset: '3%', position: 'absolute' }} />
-      <Botanical baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.botanical} style={{ height: '30%', left: '-1%', opacity: .5, position: 'absolute', top: '7%', width: '22%' }} />
-      <Botanical baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.botanical} style={{ bottom: '8%', height: '25%', opacity: .4, position: 'absolute', right: '-2%', transform: 'scaleX(-1) rotate(-15deg)', width: '20%' }} />
-      <PaperPlane color={palette.paperAlt} rotation={-2.2} material="paperStrip" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paperStrip} style={{ ...baseTitleStyle }}>
-        <div style={{ ...titleTextStyle, color: ink, fontFamily: context.tokens.typography.display.family, fontSize: titleSize, fontWeight: context.tokens.typography.display.weight, letterSpacing: '-.035em', lineHeight: .96, maxWidth: '92%', textTransform: 'uppercase' }}>{content.title}</div>
-      </PaperPlane>
-      <div style={{ color: ink, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 30 : 27, left: '9%', lineHeight: 1.28, maxWidth: reel ? '73%' : '51%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '36%' : '38%', transform: `translateY(${context.contentTranslateY}px)`, zIndex: 25 }}>{content.intro}</div>
-      <div style={{ color: ink, fontFamily: context.tokens.typography.body.family, fontSize: reel ? 24 : 22, left: '9%', lineHeight: 1.35, maxWidth: reel ? '73%' : '49%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '44%' : '50%', zIndex: 25 }}>{content.body_blocks.map((block, index) => <p key={index} style={{ margin: index ? '18px 0 0' : 0 }}>{block}</p>)}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, position: 'absolute', right: reel ? '9%' : '7%', top: reel ? '61%' : '46%', width: reel ? '56%' : '34%', zIndex: 30 }}>
-        {content.fact_cards.map((fact, index) => (
-          // Same fix as CoverVariant's hero: Tape/Pin are siblings of the
-          // card's PaperPlane (which clip-paths its own descendants), not
-          // children of it, so an authored offset can cross the card's edge
-          // without being cut. The wrapper occupies the box the PaperPlane
-          // used to occupy, so Tape/Pin's existing coordinates are unchanged.
-          <div key={`${fact.primary}-${index}`} style={{ minHeight: cardSize, position: 'relative' }}>
-            <PaperPlane color={index === 0 ? palette.paperAlt : palette.foreground} rotation={index === 0 ? 2.3 : -2.1} material="tornPaper" materialBaseUrl={context.materialBaseUrl} materialUrls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.paper} style={{ ...cardStyle, inset: 0, position: 'absolute' }}>
-              <div style={{ color: index === 0 ? ink : palette.background, fontFamily: context.tokens.typography.display.family, fontSize: context.canvas.height >= 1800 ? 48 : 42, fontWeight: context.tokens.typography.display.weight }}>{fact.primary}</div>
-              <div style={{ color: index === 0 ? ink : palette.background, fontSize: 19, lineHeight: 1.25, marginTop: 12 }}>{fact.secondary}</div>
-              <div style={{ color: index === 0 ? ink : palette.background, fontSize: 17, marginTop: 10 }}>{fact.tertiary}</div>
-            </PaperPlane>
-            <MaterialTape color={palette.paper} rotation={index === 0 ? -7 : 6} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.[`tape${index + 1}` as 'tape1' | 'tape2' | 'tape3'] ?? context.primitiveTransforms?.tape} style={{ position: 'absolute', right: 38, top: -14 }} />
-            <Pin baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.pin} style={{ bottom: 16, right: 16, position: 'absolute' }} />
+      {/* Template chrome — background paper tone, grain, brand card. Not authored elements. */}
+      <div style={{ background: isDark ? 'radial-gradient(120% 90% at 30% 10%, #1b2a24 0%, #0f1a15 60%, #09110d 100%)' : 'radial-gradient(120% 90% at 30% 20%, #f4ecdb 0%, #eadfc8 70%, #ddcfb2 100%)', inset: 0, position: 'absolute' }} />
+      <GrainOverlay color={isDark ? '#f0d9a8' : '#6b5a3a'} style={{ inset: 0, position: 'absolute' }} />
+
+      {/* Authored elements — painted from the normalized stack. */}
+      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} box={{ left: x(650), top: y(660), width: x(560) }} rotation={87} transform={transforms?.archival} zIndex={z('archival', 11)} filter="sepia(.35)" shadow />
+      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} box={{ left: x(-176), top: y(246), width: x(420) }} rotation={-42} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} />
+      <AssetLayer label="Fita do ramo 1" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(26), top: y(456), width: x(128) }} rotation={-20} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 13)} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
+
+      {content.fact_cards[0] ? (
+        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} shadow>
+          {factCard(content.fact_cards[0], cream)}
+        </AssetLayer>
+      ) : null}
+      <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} />
+      {content.fact_cards[1] ? (
+        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} shadow>
+          {factCard(content.fact_cards[1], green)}
+        </AssetLayer>
+      ) : null}
+      <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} />
+      <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} filter="saturate(.8)" />
+
+      {/* Título: light strip (first clause) over which the dark strip (rest) sits. */}
+      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} box={{ left: x(116), top: y(152), width: x(748), height: y(170) }} rotation={-1} transform={transforms?.paperStrip} zIndex={z('paperStrip', 21)} shadow />
+      {titleLineTwo ? (
+        <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} shadow />
+      ) : null}
+      <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), transform: titleTransform, transformOrigin: 'top left' }}>
+        <div style={{ color: green, fontSize: x(86), left: x(152), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(196), transform: 'rotate(-1deg)', whiteSpace: 'nowrap' }}>{titleLineOne}</div>
+        {titleLineTwo ? (
+          <div style={{ color: cream, fontSize: x(82), left: x(196), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(344), transform: 'rotate(1deg)', whiteSpace: 'nowrap' }}>
+            {titleLineTwo}
+            <div aria-hidden="true" style={{ background: gold, borderRadius: 2, height: 3, marginTop: y(14), opacity: .9, width: '100%' }} />
+          </div>
+        ) : null}
+      </div>
+
+      {content.source_line ? (
+        <div style={{ color: isDark ? '#cdbf9f' : '#6d6150', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(56), lineHeight: 1.3, maxWidth: x(300), position: 'absolute', top: y(1152), zIndex: z('source', 24), transform: `translate(${sourceTuning?.offsetX ?? 0}px, ${sourceTuning?.offsetY ?? 0}px) rotate(${-4 + (sourceTuning?.rotation ?? 0)}deg)`, transformOrigin: 'top left' }}>
+          {content.source_line}
+        </div>
+      ) : null}
+
+      {/* Template text (fixed layer). */}
+      {context.sequence?.index && context.sequence?.total ? (
+        <div style={{ ...fixedText, background: '#d6c29a', clipPath: 'polygon(3% 8%, 97% 0, 100% 90%, 5% 100%, 0 22%)', height: y(112), left: x(16), top: y(28), transform: 'rotate(-2deg)', width: x(230) }}>
+          <div style={{ border: `2px solid ${green}`, borderRadius: '50%', color: green, fontFamily: display.family, fontSize: x(34), fontWeight: display.weight, left: x(52), padding: `${y(6)}px ${x(22)}px`, position: 'absolute', top: y(26) }}>
+            {context.sequence.index}/{context.sequence.total}
+          </div>
+        </div>
+      ) : null}
+      <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(29), left: x(168), lineHeight: 1.36, top: y(572), transform: `translateY(${context.contentTranslateY}px)`, width: x(420) }}>
+        {content.body_blocks.map((block, index) => (
+          <div key={index}>
+            {index > 0 ? <div aria-hidden="true" style={{ background: gold, height: 2, margin: `${y(26)}px 0 ${y(30)}px`, opacity: .8, transform: 'rotate(-1deg)', width: x(240) }} /> : null}
+            <p style={{ margin: 0 }}>{block}</p>
           </div>
         ))}
       </div>
-      <div style={{ ...sourceTextStyle, color: ink, fontFamily: context.tokens.typography.body.family, fontSize: 18, fontStyle: 'italic', left: '9%', maxWidth: '46%', opacity: context.contentOpacity, position: 'absolute', top: reel ? '87%' : '82%', zIndex: 40 }}>{content.source_line}</div>
-      <div style={{ color: palette.muted, fontFamily: context.tokens.typography.body.family, fontSize: 18, fontStyle: 'italic', maxWidth: '30%', opacity: context.contentOpacity, position: 'absolute', right: '8%', textAlign: 'right', top: reel ? '91%' : '85%', zIndex: 40 }}>{content.annotation}</div>
-      <MaterialTape color={palette.paperAlt} rotation={-4} baseUrl={context.materialBaseUrl} urls={context.materialUrls} primitiveTransform={context.primitiveTransforms?.tape3 ?? context.primitiveTransforms?.tape} style={{ left: reel ? '18%' : '31%', opacity: .7, position: 'absolute', top: reel ? '95%' : '94%', zIndex: 35 }} />
-      <SequenceMarker color={palette.accent} ink={ink} index={context.sequence?.index} total={context.sequence?.total} style={{ left: '8%', position: 'absolute', top: '6%', zIndex: 60 }} />
-      <BrandMark asset={context.assets.logo} palette={palette} tokens={context.tokens} style={{ bottom: '5%', left: '8%', opacity: context.contentOpacity, position: 'absolute', zIndex: 60 }} />
+      {content.annotation ? (
+        <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126) }}>{content.annotation}</div>
+      ) : null}
+      <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: STACK_TOP_Z + 1 }}>
+        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow>
+          {content.intro ? (
+            <div style={{ alignItems: 'center', color: '#d9c79b', display: 'flex', fontFamily: display.family, fontSize: x(19), inset: 0, justifyContent: 'center', letterSpacing: '.16em', lineHeight: 1.5, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center', textTransform: 'uppercase' }}>{content.intro}</div>
+          ) : null}
+        </AssetLayer>
+      </div>
+      <div style={{ ...fixedText, right: x(-16), top: y(-18) }}>
+        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
+        <BrandMark asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58) }} />
+      </div>
     </>
   )
 }

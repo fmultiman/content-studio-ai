@@ -2,6 +2,12 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
+import {
+  EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE,
+  type AssetMetrics,
+  type AssetSlotId,
+  type TemplateMaterialName,
+} from '@/lib/creative/templates/template-definitions'
 
 export type CardPalette = {
   background: string
@@ -13,20 +19,31 @@ export type CardPalette = {
   ink: string
 }
 
-export type MaterialName = 'tornPaper' | 'paperStrip' | 'tape' | 'pin' | 'botanical'
+export type MaterialName = TemplateMaterialName
 
-const MATERIAL_PATHS: Record<MaterialName, string> = {
-  tornPaper: 'pack-b/paper-card-light-01.png',
-  paperStrip: 'pack-b/paper-strip-light-01.png',
-  tape: 'pack-b/tape-kraft-short-01.png',
-  pin: 'pack-b/pin-brass-01.png',
-  botanical: 'pack-b/botanical-dried-sprig-01.png'
-}
+/**
+ * Template-bundled default file per material, derived from the Template
+ * registry's asset slots (never a second hand-maintained list). Keep
+ * infra/render-worker-runtime/export.mjs REQUIRED_STATIC_ASSETS aligned.
+ */
+const MATERIAL_SLOTS: Record<MaterialName, AssetSlotId> = Object.fromEntries(
+  Object.values(EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE.assetSlots).map((slot) => [slot.material, slot.id]),
+) as Record<MaterialName, AssetSlotId>
 
 export function materialUrl(name: MaterialName, baseUrl?: string, urls?: Partial<Record<MaterialName, string>>): string {
   if (urls?.[name]) return urls[name] as string
-  const path = MATERIAL_PATHS[name]
-  return `${baseUrl ?? '/creative-fixtures'}/${path}`
+  const slot = EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE.assetSlots[MATERIAL_SLOTS[name]]
+  return `${baseUrl ?? '/creative-fixtures'}/${slot.defaultAsset.path}`
+}
+
+/**
+ * Visible-bounds metrics of a material. A Project primitive that replaces a
+ * slot (paper/tape) is today always the same file as the template default
+ * (identical sha256 — see lib/creative/primitives/discovery.ts), so the
+ * default's metrics apply to it too.
+ */
+export function materialMetrics(name: MaterialName): AssetMetrics {
+  return EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE.assetSlots[MATERIAL_SLOTS[name]].defaultAsset.metrics
 }
 
 /**
@@ -74,109 +91,77 @@ export function AssetSurface({
   )
 }
 
-export function PaperPlane({
+/** Canvas-space box of an element's VISIBLE area (px). Height defaults to the asset's visible aspect. */
+export type LayerBox = { left: number; top: number; width: number; height?: number }
+
+/** One authored element's transform: template base rotation + the author's bounded refinement. */
+export function elementTransform(rotation: number, transform?: PrimitiveTransforms, flipX = false): CSSProperties {
+  const offsetX = transform?.offsetX ?? 0
+  const offsetY = transform?.offsetY ?? 0
+  const scale = transform?.scale ?? 1
+  return {
+    transform: `translate(${offsetX}px, ${offsetY}px) rotate(${rotation + (transform?.rotation ?? 0)}deg) scale(${scale})${flipX ? ' scaleX(-1)' : ''}`,
+    transformOrigin: 'center',
+    opacity: transform?.opacity ?? 1,
+  }
+}
+
+/**
+ * Creative Editor Template Foundation V1 — one transparent Pack B asset
+ * placed by its VISIBLE (alpha) bounds, so layout coordinates describe what
+ * the eye sees, not the PNG's transparent padding. Children (text on a
+ * paper) are laid out inside the visible box and never flipped.
+ */
+export function AssetLayer({
+  url,
+  metrics,
+  box,
+  rotation = 0,
+  transform,
+  flipX = false,
+  zIndex,
+  filter,
+  shadow = false,
+  label,
   children,
-  color,
-  rotation,
-  material,
-  materialBaseUrl,
-  materialUrls,
-  primitiveTransform,
-  style,
-  className,
 }: {
+  url: string
+  metrics: AssetMetrics
+  box: LayerBox
+  rotation?: number
+  transform?: PrimitiveTransforms
+  flipX?: boolean
+  zIndex?: number
+  filter?: string
+  shadow?: boolean
+  label?: string
   children?: ReactNode
-  color: string
-  rotation: number
-  material?: MaterialName
-  materialBaseUrl?: string
-  materialUrls?: Partial<Record<MaterialName, string>>
-  primitiveTransform?: PrimitiveTransforms
-  style?: CSSProperties
-  className?: string
 }) {
+  const height = box.height ?? (box.width * metrics.visible.height) / metrics.visible.width
+  const scaleX = box.width / metrics.visible.width
+  const scaleY = height / metrics.visible.height
+  const imageStyle: CSSProperties = {
+    backgroundImage: `url(${url})`,
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: '100% 100%',
+    height: metrics.height * scaleY,
+    left: -metrics.visible.x * scaleX,
+    position: 'absolute',
+    top: -metrics.visible.y * scaleY,
+    width: metrics.width * scaleX,
+    ...(flipX ? { transform: 'scaleX(-1)', transformOrigin: `${(metrics.visible.x + metrics.visible.width / 2) * scaleX}px center` } : {}),
+    ...(filter || shadow ? { filter: [shadow ? 'drop-shadow(0 14px 22px rgba(0, 0, 0, .28))' : '', filter ?? ''].join(' ').trim() } : {}),
+  }
   return (
     <div
-      className={className}
-      style={{
-        backgroundColor: color,
-        backgroundImage: material ? `url(${materialUrl(material, materialBaseUrl, materialUrls)})` : undefined,
-        backgroundBlendMode: material ? 'multiply' : undefined,
-        backgroundPosition: 'center',
-        backgroundSize: 'cover',
-        boxShadow: '0 18px 36px rgba(0, 0, 0, .18)',
-        clipPath: 'polygon(2% 5%, 98% 0, 100% 94%, 5% 100%, 0 18%)',
-        ...style,
-        ...(primitiveTransform
-          ? {
-              opacity: primitiveTransform.opacity,
-              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${rotation + primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
-            }
-          : { transform: style?.transform ?? `rotate(${rotation}deg)` }),
-      }}
+      aria-hidden={label ? undefined : true}
+      aria-label={label}
+      data-element={label}
+      style={{ height, left: box.left, position: 'absolute', top: box.top, width: box.width, zIndex, ...elementTransform(rotation, transform) }}
     >
-      {children}
+      <div style={imageStyle} />
+      {children ? <div style={{ inset: 0, position: 'absolute' }}>{children}</div> : null}
     </div>
-  )
-}
-
-export function Tape({ color, rotation, style }: { color: string; rotation: number; style?: CSSProperties }) {
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        backgroundColor: color,
-        boxShadow: '0 4px 8px rgba(0, 0, 0, .14)',
-        height: 36,
-        opacity: .9,
-        transform: `rotate(${rotation}deg)`,
-        width: 132,
-        ...style,
-      }}
-    />
-  )
-}
-
-export function MaterialTape({
-  color,
-  rotation,
-  baseUrl,
-  urls,
-  primitiveTransform,
-  style,
-}: {
-  color: string
-  rotation: number
-  baseUrl?: string
-  urls?: Partial<Record<MaterialName, string>>
-  primitiveTransform?: PrimitiveTransforms
-  style?: CSSProperties
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        backgroundColor: color,
-        backgroundImage: `url(${materialUrl('tape', baseUrl, urls)})`,
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: '100% 100%',
-        filter: 'saturate(.82)',
-        height: 42,
-        position: 'relative',
-        width: 164,
-        ...style,
-        ...(primitiveTransform
-          ? {
-              opacity: primitiveTransform.opacity,
-              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${rotation + primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
-            }
-          : {
-              opacity: typeof style?.opacity === 'number' ? style.opacity : .92,
-              transform: style?.transform ?? `rotate(${rotation}deg)`,
-            }),
-      }}
-    />
   )
 }
 
@@ -197,100 +182,12 @@ export function GrainOverlay({ color, style }: { color: string; style?: CSSPrope
   )
 }
 
-export function Pin({ baseUrl, urls, primitiveTransform, style }: { baseUrl?: string; urls?: Partial<Record<MaterialName, string>>; primitiveTransform?: PrimitiveTransforms; style?: CSSProperties }) {
+/** Small four-point star (Pack B Slide 1 background chrome). */
+export function Sparkle({ color, size, style }: { color: string; size: number; style?: CSSProperties }) {
   return (
-    <div
-      aria-hidden="true"
-      style={{
-        backgroundImage: `url(${materialUrl('pin', baseUrl, urls)})`,
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: 'contain',
-        height: 60,
-        width: 60,
-        position: 'relative',
-        ...style,
-        ...(primitiveTransform
-          ? {
-              opacity: primitiveTransform.opacity,
-              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
-            }
-          : {}),
-      }}
-    />
-  )
-}
-
-export function Botanical({ baseUrl, urls, primitiveTransform, style }: { baseUrl?: string; urls?: Partial<Record<MaterialName, string>>; primitiveTransform?: PrimitiveTransforms; style?: CSSProperties }) {
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        backgroundImage: `url(${materialUrl('botanical', baseUrl, urls)})`,
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: 'contain',
-        position: 'absolute',
-        ...style,
-        ...(primitiveTransform
-          ? {
-              opacity: (style?.opacity as number | undefined ?? 1) * primitiveTransform.opacity,
-              transform: `${style?.transform ?? ''} translate(${primitiveTransform.offsetX}px, ${primitiveTransform.offsetY}px) rotate(${primitiveTransform.rotation}deg) scale(${primitiveTransform.scale})`.trim(),
-            }
-          : {}),
-      }}
-    />
-  )
-}
-
-export function NetworkLines({ color, style }: { color: string; style?: CSSProperties }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 420 220" style={style}>
-      <g fill="none" stroke={color} strokeDasharray="2 12" strokeWidth="2" opacity=".7">
-        <path d="M14 172C76 52 176 190 235 42s122 42 171-22" />
-        <path d="M0 62c82 118 157-68 243 48s132 24 177-70" />
-      </g>
-      <g fill={color}>
-        <circle cx="79" cy="89" r="6" /><circle cx="235" cy="42" r="7" /><circle cx="355" cy="98" r="5" />
-      </g>
+    <svg aria-hidden="true" viewBox="0 0 20 20" width={size} height={size} style={{ position: 'absolute', ...style }}>
+      <path d="M10 0 L11.6 8.4 L20 10 L11.6 11.6 L10 20 L8.4 11.6 L0 10 L8.4 8.4 Z" fill={color} />
     </svg>
-  )
-}
-
-export function SequenceMarker({
-  index,
-  total,
-  color,
-  ink,
-  style,
-}: {
-  index?: number
-  total?: number
-  color: string
-  ink: string
-  style?: CSSProperties
-}) {
-  if (!index || !total) return null
-  return (
-    <div
-      style={{
-        alignItems: 'center',
-        border: `2px solid ${color}`,
-        borderRadius: 999,
-        color: ink,
-        display: 'flex',
-        fontFamily: 'inherit',
-        fontSize: 19,
-        fontWeight: 700,
-        justifyContent: 'center',
-        letterSpacing: '.06em',
-        minWidth: 78,
-        padding: '8px 14px',
-        ...style,
-      }}
-    >
-      {index}/{total}
-    </div>
   )
 }
 
@@ -298,15 +195,20 @@ export function BrandMark({
   asset,
   tokens,
   palette,
+  label,
+  logoSize = 56,
   style,
 }: {
   asset?: ResolvedAsset
   tokens: VisualTokensSnapshot
   palette: CardPalette
+  /** Brand label beside the logo; absent renders the logo alone. */
+  label?: string
+  logoSize?: number
   style?: CSSProperties
 }) {
   return (
-    <div style={{ alignItems: 'center', display: 'flex', gap: 14, ...style }}>
+    <div style={{ alignItems: 'center', display: 'flex', gap: logoSize * 0.28, ...style }}>
       <AssetSurface
         asset={asset}
         label="Project brand mark"
@@ -314,14 +216,20 @@ export function BrandMark({
           backgroundColor: asset ? undefined : palette.accent,
           border: `2px solid ${palette.accent}`,
           borderRadius: '50%',
-          height: 56,
+          flexShrink: 0,
+          height: logoSize,
           overflow: 'hidden',
-          width: 56,
+          width: logoSize,
         }}
       />
-      <div style={{ color: palette.foreground, fontFamily: tokens.typography.display.family, fontSize: 20, fontWeight: tokens.typography.display.weight, letterSpacing: '.08em', lineHeight: 1.1, maxWidth: 230, textTransform: 'uppercase' }}>
-        Field notes
-      </div>
+      {label ? (
+        <>
+          <div aria-hidden="true" style={{ alignSelf: 'stretch', background: palette.accent, opacity: .7, width: 2 }} />
+          <div style={{ color: palette.foreground, fontFamily: tokens.typography.display.family, fontSize: logoSize * 0.22, fontWeight: tokens.typography.display.weight, letterSpacing: '.08em', lineHeight: 1.22, maxWidth: logoSize * 2.1, textTransform: 'uppercase' }}>
+            {label}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

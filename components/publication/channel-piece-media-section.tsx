@@ -100,7 +100,7 @@ interface MediaItemReadOnlyProps {
 }
 
 function MediaItemReadOnly({ item }: MediaItemReadOnlyProps) {
-  const origin      = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
+  const origin      = item.image_id || item.library_origin === 'studio_render' ? 'Imagem gerada' : 'Arquivo do projeto'
   const displayName = item.name || item.mime_type || null
 
   return (
@@ -158,7 +158,7 @@ function MediaItemEditable({
   onRemove,
   onPreview,
 }: MediaItemEditableProps) {
-  const origin      = item.image_id ? 'Imagem gerada' : 'Arquivo do projeto'
+  const origin      = item.image_id || item.library_origin === 'studio_render' ? 'Imagem gerada' : 'Arquivo do projeto'
   const displayName = item.name || item.mime_type || null
 
   const busy = anyBusy || isOrganizing || isRemoving

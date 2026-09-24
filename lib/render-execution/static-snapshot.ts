@@ -23,8 +23,10 @@ import { StaticRenderManifestSchema, type StaticRenderManifest } from '@/lib/sch
 import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import {
   authoringRenderOverridesSchema,
+  elementOrderSchema,
   primitiveSelectionSchema,
   primitiveTransformsBySlotSchema,
+  templateIdSchema,
   type AuthoringRenderOverrides,
   type PrimitiveSelectionRequest,
   type PrimitiveTransformsRequest,
@@ -71,6 +73,10 @@ export const StaticRenderExecutionSnapshotSchema = z
     primitiveSelection: primitiveSelectionSchema.optional(),
     primitiveAssets: z.object({ paper: FrozenPrimitiveAssetSchema.optional(), tape: FrozenPrimitiveAssetSchema.optional() }).strict().optional(),
     primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
+    // Creative Editor Template Foundation V1 — optional so every snapshot
+    // frozen before them still parses (absent = default template / stack).
+    templateId: templateIdSchema.optional(),
+    elementOrder: elementOrderSchema.optional(),
     slide: StaticRenderSlideRefSchema.nullable(),
     output: z
       .object({
@@ -91,6 +97,9 @@ export type StaticRenderExecutionSnapshot = {
   primitiveSelection?: PrimitiveSelectionRequest
   primitiveAssets?: FrozenPrimitiveAssets
   primitiveTransforms?: PrimitiveTransformsRequest
+  templateId?: string
+  /** Frozen, already-normalized paint order (back -> front) the Editor showed at click time. */
+  elementOrder?: string[]
   slide: StaticRenderSlideRef | null
   output: { format: 'png'; width: number; height: number }
 }
@@ -102,6 +111,8 @@ export function buildStaticRenderExecutionSnapshot(input: {
   primitiveSelection?: PrimitiveSelectionRequest
   primitiveAssets?: FrozenPrimitiveAssets
   primitiveTransforms?: PrimitiveTransformsRequest
+  templateId?: string
+  elementOrder?: string[]
   slide: StaticRenderSlideRef | null
 }): StaticRenderExecutionSnapshot {
   // Deep-clone through JSON so the frozen snapshot can never alias a caller
@@ -115,6 +126,8 @@ export function buildStaticRenderExecutionSnapshot(input: {
     ...(input.primitiveSelection ? { primitiveSelection: input.primitiveSelection } : {}),
     ...(input.primitiveAssets ? { primitiveAssets: input.primitiveAssets } : {}),
     ...(input.primitiveTransforms ? { primitiveTransforms: input.primitiveTransforms } : {}),
+    ...(input.templateId ? { templateId: input.templateId } : {}),
+    ...(input.elementOrder ? { elementOrder: input.elementOrder } : {}),
     slide: input.slide,
     output: { format: 'png', width: input.manifest.canvas.width, height: input.manifest.canvas.height },
   })) as StaticRenderExecutionSnapshot

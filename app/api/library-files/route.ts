@@ -57,6 +57,12 @@ export async function GET(request: Request) {
     const folder = searchParams.get('folder')
     const kind = searchParams.get('kind')
     const trash = searchParams.get('trash') === 'true'
+    // Template Foundation V1: `origin=upload` (Arquivos) / `origin=studio_render`
+    // (Galeria "Imagens geradas"). Absent keeps the historical "everything" list.
+    const origin = searchParams.get('origin')
+    if (origin && origin !== 'upload' && origin !== 'studio_render' && origin !== 'all') {
+      return NextResponse.json({ error: 'origin invalido' }, { status: 400 })
+    }
 
     let query = supabase
       .from('library_files')
@@ -68,6 +74,7 @@ export async function GET(request: Request) {
     if (projectId && projectId !== 'all') query = query.eq('project_id', projectId)
     if (folder && folder !== 'all') query = query.eq('folder', normalizeFolder(folder))
     if (kind && kind !== 'all') query = query.eq('kind', normalizeKind(kind))
+    if (origin && origin !== 'all') query = query.eq('origin', origin)
 
     const { data, error } = await query
     if (error) return NextResponse.json({ error: error.message, details: error }, { status: 400 })

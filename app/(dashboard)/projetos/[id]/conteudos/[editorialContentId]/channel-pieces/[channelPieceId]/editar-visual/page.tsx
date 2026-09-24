@@ -16,13 +16,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitivePicker, PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { ElementLayers } from '@/components/creative/authoring/element-layers'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
 import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type ElementKey, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
+import {
+  DEFAULT_TEMPLATE_ID, getTemplateLayout, isAppearanceSupported, layoutAssetSlots, listTemplateDefinitions, resolveAuthoringTemplate,
+} from '@/lib/creative/templates/template-definitions'
+import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
-  derivePrimitiveTransformsRequest, deriveTuningOverrides, resolvePreviewInput, DEFAULT_TUNING,
-  type AuthoringAction, type AuthoringProductContext, type AuthoringState,
+  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, resolvePreviewInput, DEFAULT_TUNING,
+  type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide,
 } from '@/lib/creative/authoring'
@@ -40,7 +45,7 @@ import type { RenderExecutionSummary } from '@/lib/types'
 
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
 const RENDER_POLL_INTERVAL_MS = 2000
-type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; slides: PersistedAuthoredSlide[] } | null }
+type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; templateId?: string | null; slides: PersistedAuthoredSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
 const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
@@ -85,8 +90,8 @@ function singleSlideDefault(context: ContextResponse, productContext: AuthoringP
   return { id: 'slide-1', order: 0, state }
 }
 
-function persistedSnapshot(slides: AuthoringSlide[]): string {
-  return JSON.stringify(slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order)))
+function persistedSnapshot(slides: AuthoringSlide[], templateId: string): string {
+  return JSON.stringify({ templateId, slides: slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order, templateId)) })
 }
 
 
@@ -95,6 +100,10 @@ export default function StaticAuthoringProductPage() {
   const router = useRouter()
   const [context, setContext] = useState<ContextResponse | null>(null)
   const [slides, setSlides] = useState<AuthoringSlide[] | null>(null)
+  // Creative Editor Template Foundation V1: the carousel's Template (root of
+  // the authored state, not per slide). Legacy rows default to the first one.
+  const [templateId, setTemplateId] = useState<string>(DEFAULT_TEMPLATE_ID)
+  const [templateFallback, setTemplateFallback] = useState(false)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
   const [selectedElement, setSelectedElement] = useState<ElementKey>('title')
   const [activeTab, setActiveTab] = useState<InspectorSection>('template')
@@ -123,7 +132,7 @@ export default function StaticAuthoringProductPage() {
   const isCarousel = context?.channelPiece.format === 'carousel'
   // Derived, not stored: comparing the live slides against the last-saved
   // snapshot is cheap and avoids a setState-in-effect render cascade.
-  const dirty = isCarousel && slides ? persistedSnapshot(slides) !== lastSavedSnapshot : false
+  const dirty = isCarousel && slides ? persistedSnapshot(slides, templateId) !== lastSavedSnapshot : false
 
   function setAutosaveEnabled(value: boolean) {
     setAutosaveEnabledState(value)
@@ -166,15 +175,18 @@ export default function StaticAuthoringProductPage() {
       const persisted = stateResponse.ok ? statePayload.state?.slides ?? null : null
       const orderedSlides = persisted && persisted.length > 0 ? sortedSlides(persisted) : defaultCarouselSlides(payload.primitiveProjectRef)
       const canvas = canvasKind(payload)
+      const { template, fallback } = resolveAuthoringTemplate(stateResponse.ok ? statePayload.state?.templateId : undefined)
+      setTemplateId(template.id)
+      setTemplateFallback(fallback)
 
       skipNextAutosaveRef.current = true
-      const hydrated = orderedSlides.map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas) }))
+      const hydrated = orderedSlides.map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, template.id) }))
       setSlides(hydrated)
       setCurrentSlideIndex(0)
       // Reload/read-back baseline: "saved" only reflects what the API actually
       // has today. A freshly-defaulted (never-saved) carousel has no baseline
       // — the first explicit Save (or first autosave) establishes one.
-      setLastSavedSnapshot(persisted && persisted.length > 0 ? persistedSnapshot(hydrated) : null)
+      setLastSavedSnapshot(persisted && persisted.length > 0 ? persistedSnapshot(hydrated, template.id) : null)
     }
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Erro ao carregar contexto.'))
     return () => { cancelled = true }
@@ -183,12 +195,13 @@ export default function StaticAuthoringProductPage() {
   async function saveNow() {
     if (!isCarousel || !slides || !context) return
     setSaveStatus('saving')
-    const snapshot = persistedSnapshot(slides)
+    const snapshot = persistedSnapshot(slides, templateId)
     try {
       const body = {
         schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION,
         channelPieceId: context.channelPiece.id,
-        slides: slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order)),
+        templateId,
+        slides: slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order, templateId)),
       }
       const response = await fetch('/api/creative/static-authoring-state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) throw new Error('persist failed')
@@ -233,10 +246,11 @@ export default function StaticAuthoringProductPage() {
 
   function revert() {
     if (!lastSavedSnapshot || !context) return
-    const persisted = JSON.parse(lastSavedSnapshot) as PersistedAuthoredSlide[]
+    const persisted = JSON.parse(lastSavedSnapshot) as { templateId: string; slides: PersistedAuthoredSlide[] }
     const productContext = buildProductContext(context)
     const canvas = canvasKind(context)
-    setSlides(sortedSlides(persisted).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas) })))
+    setTemplateId(persisted.templateId)
+    setSlides(sortedSlides(persisted.slides).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, persisted.templateId) })))
   }
 
   function restoreSlideDefault() {
@@ -244,7 +258,8 @@ export default function StaticAuthoringProductPage() {
     const defaults = defaultCarouselSlides(context.primitiveProjectRef)
     const matching = defaults.find((slide) => slide.order === currentSlide.order) ?? defaults[0]
     const productContext = buildProductContext(context)
-    const nextState = persistedSlideToAuthoringState({ ...matching, id: currentSlide.id }, productContext, canvasKind(context))
+    // Template default: content, assets, transforms AND the layout's default element stack.
+    const nextState = persistedSlideToAuthoringState({ ...matching, id: currentSlide.id }, productContext, canvasKind(context), templateId)
     setSlides((current) => current ? current.map((slide, index) => index === currentSlideIndex ? { ...slide, state: nextState } : slide) : current)
     setRestoreDialogOpen(false)
   }
@@ -254,8 +269,9 @@ export default function StaticAuthoringProductPage() {
     if (!previewInput || !state) return null
     const sequence = slides && slides.length > 1 ? { index: currentSlideIndex + 1, total: slides.length } : { index: 1, total: 1 }
     const previewWithSequence = { ...previewInput, manifest: { ...previewInput.manifest, sequence } }
-    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
-  }, [previewInput, state, slides, currentSlideIndex])
+    // Same templateId + element stack the render request freezes; DocumentaryCard normalizes both identically in preview and worker.
+    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, undefined, undefined, { templateId, elementOrder: state.elementOrder }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
+  }, [previewInput, state, slides, currentSlideIndex, templateId])
 
   async function render() {
     if (!state?.productContext || !slides || !currentSlide) return
@@ -275,6 +291,8 @@ export default function StaticAuthoringProductPage() {
       ...(selection ? { primitiveSelection: selection } : {}),
       ...(transforms ? { primitiveTransforms: transforms } : {}),
       ...(overrides ? { overrides } : {}),
+      templateId,
+      elementOrder: deriveElementOrderRequest(state, templateId),
       idempotencyKey: crypto.randomUUID(),
       slide: slideRef,
       ...(previous?.phase === 'failed' && previous.executionId ? { retryOfExecutionId: previous.executionId } : {}),
@@ -364,7 +382,7 @@ export default function StaticAuthoringProductPage() {
       const blob = await response.blob()
       const file = new File([blob], `slide-${job.slideIndex}-de-${job.slideTotal}-${executionId.slice(0, 8)}.png`, { type: 'image/png' })
       const { saveRenderFileToChannelPiece } = await import('@/lib/creative/authoring')
-      const result = await saveRenderFileToChannelPiece({ file, channelPieceId: context.channelPiece.id })
+      const result = await saveRenderFileToChannelPiece({ file, channelPieceId: context.channelPiece.id, renderExecutionId: executionId })
       if (!result.ok) throw new Error(result.error)
       setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'saved' }))
     } catch (cause: unknown) {
@@ -388,7 +406,9 @@ export default function StaticAuthoringProductPage() {
   if (error && !context) return <DashboardPage><DashboardPageContent width="4xl"><Card><CardContent className="p-6"><p className="text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => router.back()}>Voltar</Button></CardContent></Card></DashboardPageContent></DashboardPage>
   if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
 
-  const elements = elementsForVariant(state.variant)
+  const template = resolveAuthoringTemplate(templateId).template
+  const layout = getTemplateLayout(template, state.variant)
+  const elements = elementsForVariant(state.variant, template.id)
   // The CURRENT slide's own render job only — other slides' jobs keep running
   // and stay bound to their slides (see static-render-jobs.ts).
   const currentRenderJob = currentSlide ? renderJobs[currentSlide.id] : undefined
@@ -396,9 +416,14 @@ export default function StaticAuthoringProductPage() {
   const previewJob = previewJobSlideId ? renderJobs[previewJobSlideId] : undefined
   const slideTotal = slides.length
   const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
-  // A selection the active variant does not render (e.g. Hero or a second tape on Info/Cover) falls back to Título.
+  // A selection the active layout does not have (e.g. Hero on Info) falls back to Título.
   const activeElement: ElementKey = elements.some((element) => element.key === selectedElement) ? selectedElement : 'title'
-  const primitiveSlot = (['paper', 'paperStrip', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const).find((slot) => slot === activeElement)
+  const activeElementDef = elements.find((element) => element.key === activeElement)
+  const activeControl = activeElementDef?.control
+  const elementLabels = Object.fromEntries(elements.map((element) => [element.key, element.label]))
+  const stack = resolveElementStack(template.id, state.variant, state.elementOrder)
+  const stackIsDefault = layout ? isDefaultElementOrder(layout, stack.order) : true
+  const slotsInUse = layout ? layoutAssetSlots(template, layout) : []
 
   const inspector = (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
@@ -410,27 +435,49 @@ export default function StaticAuthoringProductPage() {
           </TabsTrigger>
         ))}
       </TabsList>
-      <TabsContent value="template" className="pt-3">
-        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span><Button size="sm" variant={state.variant === 'cover' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'cover' })}>Cover</Button><Button size="sm" variant={state.variant === 'info' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_VARIANT', variant: 'info' })}>Info</Button></div>
-        <p className="mt-2 text-xs text-muted-foreground">DocumentaryCard · o template estático atual.</p>
+      <TabsContent value="template" className="space-y-3 pt-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="template-selector" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</Label>
+          <Select value={template.id} onValueChange={(value) => setTemplateId(value)}>
+            <SelectTrigger id="template-selector" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>{listTemplateDefinitions().map((definition) => <SelectItem key={definition.id} value={definition.id}>{definition.name}</SelectItem>)}</SelectContent>
+          </Select>
+          {templateFallback ? <p className="text-xs text-destructive" role="alert">Template salvo não reconhecido; usando {template.name}.</p> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>{template.layouts.map((option) => <Button key={option.id} size="sm" variant={state.variant === option.id ? 'default' : 'outline'} onClick={() => { if (state.variant !== option.id) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }}>{option.label}</Button>)}</div>
+        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>{(layout?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={state.appearance === appearance ? 'default' : 'outline'} onClick={() => { if (isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}</div>
+        <p className="text-xs text-muted-foreground">{template.description}</p>
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
         <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
         {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
       </TabsContent>
-      <TabsContent value="assets" className="space-y-4 pt-3">
-        {context.primitiveProjectRef ? <><PrimitivePicker slot="paper" label="Paper" primitives={context.primitives} selectedKey={state.primitiveSelection.paper} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_PAPER', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_PAPER' })} /><PrimitivePicker slot="tape" label="Tape" primitives={context.primitives} selectedKey={state.primitiveSelection.tape} onSelect={(key) => dispatch({ type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TAPE' })} /></> : <p className="text-xs text-muted-foreground">Este Project não possui primitives registradas.</p>}
-        {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Hero: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
+      <TabsContent value="assets" className="space-y-3 pt-3">
+        {/* Assets = which resource fills each semantic slot. Placement/stacking lives in Element. */}
+        {slotsInUse.map(({ slot, elements: users }) => (
+          <div key={slot.id} className="space-y-1.5 rounded-md border border-border/60 p-2" data-asset-slot={slot.id}>
+            {slot.projectCategory && context.primitiveProjectRef
+              ? <PrimitivePicker slot={slot.projectCategory} label={slot.label} primitives={context.primitives} selectedKey={state.primitiveSelection[slot.projectCategory]} onSelect={(key) => dispatch(slot.projectCategory === 'paper' ? { type: 'SET_PRIMITIVE_PAPER', key } : { type: 'SET_PRIMITIVE_TAPE', key })} onReset={() => dispatch(slot.projectCategory === 'paper' ? { type: 'RESET_PRIMITIVE_PAPER' } : { type: 'RESET_PRIMITIVE_TAPE' })} />
+              : <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium">{slot.label}</span><span className="truncate text-xs text-muted-foreground" title="Asset padrão do template">{slot.defaultAsset.label}</span></div>}
+            <p className="text-[11px] text-muted-foreground">Usado por: {users.map((element) => element.label).join(', ')}</p>
+          </div>
+        ))}
+        {state.variant === 'cover' && <p className="text-xs text-muted-foreground">Imagem principal: imagem padrão do template (sem seletor de imagem nesta versão).</p>}
       </TabsContent>
-      <TabsContent value="style" className="pt-3"><div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant={state.appearance === 'light' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'light' })}>Light</Button><Button size="sm" variant={state.appearance === 'dark' ? 'default' : 'outline'} onClick={() => dispatch({ type: 'SET_APPEARANCE', appearance: 'dark' })}>Dark</Button></div></TabsContent>
+      <TabsContent value="style" className="space-y-2 pt-3">
+        <p className="text-xs text-muted-foreground">Tipografia e cores vêm da Identidade do Projeto.</p>
+        <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1 text-xs"><dt className="text-muted-foreground">Títulos</dt><dd className="truncate">{state.productContext?.identitySnapshot.typography.display.family ?? '—'}</dd><dt className="text-muted-foreground">Texto</dt><dd className="truncate">{state.productContext?.identitySnapshot.typography.body.family ?? '—'}</dd></dl>
+        <div className="flex flex-wrap gap-1.5">{Object.entries(state.productContext?.identitySnapshot.colors ?? {}).map(([name, value]) => <span key={name} title={`${name}: ${value}`} className="h-5 w-5 rounded border border-border/60" style={{ background: value }} />)}</div>
+      </TabsContent>
       <TabsContent value="element" className="space-y-3 pt-3">
         <div className="space-y-2"><Label htmlFor="element-selector">Elemento</Label><Select value={activeElement} onValueChange={(value) => setSelectedElement(value as ElementKey)}><SelectTrigger id="element-selector" className="w-full"><SelectValue placeholder="Escolha um elemento" /></SelectTrigger><SelectContent>{elements.map((element) => <SelectItem key={element.key} value={element.key}>{element.label}</SelectItem>)}</SelectContent></Select></div>
         <div className="rounded-md border border-border/60 p-3">
-          {activeElement === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
-          {activeElement === 'hero' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
-          {activeElement === 'source' && <TitleTuningControls tuning={state.tuning.source} onChange={(field, value) => setTuningField('source', field, value)} onReset={() => resetTuningField('source')} />}
-          {primitiveSlot && <PrimitiveTransformControls slot={primitiveSlot} transforms={state.primitiveTransforms[primitiveSlot] ?? state.primitiveTransforms.tape} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: primitiveSlot, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: primitiveSlot })} />}
+          {activeControl?.type === 'tuning' && activeControl.group === 'title' && <TitleTuningControls tuning={state.tuning.title} onChange={(field, value) => setTuningField('title', field, value)} onReset={() => resetTuningField('title')} />}
+          {activeControl?.type === 'tuning' && activeControl.group === 'hero' && <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />}
+          {activeControl?.type === 'tuning' && activeControl.group === 'source' && <TitleTuningControls tuning={state.tuning.source} onChange={(field, value) => setTuningField('source', field, value)} onReset={() => resetTuningField('source')} />}
+          {activeControl?.type === 'transform' && <PrimitiveTransformControls slot={activeControl.key} transforms={state.primitiveTransforms[activeControl.key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: activeControl.key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: activeControl.key })} />}
         </div>
+        <ElementLayers order={stack.order} labels={elementLabels} selectedId={activeElement} isDefault={stackIsDefault} onSelect={(id) => setSelectedElement(id)} onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })} onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })} />
       </TabsContent>
     </Tabs>
   )

@@ -6,6 +6,7 @@ import { InfoVariant } from './InfoVariant'
 import { paletteFromTokens } from './primitives'
 import type { DocumentaryCardProps, DocumentaryCardVisualContext } from './types'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
+import { resolveElementStack } from '@/lib/creative/templates/element-stack'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -25,6 +26,8 @@ export function DocumentaryCard({
   materialUrls,
   materialAssets,
   primitiveTransforms,
+  templateId,
+  elementOrder,
   previewTuning,
   frame = 0,
   durationInFrames = 180,
@@ -42,6 +45,8 @@ export function DocumentaryCard({
   const progress = mode === 'video' ? clamp(frame / Math.max(durationInFrames - 1, 1), 0, 1) : 1
   const contentOpacity = mode === 'video' && motion?.preset === 'fade' ? clamp(progress * 6, 0, 1) : 1
   const contentTranslateY = mode === 'video' && motion?.preset === 'fade' ? (1 - contentOpacity) * 18 : 0
+  // ONE normalization for every render path (Editor preview, worker still, video).
+  const stack = resolveElementStack(templateId, variant, elementOrder)
   const context: DocumentaryCardVisualContext = {
     variant,
     appearance,
@@ -57,6 +62,9 @@ export function DocumentaryCard({
     materialUrls,
     materialAssets,
     primitiveTransforms,
+    templateId,
+    elementOrder,
+    stack,
     previewTuning,
     frame,
     durationInFrames,
@@ -87,7 +95,7 @@ export function DocumentaryCard({
 
 export type DocumentaryCardRuntimeInput = Pick<
   DocumentaryCardProps,
-  'variant' | 'appearance' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms'
+  'variant' | 'appearance' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms' | 'templateId' | 'elementOrder'
 >
 
 export type DocumentaryCardRuntimeOptions = Pick<
@@ -141,6 +149,7 @@ export function documentaryCardPropsFromResolvedInput(
   previewTuning?: DocumentaryCardPreviewTuning,
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials'],
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms'],
+  layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder'>,
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -154,5 +163,7 @@ export function documentaryCardPropsFromResolvedInput(
     sequence: input.manifest.sequence,
     primitiveMaterials,
     primitiveTransforms,
+    templateId: layering?.templateId,
+    elementOrder: layering?.elementOrder,
   }, { mode, motion, previewTuning })
 }

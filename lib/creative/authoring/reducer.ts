@@ -1,6 +1,7 @@
 import { defaultContentForVariant } from './authoring-state'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAULT_TUNING } from './types'
 import type { AuthoringAppearance, AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
+import type { PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
 
 export type AuthoringAction =
   | { type: 'SET_VARIANT'; variant: AuthoringVariant }
@@ -18,12 +19,17 @@ export type AuthoringAction =
   | { type: 'SET_PRIMITIVE_TAPE'; key: string | undefined }
   | { type: 'RESET_PRIMITIVE_PAPER' }
   | { type: 'RESET_PRIMITIVE_TAPE' }
-  | { type: 'SET_PRIMITIVE_TRANSFORM'; slot: 'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'; field: keyof PrimitiveTransforms; value: number }
-  | { type: 'RESET_PRIMITIVE_TRANSFORMS'; slot: 'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin' }
+  | { type: 'SET_PRIMITIVE_TRANSFORM'; slot: PrimitiveTransformSlot; field: keyof PrimitiveTransforms; value: number }
+  | { type: 'RESET_PRIMITIVE_TRANSFORMS'; slot: PrimitiveTransformSlot }
+  /** Template Foundation V1: authored stack for the current slide (paint order, back -> front, already normalized by the caller). */
+  | { type: 'SET_ELEMENT_ORDER'; order: string[] }
+  /** Back to the template layout's default stack. */
+  | { type: 'RESET_ELEMENT_ORDER' }
 
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
-    case 'SET_VARIANT': return { ...state, variant: action.variant, heroRef: undefined, contentOverride: defaultContentForVariant(action.variant, state.identity) }
+    // A layout switch changes the element set, so an authored stack for the old layout no longer applies.
+    case 'SET_VARIANT': return { ...state, variant: action.variant, heroRef: undefined, contentOverride: defaultContentForVariant(action.variant, state.identity), elementOrder: undefined }
     // Slice 1 — Portal Carousel V1: appearance is independent of variant, so
     // switching variant deliberately does NOT touch it here.
     case 'SET_APPEARANCE': return { ...state, appearance: action.appearance }
@@ -40,8 +46,10 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
     case 'SET_PRIMITIVE_TAPE': return { ...state, primitiveSelection: { ...state.primitiveSelection, tape: action.key }, primitiveTransforms: { ...state.primitiveTransforms, tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
     case 'RESET_PRIMITIVE_PAPER': return { ...state, primitiveSelection: { ...state.primitiveSelection, paper: 'paper-card-light-01' }, primitiveTransforms: { ...state.primitiveTransforms, paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
     case 'RESET_PRIMITIVE_TAPE': return { ...state, primitiveSelection: { ...state.primitiveSelection, tape: 'tape-kraft-short-01' }, primitiveTransforms: { ...state.primitiveTransforms, tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
-    case 'SET_PRIMITIVE_TRANSFORM': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...state.primitiveTransforms[action.slot], [action.field]: action.value } } }
+    case 'SET_PRIMITIVE_TRANSFORM': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...(state.primitiveTransforms[action.slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS), [action.field]: action.value } } }
     case 'RESET_PRIMITIVE_TRANSFORMS': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
+    case 'SET_ELEMENT_ORDER': return { ...state, elementOrder: [...action.order] }
+    case 'RESET_ELEMENT_ORDER': return { ...state, elementOrder: undefined }
     default: return state
   }
 }

@@ -50,6 +50,7 @@ import {
   resolveGalleryDisplayImages,
   type GalleryOutputItem,
   type GalleryOutputStatus,
+  type StudioRenderSource,
 } from '@/lib/gallery-output-library'
 import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 
@@ -63,6 +64,7 @@ export default function GalleryPage() {
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
   const [executions, setExecutions] = useState<Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'>[]>([])
+  const [studioRenders, setStudioRenders] = useState<StudioRenderSource[]>([])
   const [selectedProject, setSelectedProject] = useState('all')
   const [selectedProduction, setSelectedProduction] = useState('all')
   const [statusFilter, setStatusFilter] = useState<GalleryStatusFilter>('all')
@@ -172,6 +174,18 @@ export default function GalleryPage() {
         setVideoOutputsUnavailable(true)
       }
 
+      // Creative Editor PNGs the user explicitly saved to a piece (Template
+      // Foundation V1). Isolated like video: a failure never blanks the rest.
+      try {
+        const response = await fetch('/api/library-files?origin=studio_render&kind=image')
+        if (!response.ok) throw new Error(`studio renders fetch failed: ${response.status}`)
+        const payload = await response.json()
+        setStudioRenders(payload.files || [])
+      } catch (error) {
+        console.error('Erro ao carregar renders do Creative Editor da Galeria', error)
+        setStudioRenders([])
+      }
+
       setIsLoading(false)
     }
 
@@ -179,8 +193,8 @@ export default function GalleryPage() {
   }, [retryKey])
 
   const outputs = useMemo(
-    () => buildGalleryOutputs({ images, drafts, projects, productions, executions, videoDrafts }),
-    [drafts, executions, images, productions, projects, videoDrafts],
+    () => buildGalleryOutputs({ images, drafts, projects, productions, executions, videoDrafts, studioRenders }),
+    [drafts, executions, images, productions, projects, videoDrafts, studioRenders],
   )
 
   const availableProductions = useMemo(

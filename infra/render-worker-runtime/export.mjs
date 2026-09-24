@@ -64,6 +64,10 @@ const REQUIRED_WORKER_SOURCE = [
   'remotion/TypographyReadyBoundary.tsx',
   'remotion/RenderAssetsReadyBoundary.tsx',
   'lib/creative/templates/component-resolver.ts',
+  // Creative Editor Template Foundation V1 — DocumentaryCard reads layout
+  // element stacks from the Template registry (pure, import-free modules).
+  'lib/creative/templates/template-definitions.ts',
+  'lib/creative/templates/element-stack.ts',
   'lib/creative/typography/resolve-typography.ts',
   'lib/creative/assets/resolve-asset.ts',
   'components/creative/documentary-card/DocumentaryCard.tsx',
@@ -95,6 +99,13 @@ const REQUIRED_STATIC_ASSETS = [
   'public/creative-fixtures/pack-b/tape-kraft-short-01.png',
   'public/creative-fixtures/pack-b/pin-brass-01.png',
   'public/creative-fixtures/pack-b/botanical-dried-sprig-01.png',
+  // Creative Editor Template Foundation V1 — Pack B template asset slots
+  // (lib/creative/templates/template-definitions.ts ASSET_SLOTS defaults).
+  'public/creative-fixtures/pack-b/paper-card-dark-01.png',
+  'public/creative-fixtures/pack-b/paper-scrap-light-01.png',
+  'public/creative-fixtures/pack-b/paper-archival-fragment-01.png',
+  'public/creative-fixtures/pack-b/botanical-sprig-large-01.png',
+  'public/creative-fixtures/pack-b/ornament-celestial-gold-01.png',
   // Static Render Worker V1 — every fixture asset a StaticRenderManifest can
   // bind (lib/creative/assets/resolve-asset.ts FIXTURE_ASSETS): the Creative
   // Editor's default Cover hero + the Portal logo, plus the remaining

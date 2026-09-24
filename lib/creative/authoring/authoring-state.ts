@@ -12,6 +12,9 @@ import { resolveDocumentaryCardFixture, documentaryCardTemplate } from '@/lib/cr
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
+import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
+import { DEFAULT_TEMPLATE_ID } from '@/lib/creative/templates/template-definitions'
+import { resolveElementStack } from '@/lib/creative/templates/element-stack'
 import {
   type AuthoringAppearance,
   type AuthoringCanvas,
@@ -128,7 +131,9 @@ export function createContextualAuthoringState(
 ): AuthoringState {
   return {
     ...createInitialAuthoringState(variant, 'a', canvas, appearance),
-    contentOverride: content,
+    contentOverride: variant === 'cover' && !(content as AuthoringCoverContent).brand_label && context.projectName
+      ? { ...(content as AuthoringCoverContent), brand_label: context.projectName }
+      : content,
     primitiveSelection,
     productContext: context,
   }
@@ -310,12 +315,22 @@ export function derivePrimitiveTransformsRequest(state: AuthoringState): Primiti
     return transform[field] === DEFAULT_PRIMITIVE_TRANSFORMS[field]
   })
   const primitiveTransforms = Object.fromEntries(
-    (['paper', 'paperStrip', 'tape', 'tape1', 'tape2', 'tape3', 'botanical', 'pin'] as const)
+    PRIMITIVE_TRANSFORM_SLOTS
       .filter((slot) => { const transform = state.primitiveTransforms[slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS; return !isDefault(transform) })
       .map((slot) => [slot, state.primitiveTransforms[slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS]),
   ) as PrimitiveTransformsRequest
 
   return primitiveTransforms && Object.keys(primitiveTransforms).length > 0 ? primitiveTransforms : undefined
+}
+
+/**
+ * Template Foundation V1 — the slide's element stack as sent with a render
+ * request: ALWAYS the full normalized order (template default when the slide
+ * has no authored override), so the frozen snapshot records exactly what the
+ * Editor painted. Normalized again server-side; the helper is idempotent.
+ */
+export function deriveElementOrderRequest(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): string[] {
+  return resolveElementStack(templateId, state.variant, state.elementOrder).order
 }
 
 // ── Tuning bounds ─────────────────────────────────────────────────────────────

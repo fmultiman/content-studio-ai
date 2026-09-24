@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { deleteS3Object, uploadLibraryFile } from '@/lib/storage/s3'
 import type { LibraryFileKind } from '@/lib/types'
@@ -6,8 +7,24 @@ import { UUID_RE, mapPgError, resolveMediaSource } from '../_helpers'
 
 // POST /api/channel-piece-media/upload
 // Orchestrates: S3 upload → library_file creation → CPM creation.
-// Accepts multipart/form-data with fields: file (File), channelPieceId (string).
-// Compensates partially-created resources on failure.
+// Accepts multipart/form-data with fields: file (File), channelPieceId (string)
+// and, only for the Creative Editor's explicit "Salvar nesta peca", an optional
+// renderExecutionId (string). Compensates partially-created resources on failure.
+//
+// Creative Editor Template Foundation V1: renderExecutionId classifies the new
+// LibraryFile as origin='studio_render' (discovered under Galeria / "Imagens
+// geradas", not Arquivos). It is honoured only after the server verifies the
+// execution is the caller's own COMPLETED static_still render of this same
+// ChannelPiece; otherwise the request is rejected. Persistence is unchanged:
+// still one LibraryFile + one ChannelPieceMedia.
+
+/** render_executions is server-only (no browser SELECT policy, see 031/032). */
+function createRenderExecutionReadClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) return null
+  return createServiceRoleClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -65,6 +82,7 @@ export async function POST(request: Request) {
 
     const channelPieceId = ((formData.get('channelPieceId') as string | null) ?? '').trim()
     const file = formData.get('file')
+    const renderExecutionId = ((formData.get('renderExecutionId') as string | null) ?? '').trim() || null
 
     // Validate channelPieceId
     if (!channelPieceId) {
@@ -134,6 +152,28 @@ export async function POST(request: Request) {
       )
     }
 
+    if (renderExecutionId) {
+      if (!UUID_RE.test(renderExecutionId)) {
+        return NextResponse.json({ error: 'renderExecutionId invalido' }, { status: 400 })
+      }
+      if (mimeType !== 'image/png') {
+        return NextResponse.json({ error: 'Render estatico deve ser PNG' }, { status: 400 })
+      }
+      const executionReader = createRenderExecutionReadClient()
+      if (!executionReader) {
+        return NextResponse.json({ error: 'Servico de renderizacao indisponivel.' }, { status: 503 })
+      }
+      const { data: execution } = await executionReader
+        .from('render_executions')
+        .select('id, kind, status, channel_piece_id')
+        .eq('id', renderExecutionId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!execution || execution.kind !== 'static_still' || execution.status !== 'completed' || execution.channel_piece_id !== channelPieceId) {
+        return NextResponse.json({ error: 'Render nao encontrado para esta peca.' }, { status: 404 })
+      }
+    }
+
     // Step 1: Upload to S3 (Caso A — failure here leaves no residue)
     const safeName = sanitizeFilename(file.name || 'arquivo')
     const buffer = Buffer.from(await file.arrayBuffer())
@@ -170,6 +210,9 @@ export async function POST(request: Request) {
         storage_path: uploaded.storagePath,
         public_url: uploaded.publicUrl,
         thumbnail_url: null,
+        // Discovery classification only (migration 035): a verified studio
+        // render surfaces in Galeria; everything else stays an upload.
+        ...(renderExecutionId ? { origin: 'studio_render', source_render_execution_id: renderExecutionId } : {}),
       })
       .select()
       .single()

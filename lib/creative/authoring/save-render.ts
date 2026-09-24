@@ -38,6 +38,12 @@ export async function saveRenderToChannelPiece(input: {
 export async function saveRenderFileToChannelPiece(input: {
   file: File
   channelPieceId: string
+  /**
+   * Creative Editor Template Foundation V1: the completed static execution
+   * this PNG came from. Lets the route classify the LibraryFile as a studio
+   * render (Galeria / "Imagens geradas") after verifying it server-side.
+   */
+  renderExecutionId?: string
   fetchImpl?: typeof fetch
 }): Promise<SaveRenderResult> {
   const doFetch = input.fetchImpl ?? fetch
@@ -45,6 +51,7 @@ export async function saveRenderFileToChannelPiece(input: {
   const formData = new FormData()
   formData.set('file', file)
   formData.set('channelPieceId', input.channelPieceId)
+  if (input.renderExecutionId) formData.set('renderExecutionId', input.renderExecutionId)
 
   try {
     const response = await doFetch(CHANNEL_PIECE_MEDIA_UPLOAD_ROUTE, { method: 'POST', body: formData })

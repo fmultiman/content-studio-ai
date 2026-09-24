@@ -14,7 +14,9 @@ import { z } from 'zod'
 import { StaticRenderManifestSchema } from '@/lib/schemas/creative/static-render'
 import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { DocumentaryCardPreviewTuning } from './types'
-import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
+import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
+import { isRegisteredTemplateId } from '@/lib/creative/templates/template-definitions'
+import { MAX_ELEMENT_ORDER_LENGTH } from '@/lib/creative/templates/element-stack'
 
 const heroTuningSchema = z.object({
   offsetX: z.number().finite().min(-120).max(120),
@@ -70,7 +72,20 @@ export const primitiveTransformsBySlotSchema = z.object({
   tape3: primitiveTransformsSchema.optional(),
   botanical: primitiveTransformsSchema.optional(),
   pin: primitiveTransformsSchema.optional(),
+  paperDark: primitiveTransformsSchema.optional(),
+  botanicalLeaf: primitiveTransformsSchema.optional(),
+  pin2: primitiveTransformsSchema.optional(),
+  archival: primitiveTransformsSchema.optional(),
+  ornament: primitiveTransformsSchema.optional(),
+  note: primitiveTransformsSchema.optional(),
+  card1: primitiveTransformsSchema.optional(),
 }).strict()
+
+/** Template Foundation V1: which registered Template authored this slide (renderer identity stays manifest.template). */
+export const templateIdSchema = z.string().trim().min(1).refine(isRegisteredTemplateId, { message: 'templateId is not a registered template' })
+
+/** Template Foundation V1: element stack, paint order back -> front. Normalized server-side before freezing. */
+export const elementOrderSchema = z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH)
 
 export const authoringRenderRequestSchema = z.object({
   manifest: StaticRenderManifestSchema,
@@ -78,6 +93,8 @@ export const authoringRenderRequestSchema = z.object({
   /** Phase 2C: primitive selection (semantic keys, resolved server-side) */
   primitiveSelection: primitiveSelectionSchema.optional(),
   primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
+  templateId: templateIdSchema.optional(),
+  elementOrder: elementOrderSchema.optional(),
   context: z.object({
     projectId: z.string().min(1),
     editorialContentId: z.string().min(1),
@@ -96,13 +113,15 @@ export type PrimitiveSelectionRequest = {
   tape?: string
 }
 
-export type PrimitiveTransformsRequest = Partial<Record<'paper' | 'paperStrip' | 'tape' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin', PrimitiveTransforms>>
+export type PrimitiveTransformsRequest = Partial<Record<PrimitiveTransformSlot, PrimitiveTransforms>>
 
 export type AuthoringRenderRequest = {
   manifest: z.infer<typeof StaticRenderManifestSchema>
   overrides?: AuthoringRenderOverrides
   primitiveSelection?: PrimitiveSelectionRequest
   primitiveTransforms?: PrimitiveTransformsRequest
+  templateId?: string
+  elementOrder?: string[]
   context?: { projectId: string; editorialContentId: string; channelPieceId: string }
   identitySnapshot?: VisualTokensSnapshot
 }

@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  PersistedAuthoredSlideSchema,
   StaticAuthoringStateSchema,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION,
   authoringStateToPersistedSlide,
@@ -17,7 +18,9 @@ import {
   persistedSlideToAuthoringState,
   sortedSlides,
 } from '../carousel-state'
-import { createContextualAuthoringState, deriveManifestFromState } from '../authoring-state'
+import { createContextualAuthoringState, deriveElementOrderRequest, deriveManifestFromState } from '../authoring-state'
+import { authoringReducer } from '../reducer'
+import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE } from '@/lib/creative/templates/template-definitions'
 import type { AuthoringCoverContent, AuthoringInfoContent, AuthoringProductContext } from '../types'
 
 const productContext: AuthoringProductContext = {
@@ -112,14 +115,16 @@ describe('AuthoringState <-> PersistedAuthoredSlide round-trip', () => {
     const content: AuthoringCoverContent = { eyebrow: 'Memória viva', title: 'Título editado', subtitle: 'Subtítulo editado', source_line: 'Fonte', detail_note: 'Nota' }
     const state = createContextualAuthoringState(productContext, canvas, content, { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' }, 'cover', 'light')
     const persisted = authoringStateToPersistedSlide(state, 'slide-1', 0)
+    // Template Foundation V1: a cover without brand_label takes the live Project name.
+    const withBrand = { ...content, brand_label: 'Portal Comunidades Alternativas' }
     expect(persisted.variant).toBe('cover')
     expect(persisted.appearance).toBe('light')
-    expect(persisted.content).toEqual(content)
+    expect(persisted.content).toEqual(withBrand)
 
     const reconstructed = persistedSlideToAuthoringState(persisted, productContext, canvas)
     expect(reconstructed.variant).toBe('cover')
     expect(reconstructed.appearance).toBe('light')
-    expect(reconstructed.contentOverride).toEqual(content)
+    expect(reconstructed.contentOverride).toEqual(withBrand)
     expect(reconstructed.primitiveSelection).toEqual({ paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' })
     expect(reconstructed.primitiveTransforms).toEqual(state.primitiveTransforms)
   })
@@ -253,5 +258,100 @@ describe('Final Authoring Polish V2.1 — Title / Source independence', () => {
     const state = createContextualAuthoringState(productContext, canvas, { title: 'x' } as unknown as AuthoringInfoContent)
     const withSource = { ...state, tuning: { ...state.tuning, source: { offsetX: -18, offsetY: 22, rotation: -0.7 } } }
     expect(withSource.tuning.title).toEqual({ offsetX: 0, offsetY: 0, rotation: 0 })
+  })
+})
+
+// ── Creative Editor Template Foundation V1 ───────────────────────────────────
+
+const COVER_DEFAULT = [...EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE.layouts[0].defaultStackOrder]
+
+describe('Template Foundation V1 — templateId persistence', () => {
+  const slides = defaultCarouselSlides('project:portal-comunidades-alternativas')
+
+  it('accepts a legacy authoring state with no templateId (defaults on read)', () => {
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', slides })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('round-trips a registered templateId', () => {
+    const parsed = StaticAuthoringStateSchema.parse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', templateId: 'editorial-documentary-collage-v1', slides })
+    expect(parsed.templateId).toBe('editorial-documentary-collage-v1')
+  })
+
+  it('rejects an unknown templateId on write', () => {
+    const parsed = StaticAuthoringStateSchema.safeParse({ schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: 'cp-1', templateId: 'portal-comunidades-alternativas-template', slides })
+    expect(parsed.success).toBe(false)
+  })
+})
+
+describe('Template Foundation V1 — per-slide element stack', () => {
+  const canvas = 'portrait' as const
+
+  it('a slide without elementOrder follows the template default (nothing persisted)', () => {
+    const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const state = persistedSlideToAuthoringState(cover, productContext, canvas)
+    expect(state.elementOrder).toBeUndefined()
+    expect(deriveElementOrderRequest(state)).toEqual(COVER_DEFAULT)
+    expect(authoringStateToPersistedSlide(state, cover.id, cover.order).elementOrder).toBeUndefined()
+  })
+
+  it('persists an authored reorder per slide and round-trips it', () => {
+    const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const authored = ['ornament', 'archival', 'botanicalLeaf', 'botanical', 'tape1', 'hero', 'note', 'tape2', 'paper', 'title']
+    const state = authoringReducer(persistedSlideToAuthoringState(cover, productContext, canvas), { type: 'SET_ELEMENT_ORDER', order: authored })
+    const persisted = authoringStateToPersistedSlide(state, cover.id, cover.order)
+    expect(persisted.elementOrder).toEqual(authored)
+    expect(persistedSlideToAuthoringState(persisted, productContext, canvas).elementOrder).toEqual(authored)
+  })
+
+  it('reordering Slide 1 never mutates Slide 2', () => {
+    const [cover, info] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const slide1 = persistedSlideToAuthoringState(cover, productContext, canvas)
+    const slide2 = persistedSlideToAuthoringState(info, productContext, canvas)
+    const reordered = authoringReducer(slide1, { type: 'SET_ELEMENT_ORDER', order: [...COVER_DEFAULT].reverse() })
+    expect(reordered.elementOrder).toEqual([...COVER_DEFAULT].reverse())
+    expect(slide1.elementOrder).toBeUndefined()
+    expect(slide2.elementOrder).toBeUndefined()
+    expect(authoringStateToPersistedSlide(slide2, info.id, info.order).elementOrder).toBeUndefined()
+  })
+
+  it('normalizes duplicates and unknown ids from an old persisted row on read', () => {
+    const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const legacy = { ...cover, elementOrder: ['retired-element', 'title', 'title', 'hero'] }
+    expect(PersistedAuthoredSlideSchema.safeParse(legacy).success).toBe(true)
+    const order = persistedSlideToAuthoringState(legacy, productContext, canvas).elementOrder ?? []
+    expect(order).not.toContain('retired-element')
+    expect(new Set(order).size).toBe(order.length)
+    expect([...order].sort()).toEqual([...COVER_DEFAULT].sort())
+    // Known persisted relative order kept: title stays behind hero.
+    expect(order.indexOf('title')).toBeLessThan(order.indexOf('hero'))
+  })
+
+  it('RESET_ELEMENT_ORDER (Ordem padrão) and a layout switch return to the template stack', () => {
+    const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const reordered = authoringReducer(persistedSlideToAuthoringState(cover, productContext, canvas), { type: 'SET_ELEMENT_ORDER', order: [...COVER_DEFAULT].reverse() })
+    expect(authoringReducer(reordered, { type: 'RESET_ELEMENT_ORDER' }).elementOrder).toBeUndefined()
+    expect(authoringReducer(reordered, { type: 'SET_VARIANT', variant: 'info' }).elementOrder).toBeUndefined()
+  })
+
+  it('Restore default (template slide default) carries no authored stack; Revert restores the persisted one', () => {
+    const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
+    const authored = [...COVER_DEFAULT].reverse()
+    const persisted = authoringStateToPersistedSlide(authoringReducer(persistedSlideToAuthoringState(cover, productContext, canvas), { type: 'SET_ELEMENT_ORDER', order: authored }), cover.id, cover.order)
+    // Restore default = the template default slide re-hydrated (what the page does).
+    expect(persistedSlideToAuthoringState({ ...defaultCarouselSlides('project:portal-comunidades-alternativas')[0], id: cover.id }, productContext, canvas).elementOrder).toBeUndefined()
+    // Revert = re-hydrate the last saved snapshot.
+    const saved = JSON.parse(JSON.stringify(persisted))
+    expect(persistedSlideToAuthoringState(saved, productContext, canvas).elementOrder).toEqual(authored)
+  })
+
+  it('keeps legacy transform rows loadable and fills the new element channels with defaults', () => {
+    const [info] = defaultCarouselSlides('project:portal-comunidades-alternativas').slice(1)
+    const legacyTransforms = { paper: info.primitiveTransforms.paper, paperStrip: info.primitiveTransforms.paperStrip, tape: info.primitiveTransforms.tape, botanical: info.primitiveTransforms.botanical, pin: info.primitiveTransforms.pin }
+    const legacy = { ...info, primitiveTransforms: legacyTransforms }
+    expect(PersistedAuthoredSlideSchema.safeParse(legacy).success).toBe(true)
+    const state = persistedSlideToAuthoringState(legacy as typeof info, productContext, canvas)
+    expect(state.primitiveTransforms.pin2).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 })
+    expect(state.primitiveTransforms.card1).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 })
   })
 })

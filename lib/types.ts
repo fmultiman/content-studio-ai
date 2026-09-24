@@ -181,10 +181,20 @@ export interface LibraryFile {
   storage_path: string
   public_url: string
   thumbnail_url: string | null
+  /**
+   * Creative Editor Template Foundation V1 (migration 035) — UI discovery
+   * class, not a separate entity: 'studio_render' = a Creative Editor PNG the
+   * user explicitly saved to a piece (Galeria); 'upload' = everything else
+   * (Arquivos). Optional because older rows/selects may omit it.
+   */
+  origin?: LibraryFileOrigin
+  source_render_execution_id?: string | null
   deleted_at: string | null
   created_at: string
   updated_at: string
 }
+
+export type LibraryFileOrigin = 'upload' | 'studio_render'
 
 export interface LibraryFolder {
   id: string
@@ -390,6 +400,8 @@ export interface ChannelPieceMediaResolved extends ChannelPieceMedia {
   mime_type: string | null
   name: string | null
   source_deleted: boolean  // true se library_files.deleted_at IS NOT NULL
+  /** Template Foundation V1: discovery class of a library_file source ('studio_render' = saved Creative Editor PNG). */
+  library_origin?: LibraryFileOrigin
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +417,8 @@ export interface ChannelPieceStaticAuthoringStateRow {
   user_id: string
   channel_piece_id: string
   schema_version: string
+  /** Creative Editor Template Foundation V1 (migration 035). Absent only before the column existed. */
+  template_id?: string | null
   slides: unknown[]
   created_at: string
   updated_at: string

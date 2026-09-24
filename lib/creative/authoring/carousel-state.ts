@@ -42,6 +42,14 @@ import {
   type AuthoringVariant,
 } from './types'
 import { defaultContentForVariant, TUNING_BOUNDS } from './authoring-state'
+import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
+import {
+  DEFAULT_TEMPLATE_ID,
+  getTemplateDefinition,
+  getTemplateLayout,
+  isRegisteredTemplateId,
+} from '@/lib/creative/templates/template-definitions'
+import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder } from '@/lib/creative/templates/element-stack'
 
 export const STATIC_AUTHORING_STATE_SCHEMA_VERSION = 'static-authoring-state.v1' as const
 
@@ -65,6 +73,15 @@ const primitiveTransformsBySlotSchema = z
     tape3: primitiveTransformValueSchema.optional(),
     botanical: primitiveTransformValueSchema,
     pin: primitiveTransformValueSchema,
+    // Creative Editor Template Foundation V1 — Pack B element channels.
+    // Optional: rows persisted before them read back as template defaults.
+    paperDark: primitiveTransformValueSchema.optional(),
+    botanicalLeaf: primitiveTransformValueSchema.optional(),
+    pin2: primitiveTransformValueSchema.optional(),
+    archival: primitiveTransformValueSchema.optional(),
+    ornament: primitiveTransformValueSchema.optional(),
+    note: primitiveTransformValueSchema.optional(),
+    card1: primitiveTransformValueSchema.optional(),
   })
   .strict()
 
@@ -126,6 +143,10 @@ export const PersistedAuthoredSlideSchema = z
     // Shell V1 have no `tuning` at all. Absence means "template default",
     // read back as DEFAULT_TUNING — no migration/backfill needed.
     tuning: tuningSchema.optional(),
+    // Creative Editor Template Foundation V1 — authored element stack (paint
+    // order, back -> front) for THIS slide only. Absent = template default.
+    // Unknown/duplicate ids are tolerated here and normalized on read.
+    elementOrder: z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH).optional(),
   })
   .strict()
 
@@ -135,6 +156,10 @@ export const StaticAuthoringStateSchema = z
   .object({
     schemaVersion: z.literal(STATIC_AUTHORING_STATE_SCHEMA_VERSION),
     channelPieceId: z.string().trim().min(1),
+    // Creative Editor Template Foundation V1 — the Template this carousel is
+    // authored with (carousel root, not per slide). Optional on write for
+    // older clients (persisted as the default); an unknown id is rejected.
+    templateId: z.string().trim().min(1).refine(isRegisteredTemplateId, { message: 'templateId is not a registered template' }).optional(),
     slides: z.array(PersistedAuthoredSlideSchema).min(1),
   })
   .strict()
@@ -156,7 +181,20 @@ export function sortedSlides(slides: readonly PersistedAuthoredSlide[]): Persist
 
 // ── AuthoringState <-> PersistedAuthoredSlide ─────────────────────────────────
 
-export function authoringStateToPersistedSlide(state: AuthoringState, id: string, order: number): PersistedAuthoredSlide {
+/** Every transform channel, each defaulted — a persisted slide always carries the full set. */
+function completeTransforms(transforms: Partial<AuthoringPrimitiveTransforms>): AuthoringPrimitiveTransforms {
+  return Object.fromEntries(
+    PRIMITIVE_TRANSFORM_SLOTS.map((slot) => [slot, { ...(transforms[slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS) }]),
+  ) as unknown as AuthoringPrimitiveTransforms
+}
+
+function layoutFor(templateId: string, variant: AuthoringVariant) {
+  const template = getTemplateDefinition(templateId) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
+  return template ? getTemplateLayout(template, variant) : null
+}
+
+export function authoringStateToPersistedSlide(state: AuthoringState, id: string, order: number, templateId: string = DEFAULT_TEMPLATE_ID): PersistedAuthoredSlide {
+  const layout = layoutFor(templateId, state.variant)
   return {
     id,
     order,
@@ -164,18 +202,11 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     appearance: state.appearance,
     content: state.contentOverride as unknown as Record<string, unknown>,
     primitiveSelection: { ...state.primitiveSelection },
-    primitiveTransforms: {
-      paper: { ...state.primitiveTransforms.paper },
-      paperStrip: { ...state.primitiveTransforms.paperStrip },
-      tape: { ...state.primitiveTransforms.tape },
-      tape1: { ...(state.primitiveTransforms.tape1 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      tape2: { ...(state.primitiveTransforms.tape2 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      tape3: { ...(state.primitiveTransforms.tape3 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      botanical: { ...state.primitiveTransforms.botanical },
-      pin: { ...state.primitiveTransforms.pin },
-    },
+    primitiveTransforms: completeTransforms(state.primitiveTransforms),
     ...(state.heroRef ? { heroRef: state.heroRef } : {}),
     tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source } },
+    // Only an authored override is persisted; absence keeps following the template default.
+    ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
   }
 }
 
@@ -189,25 +220,25 @@ export function persistedSlideToAuthoringState(
   slide: PersistedAuthoredSlide,
   productContext: AuthoringProductContext,
   canvas: AuthoringCanvas,
+  templateId: string = DEFAULT_TEMPLATE_ID,
 ): AuthoringState {
+  const layout = layoutFor(templateId, slide.variant)
+  const content = slide.content as unknown as AuthoringContent
   return {
     variant: slide.variant,
     identity: 'a',
     canvas,
     heroRef: slide.heroRef as AuthoringHeroRef | undefined,
     appearance: slide.appearance,
-    contentOverride: slide.content as unknown as AuthoringContent,
+    // Cover's brand block label is the live Project name when the slide has
+    // none yet (rows authored before brand_label existed) — derived, like the
+    // rest of productContext, never a second source of truth for the name.
+    contentOverride: slide.variant === 'cover' && !(content as { brand_label?: string }).brand_label && productContext.projectName
+      ? { ...content, brand_label: productContext.projectName } as AuthoringContent
+      : content,
     primitiveSelection: { ...slide.primitiveSelection } as AuthoringPrimitiveSelection,
-    primitiveTransforms: {
-      paper: { ...slide.primitiveTransforms.paper },
-      paperStrip: { ...slide.primitiveTransforms.paperStrip },
-      tape: { ...slide.primitiveTransforms.tape },
-      tape1: { ...(slide.primitiveTransforms.tape1 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      tape2: { ...(slide.primitiveTransforms.tape2 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      tape3: { ...(slide.primitiveTransforms.tape3 ?? DEFAULT_PRIMITIVE_TRANSFORMS) },
-      botanical: { ...slide.primitiveTransforms.botanical },
-      pin: { ...slide.primitiveTransforms.pin },
-    } as AuthoringPrimitiveTransforms,
+    primitiveTransforms: completeTransforms(slide.primitiveTransforms as Partial<AuthoringPrimitiveTransforms>),
+    ...(slide.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, slide.elementOrder) } : {}),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
     // adjustment, identical to how those slides always rendered. `source`
@@ -237,16 +268,7 @@ export function defaultCarouselSlides(primitiveProjectRef: string | null): Persi
     appearance,
     content: defaultContentForVariant(variant, 'a') as unknown as Record<string, unknown>,
     primitiveSelection: { ...primitiveSelection },
-    primitiveTransforms: {
-      paper: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.paper },
-      paperStrip: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.paperStrip },
-      tape: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.tape },
-      tape1: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.tape1 },
-      tape2: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.tape2 },
-      tape3: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.tape3 },
-      botanical: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.botanical },
-      pin: { ...DEFAULT_PRIMITIVE_TRANSFORMS_STATE.pin },
-    },
+    primitiveTransforms: completeTransforms(DEFAULT_PRIMITIVE_TRANSFORMS_STATE),
     tuning: { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
   })
   return [

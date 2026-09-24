@@ -32,6 +32,8 @@ import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/proje
 import { listPrimitivesForProject, PORTAL_PROJECT_REF, selectPrimitiveAssetRef } from '@/lib/creative/primitives/discovery'
 import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
+import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
+import { normalizeElementOrder } from '@/lib/creative/templates/element-stack'
 import {
   StaticRenderSlideRefSchema,
   assertStaticSnapshotHasNoSignedUrl,
@@ -194,6 +196,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Conteudo do slide invalido para render.', code: 'INVALID_STATIC_PAYLOAD', details: first ? `${first.code}: ${first.message}`.slice(0, 300) : undefined }, { status: 400 })
     }
 
+    // Creative Editor Template Foundation V1: the authoring Template must
+    // match the renderer the manifest names, and the element stack is frozen
+    // already normalized (same helper the Editor preview and worker use).
+    const templateId = input.templateId ?? DEFAULT_TEMPLATE_ID
+    const template = getTemplateDefinition(templateId)
+    const layout = template && manifest.template.variant ? getTemplateLayout(template, manifest.template.variant) : null
+    if (!template || !layout || template.renderer.templateRef.id !== manifest.template.id) {
+      return fail(400, 'TEMPLATE_LAYOUT_MISMATCH', 'Template/estrutura nao correspondem ao render.')
+    }
+    const elementOrder = normalizeElementOrder(layout, input.elementOrder)
+
     const snapshot = buildStaticRenderExecutionSnapshot({
       manifest,
       identitySnapshot,
@@ -201,6 +214,8 @@ export async function POST(request: Request) {
       primitiveSelection: input.primitiveSelection,
       primitiveAssets: Object.keys(primitiveAssets).length > 0 ? primitiveAssets : undefined,
       primitiveTransforms: input.primitiveTransforms,
+      templateId,
+      elementOrder,
       slide,
     })
     assertStaticSnapshotHasNoSignedUrl(snapshot)

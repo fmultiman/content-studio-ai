@@ -23,6 +23,8 @@ export type ResolvedStaticWorkerInput = {
   overrides?: AuthoringRenderOverrides
   primitiveMaterials?: { paper?: ResolvedAsset; tape?: ResolvedAsset }
   primitiveTransforms?: PrimitiveTransformsRequest
+  templateId?: string
+  elementOrder?: string[]
   output: { format: 'png'; width: number; height: number }
   slide: StaticRenderSlideRef | null
 }
@@ -87,6 +89,8 @@ export async function resolveStaticRuntimeInput(input: {
       ...(snapshot.overrides ? { overrides: snapshot.overrides } : {}),
       ...(Object.keys(primitiveMaterials).length > 0 ? { primitiveMaterials } : {}),
       ...(snapshot.primitiveTransforms ? { primitiveTransforms: snapshot.primitiveTransforms } : {}),
+      ...(snapshot.templateId ? { templateId: snapshot.templateId } : {}),
+      ...(snapshot.elementOrder ? { elementOrder: snapshot.elementOrder } : {}),
       output: snapshot.output,
       slide: snapshot.slide,
     },

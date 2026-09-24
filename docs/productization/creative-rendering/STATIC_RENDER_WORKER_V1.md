@@ -72,4 +72,19 @@ Full-repository ESLint still reports inherited errors in ignored/interrupted `.t
 
 ## External deployment status
 
-The exported runtime is ready for the established manual VPS deployment to `content-studio-execution_render-worker`. This environment has no SSH credentials or Portainer control, so VPS update/health, Vercel push/READY, real VPS Slide 1/2 smoke, authenticated production editor smoke, and production explicit-save smoke remain operator gates. No claim of those external results is made here.
+At handoff (commit `73ebbfef895963c6b5f72fe8ed3e331757c4010f`, Vercel `dpl_GZFWRYBaoWLuRvVKQBXdwHo49kvF` READY) this mission stopped as `STATIC_RENDER_WORKER_V1_BLOCKED`, only because the agent had no operator access to the VPS runtime.
+
+## Operator-confirmed production closure
+
+After the handoff, **the operator** (not the agent) completed the external gates:
+
+- copied the exported runtime into the existing VPS bind-mounted worker tree;
+- restarted `content-studio-execution_render-worker`; the new Swarm task reached Running with no error;
+- used the real production Creative Editor on the Portal carousel (ChannelPiece `1247e54b-8f55-492e-825d-ed9b927f2e63`) and generated real static PNGs through the VPS path, with "PNG pronto" shown for Slide 1 and Slide 2;
+- used "Salvar nesta peça"; the PNGs attached to the ChannelPiece and Slide 1 and Slide 2 media are present on the version.
+
+Database evidence read afterwards (Creative Editor Template Foundation V1 mission): two `static_still` executions for that ChannelPiece, both `completed`, 1080×1350 — `d65f13ee-640a-4e25-a69a-833db150a086` (slide-1, completed 2026-09-24 00:41:57 UTC) and `54d56b3c-80d8-4697-b366-ac5d08be5472` (slide-2, 00:44:11 UTC) — plus the two saved LibraryFiles `slide-1-de-2-d65f13ee.png` and `slide-2-de-2-54d56b3c.png` in the Portal project.
+
+Status: **operator-confirmed production completion.** The agent did not personally observe the VPS restart or the browser session. Those steps are recorded as operator evidence.
+
+The same smoke found that saved PNGs appeared under Arquivos instead of Galeria. That is resolved in `CREATIVE_EDITOR_TEMPLATE_FOUNDATION_V1.md` §9.

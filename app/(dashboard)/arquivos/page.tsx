@@ -138,6 +138,9 @@ export default function ArquivosPage() {
     if (selectedKind !== 'all') params.set('kind', selectedKind)
     if (!showTrash && folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
     if (showTrash) params.set('trash', 'true')
+    // Arquivos = uploaded/imported source files. Saved Creative Editor PNGs
+    // are studio outputs and live in Galeria (Template Foundation V1).
+    params.set('origin', 'upload')
 
     const foldersUrl = `/api/library-folders${selectedProject !== 'all'
       ? `?projectId=${encodeURIComponent(selectedProject)}`

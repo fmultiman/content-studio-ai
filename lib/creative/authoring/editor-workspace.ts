@@ -5,6 +5,13 @@
  * StaticRenderManifest, template props or render overrides.
  */
 import type { AuthoringState } from './types'
+import {
+  DEFAULT_TEMPLATE_ID,
+  getTemplateDefinition,
+  getTemplateLayout,
+  type AssetSlotId,
+  type TemplateElementControl,
+} from '@/lib/creative/templates/template-definitions'
 
 /** Below this viewport width the floating palette is replaced by a stacked Inspector. */
 export const FLOATING_WORKBENCH_MIN_VIEWPORT_WIDTH = 1024
@@ -76,29 +83,21 @@ export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: stri
 ]
 
 /** Authored ELEMENT instances the Element selector can target. Distinct from ASSET selection
- * (Assets tab): an asset is which resource fills a template role; an element is an authored
- * instance of that resource (or of a fixed text/image role) inside the composition. */
-export type ElementKey = 'title' | 'hero' | 'source' | 'paper' | 'paperStrip' | 'tape1' | 'tape2' | 'tape3' | 'botanical' | 'pin'
+ * (Assets tab): an asset is which resource fills a template slot; an element is an authored
+ * instance of that resource (or of a fixed text/image role) inside the composition.
+ * Creative Editor Template Foundation V1: element ids are template-scoped strings. */
+export type ElementKey = string
+
+export type EditorElement = { key: ElementKey; label: string; control: TemplateElementControl; assetSlot?: AssetSlotId }
 
 /**
- * Only elements the variant actually renders (DocumentaryCard Cover/Info):
- * Cover has one tape (`tape1`, on the hero image); Info has one tape per image
- * card (`tape1`, `tape2`) plus the lower tape (`tape3`). No variant tapes the title.
- * Fonte (source/credit line) is Info-only: Cover's source_line is not
- * independently authored today, so the element genuinely does not exist there.
+ * The active layout's authored elements, exactly as the Template defines
+ * them (lib/creative/templates/template-definitions.ts) — never a second
+ * hand-maintained list. Fonte is Info-only and Hero Cover-only because the
+ * layouts say so, not because this helper special-cases them.
  */
-export function elementsForVariant(variant: AuthoringState['variant']): { key: ElementKey; label: string }[] {
-  const tapes: { key: ElementKey; label: string }[] = variant === 'cover'
-    ? [{ key: 'tape1', label: 'Fita da imagem' }]
-    : [{ key: 'tape1', label: 'Fita da imagem 1' }, { key: 'tape2', label: 'Fita da imagem 2' }, { key: 'tape3', label: 'Fita inferior' }]
-  return [
-    { key: 'title', label: 'Título' },
-    ...(variant === 'cover' ? [{ key: 'hero' as const, label: 'Hero' }] : []),
-    ...(variant === 'info' ? [{ key: 'source' as const, label: 'Fonte' }] : []),
-    { key: 'paper', label: 'Paper' },
-    { key: 'paperStrip', label: 'Faixa do título' },
-    ...tapes,
-    { key: 'pin', label: 'Pin' },
-    { key: 'botanical', label: 'Botânica' },
-  ]
+export function elementsForVariant(variant: AuthoringState['variant'], templateId: string = DEFAULT_TEMPLATE_ID): EditorElement[] {
+  const template = getTemplateDefinition(templateId) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
+  const layout = template ? getTemplateLayout(template, variant) : null
+  return (layout?.elements ?? []).map((element) => ({ key: element.id, label: element.label, control: element.control, ...(element.assetSlot ? { assetSlot: element.assetSlot } : {}) }))
 }

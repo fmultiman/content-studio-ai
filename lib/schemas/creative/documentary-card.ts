@@ -28,6 +28,10 @@ export const DocumentaryCardCoverContentSchema = z
     subtitle: z.string().trim().min(1).max(220).optional(),
     source_line: z.string().trim().min(1).max(160).optional(),
     detail_note: z.string().trim().min(1).max(240).optional(),
+    // Creative Editor Template Foundation V1: the brand block's label (Pack B
+    // Slide 1 shows the project name beside the logo). Optional — absent on
+    // every manifest authored before it existed.
+    brand_label: z.string().trim().min(1).max(80).optional(),
   })
   .strict()
 

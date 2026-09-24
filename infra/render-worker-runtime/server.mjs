@@ -216,6 +216,11 @@ async function handleRenderStill(req, res) {
       overrides: staticInput.overrides,
       primitiveMaterials: staticInput.primitiveMaterials,
       primitiveTransforms: staticInput.primitiveTransforms,
+      // Creative Editor Template Foundation V1: frozen template + element
+      // stack. DocumentaryCard normalizes them with the same helper the
+      // Editor preview uses (lib/creative/templates/element-stack.ts).
+      templateId: staticInput.templateId,
+      elementOrder: staticInput.elementOrder,
     }
     const composition = await selectComposition({ serveUrl: bundleLocation, id: 'StaticRenderManifestStill', inputProps })
 

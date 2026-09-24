@@ -65,6 +65,8 @@ export interface AuthoringCoverContent {
   source_line: string
   /** Optional — DocumentaryCardCoverContentSchema requires min(1) when present; omit rather than send ''. */
   detail_note?: string
+  /** Brand block label (project name). Filled from the live Project context when absent. */
+  brand_label?: string
 }
 
 export interface AuthoringFactCard {
@@ -156,6 +158,14 @@ export interface AuthoringPrimitiveTransforms {
   tape3?: PrimitiveTransforms
   botanical: PrimitiveTransforms
   pin: PrimitiveTransforms
+  /** Creative Editor Template Foundation V1 — Pack B element channels; absent on older rows. */
+  paperDark?: PrimitiveTransforms
+  botanicalLeaf?: PrimitiveTransforms
+  pin2?: PrimitiveTransforms
+  archival?: PrimitiveTransforms
+  ornament?: PrimitiveTransforms
+  note?: PrimitiveTransforms
+  card1?: PrimitiveTransforms
 }
 
 /** Runtime-only context for product authoring; never persisted as a domain entity. */
@@ -225,6 +235,14 @@ export interface AuthoringState {
    * before that it was recomputed to DEFAULT_TUNING on every load.
    */
   tuning: DocumentaryCardPreviewTuning
+
+  /**
+   * Creative Editor Template Foundation V1 — authored element stack override
+   * for THIS slide (paint order, back → front). undefined = the template
+   * layout's default stack. Always normalized through
+   * lib/creative/templates/element-stack.ts before rendering.
+   */
+  elementOrder?: string[]
 
   /** UI-only: which debug panel tabs are open */
   debugPanelOpen: boolean

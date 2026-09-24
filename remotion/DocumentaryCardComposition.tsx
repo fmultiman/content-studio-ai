@@ -18,7 +18,7 @@ import { materialUrl, type MaterialName } from '@/components/creative/documentar
  * adapter changes the base; the web preview keeps its own.
  */
 const REMOTION_MATERIAL_BASE_URL = '/public/creative-fixtures'
-const DOCUMENTARY_CARD_MATERIALS: readonly MaterialName[] = ['tornPaper', 'paperStrip', 'tape', 'pin', 'botanical']
+const DOCUMENTARY_CARD_MATERIALS: readonly MaterialName[] = ['tornPaper', 'paperStrip', 'paperDark', 'paperScrap', 'archival', 'tape', 'pin', 'botanical', 'botanicalLeaf', 'ornament']
 
 export type DocumentaryCardCompositionProps = DocumentaryCardProps
 
@@ -68,6 +68,8 @@ export type StaticRenderManifestStillProps = {
   overrides?: AuthoringRenderOverrides
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
+  templateId?: string
+  elementOrder?: string[]
 }
 
 /**
@@ -75,7 +77,7 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
-export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms }) => {
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms, templateId, elementOrder }) => {
   const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
@@ -88,6 +90,8 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     sequence: resolvedInput.manifest.sequence,
     primitiveMaterials,
     primitiveTransforms,
+    templateId,
+    elementOrder,
   }, { mode: 'still', overrides })
   const renderProps = remotionTemplateProps(props)
   // A still is one captured frame: hold it until every painted image loaded.

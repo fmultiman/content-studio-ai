@@ -1,4 +1,4 @@
-import type { Image, ImageDraft, Production, Project, RenderExecutionSummary, VideoDraft } from '@/lib/types'
+import type { Image, ImageDraft, LibraryFile, Production, Project, RenderExecutionSummary, VideoDraft } from '@/lib/types'
 import { productionHref } from '@/lib/draft-hub'
 import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 
@@ -36,6 +36,12 @@ export type GalleryOutputItem = {
    * which already carry a directly-usable URL in `imageUrl`/`downloadUrl`.
    */
   videoPreviewEndpoint: string | null
+  /**
+   * Creative Editor Template Foundation V1 — set only on explicitly saved
+   * Creative Editor PNGs ('studio_render'). Their `id` is a LibraryFile id,
+   * never an `images` id, so no AI-image action may treat it as one.
+   */
+  source?: 'studio_render'
 }
 
 export type GalleryOutputFilters = {
@@ -87,6 +93,9 @@ type ImageSource = Pick<
   | 'updated_at'
 >
 
+/** A LibraryFile with origin='studio_render' (already carrying a display URL). */
+export type StudioRenderSource = Pick<LibraryFile, 'id' | 'project_id' | 'name' | 'public_url' | 'thumbnail_url' | 'created_at' | 'updated_at'> & Partial<Pick<LibraryFile, 'origin' | 'kind' | 'deleted_at'>>
+
 type ExecutionSource = Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'> & Partial<Pick<RenderExecutionSummary, 'kind'>>
 
 const STATUS_LABELS: Record<GalleryOutputStatus, string> = {
@@ -123,6 +132,7 @@ export function buildGalleryOutputs({
   productions = [],
   executions = [],
   videoDrafts = [],
+  studioRenders = [],
 }: {
   images: ImageSource[]
   drafts?: ImageDraftSource[]
@@ -130,6 +140,7 @@ export function buildGalleryOutputs({
   productions?: ProductionSource[]
   executions?: ExecutionSource[]
   videoDrafts?: VideoDraftSource[]
+  studioRenders?: StudioRenderSource[]
 }): GalleryOutputItem[] {
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const productionById = new Map(productions.map((production) => [production.id, production]))
@@ -244,7 +255,43 @@ export function buildGalleryOutputs({
       }
     })
 
-  return [...imageItems, ...videoItems].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+  // Creative Editor Template Foundation V1: studio renders enter the Gallery
+  // ONLY after the explicit "Salvar nesta peca" durability boundary (they are
+  // LibraryFiles with origin='studio_render'). Scratch executions never do.
+  const studioRenderItems = studioRenders
+    .filter((file) => file.origin === 'studio_render' && !file.deleted_at && (file.kind ?? 'image') === 'image')
+    .map((file): GalleryOutputItem => {
+      const project = file.project_id ? projectById.get(file.project_id) || null : null
+      const slide = /^slide-(\d+)-de-(\d+)-/.exec(file.name)
+      const title = slide ? `Creative Editor · Slide ${slide[1]}/${slide[2]}` : 'Creative Editor · Render'
+      const status = 'generated'
+      return {
+        id: file.id,
+        mediaType: 'image',
+        title,
+        prompt: 'Render estático do Creative Editor, salvo na peça',
+        projectId: file.project_id,
+        projectName: project?.name || null,
+        productionId: null,
+        productionName: null,
+        draftId: null,
+        status,
+        statusLabel: galleryOutputStatusLabel(status),
+        generatedAt: file.created_at,
+        updatedAt: file.updated_at,
+        imageUrl: file.public_url || null,
+        thumbnailUrl: file.thumbnail_url || file.public_url || null,
+        downloadUrl: file.public_url || null,
+        canDownload: Boolean(file.public_url),
+        previewAlt: buildGalleryOutputAlt(title, project?.name || null, null),
+        productionHref: null,
+        sourceHref: null,
+        videoPreviewEndpoint: null,
+        source: 'studio_render',
+      }
+    })
+
+  return [...imageItems, ...videoItems, ...studioRenderItems].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 }
 
 export function filterGalleryOutputs(

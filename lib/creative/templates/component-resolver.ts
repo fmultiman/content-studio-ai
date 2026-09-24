@@ -6,7 +6,6 @@ import type { QuoteCardProps } from '@/components/creative/quote-card'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import type { CanvasSpec, MotionSpec, SequenceContext, VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
-import type { PrimitiveTransforms } from '@/lib/creative/primitives/transforms'
 
 /** Renderer-facing input shared by every registered template binding. */
 export type TemplateComponentInput = {
@@ -19,7 +18,10 @@ export type TemplateComponentInput = {
   canvas: CanvasSpec
   sequence?: SequenceContext
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
-  primitiveTransforms?: Partial<Record<'paper' | 'tape', PrimitiveTransforms>>
+  primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
+  /** Template Foundation V1: authoring template + element stack (paint order). Templates without them ignore both. */
+  templateId?: string
+  elementOrder?: string[]
 }
 
 export type TemplateComponentRuntime = {
@@ -51,6 +53,8 @@ const COMPONENT_BINDINGS: Readonly<Record<string, TemplateComponentBinding>> = {
       sequence: input.sequence,
       primitiveMaterials: input.primitiveMaterials,
       primitiveTransforms: input.primitiveTransforms,
+      templateId: input.templateId,
+      elementOrder: input.elementOrder,
     }, {
       mode: runtime.mode,
       motion: runtime.motion,
