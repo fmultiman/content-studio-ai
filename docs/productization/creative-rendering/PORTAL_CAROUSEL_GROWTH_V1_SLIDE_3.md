@@ -1,6 +1,6 @@
 # Portal Carousel Growth V1 — Add Slide + real Slide 3
 
-Status: implemented and validated locally. The production smoke runs after the operator updates the VPS worker (§14, §15).
+Status: delivered. The production smoke passed after the operator's VPS update (§15); one smoke finding was fixed in `bce02e8`.
 
 ## 1. Starting SHA
 
@@ -165,11 +165,62 @@ Default appearance is Light; Dark is supported (dark green ground, cream text, g
 
 ## 15. Production smoke
 
-Pending the operator's VPS update. Recorded after the smoke.
+Setup:
+- Authenticated production Creative Editor, Portal carousel `1247e54b…`.
+- VPS worker updated by the operator to `content-studio-carousel-growth-v1`, reported healthy. The agent did not observe the VPS directly; the renders below prove it.
+- Web builds: `6951d77` (`dpl_8gnzWC13fepmHZ36M78NMbXEHV4i`), then the fix `bce02e8` (`dpl_21ijBFQe3fWQbEJmXkxRiZ5tMpwy`), both READY.
+
+Add Slide:
+- The "+" sits beside the nav (`1/2 2/2 +`). The dialog shows Template "Editorial Documentary Collage" read-only, Estrutura Cover/Info/Lista (defaulting to the current slide's layout) and its Aparência options.
+- Choosing Lista switched the appearance to Light (the layout default).
+- **Cancelar** changed nothing (1/2, "Salvo").
+- **Adicionar slide** produced `1/3 2/3 3/3`, with 3/3 selected, a List card, a `3/3` badge and "Alterações não salvas".
+
+**Finding, fixed during the smoke:**
+- **Voltar ao salvo** after adding left the selected index (2) outside the restored 2-slide collection, and the editor stayed on its loader.
+- Fix `bce02e8`: clamp the selection to the restored slides (regression test added).
+- Re-smoked on `bce02e8`: add → 3/3 → Voltar ao salvo → `1/2 2/2`, 2/2 selected, "Salvo".
+
+Content tab:
+- Title, Introdução, 3 item editors (Microfone / Lápis / Livro + text, Remover), Adicionar item (enabled at 3/4) and Legenda da imagem, all holding the exact Pack A text.
+- A caption edit showed on the Canvas live; the exact text was restored afterwards.
+
+Save and reload:
+- **Salvar** gave "Salvo"; after reload the header reads `1/3` with nav `1/3 2/3 3/3`, "Salvo".
+- The DB row has 3 slides. `slide-3` is order 2, `list`/light, with no elementOrder and no assetOverrides. Slides 1–2 are untouched.
+
+Slide 3 render on the VPS:
+- Execution `96e83321…`: queued 22:26:56, claimed 0.7 s later, completed in 23 s; 1080×1350, 1.97 MB.
+- The snapshot froze `list`/light, sequence 3/3, slide `slide-3` (3/3), templateId `editorial-documentary-collage-v1`, the default stack, and the Template hero fixture, with **no signed URL**.
+- The PNG matches the local render, with the bundled Source Sans 3 (`evidence/portal-carousel-growth-v1/vps-production-slides-1-3.jpg`).
+
+Regression:
+- Slide 1 (`d25fa26d…`, cover/dark, 1/3) and Slide 2 (`7135c3b4…`, info/light, 2/3) rendered on the VPS in 10 s each.
+- Their layouts are unchanged; only the sequences read x/3.
+
+Save to piece and Gallery:
+- **Salvar nesta peça** on Slide 3 showed "✓ Salvo nesta peça".
+- A LibraryFile `9eadd82f…` (`slide-3-de-3-96e83321.png`, `studio_render`) is attached as ChannelPieceMedia at position 3, after the historical duplicate at position 2, which was left untouched (§11).
+- `/api/render-executions` shows `attached_to_piece: true` for `96e83321` only. Galeria lists "Creative Editor · Slide 3/3".
+- This attachment was kept as the piece's real Slide 3 output.
+
+Viewports:
+
+| Viewport | Workbench | Slide 3 | "+" visible | Horizontal scroll |
+|---|---|---|---|---|
+| 1366×768 | floating | list, 3/3 | yes | none |
+| 1440×900 | floating | list, 3/3 | yes | none |
+| 768×1024 | stacked | list, 3/3 | yes | none |
+| 390×844 | stacked | list, 3/3 | yes | none |
+
+At 390 px the Add Slide dialog fits (x 16–374) and reads "Será o slide 4/4". Cancelar left 3/3 "Salvo".
+
+Autosave: its code path is unchanged (same dirty gate, debounce and PUT) and it stayed **OFF**. It was not toggled in production, because a 4th slide saved by autosave could not be removed without a Delete feature (out of scope).
 
 ## 16. Final SHA
 
-Recorded after delivery.
+- Code: `bce02e8f76f06b392afd2d3a0ce93c8af7c958b8`. It sits on top of `6951d77`, and both are READY on Vercel.
+- The commit recording this smoke contains docs and evidence only.
 
 ## 17. Lessons for Slide 4
 
@@ -178,3 +229,5 @@ Recorded after delivery.
 - Keep every new icon in the closed set, code-drawn. The set grows only when a slide needs it.
 - Slide 5 is the strongest second Lista user (4 icon rows); its callout box is the next likely optional List field.
 - Use the local proof script pattern (real Portal state + `createTemplateSlide` + exported worker) before the VPS gate; it caught a misplaced decoration here before any deploy.
+- Any change to the slide *count* must keep `currentSlideIndex` valid. Revert was the one path that shrank the collection; it is clamped now, and a future Delete must do the same.
+- Piece media order is attach order, not authored order: the duplicate Slide 2 sits at position 2 and Slide 3 at position 3. Tidy the piece's media (a human decision) before publishing a carousel.
