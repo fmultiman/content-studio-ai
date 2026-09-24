@@ -1,9 +1,9 @@
-export type { AuthoringState, AuthoringVariant, AuthoringAppearance, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning, AuthoringPrimitiveSelection, AuthoringPrimitiveTransforms, AuthoringProductContext, PrimitiveTransforms } from './types'
+export type { AuthoringState, AuthoringVariant, AuthoringAppearance, AuthoringIdentity, AuthoringCanvas, AuthoringCoverContent, AuthoringInfoContent, AuthoringFactCard, AuthoringListContent, AuthoringListItem, AuthoringListIcon, AuthoringContent, AuthoringHeroRef, AuthoringHeroAsset, DocumentaryCardPreviewTuning, HeroTuning, TitleTuning, AuthoringPrimitiveSelection, AuthoringPrimitiveTransforms, AuthoringProductContext, PrimitiveTransforms } from './types'
 export { DEFAULT_TUNING, AUTHORING_HERO_ASSETS, DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE } from './types'
-export { createInitialAuthoringState, createContextualAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, defaultAppearanceForVariant, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveAssetOverridesRequest, projectRefForIdentity } from './authoring-state'
+export { createInitialAuthoringState, createContextualAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, defaultAppearanceForVariant, variantUsesContentImage, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveAssetOverridesRequest, projectRefForIdentity } from './authoring-state'
 export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest, primitiveSelectionSchema, primitiveTransformsBySlotSchema, templateIdSchema, elementOrderSchema } from './render-request'
 export type { AuthoringRenderRequest, AuthoringRenderOverrides, PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
-export { authoringReducer } from './reducer'
+export { authoringReducer, LIST_ITEMS_MIN, LIST_ITEMS_MAX } from './reducer'
 export type { AuthoringAction } from './reducer'
 export { dataUrlToFile, renderOutputFilename } from './render-output'
 export { initialSaveStatus, isSavedForCurrent, canSave, startSaving, saveSucceeded, saveFailed, resetForNewRender } from './save-state'
@@ -18,5 +18,8 @@ export {
   authoringStateToPersistedSlide,
   persistedSlideToAuthoringState,
   defaultCarouselSlides,
+  createTemplateSlide,
+  nextSlideId,
+  nextSlideOrder,
 } from './carousel-state'
-export type { PersistedAuthoredSlide, StaticAuthoringStateContract } from './carousel-state'
+export type { PersistedAuthoredSlide, StaticAuthoringStateContract, TemplateSlideOptions } from './carousel-state'

@@ -1,6 +1,10 @@
 import { defaultContentForVariant } from './authoring-state'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAULT_TUNING } from './types'
-import type { AuthoringAppearance, AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
+import type { AuthoringAppearance, AuthoringCanvas, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringListContent, AuthoringListItem, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
+
+/** DocumentaryCardListContentSchema bounds. */
+export const LIST_ITEMS_MIN = 2
+export const LIST_ITEMS_MAX = 4
 import type { PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
 import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 
@@ -13,6 +17,12 @@ export type AuthoringAction =
   | { type: 'SET_COVER_FIELD'; field: keyof AuthoringCoverContent; value: string }
   | { type: 'SET_INFO_FIELD'; field: keyof AuthoringInfoContent; value: string }
   | { type: 'SET_INFO_BODY'; value: string }
+  /** Layout "Lista": text fields (title / intro / image_caption). */
+  | { type: 'SET_LIST_FIELD'; field: 'title' | 'intro' | 'image_caption'; value: string }
+  | { type: 'SET_LIST_ITEM'; index: number; item: Partial<AuthoringListItem> }
+  /** Bounded by the Lista schema: 2..4 items. */
+  | { type: 'ADD_LIST_ITEM' }
+  | { type: 'REMOVE_LIST_ITEM'; index: number }
   | { type: 'SET_TUNING'; tuning: DocumentaryCardPreviewTuning }
   | { type: 'RESET_TUNING' }
   | { type: 'RESET_CONTENT' }
@@ -44,6 +54,30 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
     case 'SET_COVER_FIELD': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringCoverContent), [action.field]: action.value } }
     case 'SET_INFO_FIELD': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringInfoContent), [action.field]: action.value } }
     case 'SET_INFO_BODY': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringInfoContent), body_blocks: action.value.split('\n').filter(Boolean) } }
+    case 'SET_LIST_FIELD': {
+      const content = state.contentOverride as AuthoringListContent
+      // Optional fields are omitted when cleared (the schema requires min(1) when present).
+      if (action.field !== 'title' && !action.value) {
+        const { [action.field]: _cleared, ...rest } = content
+        void _cleared
+        return { ...state, contentOverride: rest as AuthoringListContent }
+      }
+      return { ...state, contentOverride: { ...content, [action.field]: action.value } }
+    }
+    case 'SET_LIST_ITEM': {
+      const content = state.contentOverride as AuthoringListContent
+      return { ...state, contentOverride: { ...content, items: content.items.map((item, index) => index === action.index ? { ...item, ...action.item } : item) } }
+    }
+    case 'ADD_LIST_ITEM': {
+      const content = state.contentOverride as AuthoringListContent
+      if (content.items.length >= LIST_ITEMS_MAX) return state
+      return { ...state, contentOverride: { ...content, items: [...content.items, { icon: 'book', text: 'Novo item' }] } }
+    }
+    case 'REMOVE_LIST_ITEM': {
+      const content = state.contentOverride as AuthoringListContent
+      if (content.items.length <= LIST_ITEMS_MIN) return state
+      return { ...state, contentOverride: { ...content, items: content.items.filter((_, index) => index !== action.index) } }
+    }
     case 'SET_TUNING': return { ...state, tuning: action.tuning }
     case 'RESET_TUNING': return { ...state, tuning: DEFAULT_TUNING }
     case 'RESET_CONTENT': return { ...state, contentOverride: defaultContentForVariant(state.variant, state.identity), heroRef: undefined }

@@ -22,6 +22,7 @@ import {
   type AuthoringCoverContent,
   type AuthoringIdentity,
   type AuthoringInfoContent,
+  type AuthoringListContent,
   type AuthoringPrimitiveSelection,
   type AuthoringState,
   type AuthoringVariant,
@@ -35,6 +36,11 @@ import {
 /** Legacy per-variant default, preserved so every pre-Slice-1 caller renders identically. */
 export function defaultAppearanceForVariant(variant: AuthoringVariant): AuthoringAppearance {
   return variant === 'cover' ? 'dark' : 'light'
+}
+
+/** Layouts that draw the content image ('hero'); mirrors the Template registry (layoutUsesContentImage). */
+export function variantUsesContentImage(variant: AuthoringVariant): boolean {
+  return variant === 'cover' || variant === 'list'
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -83,11 +89,31 @@ function defaultInfoContent(): AuthoringInfoContent {
   }
 }
 
+/**
+ * Layout "Lista" example content — Pack A Slide 3, verbatim
+ * (docs/discovery/creative-rendering/visual-reference-pack/pack-a/003.png).
+ * Bold runs of the reference are marked with **…**.
+ */
+function defaultListContent(): AuthoringListContent {
+  return {
+    title: 'Quem estava fazendo essa pergunta?',
+    intro: '**Carlos A. P. Tavares** (1956–) escrevia sobre aquele universo no momento em que ele se organizava.',
+    items: [
+      { icon: 'microphone', text: 'Apresentava o programa **Sociedade Alternativa,** na Rádio Gazeta AM de São Paulo.' },
+      { icon: 'pencil', text: 'Escrevia a coluna **Anarquismo Vivo,** na revista **Planeta.**' },
+      { icon: 'book', text: 'Formado em Jornalismo pela Faculdade Cásper Líbero. Trabalhou como bancário e livreiro.' },
+    ],
+    image_caption: 'Revista Planeta, março de 1983, texto “Anarquismo vivo”.',
+  }
+}
+
 export function defaultContentForVariant(
   variant: AuthoringVariant,
   identity: AuthoringIdentity,
-): AuthoringCoverContent | AuthoringInfoContent {
-  return variant === 'cover' ? defaultCoverContent(identity) : defaultInfoContent()
+): AuthoringContent {
+  if (variant === 'cover') return defaultCoverContent(identity)
+  if (variant === 'list') return defaultListContent()
+  return defaultInfoContent()
 }
 
 // ── Initial state factory ─────────────────────────────────────────────────────
@@ -207,7 +233,7 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
 
   const heroAsset = state.heroRef
     ? { type: 'fixture' as const, ref: state.heroRef, fit: 'cover' as const }
-    : state.variant === 'cover'
+    : variantUsesContentImage(state.variant)
       ? {
           type: 'fixture' as const,
           ref: state.identity === 'b'

@@ -93,8 +93,41 @@ function infoManifest(canvas: CanvasSpec, identity: IdentitySnapshotRef): Static
   }
 }
 
+/** Layout "Lista" — Pack A Slide 3 content; the content image is the template's example until a Project file replaces it. */
+function listManifest(canvas: CanvasSpec, identity: IdentitySnapshotRef): StaticRenderManifest {
+  return {
+    schema_version: 'static-render.v0',
+    manifest_id: `fixture:documentary-card:list:${canvas.height}`,
+    source: { type: 'fixture', ref: 'fixture:documentary-card' },
+    context: {
+      project_ref: 'fixture:project:comunidades-alternativas',
+      production_ref: 'fixture:production:terra-una',
+    },
+    template: { ...documentaryCardTemplate, variant: 'list' },
+    canvas,
+    identity,
+    sequence: { index: 3, total: 10 },
+    content: {
+      title: 'Quem estava fazendo essa pergunta?',
+      intro: '**Carlos A. P. Tavares** (1956–) escrevia sobre aquele universo no momento em que ele se organizava.',
+      items: [
+        { icon: 'microphone', text: 'Apresentava o programa **Sociedade Alternativa,** na Rádio Gazeta AM de São Paulo.' },
+        { icon: 'pencil', text: 'Escrevia a coluna **Anarquismo Vivo,** na revista **Planeta.**' },
+        { icon: 'book', text: 'Formado em Jornalismo pela Faculdade Cásper Líbero. Trabalhou como bancário e livreiro.' },
+      ],
+      image_caption: 'Revista Planeta, março de 1983, texto “Anarquismo vivo”.',
+    },
+    assets: {
+      hero: { type: 'fixture', ref: 'fixture:asset:documentary-card:hero-archival-01', fit: 'cover' },
+      logo: { type: 'fixture', ref: 'fixture:asset:comunidades-alternativas:logo-v1', fit: 'contain' },
+    },
+    output: { format: 'png', role: 'fixture' },
+    metadata: { fixture: true, not_a_database_record: true },
+  }
+}
+
 export type DocumentaryCardFixtureOptions = {
-  variant: 'cover' | 'info'
+  variant: 'cover' | 'info' | 'list'
   canvas: CanvasSpec
   identity: 'a' | 'b'
 }
@@ -103,7 +136,9 @@ export function resolveDocumentaryCardFixture(options: DocumentaryCardFixtureOpt
   const identity = options.identity === 'a' ? identityA : identityB
   const manifest = options.variant === 'cover'
     ? coverManifest(options.canvas, identity, options.identity === 'b')
-    : infoManifest(options.canvas, identity)
+    : options.variant === 'list'
+      ? listManifest(options.canvas, identity)
+      : infoManifest(options.canvas, identity)
   const result = resolveStaticRenderManifest(manifest)
   if (!result.valid) throw new Error(`Documentary card fixture failed to resolve: ${result.errors.map((error) => error.message).join('; ')}`)
   return result.value
@@ -112,6 +147,7 @@ export function resolveDocumentaryCardFixture(options: DocumentaryCardFixtureOpt
 export const documentaryCardFixtures = {
   cover45: resolveDocumentaryCardFixture({ variant: 'cover', canvas: canvas45, identity: 'a' }),
   info45: resolveDocumentaryCardFixture({ variant: 'info', canvas: canvas45, identity: 'a' }),
+  list45: resolveDocumentaryCardFixture({ variant: 'list', canvas: canvas45, identity: 'a' }),
   cover916: resolveDocumentaryCardFixture({ variant: 'cover', canvas: canvas916, identity: 'a' }),
   coverNeutral45: resolveDocumentaryCardFixture({ variant: 'cover', canvas: canvas45, identity: 'b' }),
 } as const

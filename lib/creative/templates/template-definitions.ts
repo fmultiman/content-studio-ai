@@ -239,6 +239,31 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
   defaultStackOrder: ['archival', 'botanicalLeaf', 'tape1', 'tape2', 'botanical', 'card1', 'pin', 'paper', 'pin2', 'tape3', 'paperStrip', 'paperDark', 'title', 'source'],
 }
 
+/**
+ * Portal Carousel Growth V1 — "Lista": a title, a short intro, 2..4 icon-led
+ * rows and one documentary content image with its caption. Pack A Slide 3's
+ * editorial anatomy (the same structure recurs in Pack A Slides 5, 6 and 10),
+ * drawn in the Pack B visual language out of this template's existing slots.
+ */
+const LIST_LAYOUT: TemplateLayoutDefinition = {
+  id: 'list',
+  label: 'Lista',
+  supportedAppearances: ['light', 'dark'],
+  defaultAppearance: 'light',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'hero', label: 'Imagem do documento', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
+    { id: 'tape1', label: 'Fita do documento', kind: 'material', assetSlot: 'tape', control: t('tape1') },
+    { id: 'note', label: 'Papel da legenda', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'tape2', label: 'Fita da legenda', kind: 'material', assetSlot: 'tape', control: t('tape2') },
+    { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+    { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
+    { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
+  ],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'note', 'tape2', 'paperStrip', 'title'],
+}
+
 export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   id: EDITORIAL_DOCUMENTARY_COLLAGE_V1,
   name: 'Editorial Documentary Collage',
@@ -249,7 +274,7 @@ export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   contentImageSlots: {
     hero: { id: 'hero', label: 'Imagem principal', defaultAsset: { key: 'documentary-card-hero-01', label: 'Imagem de exemplo do template', path: 'documentary-card-hero-01.webp' } },
   },
-  layouts: [COVER_LAYOUT, INFO_LAYOUT],
+  layouts: [COVER_LAYOUT, INFO_LAYOUT, LIST_LAYOUT],
 }
 
 const TEMPLATE_DEFINITIONS: Readonly<Record<string, TemplateDefinition>> = {
@@ -293,6 +318,11 @@ export function isAppearanceSupported(template: TemplateDefinition, layoutId: st
 
 export function getLayoutElement(layout: TemplateLayoutDefinition, elementId: string): TemplateElementDefinition | null {
   return layout.elements.find((element) => element.id === elementId) ?? null
+}
+
+/** True when the layout draws the content image ('hero'): Cover and Lista do, Info does not. */
+export function layoutUsesContentImage(layout: TemplateLayoutDefinition | null): boolean {
+  return Boolean(layout?.elements.some((element) => element.assetSlot === 'hero'))
 }
 
 export function slotView(template: TemplateDefinition, slotId: AuthoringAssetSlotId): AuthoringSlotView {

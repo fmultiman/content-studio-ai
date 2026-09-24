@@ -4,6 +4,8 @@ import {
   DocumentaryCardCoverContentSchema,
   DocumentaryCardInfoAssetsSchema,
   DocumentaryCardInfoContentSchema,
+  DocumentaryCardListAssetsSchema,
+  DocumentaryCardListContentSchema,
 } from '@/lib/schemas/creative/documentary-card'
 import { QuoteCardAssetsSchema, QuoteCardContentSchema } from '@/lib/schemas/creative/quote-card'
 import { TemplateDescriptorSchema, type TemplateDescriptor } from '@/lib/schemas/creative/template-descriptor'
@@ -61,7 +63,7 @@ const documentaryCardDescriptor = TemplateDescriptorSchema.parse({
   scope: 'system',
   label: 'Editorial Documentary Card',
   supported_modes: ['still', 'video'],
-  variants: ['cover', 'info'],
+  variants: ['cover', 'info', 'list'],
   canvas_support: {
     strategy: 'declared_sizes',
     sizes: [
@@ -120,6 +122,10 @@ const TEMPLATE_REGISTRY: readonly RegisteredTemplate[] = [
       info: {
         content: DocumentaryCardInfoContentSchema,
         assets: DocumentaryCardInfoAssetsSchema,
+      },
+      list: {
+        content: DocumentaryCardListContentSchema,
+        assets: DocumentaryCardListAssetsSchema,
       },
     },
   },

@@ -6,7 +6,7 @@ import { AssetRefSchema } from './primitives'
 // editorial.documentary-card@0.1.0 content/asset contracts.
 //
 // Decision C5 (Wave 2): variant-specific schemas, not one large object full
-// of optional flags. V0 variants are `cover` and `info` only — "standard" is
+// of optional flags. Variants are `cover`, `info` and (Carousel Growth V1) `list` — "standard" is
 // prior nomenclature and must not appear as an announced variant here.
 //
 // Decision C6 (Wave 2): cover uses `detail_note?`, not a generic `footer`.
@@ -88,3 +88,45 @@ export const DocumentaryCardInfoAssetsSchema = z
   .strict()
 
 export type DocumentaryCardInfoAssets = z.infer<typeof DocumentaryCardInfoAssetsSchema>
+
+// ─── List ────────────────────────────────────────────────────────────────────
+//
+// Carousel Growth V1 (Pack A Slide 3 anatomy, recurring in Slides 5/6/10):
+// a title, a short intro, 2..4 icon-led rows and ONE documentary content image
+// with its caption. Icons are a closed, code-backed set — not arbitrary
+// uploads. Text may mark emphasis with **double asterisks** (bold only; no
+// other markup) — the one bounded rich-text affordance, because Pack A sets
+// names and titles in bold inside the sentence.
+
+export const DOCUMENTARY_CARD_LIST_ICONS = ['microphone', 'pencil', 'book'] as const
+export type DocumentaryCardListIcon = (typeof DOCUMENTARY_CARD_LIST_ICONS)[number]
+
+export const DocumentaryCardListItemSchema = z
+  .object({
+    icon: z.enum(DOCUMENTARY_CARD_LIST_ICONS),
+    text: z.string().trim().min(1).max(220),
+  })
+  .strict()
+
+export type DocumentaryCardListItem = z.infer<typeof DocumentaryCardListItemSchema>
+
+export const DocumentaryCardListContentSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    intro: z.string().trim().min(1).max(260).optional(),
+    items: z.array(DocumentaryCardListItemSchema).min(2).max(4),
+    image_caption: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict()
+
+export type DocumentaryCardListContent = z.infer<typeof DocumentaryCardListContentSchema>
+
+// List's content image is required, exactly like Cover's hero.
+export const DocumentaryCardListAssetsSchema = z
+  .object({
+    hero: AssetRefSchema,
+    logo: AssetRefSchema.optional(),
+  })
+  .strict()
+
+export type DocumentaryCardListAssets = z.infer<typeof DocumentaryCardListAssetsSchema>

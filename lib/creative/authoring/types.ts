@@ -15,7 +15,8 @@
 // ── Fixture identifiers ───────────────────────────────────────────────────────
 
 export type AuthoringIdentity = 'a' | 'b'
-export type AuthoringVariant = 'cover' | 'info'
+/** Template layout ids of editorial-documentary-collage-v1 (Portal Carousel Growth V1 adds 'list'). */
+export type AuthoringVariant = 'cover' | 'info' | 'list'
 export type AuthoringCanvas = 'portrait' | 'reel' // 1080×1350 | 1080×1920
 /**
  * Slice 1 — Portal Carousel V1: rendering-style axis, independent of
@@ -84,7 +85,23 @@ export interface AuthoringInfoContent {
   annotation: string
 }
 
-export type AuthoringContent = AuthoringCoverContent | AuthoringInfoContent
+export type AuthoringListIcon = 'microphone' | 'pencil' | 'book'
+
+export interface AuthoringListItem {
+  icon: AuthoringListIcon
+  /** May mark emphasis with **double asterisks** (bold only). */
+  text: string
+}
+
+/** Layout "Lista" (DocumentaryCardListContentSchema): 2..4 items. */
+export interface AuthoringListContent {
+  title: string
+  intro?: string
+  items: AuthoringListItem[]
+  image_caption?: string
+}
+
+export type AuthoringContent = AuthoringCoverContent | AuthoringInfoContent | AuthoringListContent
 
 // ── Preview Tuning — UI-only, never enters a StaticRenderManifest ─────────────
 

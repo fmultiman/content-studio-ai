@@ -29,6 +29,8 @@ A Template is a reusable **visual system**. It is not owned by a ChannelPiece (t
 
 `Cover`/`Info` are **not** universal slide types. A future template may have entirely different layouts. `List`, `Grid`, `Quote`, `Closing CTA` are deliberately not implemented.
 
+> **Update — Portal Carousel Growth V1:** `editorial-documentary-collage-v1` now has a third layout, **`list` (Lista)**: title, intro, 2–4 icon-led rows, and one content image (`hero`) with a caption, in Light/Dark. It reuses existing slots only and is drawn by `ListVariant`. The contract, rationale and evidence are in [PORTAL_CAROUSEL_GROWTH_V1_SLIDE_3.md](PORTAL_CAROUSEL_GROWTH_V1_SLIDE_3.md). `Grid`, `Quote` and `Closing CTA` remain unimplemented.
+
 ## 2. Template registry (code, no DB)
 
 `lib/creative/templates/template-definitions.ts` — pure data + pure functions, no imports (it ships in the VPS worker bundle).

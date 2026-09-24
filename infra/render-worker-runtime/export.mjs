@@ -73,6 +73,8 @@ const REQUIRED_WORKER_SOURCE = [
   'components/creative/documentary-card/DocumentaryCard.tsx',
   'components/creative/documentary-card/CoverVariant.tsx',
   'components/creative/documentary-card/InfoVariant.tsx',
+  // Portal Carousel Growth V1 — layout "list" (Lista).
+  'components/creative/documentary-card/ListVariant.tsx',
   'components/creative/documentary-card/primitives.tsx',
   'components/creative/documentary-card/types.ts',
   'components/creative/documentary-card/index.ts',

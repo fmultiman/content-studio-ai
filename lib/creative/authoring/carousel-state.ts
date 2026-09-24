@@ -140,7 +140,8 @@ export const PersistedAuthoredSlideSchema = z
   .object({
     id: z.string().trim().min(1),
     order: z.number().int().nonnegative(),
-    variant: z.enum(['cover', 'info']),
+    // Template layout id (editorial-documentary-collage-v1). 'list' — Portal Carousel Growth V1.
+    variant: z.enum(['cover', 'info', 'list']),
     appearance: z.enum(['light', 'dark']),
     content: persistedSlideContentSchema,
     primitiveSelection: primitiveSelectionSchema,
@@ -267,28 +268,75 @@ export function persistedSlideToAuthoringState(
   }
 }
 
+// ── Template-level slide initializer (Portal Carousel Growth V1) ──────────────
+
+export type TemplateSlideOptions = {
+  templateId: string
+  layoutId: string
+  /** Must be one the layout supports; absent/unsupported → the layout's default appearance. */
+  appearance?: AuthoringAppearance
+  id: string
+  order: number
+  primitiveProjectRef: string | null
+}
+
+/**
+ * A brand-new slide built ONLY from the Template: the layout's example
+ * content, the Project paper/tape primitives (when the Project has a
+ * catalog) else the Template's default assets, neutral transforms/tuning, and
+ * NO elementOrder / assetOverrides — so it follows the layout's default stack
+ * and default slot resources. Never a clone of another slide. Returns null
+ * for a layout the Template does not define.
+ */
+export function createTemplateSlide(options: TemplateSlideOptions): PersistedAuthoredSlide | null {
+  const template = getTemplateDefinition(options.templateId)
+  const layout = template ? getTemplateLayout(template, options.layoutId) : null
+  if (!template || !layout) return null
+  const variant = layout.id as AuthoringVariant
+  const appearance = options.appearance && (layout.supportedAppearances as readonly string[]).includes(options.appearance)
+    ? options.appearance
+    : layout.defaultAppearance
+  const primitiveSelection: AuthoringPrimitiveSelection = options.primitiveProjectRef
+    ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' }
+    : {}
+  return {
+    id: options.id,
+    order: options.order,
+    variant,
+    appearance,
+    content: defaultContentForVariant(variant, 'a') as unknown as Record<string, unknown>,
+    primitiveSelection,
+    primitiveTransforms: completeTransforms(DEFAULT_PRIMITIVE_TRANSFORMS_STATE),
+    tuning: { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
+  }
+}
+
+/** A slide id unused by `existingIds`: `slide-<n>` past the highest numbered one (stable; never reuses an existing id). */
+export function nextSlideId(existingIds: readonly string[]): string {
+  const taken = new Set(existingIds)
+  let next = existingIds.reduce((max, id) => {
+    const match = /^slide-(\d+)$/.exec(id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0) + 1
+  while (taken.has(`slide-${next}`)) next += 1
+  return `slide-${next}`
+}
+
+/** Appended slides go after the last one by `order` (the persisted sequence source of truth). */
+export function nextSlideOrder(slides: readonly { order: number }[]): number {
+  return slides.reduce((max, slide) => Math.max(max, slide.order), -1) + 1
+}
+
 /**
  * The Slice 1 acceptance default: slide 1 = cover/dark, slide 2 = info/light —
  * matching Pack B slides 1–2 exactly (see PORTAL_CAROUSEL_V1_FACTUAL_REENTRY.md
  * §5, §13). Used only the first time a carousel ChannelPiece is opened with no
- * persisted state yet.
+ * persisted state yet. Built through the same Template-level initializer as
+ * "Adicionar slide"; more slides are added by the author, never assumed here.
  */
-export function defaultCarouselSlides(primitiveProjectRef: string | null): PersistedAuthoredSlide[] {
-  const primitiveSelection: AuthoringPrimitiveSelection = primitiveProjectRef
-    ? { paper: 'paper-card-light-01', tape: 'tape-kraft-short-01' }
-    : {}
-  const slideDefaults = (variant: AuthoringVariant, id: string, order: number, appearance: AuthoringAppearance): PersistedAuthoredSlide => ({
-    id,
-    order,
-    variant,
-    appearance,
-    content: defaultContentForVariant(variant, 'a') as unknown as Record<string, unknown>,
-    primitiveSelection: { ...primitiveSelection },
-    primitiveTransforms: completeTransforms(DEFAULT_PRIMITIVE_TRANSFORMS_STATE),
-    tuning: { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title } },
-  })
+export function defaultCarouselSlides(primitiveProjectRef: string | null, templateId: string = DEFAULT_TEMPLATE_ID): PersistedAuthoredSlide[] {
   return [
-    slideDefaults('cover', 'slide-1', 0, 'dark'),
-    slideDefaults('info', 'slide-2', 1, 'light'),
-  ]
+    createTemplateSlide({ templateId, layoutId: 'cover', appearance: 'dark', id: 'slide-1', order: 0, primitiveProjectRef }),
+    createTemplateSlide({ templateId, layoutId: 'info', appearance: 'light', id: 'slide-2', order: 1, primitiveProjectRef }),
+  ].filter((slide): slide is PersistedAuthoredSlide => Boolean(slide))
 }

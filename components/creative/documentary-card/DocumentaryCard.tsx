@@ -3,6 +3,7 @@ import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolv
 import { resolveFixtureAssetSync } from '@/lib/creative/assets/resolve-asset'
 import { CoverVariant } from './CoverVariant'
 import { InfoVariant } from './InfoVariant'
+import { ListVariant } from './ListVariant'
 import { paletteFromTokens } from './primitives'
 import type { DocumentaryCardProps, DocumentaryCardVisualContext } from './types'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
@@ -92,7 +93,11 @@ export function DocumentaryCard({
 
   return (
     <main aria-label={`Editorial documentary card ${variant}`} style={rootStyle}>
-      {variant === 'cover' ? <CoverVariant context={context} palette={palette} /> : <InfoVariant context={context} palette={palette} />}
+      {variant === 'cover'
+        ? <CoverVariant context={context} palette={palette} />
+        : variant === 'list'
+          ? <ListVariant context={context} palette={palette} />
+          : <InfoVariant context={context} palette={palette} />}
     </main>
   )
 }
@@ -170,7 +175,7 @@ export function documentaryCardPropsFromResolvedInput(
   layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder'>,
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
-  if (variant !== 'cover' && variant !== 'info') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
+  if (variant !== 'cover' && variant !== 'info' && variant !== 'list') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
   return documentaryCardPropsFromRuntimeInput({
     variant,
     appearance: input.manifest.template.appearance,

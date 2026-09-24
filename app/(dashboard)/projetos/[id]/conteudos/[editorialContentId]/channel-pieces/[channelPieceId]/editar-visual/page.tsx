@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { ContextMetadata } from '@/components/ui/context-metadata'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -24,7 +24,7 @@ import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/com
 import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
 import {
   DEFAULT_TEMPLATE_ID, getTemplateLayout, isAppearanceSupported, layoutAssetSlots, listTemplateDefinitions, resolveAuthoringTemplate,
-  type AuthoringAssetSlotId,
+  type AuthoringAssetSlotId, type TemplateAppearance,
 } from '@/lib/creative/templates/template-definitions'
 import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
@@ -33,7 +33,8 @@ import {
   derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_TUNING,
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
-  persistedSlideToAuthoringState, type PersistedAuthoredSlide,
+  persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
+  variantUsesContentImage, LIST_ITEMS_MAX, LIST_ITEMS_MIN, type AuthoringListContent, type AuthoringListIcon,
 } from '@/lib/creative/authoring'
 import { contextualContentForChannelPiece } from '@/lib/creative/context/static-authoring'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -56,6 +57,9 @@ type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPie
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
 const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
+/** Instagram's carousel ceiling — "Adicionar slide" stops there. */
+const MAX_CAROUSEL_SLIDES = 20
+const LIST_ICON_LABELS: Readonly<Record<AuthoringListIcon, string>> = { microphone: 'Microfone', pencil: 'Lápis', book: 'Livro' }
 const AUTOSAVE_PREF_KEY = 'creative-editor:autosave-enabled'
 
 function readAutosavePreference(): boolean {
@@ -134,6 +138,10 @@ export default function StaticAuthoringProductPage() {
   const [zoom, setZoom] = useState<'fit' | number>('fit')
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
+  // "Adicionar slide" dialog: the Layout/Appearance the new slide starts from.
+  const [addSlideOpen, setAddSlideOpen] = useState(false)
+  const [addLayoutId, setAddLayoutId] = useState<string>('info')
+  const [addAppearance, setAddAppearance] = useState<TemplateAppearance>('light')
   const floating = useFloatingWorkbench()
   const skipNextAutosaveRef = useRef(true)
   // Callback-ref state, not useRef: in the floating workbench the Canvas mounts inside a Dockview
@@ -294,13 +302,40 @@ export default function StaticAuthoringProductPage() {
 
   function restoreSlideDefault() {
     if (!context || !currentSlide) return
-    const defaults = defaultCarouselSlides(context.primitiveProjectRef)
-    const matching = defaults.find((slide) => slide.order === currentSlide.order) ?? defaults[0]
-    const productContext = buildProductContext(context)
-    // Template default: content, assets, transforms AND the layout's default element stack.
-    const nextState = persistedSlideToAuthoringState({ ...matching, id: currentSlide.id }, productContext, canvasKind(context), templateId)
+    // Template default for THIS slide's layout (never matched by position): content,
+    // assets, transforms, appearance AND the layout's default element stack.
+    const defaults = createTemplateSlide({ templateId, layoutId: currentSlide.state.variant, id: currentSlide.id, order: currentSlide.order, primitiveProjectRef: context.primitiveProjectRef })
+    if (!defaults) return
+    const nextState = persistedSlideToAuthoringState(defaults, buildProductContext(context), canvasKind(context), templateId)
     setSlides((current) => current ? current.map((slide, index) => index === currentSlideIndex ? { ...slide, state: nextState } : slide) : current)
     setRestoreDialogOpen(false)
+  }
+
+  function openAddSlide() {
+    const template = resolveAuthoringTemplate(templateId).template
+    const layoutId = currentSlide?.state.variant && getTemplateLayout(template, currentSlide.state.variant) ? currentSlide.state.variant : template.layouts[0].id
+    setAddLayoutId(layoutId)
+    setAddAppearance(getTemplateLayout(template, layoutId)?.defaultAppearance ?? 'light')
+    setAddSlideOpen(true)
+  }
+
+  /** Appends a Template-initialized slide (never a clone) and selects it. Unsaved until Salvar/autosave. */
+  function addSlide() {
+    if (!context || !slides || slides.length >= MAX_CAROUSEL_SLIDES) return
+    const created = createTemplateSlide({
+      templateId,
+      layoutId: addLayoutId,
+      appearance: addAppearance,
+      id: nextSlideId(slides.map((slide) => slide.id)),
+      order: nextSlideOrder(slides),
+      primitiveProjectRef: context.primitiveProjectRef,
+    })
+    if (!created) return
+    const createdState = persistedSlideToAuthoringState(created, buildProductContext(context), canvasKind(context), templateId)
+    setSlides([...slides, { id: created.id, order: created.order, state: createdState }])
+    setCurrentSlideIndex(slides.length)
+    setOpenElementId(null)
+    setAddSlideOpen(false)
   }
 
   const previewInput = useMemo(() => state ? resolvePreviewInput(state) : null, [state])
@@ -309,7 +344,7 @@ export default function StaticAuthoringProductPage() {
     const sequence = slides && slides.length > 1 ? { index: currentSlideIndex + 1, total: slides.length } : { index: 1, total: 1 }
     // Slot overrides painted with the same shapes the claim-time resolver gives the worker.
     const overrideAssets = previewOverrideAssets(state.assetOverrides, projectImages)
-    const heroAsset = state.variant === 'cover' && overrideAssets.hero ? overrideAssets.hero : undefined
+    const heroAsset = variantUsesContentImage(state.variant) && overrideAssets.hero ? overrideAssets.hero : undefined
     const previewWithSequence = {
       ...previewInput,
       resolvedAssets: heroAsset ? { ...previewInput.resolvedAssets, hero: heroAsset } : previewInput.resolvedAssets,
@@ -491,6 +526,31 @@ export default function StaticAuthoringProductPage() {
     return <PrimitiveTransformControls slot={key} transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })} />
   }
 
+  const listContent = state.variant === 'list' ? state.contentOverride as AuthoringListContent : null
+  const listContentFields = listContent ? (
+    <>
+      <div><Label htmlFor="visual-list-intro">Introdução</Label><Textarea id="visual-list-intro" value={listContent.intro ?? ''} onChange={(event) => dispatch({ type: 'SET_LIST_FIELD', field: 'intro', value: event.target.value })} rows={3} /></div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Itens ({listContent.items.length}/{LIST_ITEMS_MAX})</legend>
+        {listContent.items.map((item, index) => (
+          <div key={index} className="space-y-1.5 rounded-md border border-border/60 p-2" data-testid="list-item-editor">
+            <div className="flex items-center gap-1.5">
+              <Select value={item.icon} onValueChange={(value) => dispatch({ type: 'SET_LIST_ITEM', index, item: { icon: value as AuthoringListIcon } })}>
+                <SelectTrigger className="h-7 flex-1 text-xs" aria-label={`Ícone do item ${index + 1}`}><SelectValue /></SelectTrigger>
+                <SelectContent>{(Object.keys(LIST_ICON_LABELS) as AuthoringListIcon[]).map((icon) => <SelectItem key={icon} value={icon}>{LIST_ICON_LABELS[icon]}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button size="icon-sm" variant="ghost" disabled={listContent.items.length <= LIST_ITEMS_MIN} onClick={() => dispatch({ type: 'REMOVE_LIST_ITEM', index })} aria-label={`Remover item ${index + 1}`} title="Remover item"><Trash2 className="h-3.5 w-3.5" /></Button>
+            </div>
+            <Textarea aria-label={`Texto do item ${index + 1}`} value={item.text} onChange={(event) => dispatch({ type: 'SET_LIST_ITEM', index, item: { text: event.target.value } })} rows={3} />
+          </div>
+        ))}
+        <Button size="sm" variant="outline" className="w-full gap-1 text-xs" disabled={listContent.items.length >= LIST_ITEMS_MAX} onClick={() => dispatch({ type: 'ADD_LIST_ITEM' })}><Plus className="h-3 w-3" />Adicionar item</Button>
+        <p className="text-[11px] text-muted-foreground">Use **texto** para destacar em negrito.</p>
+      </fieldset>
+      <div><Label htmlFor="visual-list-caption">Legenda da imagem</Label><Textarea id="visual-list-caption" value={listContent.image_caption ?? ''} onChange={(event) => dispatch({ type: 'SET_LIST_FIELD', field: 'image_caption', value: event.target.value })} rows={2} /></div>
+    </>
+  ) : null
+
   const inspector = (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
       <TabsList className="flex w-full">
@@ -516,8 +576,8 @@ export default function StaticAuthoringProductPage() {
         {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
-        <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
-        {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
+        <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : state.variant === 'list' ? { type: 'SET_LIST_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
+        {state.variant === 'list' ? listContentFields : state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
       </TabsContent>
       <TabsContent value="assets" className="space-y-2 pt-3">
         {/* Assets = which resource fills each semantic slot. Placement/stacking live in Elementos. */}
@@ -562,10 +622,11 @@ export default function StaticAuthoringProductPage() {
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
-        {isCarousel && slideTotal > 1 && <div className="flex items-center gap-1" role="group" aria-label="Slides">
+        {isCarousel && <div className="flex items-center gap-1" role="group" aria-label="Slides">
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
           {slides.map((slide, index) => <Button key={slide.id} size="sm" className="px-2.5 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} onClick={() => switchSlide(index)}>{index + 1}/{slideTotal}</Button>)}
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
+          <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
         </div>}
         <div className="flex items-center gap-1" role="group" aria-label="Zoom">
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
@@ -642,6 +703,34 @@ export default function StaticAuthoringProductPage() {
         dispatch({ type: 'SET_ASSET_OVERRIDE', slot: pickerSlot.id, libraryFileId: file.id })
       }}
     />
+    <Dialog open={addSlideOpen} onOpenChange={setAddSlideOpen}>
+      <DialogContent className="max-w-[min(92vw,420px)]" data-testid="add-slide-dialog">
+        <DialogHeader>
+          <DialogTitle>Adicionar slide</DialogTitle>
+          <DialogDescription>O novo slide entra no fim da sequência com os padrões do Template (conteúdo de exemplo, assets e ordem de camadas). Clique em Salvar para persistir.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="flex items-baseline gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</span><span data-testid="add-slide-template">{template.name}</span></div>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Estrutura do novo slide">
+              {template.layouts.map((option) => <Button key={option.id} size="sm" variant={addLayoutId === option.id ? 'default' : 'outline'} aria-pressed={addLayoutId === option.id} onClick={() => { setAddLayoutId(option.id); setAddAppearance(option.defaultAppearance) }}>{option.label}</Button>)}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Aparência do novo slide">
+              {(getTemplateLayout(template, addLayoutId)?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={addAppearance === appearance ? 'default' : 'outline'} aria-pressed={addAppearance === appearance} onClick={() => setAddAppearance(appearance)}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Será o slide {slideTotal + 1}/{slideTotal + 1}.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAddSlideOpen(false)}>Cancelar</Button>
+          <Button onClick={addSlide} disabled={!getTemplateLayout(template, addLayoutId)}>Adicionar slide</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={Boolean(previewJob?.imageUrl)} onOpenChange={(open) => { if (!open) setPreviewJobSlideId(null) }}>
       <DialogContent className="max-w-[min(92vw,540px)]">
         <DialogHeader>

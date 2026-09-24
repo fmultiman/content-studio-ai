@@ -41,8 +41,8 @@ describe('Template registry', () => {
   })
 
   it('owns Cover and Info as template-scoped layouts', () => {
-    expect(template.layouts.map((layout) => layout.id)).toEqual(['cover', 'info'])
-    expect(getTemplateLayout(template, 'list')).toBeNull()
+    expect(template.layouts.map((layout) => layout.id)).toEqual(['cover', 'info', 'list'])
+    expect(getTemplateLayout(template, 'gallery')).toBeNull()
     expect(getTemplateLayout(template, 'grid')).toBeNull()
   })
 
@@ -51,7 +51,7 @@ describe('Template registry', () => {
     expect(isAppearanceSupported(template, 'cover', 'light')).toBe(true)
     expect(isAppearanceSupported(template, 'info', 'light')).toBe(true)
     expect(isAppearanceSupported(template, 'info', 'sepia')).toBe(false)
-    expect(isAppearanceSupported(template, 'list', 'light')).toBe(false)
+    expect(isAppearanceSupported(template, 'gallery', 'light')).toBe(false)
     expect(cover.defaultAppearance).toBe('dark')
     expect(info.defaultAppearance).toBe('light')
   })
@@ -164,7 +164,7 @@ describe('normalizeElementOrder', () => {
   it('resolveElementStack is layout-scoped and tolerant of unknown templates/layouts', () => {
     expect(resolveElementStack(undefined, 'info', undefined).order).toEqual([...info.defaultStackOrder])
     expect(resolveElementStack('unknown-template', 'cover', undefined).order).toEqual([])
-    expect(resolveElementStack(DEFAULT_TEMPLATE_ID, 'list', undefined).order).toEqual([])
+    expect(resolveElementStack(DEFAULT_TEMPLATE_ID, 'gallery', undefined).order).toEqual([])
   })
 
   it('moveElementInOrder moves one element and ignores out-of-range moves', () => {
@@ -237,7 +237,7 @@ describe('Preview / worker parity wiring (one normalizer, one renderer)', () => 
     const route = read('app', 'api', 'creative', 'static-authoring', 'render', 'route.ts')
     expect(route).toMatch(/const elementOrder = normalizeElementOrder\(layout, input\.elementOrder\)/)
     expect(route).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*assetOverrides,\s*\n\s*slide,/)
-    expect(route).toMatch(/template\.renderer\.templateRef\.id !== manifest\.template\.id/)
+    expect(route).toMatch(/template\.renderer\.templateRef\.id !== input\.manifest\.template\.id/)
   })
 
   it('the worker composition forwards templateId + elementOrder to the same binding', () => {
