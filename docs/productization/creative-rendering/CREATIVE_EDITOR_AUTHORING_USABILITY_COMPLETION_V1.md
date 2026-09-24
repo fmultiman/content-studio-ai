@@ -123,3 +123,54 @@ Each render job records the slide's authored-state signature: at Gerar PNG for r
 - **Database:** no migration. The work uses existing JSONB authoring state, `library_files.origin` / `source_render_execution_id`, `render_executions` and ChannelPieceMedia.
 - **Worker-shared code changed** (renderer contain fit, slot material URLs, registry content slot). The runtime was re-exported (47 files) and proven locally with real `renderStill`, using real Portal LibraryFiles and no uploads: `evidence/authoring-usability-v1/local-renderstill-hero-and-slot-override.jpg` shows the default vs hero replaced by an existing Portal image, plus the ornament slot filled by the uploaded tape.
 - **Operator tarball:** `content-studio-authoring-usability-v1.tar.gz`, sha256 `5ec7f78c43a419f24a573c694ab960fdf5e093841572a461639c835560488315`.
+
+## 13. Autosave — verified behavior (and one fix)
+
+Production smoke on `c38c38d`:
+- **OFF:** an edit only marks the draft dirty ("Alterações não salvas"). After 2.5 s the database still held the saved values; nothing is persisted.
+- **ON:** an edit persists after the 600 ms debounce ("Salvo"), and it is the same PUT as Salvar.
+- **Bug found and fixed:** turning autosave ON with a pending edit did **not** persist it; only the next edit did.
+  - Cause: the load-time "skip the first autosave" flag was only consumed on the first *dirty run with autosave ON*, so it swallowed the author's first real edit. The same happened to the first edit after a load with autosave already on.
+  - Fix: consume the flag on the first run after load, before the autosave/dirty gate. It still never autosaves the load/hydration itself.
+  - A regression test asserts the ordering.
+- Autosave was left **OFF** after the smoke.
+
+## 14. Production interaction evidence
+
+Authenticated production Creative Editor (Portal carousel `1247e54b…`), VPS worker updated by the operator to `content-studio-authoring-usability-v1` (reported healthy; the agent did not observe the VPS directly).
+
+**Environment note.** A browser tab that is not rendering frames (no `requestAnimationFrame`, no ResizeObserver) leaves Dockview's floating Inspector at its 100 px fallback and Fit at 33 %. That is an environment artifact, not the product. All evidence below comes from a visible, rendering tab (rAF firing, body 358 px, Fit 43 %).
+
+- **Elementos (Cover):**
+  - Título opens inline with Posição X / Posição Y / Rotação; X = 24 moved the Canvas title (`translate(24px, 0px)`).
+  - Opening Fita da imagem closed Título and showed X / Y / Rotação / Escala / Opacidade.
+  - A grip drag put Imagem principal above Fita da imagem (z 16 / 20 → 20 / 18) while the open panel stayed open and the Inspector stayed put (969,111). Ordem padrão restored only the stack.
+- **Elementos (Info):**
+  - Fonte offers X / Y / Rotação; Cartão 1 offers the full material set.
+  - Dragging the Escala slider across the list changed the value and never reordered.
+- **Inspector:**
+  - Resize clamps at **272 px** with compact tabs (Tpl. / Cont. / Assets / Estilo / Elem.) and zero overflow. An open panel is 229 px wide (slider 89 px).
+  - A real double-click on the titlebar minimized it (38 px); a second restored it (525 px).
+  - After restore, drag (1069→807), horizontal resize (272→377) and vertical resize (525→420) all worked.
+- **Template anatomy:** the Cover lists its 10 elements and 8 slots (including Imagem principal); Info lists its 14 elements and 8 slots.
+- **Assets:**
+  - Every slot has a thumbnail, an origin, "Usado por" and Trocar; paper and tape show Projeto + Usar padrão.
+  - The picker groups "Arquivos do projeto" (paper, tape) and "Imagens geradas".
+  - Nothing was uploaded.
+- **Hero picker:**
+  - Choosing `slide-2-de-2-54d56b3c.png` updated the Canvas at once, and survived Salvar and a reload.
+  - Gerar PNG ran on the VPS (execution `c0f0f743…`, queue 8 s / render 23 s). The snapshot froze `assetOverrides.hero = b1560c65…` and `manifest.assets.hero = library_file:b1560c65…`, with no signed URL. The PNG shows the chosen image as the hero.
+- **Slot replacement:** the ornament slot was set to the tape LibraryFile; the preview used `contain`; the VPS render `d9ece1f0…` shows it the same way (`evidence/authoring-usability-v1/vps-production-hero-and-slot-override.jpg`). Usar padrão returned both slots to Template.
+- **Render state:**
+  - The new render was unsaved and offered Salvar nesta peça. Saving it showed **✓ Salvo nesta peça**.
+  - A forced second save of the same render returned **200 `alreadyAttached`**, and the database kept exactly one LibraryFile and one media row.
+  - Reload kept ✓. An authored edit showed **Alterações ainda não renderizadas**; a new render cleared it and was unsaved again.
+  - Gerar PNG never saved the authoring state.
+- **Save semantics:**
+  - Voltar ao salvo restored the saved values and disabled Salvar.
+  - Restaurar padrão do Template showed the required copy and left Salvar active, because Slide 2's saved state differs from the defaults.
+- **Viewports:** at 1366×768, 1440×900, 768×1024 and 390×844 there is zero page overflow, the accordion panel, asset cards and anatomy fit, and the Inspector floats on desktop and stacks on tablet/mobile.
+- **Cleanup:** the smoke's own attachment (media `beb251d0…` / LibraryFile `148d1bcc…`) was unlinked and trashed. The reference state was restored and saved: Template hero, no overrides, title offset 0.
+- **Pre-existing data left untouched:** a duplicate `slide-2-de-2-31c07938.png` attached at position 2, and an unattached LibraryFile `60e6bfe3…`. Both were created before this mission and are left for the owner to decide on.
+
+**Known limit:** for a render *hydrated* after reload, the stale hint compares against the state at load. It is never wrongly shown, but it cannot flag a render made *before* a saved change.

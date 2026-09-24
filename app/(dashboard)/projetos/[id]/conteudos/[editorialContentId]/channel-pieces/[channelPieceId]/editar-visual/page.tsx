@@ -250,8 +250,13 @@ export default function StaticAuthoringProductPage() {
   // CREATIVE_EDITOR_STATIC_SHELL_FOUNDATION_V1.md for the previous always-on behavior
   // this replaces). Reuses the same 600ms debounce and the same PUT as explicit Save.
   useEffect(() => {
-    if (!isCarousel || !autosaveEnabled || !dirty || !slides) return
+    if (!isCarousel || !slides) return
+    // The skip exists only to never autosave the load/hydration itself. Consume it on
+    // the first run after load regardless of autosave/dirty: it used to wait for the
+    // first dirty run with autosave ON, silently swallowing the author's first real
+    // edit (Authoring Usability Completion V1 production smoke finding).
     if (skipNextAutosaveRef.current) { skipNextAutosaveRef.current = false; return }
+    if (!autosaveEnabled || !dirty) return
     const timeout = setTimeout(() => { void saveNow() }, 600)
     return () => clearTimeout(timeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps

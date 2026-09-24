@@ -288,7 +288,11 @@ describe('Save / restore / render semantics', () => {
 
   it('autosave: OFF by default, same PUT as Salvar after a 600 ms debounce, only when dirty', () => {
     expect(PAGE).toMatch(/window\.localStorage\.getItem\(AUTOSAVE_PREF_KEY\) === 'true'/)
-    expect(PAGE).toMatch(/if \(!isCarousel \|\| !autosaveEnabled \|\| !dirty \|\| !slides\) return/)
+    // The load-time skip is consumed BEFORE the autosave/dirty gate, so it can only ever
+    // swallow the hydration run — never the author's first edit after enabling autosave.
+    const effect = PAGE.slice(PAGE.indexOf('if (!isCarousel || !slides) return'), PAGE.indexOf('setTimeout(() => { void saveNow() }, 600)'))
+    expect(effect.indexOf('skipNextAutosaveRef.current = false')).toBeGreaterThan(-1)
+    expect(effect.indexOf('skipNextAutosaveRef.current = false')).toBeLessThan(effect.indexOf('if (!autosaveEnabled || !dirty) return'))
     expect(PAGE).toMatch(/setTimeout\(\(\) => \{ void saveNow\(\) \}, 600\)/)
   })
 })
