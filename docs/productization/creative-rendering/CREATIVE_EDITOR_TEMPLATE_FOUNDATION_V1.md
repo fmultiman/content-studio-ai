@@ -136,6 +136,19 @@ Real exported worker (`infra/render-worker-runtime/dist/content-studio`, `POST /
 
 The Editor preview renders the same DocumentaryCard with the same `templateId`/`elementOrder`; unit tests assert the z-index flip in the rendered markup and the wiring (preview props, request body, route freeze, worker forward).
 
+### Production smoke (after the operator's VPS runtime update)
+
+Commits `eb255b9` (feature) and `54f4136` (Camadas fix below) are READY on Vercel. The operator reported the VPS worker updated and healthy. The agent then drove the authenticated production Creative Editor (Portal carousel, ChannelPiece `1247e54b…`) at 1366×768:
+
+- **Template tab:** Editorial Documentary Collage, Estrutura Cover/Info, Aparência Dark/Light. **Assets:** 7 slots on Cover with "Usado por". **Style:** identity typography. **Camadas:** front→back with product labels only.
+- **Drag found a real bug.** The first drag committed nothing: the list scrolled under a stationary, captured pointer, and the target was computed from the `clientY` delta. Fixed in `54f4136` by hit-testing the row under the pointer, with a regression test. After the fix, a mouse drag put *Pin do cartão 1* behind *Cartão 1* (preview z 20 < 22). The floating Inspector did not move (969,111).
+- **Gerar PNG on the VPS:** execution `6c2a9cd3…`, queue 7 s, render 18 s. The frozen snapshot holds `templateId` and `elementOrder` with `pin` before `card1`, plus the immutable paper/tape LibraryFile ids. Decoding the real PNG at the pin: dark card (≈45,51,37), versus brass (≈247,241,217) in the default stack. **Ordem padrão** then another render (`31c07938…`, 12 s) brought brass back (245,233,201).
+- **Save round-trip:** a saved reorder persisted `elementOrder` on slide-2 only (slide-1 none) and `brand_label` on the Cover, and survived a reload. Ordem padrão + Salvar returned slide-2 to the template default.
+- **Salvar nesta peça** (new path): `slide-2-de-2-31c07938.png` was created as `origin=studio_render` with `source_render_execution_id` and attached as carousel item 2.
+- **Discovery:** Galeria lists "Creative Editor · Slide 1/2" and "· Slide 2/2" and no paper/tape. Arquivos lists paper/tape and no renders. The picker's "Imagens geradas" has the saved slides; "Arquivos do projeto" has only paper/tape. The piece media list labels saved renders "Imagem gerada".
+- **Viewports:** 1366×768, 1440×900 (floating Inspector), 768×1024 and 390×844 (stacked). No body horizontal overflow at any size, Camadas fits with no row truncation, and header and toolbar are present.
+- **VPS vs local reconstruction:** Slide 1 (`6bc5998e…`) and Slide 2 (`31c07938…`) are the reconstructed layouts (`evidence/template-foundation-v1/vps-production-slides-1-2.jpg`). On a 9×9 luminance grid the mean delta to the local exported-worker render is 7.6 / 6.1, versus 44.6 / 47.6 to the pre-mission layout. The residual is body text: the VPS uses the bundled Source Sans 3 as intended; the local Windows proof fell back to a serif.
+
 ## 9. Gallery vs Arquivos
 
 Production smoke showed saved Creative Editor PNGs listed under Arquivos / "Arquivos do projeto". The fix changes **UI discovery**, not persistence (still one LibraryFile + one ChannelPieceMedia):
