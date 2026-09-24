@@ -297,7 +297,10 @@ export default function StaticAuthoringProductPage() {
     const productContext = buildProductContext(context)
     const canvas = canvasKind(context)
     setTemplateId(persisted.templateId)
-    setSlides(sortedSlides(persisted.slides).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, persisted.templateId) })))
+    const restored = sortedSlides(persisted.slides).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, persisted.templateId) }))
+    setSlides(restored)
+    // An unsaved added slide disappears on revert: keep the selection inside the restored collection.
+    setCurrentSlideIndex((index) => Math.min(index, restored.length - 1))
   }
 
   function restoreSlideDefault() {

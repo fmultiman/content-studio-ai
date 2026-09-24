@@ -229,6 +229,10 @@ describe('Editor wiring (Adicionar slide, truthful totals)', () => {
     expect(page).toMatch(/setCurrentSlideIndex\(slides\.length\)/)
   })
 
+  it('Voltar ao salvo keeps the selection inside the restored collection (removes an unsaved added slide safely)', () => {
+    expect(page).toMatch(/setSlides\(restored\)\s*\n[^\n]*\n\s*setCurrentSlideIndex\(\(index\) => Math\.min\(index, restored\.length - 1\)\)/)
+  })
+
   it('restores Template defaults by the slide layout, never by position', () => {
     expect(page).not.toMatch(/slide\.order === currentSlide\.order/)
     expect(page).toMatch(/layoutId: currentSlide\.state\.variant/)
