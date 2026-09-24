@@ -16,6 +16,9 @@ import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import { DEFAULT_TEMPLATE_ID } from '@/lib/creative/templates/template-definitions'
 import { resolveElementStack } from '@/lib/creative/templates/element-stack'
 import {
+  CLOSING_EXAMPLE_CONTENT, GRID_EXAMPLE_CONTENT, LIST_EXAMPLE_CONTENT, MAP_EXAMPLE_CONTENT, NETWORK_EXAMPLE_CONTENT, QUOTE_EXAMPLE_CONTENT, cloneExample,
+} from '@/lib/creative/templates/layout-examples'
+import {
   type AuthoringAppearance,
   type AuthoringCanvas,
   type AuthoringContent,
@@ -35,12 +38,17 @@ import {
 
 /** Legacy per-variant default, preserved so every pre-Slice-1 caller renders identically. */
 export function defaultAppearanceForVariant(variant: AuthoringVariant): AuthoringAppearance {
-  return variant === 'cover' ? 'dark' : 'light'
+  return variant === 'cover' || variant === 'network' || variant === 'closing' ? 'dark' : 'light'
 }
 
 /** Layouts that draw the content image ('hero'); mirrors the Template registry (layoutUsesContentImage). */
 export function variantUsesContentImage(variant: AuthoringVariant): boolean {
-  return variant === 'cover' || variant === 'list'
+  return variant === 'cover' || variant === 'list' || variant === 'quote'
+}
+
+/** Layouts with a brand block whose label defaults to the live Project name. */
+export function variantHasBrandLabel(variant: AuthoringVariant): boolean {
+  return variant === 'cover' || variant === 'closing'
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
@@ -90,30 +98,24 @@ function defaultInfoContent(): AuthoringInfoContent {
 }
 
 /**
- * Layout "Lista" example content — Pack A Slide 3, verbatim
- * (docs/discovery/creative-rendering/visual-reference-pack/pack-a/003.png).
- * Bold runs of the reference are marked with **…**.
+ * The layout's Template example content (a fresh copy, never shared): Pack B
+ * for Cover/Info, the Pack A reference slide for the layouts built from it
+ * (lib/creative/templates/layout-examples.ts).
  */
-function defaultListContent(): AuthoringListContent {
-  return {
-    title: 'Quem estava fazendo essa pergunta?',
-    intro: '**Carlos A. P. Tavares** (1956–) escrevia sobre aquele universo no momento em que ele se organizava.',
-    items: [
-      { icon: 'microphone', text: 'Apresentava o programa **Sociedade Alternativa,** na Rádio Gazeta AM de São Paulo.' },
-      { icon: 'pencil', text: 'Escrevia a coluna **Anarquismo Vivo,** na revista **Planeta.**' },
-      { icon: 'book', text: 'Formado em Jornalismo pela Faculdade Cásper Líbero. Trabalhou como bancário e livreiro.' },
-    ],
-    image_caption: 'Revista Planeta, março de 1983, texto “Anarquismo vivo”.',
-  }
-}
-
 export function defaultContentForVariant(
   variant: AuthoringVariant,
   identity: AuthoringIdentity,
 ): AuthoringContent {
-  if (variant === 'cover') return defaultCoverContent(identity)
-  if (variant === 'list') return defaultListContent()
-  return defaultInfoContent()
+  switch (variant) {
+    case 'cover': return defaultCoverContent(identity)
+    case 'info': return defaultInfoContent()
+    case 'list': return cloneExample(LIST_EXAMPLE_CONTENT) as unknown as AuthoringListContent
+    case 'grid': return cloneExample(GRID_EXAMPLE_CONTENT) as unknown as AuthoringContent
+    case 'map': return cloneExample(MAP_EXAMPLE_CONTENT) as unknown as AuthoringContent
+    case 'network': return cloneExample(NETWORK_EXAMPLE_CONTENT) as unknown as AuthoringContent
+    case 'quote': return cloneExample(QUOTE_EXAMPLE_CONTENT) as unknown as AuthoringContent
+    case 'closing': return cloneExample(CLOSING_EXAMPLE_CONTENT) as unknown as AuthoringContent
+  }
 }
 
 // ── Initial state factory ─────────────────────────────────────────────────────
@@ -157,8 +159,8 @@ export function createContextualAuthoringState(
 ): AuthoringState {
   return {
     ...createInitialAuthoringState(variant, 'a', canvas, appearance),
-    contentOverride: variant === 'cover' && !(content as AuthoringCoverContent).brand_label && context.projectName
-      ? { ...(content as AuthoringCoverContent), brand_label: context.projectName }
+    contentOverride: variantHasBrandLabel(variant) && !(content as { brand_label?: string }).brand_label && context.projectName
+      ? { ...content, brand_label: context.projectName } as AuthoringContent
       : content,
     primitiveSelection,
     productContext: context,

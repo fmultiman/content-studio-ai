@@ -40,10 +40,10 @@ describe('Template registry', () => {
     expect(template.renderer).toEqual({ componentKey: 'editorial.documentary-card', templateRef: { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } })
   })
 
-  it('owns Cover and Info as template-scoped layouts', () => {
-    expect(template.layouts.map((layout) => layout.id)).toEqual(['cover', 'info', 'list'])
+  it('owns its layouts (Cover, Info, Lista + Completion V1) as template-scoped layouts', () => {
+    expect(template.layouts.map((layout) => layout.id)).toEqual(['cover', 'info', 'list', 'grid', 'map', 'network', 'quote', 'closing'])
     expect(getTemplateLayout(template, 'gallery')).toBeNull()
-    expect(getTemplateLayout(template, 'grid')).toBeNull()
+    expect(getTemplateLayout(template, 'timeline')).toBeNull()
   })
 
   it('treats appearance as an axis of a layout, not a template', () => {

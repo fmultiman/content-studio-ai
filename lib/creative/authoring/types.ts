@@ -15,8 +15,13 @@
 // ── Fixture identifiers ───────────────────────────────────────────────────────
 
 export type AuthoringIdentity = 'a' | 'b'
-/** Template layout ids of editorial-documentary-collage-v1 (Portal Carousel Growth V1 adds 'list'). */
-export type AuthoringVariant = 'cover' | 'info' | 'list'
+/**
+ * Template layout ids of editorial-documentary-collage-v1: 'list' (Portal
+ * Carousel Growth V1); 'grid' | 'map' | 'network' | 'quote' | 'closing'
+ * (Portal Carousel Completion V1).
+ */
+export type AuthoringVariant = 'cover' | 'info' | 'list' | 'grid' | 'map' | 'network' | 'quote' | 'closing'
+export const AUTHORING_VARIANTS = ['cover', 'info', 'list', 'grid', 'map', 'network', 'quote', 'closing'] as const satisfies readonly AuthoringVariant[]
 export type AuthoringCanvas = 'portrait' | 'reel' // 1080×1350 | 1080×1920
 /**
  * Slice 1 — Portal Carousel V1: rendering-style axis, independent of
@@ -85,7 +90,8 @@ export interface AuthoringInfoContent {
   annotation: string
 }
 
-export type AuthoringListIcon = 'microphone' | 'pencil' | 'book'
+/** The shared closed icon set (DOCUMENTARY_CARD_ICONS). */
+export type AuthoringListIcon = DocumentaryCardIcon
 
 export interface AuthoringListItem {
   icon: AuthoringListIcon
@@ -99,9 +105,26 @@ export interface AuthoringListContent {
   intro?: string
   items: AuthoringListItem[]
   image_caption?: string
+  /** Completion V1: optional closing callout. */
+  callout?: string
 }
 
-export type AuthoringContent = AuthoringCoverContent | AuthoringInfoContent | AuthoringListContent
+/** Completion V1 layouts: the authoring shape IS the validated content contract. */
+export type AuthoringGridContent = DocumentaryCardGridContent
+export type AuthoringMapContent = DocumentaryCardMapContent
+export type AuthoringNetworkContent = DocumentaryCardNetworkContent
+export type AuthoringQuoteContent = DocumentaryCardQuoteContent
+export type AuthoringClosingContent = DocumentaryCardClosingContent
+
+export type AuthoringContent =
+  | AuthoringCoverContent
+  | AuthoringInfoContent
+  | AuthoringListContent
+  | AuthoringGridContent
+  | AuthoringMapContent
+  | AuthoringNetworkContent
+  | AuthoringQuoteContent
+  | AuthoringClosingContent
 
 // ── Preview Tuning — UI-only, never enters a StaticRenderManifest ─────────────
 
@@ -163,6 +186,14 @@ import {
   type PrimitiveTransforms,
 } from '@/lib/creative/primitives/transforms'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
+import type {
+  DocumentaryCardClosingContent,
+  DocumentaryCardGridContent,
+  DocumentaryCardIcon,
+  DocumentaryCardMapContent,
+  DocumentaryCardNetworkContent,
+  DocumentaryCardQuoteContent,
+} from '@/lib/schemas/creative/documentary-card'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 

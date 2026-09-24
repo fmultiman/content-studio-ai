@@ -75,6 +75,16 @@ const REQUIRED_WORKER_SOURCE = [
   'components/creative/documentary-card/InfoVariant.tsx',
   // Portal Carousel Growth V1 — layout "list" (Lista).
   'components/creative/documentary-card/ListVariant.tsx',
+  // Portal Carousel Completion V1 — layouts grid/map/network/quote/closing,
+  // their shared kit, the closed icon set and the IBGE UF map geometry.
+  'components/creative/documentary-card/GridVariant.tsx',
+  'components/creative/documentary-card/MapVariant.tsx',
+  'components/creative/documentary-card/NetworkVariant.tsx',
+  'components/creative/documentary-card/QuoteVariant.tsx',
+  'components/creative/documentary-card/ClosingVariant.tsx',
+  'components/creative/documentary-card/layout-kit.tsx',
+  'components/creative/documentary-card/icons.tsx',
+  'components/creative/documentary-card/brazil-uf-geometry.ts',
   'components/creative/documentary-card/primitives.tsx',
   'components/creative/documentary-card/types.ts',
   'components/creative/documentary-card/index.ts',

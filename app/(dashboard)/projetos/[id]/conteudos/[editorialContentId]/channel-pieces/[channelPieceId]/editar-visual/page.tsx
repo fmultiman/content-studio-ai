@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -17,6 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
+import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
+import { LAYOUT_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy } from '@/components/creative/authoring/inspector-panels'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
@@ -34,7 +36,7 @@ import {
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
-  variantUsesContentImage, LIST_ITEMS_MAX, LIST_ITEMS_MIN, type AuthoringListContent, type AuthoringListIcon,
+  variantUsesContentImage,
 } from '@/lib/creative/authoring'
 import { contextualContentForChannelPiece } from '@/lib/creative/context/static-authoring'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -59,7 +61,6 @@ type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
 /** Instagram's carousel ceiling — "Adicionar slide" stops there. */
 const MAX_CAROUSEL_SLIDES = 20
-const LIST_ICON_LABELS: Readonly<Record<AuthoringListIcon, string>> = { microphone: 'Microfone', pencil: 'Lápis', book: 'Livro' }
 const AUTOSAVE_PREF_KEY = 'creative-editor:autosave-enabled'
 
 function readAutosavePreference(): boolean {
@@ -529,30 +530,8 @@ export default function StaticAuthoringProductPage() {
     return <PrimitiveTransformControls slot={key} transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })} />
   }
 
-  const listContent = state.variant === 'list' ? state.contentOverride as AuthoringListContent : null
-  const listContentFields = listContent ? (
-    <>
-      <div><Label htmlFor="visual-list-intro">Introdução</Label><Textarea id="visual-list-intro" value={listContent.intro ?? ''} onChange={(event) => dispatch({ type: 'SET_LIST_FIELD', field: 'intro', value: event.target.value })} rows={3} /></div>
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Itens ({listContent.items.length}/{LIST_ITEMS_MAX})</legend>
-        {listContent.items.map((item, index) => (
-          <div key={index} className="space-y-1.5 rounded-md border border-border/60 p-2" data-testid="list-item-editor">
-            <div className="flex items-center gap-1.5">
-              <Select value={item.icon} onValueChange={(value) => dispatch({ type: 'SET_LIST_ITEM', index, item: { icon: value as AuthoringListIcon } })}>
-                <SelectTrigger className="h-7 flex-1 text-xs" aria-label={`Ícone do item ${index + 1}`}><SelectValue /></SelectTrigger>
-                <SelectContent>{(Object.keys(LIST_ICON_LABELS) as AuthoringListIcon[]).map((icon) => <SelectItem key={icon} value={icon}>{LIST_ICON_LABELS[icon]}</SelectItem>)}</SelectContent>
-              </Select>
-              <Button size="icon-sm" variant="ghost" disabled={listContent.items.length <= LIST_ITEMS_MIN} onClick={() => dispatch({ type: 'REMOVE_LIST_ITEM', index })} aria-label={`Remover item ${index + 1}`} title="Remover item"><Trash2 className="h-3.5 w-3.5" /></Button>
-            </div>
-            <Textarea aria-label={`Texto do item ${index + 1}`} value={item.text} onChange={(event) => dispatch({ type: 'SET_LIST_ITEM', index, item: { text: event.target.value } })} rows={3} />
-          </div>
-        ))}
-        <Button size="sm" variant="outline" className="w-full gap-1 text-xs" disabled={listContent.items.length >= LIST_ITEMS_MAX} onClick={() => dispatch({ type: 'ADD_LIST_ITEM' })}><Plus className="h-3 w-3" />Adicionar item</Button>
-        <p className="text-[11px] text-muted-foreground">Use **texto** para destacar em negrito.</p>
-      </fieldset>
-      <div><Label htmlFor="visual-list-caption">Legenda da imagem</Label><Textarea id="visual-list-caption" value={listContent.image_caption ?? ''} onChange={(event) => dispatch({ type: 'SET_LIST_FIELD', field: 'image_caption', value: event.target.value })} rows={2} /></div>
-    </>
-  ) : null
+  // Structured layouts (Lista, Grade, Mapa, Rede, Citação, Encerramento) edit through their field descriptors.
+  const structuredFields = LAYOUT_CONTENT_FIELDS[state.variant]
 
   const inspector = (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
@@ -579,8 +558,10 @@ export default function StaticAuthoringProductPage() {
         {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
-        <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : state.variant === 'list' ? { type: 'SET_LIST_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
-        {state.variant === 'list' ? listContentFields : state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
+        {structuredFields ? <LayoutContentForm fields={structuredFields} content={state.contentOverride} dispatch={dispatch} /> : <>
+          <div><Label htmlFor="visual-title">Título</Label><Textarea id="visual-title" value={(state.contentOverride as { title?: string }).title ?? ''} onChange={(event) => dispatch(state.variant === 'cover' ? { type: 'SET_COVER_FIELD', field: 'title', value: event.target.value } : { type: 'SET_INFO_FIELD', field: 'title', value: event.target.value })} rows={2} /></div>
+          {state.variant === 'cover' ? <div><Label htmlFor="visual-subtitle">Texto</Label><Textarea id="visual-subtitle" value={(state.contentOverride as { subtitle?: string }).subtitle ?? ''} onChange={(event) => dispatch({ type: 'SET_COVER_FIELD', field: 'subtitle', value: event.target.value })} rows={4} /></div> : <><div><Label htmlFor="visual-intro">Introdução</Label><Textarea id="visual-intro" value={(state.contentOverride as { intro?: string }).intro ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_FIELD', field: 'intro', value: event.target.value })} rows={2} /></div><div><Label htmlFor="visual-body">Corpo (um parágrafo por linha)</Label><Textarea id="visual-body" value={(state.contentOverride as { body_blocks?: string[] }).body_blocks?.join('\n') ?? ''} onChange={(event) => dispatch({ type: 'SET_INFO_BODY', value: event.target.value })} rows={3} /></div></>}
+        </>}
       </TabsContent>
       <TabsContent value="assets" className="space-y-2 pt-3">
         {/* Assets = which resource fills each semantic slot. Placement/stacking live in Elementos. */}

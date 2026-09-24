@@ -6,6 +6,16 @@ import {
   DocumentaryCardInfoContentSchema,
   DocumentaryCardListAssetsSchema,
   DocumentaryCardListContentSchema,
+  DocumentaryCardGridAssetsSchema,
+  DocumentaryCardGridContentSchema,
+  DocumentaryCardMapAssetsSchema,
+  DocumentaryCardMapContentSchema,
+  DocumentaryCardNetworkAssetsSchema,
+  DocumentaryCardNetworkContentSchema,
+  DocumentaryCardQuoteAssetsSchema,
+  DocumentaryCardQuoteContentSchema,
+  DocumentaryCardClosingAssetsSchema,
+  DocumentaryCardClosingContentSchema,
 } from '@/lib/schemas/creative/documentary-card'
 import { QuoteCardAssetsSchema, QuoteCardContentSchema } from '@/lib/schemas/creative/quote-card'
 import { TemplateDescriptorSchema, type TemplateDescriptor } from '@/lib/schemas/creative/template-descriptor'
@@ -63,7 +73,7 @@ const documentaryCardDescriptor = TemplateDescriptorSchema.parse({
   scope: 'system',
   label: 'Editorial Documentary Card',
   supported_modes: ['still', 'video'],
-  variants: ['cover', 'info', 'list'],
+  variants: ['cover', 'info', 'list', 'grid', 'map', 'network', 'quote', 'closing'],
   canvas_support: {
     strategy: 'declared_sizes',
     sizes: [
@@ -127,6 +137,11 @@ const TEMPLATE_REGISTRY: readonly RegisteredTemplate[] = [
         content: DocumentaryCardListContentSchema,
         assets: DocumentaryCardListAssetsSchema,
       },
+      grid: { content: DocumentaryCardGridContentSchema, assets: DocumentaryCardGridAssetsSchema },
+      map: { content: DocumentaryCardMapContentSchema, assets: DocumentaryCardMapAssetsSchema },
+      network: { content: DocumentaryCardNetworkContentSchema, assets: DocumentaryCardNetworkAssetsSchema },
+      quote: { content: DocumentaryCardQuoteContentSchema, assets: DocumentaryCardQuoteAssetsSchema },
+      closing: { content: DocumentaryCardClosingContentSchema, assets: DocumentaryCardClosingAssetsSchema },
     },
   },
   {

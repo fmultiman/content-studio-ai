@@ -40,8 +40,9 @@ import {
   type AuthoringProductContext,
   type AuthoringState,
   type AuthoringVariant,
+  AUTHORING_VARIANTS,
 } from './types'
-import { defaultContentForVariant, TUNING_BOUNDS } from './authoring-state'
+import { defaultContentForVariant, TUNING_BOUNDS, variantHasBrandLabel } from './authoring-state'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import {
   AUTHORING_ASSET_SLOT_IDS,
@@ -140,8 +141,9 @@ export const PersistedAuthoredSlideSchema = z
   .object({
     id: z.string().trim().min(1),
     order: z.number().int().nonnegative(),
-    // Template layout id (editorial-documentary-collage-v1). 'list' — Portal Carousel Growth V1.
-    variant: z.enum(['cover', 'info', 'list']),
+    // Template layout id (editorial-documentary-collage-v1). 'list' — Portal
+    // Carousel Growth V1; 'grid'…'closing' — Portal Carousel Completion V1.
+    variant: z.enum(AUTHORING_VARIANTS),
     appearance: z.enum(['light', 'dark']),
     content: persistedSlideContentSchema,
     primitiveSelection: primitiveSelectionSchema,
@@ -246,10 +248,10 @@ export function persistedSlideToAuthoringState(
     canvas,
     heroRef: slide.heroRef as AuthoringHeroRef | undefined,
     appearance: slide.appearance,
-    // Cover's brand block label is the live Project name when the slide has
+    // The brand block label (Cover, Encerramento) is the live Project name when the slide has
     // none yet (rows authored before brand_label existed) — derived, like the
     // rest of productContext, never a second source of truth for the name.
-    contentOverride: slide.variant === 'cover' && !(content as { brand_label?: string }).brand_label && productContext.projectName
+    contentOverride: variantHasBrandLabel(slide.variant) && !(content as { brand_label?: string }).brand_label && productContext.projectName
       ? { ...content, brand_label: productContext.projectName } as AuthoringContent
       : content,
     primitiveSelection: { ...slide.primitiveSelection } as AuthoringPrimitiveSelection,

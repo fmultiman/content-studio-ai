@@ -260,8 +260,106 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
+    // Completion V1 (Slide 5): optional closing callout on dark paper.
+    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
   ],
-  defaultStackOrder: ['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'note', 'tape2', 'paperStrip', 'title'],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'callout', 'note', 'tape2', 'paperStrip', 'title'],
+}
+
+/*
+ * Portal Carousel Completion V1 — five more reusable layouts, each the
+ * structure of one Pack A slide (6–10) drawn in the Pack B language out of the
+ * existing slots. Grouped content (tiles, network cards, map) is ONE authored
+ * element with one transform; per-item positions are template geometry.
+ * Transform channels are reused per layout (a channel is per slide, so e.g.
+ * `card1` drives "Grade de temas" here and "Cartão 1" in Info).
+ */
+
+/** Grade — a typology of 2..6 icon tiles plus an optional row of cross-cutting ideas (Pack A Slide 6). */
+const GRID_LAYOUT: TemplateLayoutDefinition = {
+  id: 'grid',
+  label: 'Grade',
+  supportedAppearances: ['light', 'dark'],
+  defaultAppearance: 'light',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'tape1', label: 'Fita do título', kind: 'material', assetSlot: 'tape', control: t('tape1') },
+    { id: 'tiles', label: 'Grade de temas', kind: 'text', control: t('card1') },
+    { id: 'note', label: 'Papel das ideias', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+    { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
+  ],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'tiles', 'note', 'paperStrip', 'tape1', 'title'],
+}
+
+/** Mapa — places pinned by federative unit on a code-drawn Brazil map, with legend and note (Pack A Slide 7). */
+const MAP_LAYOUT: TemplateLayoutDefinition = {
+  id: 'map',
+  label: 'Mapa',
+  supportedAppearances: ['light', 'dark'],
+  defaultAppearance: 'light',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'map', label: 'Mapa do Brasil', kind: 'image', control: t('card1') },
+    { id: 'note', label: 'Nota do mapa', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'tape1', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape1') },
+    { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+    { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
+  ],
+  defaultStackOrder: ['botanicalLeaf', 'map', 'botanical', 'note', 'tape1', 'paperStrip', 'title'],
+}
+
+/** Rede — 3..9 linked cards plus an optional icon-led callout with bullets (Pack A Slide 8). */
+const NETWORK_LAYOUT: TemplateLayoutDefinition = {
+  id: 'network',
+  label: 'Rede',
+  supportedAppearances: ['dark', 'light'],
+  defaultAppearance: 'dark',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'cards', label: 'Cartões da rede', kind: 'material', assetSlot: 'paperScrap', control: t('card1') },
+    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
+    { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
+  ],
+  defaultStackOrder: ['ornament', 'cards', 'callout', 'paperStrip', 'title'],
+}
+
+/** Citação — a pull quote as focal point, with intro, bullets, one wide content image and a callout (Pack A Slide 9). */
+const QUOTE_LAYOUT: TemplateLayoutDefinition = {
+  id: 'quote',
+  label: 'Citação',
+  supportedAppearances: ['light', 'dark'],
+  defaultAppearance: 'light',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper') },
+    { id: 'tape1', label: 'Fita da citação', kind: 'material', assetSlot: 'tape', control: t('tape1') },
+    { id: 'hero', label: 'Imagem', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
+    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
+    { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+  ],
+  defaultStackOrder: ['botanicalLeaf', 'hero', 'callout', 'quote', 'tape1', 'paperStrip', 'title'],
+}
+
+/** Encerramento — closing statement, icon-labelled items, an invitation with contact, brand and tagline (Pack A Slide 10). */
+const CLOSING_LAYOUT: TemplateLayoutDefinition = {
+  id: 'closing',
+  label: 'Encerramento',
+  supportedAppearances: ['dark', 'light'],
+  defaultAppearance: 'dark',
+  elements: [
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'note', label: 'Papel do convite', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'tape1', label: 'Fita do convite', kind: 'material', assetSlot: 'tape', control: t('tape1') },
+    { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
+    { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+    { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
+  ],
+  defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'tape1', 'title'],
 }
 
 export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
@@ -274,7 +372,7 @@ export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   contentImageSlots: {
     hero: { id: 'hero', label: 'Imagem principal', defaultAsset: { key: 'documentary-card-hero-01', label: 'Imagem de exemplo do template', path: 'documentary-card-hero-01.webp' } },
   },
-  layouts: [COVER_LAYOUT, INFO_LAYOUT, LIST_LAYOUT],
+  layouts: [COVER_LAYOUT, INFO_LAYOUT, LIST_LAYOUT, GRID_LAYOUT, MAP_LAYOUT, NETWORK_LAYOUT, QUOTE_LAYOUT, CLOSING_LAYOUT],
 }
 
 const TEMPLATE_DEFINITIONS: Readonly<Record<string, TemplateDefinition>> = {
@@ -320,7 +418,7 @@ export function getLayoutElement(layout: TemplateLayoutDefinition, elementId: st
   return layout.elements.find((element) => element.id === elementId) ?? null
 }
 
-/** True when the layout draws the content image ('hero'): Cover and Lista do, Info does not. */
+/** True when the layout draws the content image ('hero'): Cover, Lista and Citação do; the others do not. */
 export function layoutUsesContentImage(layout: TemplateLayoutDefinition | null): boolean {
   return Boolean(layout?.elements.some((element) => element.assetSlot === 'hero'))
 }

@@ -1,15 +1,33 @@
-import type { CSSProperties } from 'react'
+import type { ComponentType, CSSProperties } from 'react'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
 import { resolveFixtureAssetSync } from '@/lib/creative/assets/resolve-asset'
 import { CoverVariant } from './CoverVariant'
 import { InfoVariant } from './InfoVariant'
 import { ListVariant } from './ListVariant'
+import { GridVariant } from './GridVariant'
+import { MapVariant } from './MapVariant'
+import { NetworkVariant } from './NetworkVariant'
+import { QuoteVariant } from './QuoteVariant'
+import { ClosingVariant } from './ClosingVariant'
 import { paletteFromTokens } from './primitives'
-import type { DocumentaryCardProps, DocumentaryCardVisualContext } from './types'
+import { DOCUMENTARY_CARD_VARIANTS, type DocumentaryCardProps, type DocumentaryCardVariant, type DocumentaryCardVisualContext } from './types'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
 import { resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, type AssetSlotId } from '@/lib/creative/templates/template-definitions'
 import type { MaterialName } from './primitives'
+import type { CardPalette } from './primitives'
+
+/** One code-backed component per template layout (editorial-documentary-collage-v1). */
+const VARIANT_COMPONENTS: Record<DocumentaryCardVariant, ComponentType<{ context: DocumentaryCardVisualContext; palette: CardPalette }>> = {
+  cover: CoverVariant,
+  info: InfoVariant,
+  list: ListVariant,
+  grid: GridVariant,
+  map: MapVariant,
+  network: NetworkVariant,
+  quote: QuoteVariant,
+  closing: ClosingVariant,
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -77,6 +95,7 @@ export function DocumentaryCard({
     contentOpacity,
     contentTranslateY,
   }
+  const Variant = VARIANT_COMPONENTS[variant] ?? InfoVariant
   const rootStyle: CSSProperties = {
     background: palette.background,
     color: palette.foreground,
@@ -93,11 +112,7 @@ export function DocumentaryCard({
 
   return (
     <main aria-label={`Editorial documentary card ${variant}`} style={rootStyle}>
-      {variant === 'cover'
-        ? <CoverVariant context={context} palette={palette} />
-        : variant === 'list'
-          ? <ListVariant context={context} palette={palette} />
-          : <InfoVariant context={context} palette={palette} />}
+      <Variant context={context} palette={palette} />
     </main>
   )
 }
@@ -175,9 +190,9 @@ export function documentaryCardPropsFromResolvedInput(
   layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder'>,
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
-  if (variant !== 'cover' && variant !== 'info' && variant !== 'list') throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
+  if (!variant || !(DOCUMENTARY_CARD_VARIANTS as readonly string[]).includes(variant)) throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
   return documentaryCardPropsFromRuntimeInput({
-    variant,
+    variant: variant as DocumentaryCardVariant,
     appearance: input.manifest.template.appearance,
     content: input.manifest.content as DocumentaryCardProps['content'],
     assets: input.resolvedAssets,

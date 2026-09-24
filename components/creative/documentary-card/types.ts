@@ -8,6 +8,11 @@ import type {
   DocumentaryCardCoverContent,
   DocumentaryCardInfoContent,
   DocumentaryCardListContent,
+  DocumentaryCardGridContent,
+  DocumentaryCardMapContent,
+  DocumentaryCardNetworkContent,
+  DocumentaryCardQuoteContent,
+  DocumentaryCardClosingContent,
 } from '@/lib/schemas/creative/documentary-card'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { DocumentaryCardPreviewTuning } from '@/lib/creative/authoring/types'
@@ -18,9 +23,18 @@ import type { MaterialName } from './primitives'
 
 export type { DocumentaryCardPreviewTuning }
 
-export type DocumentaryCardVariant = 'cover' | 'info' | 'list'
+export const DOCUMENTARY_CARD_VARIANTS = ['cover', 'info', 'list', 'grid', 'map', 'network', 'quote', 'closing'] as const
+export type DocumentaryCardVariant = (typeof DOCUMENTARY_CARD_VARIANTS)[number]
 export type DocumentaryCardMode = 'still' | 'video'
-export type DocumentaryCardContent = DocumentaryCardCoverContent | DocumentaryCardInfoContent | DocumentaryCardListContent
+export type DocumentaryCardContent =
+  | DocumentaryCardCoverContent
+  | DocumentaryCardInfoContent
+  | DocumentaryCardListContent
+  | DocumentaryCardGridContent
+  | DocumentaryCardMapContent
+  | DocumentaryCardNetworkContent
+  | DocumentaryCardQuoteContent
+  | DocumentaryCardClosingContent
 /**
  * Rendering-style axis, independent of structural variant (Slice 1 — Portal
  * Carousel V1). Absent means the legacy default: dark for cover, light for

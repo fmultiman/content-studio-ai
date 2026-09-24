@@ -1,8 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react'
-import type { DocumentaryCardListContent, DocumentaryCardListIcon } from '@/lib/schemas/creative/documentary-card'
+import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
+import { DocumentaryIcon } from './icons'
 
 /**
  * `**bold**` runs -> <strong>. The only markup the List content accepts
@@ -14,34 +15,6 @@ export function renderEmphasis(text: string): ReactNode[] {
       ? <strong key={index} style={{ fontWeight: 700 }}>{part.slice(2, -2)}</strong>
       : <span key={index}>{part}</span>
   ))
-}
-
-/** Closed, code-backed icon set (line drawings on a 48px grid). */
-function ListIcon({ icon, color, size }: { icon: DocumentaryCardListIcon; color: string; size: number }) {
-  const common = { fill: 'none', stroke: color, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, strokeWidth: 2.4 }
-  return (
-    <svg aria-hidden="true" viewBox="0 0 48 48" width={size} height={size} style={{ flexShrink: 0 }}>
-      {icon === 'microphone' ? (
-        <>
-          <rect x="17" y="5" width="14" height="23" rx="7" {...common} />
-          <path d="M20 11h8M20 16h8M20 21h8" {...common} strokeWidth={1.6} />
-          <path d="M11 22c0 8 6 13 13 13s13-5 13-13" {...common} />
-          <path d="M24 35v7M16 43h16" {...common} />
-        </>
-      ) : icon === 'pencil' ? (
-        <>
-          <path d="M33 6l9 9-24 24-12 3 3-12z" {...common} />
-          <path d="M28 11l9 9M9 30l9 9" {...common} />
-        </>
-      ) : (
-        <>
-          <path d="M24 13c-5-4-12-5-19-4v27c7-1 14 0 19 4 5-4 12-5 19-4V9c-7-1-14 0-19 4z" {...common} />
-          <path d="M24 13v27" {...common} />
-          <path d="M9 16c4 0 8 1 11 3M9 22c4 0 8 1 11 3M28 19c3-2 7-3 11-3M28 25c3-2 7-3 11-3" {...common} strokeWidth={1.4} />
-        </>
-      )}
-    </svg>
-  )
 }
 
 /**
@@ -72,6 +45,9 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
   const heroTuning = context.previewTuning?.hero
   const titleTuning = context.previewTuning?.title
   const items = content.items ?? []
+  // Completion V1: an optional closing callout takes the bottom band; with a caption too, the image and its caption move up.
+  const hasCallout = Boolean(content.callout)
+  const compact = hasCallout && Boolean(content.image_caption)
 
   return (
     <>
@@ -92,7 +68,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
         style={{
           background: '#ece2cc',
           boxShadow: '0 22px 40px rgba(0, 0, 0, .38)',
-          height: y(600),
+          height: y(compact ? 540 : 600),
           left: x(598),
           padding: x(14),
           position: 'absolute',
@@ -110,15 +86,27 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
       <AssetLayer label="Fita do documento" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(402), width: x(150) }} rotation={-5} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 14)} filter="saturate(.85)" />
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(992), top: y(700), width: x(116) }} rotation={-12} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
 
-      {/* Papel da legenda: image_caption on its own paper scrap. */}
-      <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(588), top: y(1052), width: x(420), height: y(190) }} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} shadow>
-        {content.image_caption ? (
-          <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(23), fontStyle: 'italic', inset: 0, lineHeight: 1.32, padding: `0 ${x(44)}px`, position: 'absolute' }}>
-            {content.image_caption}
+      {/* Papel da legenda: image_caption on its own paper scrap (only when there is a caption). */}
+      {content.image_caption ? (
+        <>
+          <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(588), top: y(compact ? 988 : 1052), width: x(420), height: y(compact ? 150 : 190) }} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} shadow>
+            <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(23), fontStyle: 'italic', inset: 0, lineHeight: 1.32, padding: `0 ${x(44)}px`, position: 'absolute' }}>
+              {content.image_caption}
+            </div>
+          </AssetLayer>
+          <AssetLayer label="Fita da legenda" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(676), top: y(compact ? 968 : 1030), width: x(118) }} rotation={4} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 17)} filter="saturate(.85)" />
+        </>
+      ) : null}
+
+      {/* Caixa de destaque (optional): the closing thought on dark paper, full width. */}
+      {hasCallout ? (
+        <AssetLayer label="Caixa de destaque" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(48), top: y(1134), width: x(984), height: y(176) }} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('callout', 16)} shadow>
+          <div style={{ alignItems: 'center', color: '#efe4cc', display: 'flex', fontFamily: body, fontSize: x(28), gap: x(28), inset: 0, lineHeight: 1.36, padding: `0 ${x(56)}px 0 ${x(64)}px`, position: 'absolute' }}>
+            <div style={{ flex: 1 }}>{renderEmphasis(content.callout ?? '')}</div>
+            <DocumentaryIcon icon="leaf" color="#c9a45c" size={x(64)} />
           </div>
-        ) : null}
-      </AssetLayer>
-      <AssetLayer label="Fita da legenda" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(676), top: y(1030), width: x(118) }} rotation={4} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 17)} filter="saturate(.85)" />
+        </AssetLayer>
+      ) : null}
 
       {/* Faixa do título + Título: siblings, so each owns its own layer. */}
       <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(40), top: y(158), width: x(1000), height: y(236) }} rotation={-0.8} transform={transforms?.paperStrip} zIndex={z('paperStrip', 18)} shadow />
@@ -161,7 +149,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
         {items.map((item, index) => (
           <div key={index} style={{ alignItems: 'flex-start', display: 'flex', gap: x(26) }}>
             <div style={{ alignItems: 'center', border: `1.5px solid ${gold}`, borderRadius: '50%', display: 'flex', flexShrink: 0, height: x(76), justifyContent: 'center', width: x(76) }}>
-              <ListIcon icon={item.icon} color={isDark ? '#d9c79b' : green} size={x(46)} />
+              <DocumentaryIcon icon={item.icon} color={isDark ? '#d9c79b' : green} size={x(46)} />
             </div>
             <div style={{ color: ink, fontFamily: body, fontSize: x(26), lineHeight: 1.36, paddingTop: y(4) }}>{renderEmphasis(item.text)}</div>
           </div>

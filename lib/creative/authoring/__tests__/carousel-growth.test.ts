@@ -23,7 +23,10 @@ import {
   STATIC_AUTHORING_STATE_SCHEMA_VERSION,
   type AuthoringListContent,
   type AuthoringProductContext,
+  LIST_ITEMS_MAX,
+  LIST_ITEMS_MIN,
 } from '@/lib/creative/authoring'
+import { LIST_EXAMPLE_CONTENT } from '@/lib/creative/templates/layout-examples'
 import { documentaryCardFixtures } from '@/lib/creative/fixtures/documentary-card-fixtures'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { DocumentaryCardListContentSchema } from '@/lib/schemas/creative/documentary-card'
@@ -83,7 +86,8 @@ describe('Template layout "list" (Lista)', () => {
     expect(layoutUsesContentImage(layout)).toBe(true)
     expect(layoutUsesContentImage(getTemplateLayout(EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, 'info'))).toBe(false)
     const slots = layoutAssetSlots(EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, layout!).map(({ slot }) => slot.id)
-    expect(slots).toEqual(['paperStrip', 'hero', 'tape', 'paperScrap', 'botanicalLeaf', 'botanical', 'archival'])
+    // Completion V1 adds the optional callout on dark paper (paperDark) — still no new slot.
+    expect(slots).toEqual(['paperStrip', 'hero', 'tape', 'paperScrap', 'botanicalLeaf', 'botanical', 'archival', 'paperDark'])
   })
 
   it('content schema: 2..4 items, closed icon set, optional intro/caption', () => {
@@ -165,7 +169,7 @@ describe('Slide 3 render path', () => {
     expect(manifest.assets.hero).toMatchObject({ type: 'fixture' })
     const resolved = resolveStaticRenderManifest({ ...manifest, identity: { snapshot_ref: productContext.identitySnapshot.snapshot_ref, token_profile: 'default' } }, { identitySnapshot: productContext.identitySnapshot })
     expect(resolved.valid).toBe(true)
-    expect(deriveElementOrderRequest(state, DEFAULT_TEMPLATE_ID)).toEqual(['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'note', 'tape2', 'paperStrip', 'title'])
+    expect(deriveElementOrderRequest(state, DEFAULT_TEMPLATE_ID)).toEqual(['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'callout', 'note', 'tape2', 'paperStrip', 'title'])
   })
 
   it('DocumentaryCard draws the List layout: title, bold runs, one row per item, caption, sequence', () => {
@@ -192,17 +196,20 @@ describe('Slide 3 render path', () => {
     expect(markup).toBe('<p><span>a </span><strong style="font-weight:700">b</strong><span> c *d* e</span></p>')
   })
 
-  it('List reducer actions stay inside the 2..4 bound and drop cleared optional fields', () => {
-    let next = authoringReducer(state, { type: 'ADD_LIST_ITEM' })
+  it('content actions stay inside the List 2..4 bound and drop cleared optional fields', () => {
+    const item = { icon: 'dot', text: 'Novo item' }
+    let next = authoringReducer(state, { type: 'ADD_CONTENT_ITEM', path: ['items'], item, max: LIST_ITEMS_MAX })
     expect((next.contentOverride as AuthoringListContent).items).toHaveLength(4)
-    expect(authoringReducer(next, { type: 'ADD_LIST_ITEM' })).toBe(next)
-    next = authoringReducer(next, { type: 'REMOVE_LIST_ITEM', index: 3 })
-    next = authoringReducer(next, { type: 'REMOVE_LIST_ITEM', index: 2 })
-    expect(authoringReducer(next, { type: 'REMOVE_LIST_ITEM', index: 0 })).toBe(next)
-    next = authoringReducer(next, { type: 'SET_LIST_ITEM', index: 1, item: { icon: 'book' } })
+    expect(authoringReducer(next, { type: 'ADD_CONTENT_ITEM', path: ['items'], item, max: LIST_ITEMS_MAX })).toBe(next)
+    next = authoringReducer(next, { type: 'REMOVE_CONTENT_ITEM', path: ['items'], index: 3, min: LIST_ITEMS_MIN })
+    next = authoringReducer(next, { type: 'REMOVE_CONTENT_ITEM', path: ['items'], index: 2, min: LIST_ITEMS_MIN })
+    expect(authoringReducer(next, { type: 'REMOVE_CONTENT_ITEM', path: ['items'], index: 0, min: LIST_ITEMS_MIN })).toBe(next)
+    next = authoringReducer(next, { type: 'SET_CONTENT_VALUE', path: ['items', 1, 'icon'], value: 'book' })
     expect((next.contentOverride as AuthoringListContent).items[1]).toEqual({ icon: 'book', text: PACK_A_SLIDE_3.items[1].text })
-    next = authoringReducer(next, { type: 'SET_LIST_FIELD', field: 'image_caption', value: '' })
+    next = authoringReducer(next, { type: 'SET_CONTENT_VALUE', path: ['image_caption'], value: '', optional: true })
     expect('image_caption' in next.contentOverride).toBe(false)
+    // The edit never leaks into the shared Template example.
+    expect(LIST_EXAMPLE_CONTENT.items[1].icon).toBe('pencil')
   })
 })
 
