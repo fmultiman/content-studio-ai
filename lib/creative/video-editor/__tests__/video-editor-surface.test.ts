@@ -90,10 +90,11 @@ describe('route / entry boundary', () => {
 describe('/videos remains the Hub', () => {
   it('keeps the draft hub and launches the Creative Editor for a VideoDraft', () => {
     expect(hub).toContain('Rascunhos recentes')
-    expect(hub).toContain('videoCreativeEditorHref(draft.id)')
+    // Hub cards carry the canonical editor href (lib/draft-hub.ts draftRoute).
+    expect(hub).toContain('router.push(draft.href)')
     expect(hub).toContain('Criar no Creative Editor')
-    // incremental migration: the classic workspace is still reachable
-    expect(hub).toContain('Abrir (clássico)')
-    expect(hub).toContain('<SceneCard')
+    // VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1: the classic workspace is retired.
+    expect(hub).not.toContain('Abrir (clássico)')
+    expect(hub).not.toContain('<SceneCard')
   })
 })

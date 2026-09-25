@@ -3,7 +3,8 @@
  * VideoDraft / VideoScene[] authority.
  *
  * The Video editor persists through the SAME `/api/video-drafts` PATCH the
- * legacy /videos workspace uses: `{ id, name, projectId, productionId, scenes }`.
+ * retired /videos workspace used: `{ id, name, projectId, productionId, scenes }`. Since
+ * VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1 this editor is its only product writer.
  * Nothing temporal or visual beyond VideoScene's own fields enters that body —
  * no start frames, no TimelineManifest, no zoom/scroll/selection/playhead.
  */

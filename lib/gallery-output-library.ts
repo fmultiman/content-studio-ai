@@ -1,3 +1,4 @@
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-routes'
 import type { Image, ImageDraft, LibraryFile, Production, Project, RenderExecutionSummary, VideoDraft } from '@/lib/types'
 import { productionHref } from '@/lib/draft-hub'
 import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
@@ -438,6 +439,10 @@ function buildGallerySourceHref({
   if (draftId) params.set('draft', draftId)
   if (projectId) params.set('project', projectId)
   if (productionId) params.set('production', productionId)
+
+  // "Abrir origem" of a rendered video = the authored VideoDraft, which opens ONLY in the
+  // canonical Creative Editor. Viewing/downloading the MP4 stays on the output endpoints.
+  if (mediaType === 'video' && draftId) return videoCreativeEditorHref(draftId)
 
   const query = params.toString()
   const basePath = mediaType === 'video' ? '/videos' : '/imagens'

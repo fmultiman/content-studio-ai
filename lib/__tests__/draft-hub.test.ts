@@ -108,7 +108,8 @@ describe('UX-H3B draft hub helpers', () => {
       kind: 'video',
       title: 'Rascunho de video',
       meta: '2 cenas',
-      href: '/videos?draft=video-1&project=project-1&production=production-1',
+      // VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1: opens the canonical editor
+      href: '/creative-editor/video/video-1',
     })
   })
 

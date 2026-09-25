@@ -105,12 +105,4 @@ describe('UX-H4B4 states, forms and final polish', () => {
     expect(filesPage).toContain('title="Upload indisponível"')
     expect(filesPage).toContain('selectedProject !== \'all\' || selectedKind !== \'all\' || folder !== \'/\'')
   })
-
-  it('keeps scene-level media validation inline instead of browser alerts', () => {
-    const sceneCard = readFileSync(join(process.cwd(), 'components/videos/scene-card.tsx'), 'utf8')
-
-    expect(sceneCard).toContain('const [imageError, setImageError] = useState<string | null>(null)')
-    expect(sceneCard).toContain('Use uma imagem JPG, PNG ou WEBP para a cena.')
-    expect(sceneCard).not.toContain('alert(')
-  })
 })

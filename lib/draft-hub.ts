@@ -1,3 +1,4 @@
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-routes'
 import { resolveProductionDisplay } from '@/lib/ux-production-hardening'
 import type { ImageDraft, Production, Project, VideoDraft } from '@/lib/types'
 
@@ -242,7 +243,9 @@ export function draftRoute(
   projectId: string | null,
   productionId: string | null,
 ) {
-  const base = kind === 'image' ? '/imagens' : '/videos'
+  // VideoDraft single writer: a video draft opens ONLY in the canonical Creative Editor.
+  if (kind === 'video') return videoCreativeEditorHref(draftId)
+  const base = '/imagens'
   const params = new URLSearchParams({ draft: draftId })
   if (projectId) params.set('project', projectId)
   if (productionId) params.set('production', productionId)

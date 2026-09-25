@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-routes'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -148,7 +149,7 @@ export default function VideoDraftsPage() {
                   <CardContent className="flex items-center justify-between p-4">
                     <div
                       className="flex flex-1 cursor-pointer items-center gap-4"
-                      onClick={() => router.push(`/videos?draft=${draft.id}`)}
+                      onClick={() => router.push(videoCreativeEditorHref(draft.id))}
                     >
                       <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500/20 to-violet-500/20">
                         <Video className="h-6 w-6 text-pink-400" />

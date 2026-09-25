@@ -1,3 +1,4 @@
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-routes'
 import {
   getIdentityStatusLabel,
   resolveInheritedIdentitySummary,
@@ -212,10 +213,8 @@ export function buildRecentWorkItems({
     productionName: productionName(draft.production_id),
     status: 'Rascunho',
     updatedAt: draft.updated_at,
-    href:
-      draft.project_id && draft.production_id
-        ? `/videos?draft=${draft.id}&project=${draft.project_id}&production=${draft.production_id}`
-        : `/videos?draft=${draft.id}`,
+    // VideoDraft single writer: continue in the canonical Creative Editor.
+    href: videoCreativeEditorHref(draft.id),
   }))
 
   const editorialItems: RecentWorkItem[] = editorialContents.map((content) => ({

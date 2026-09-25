@@ -844,3 +844,7 @@ P1-1 (video ChannelPiece entry, with the explicit D-9 relation decision) should 
   - No production data was mutated (read-only SQL and one unauthenticated GET only).
 - Final SHA: the commit that introduces this file on `main`, verified equal on local HEAD, `origin/main` and remote `main` at delivery.
 - Local ignored files left untouched and uncommitted: `.env.local`, `.next/`, `tsconfig.typecheck.tsbuildinfo`.
+
+## Follow-up (after this review)
+
+- **P0-1 resolved** by VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1 (see `docs/productization/creative-rendering/VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1.md`): `/videos?draft=` redirects to `/creative-editor/video/[draftId]`, the classic workspace was removed (`/videos` is hub-only, QuickFlow kept per draft), and every VideoDraft authoring link (Production, `/videos/rascunhos`, Dashboard, Gallery source) now opens the canonical editor. The rows above describing the classic workspace reflect the state at `82cd7bd`.

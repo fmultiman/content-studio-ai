@@ -1,6 +1,20 @@
 'use client'
 
-import { useState, useEffect, Suspense, useRef } from 'react'
+/**
+ * /videos — Video hub (VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1).
+ *
+ * This page NEVER authors a VideoDraft. It lists drafts, creates a new one
+ * (then hands off) and offers non-authoring actions (Preparar publicação,
+ * Ver Production). Every "open draft" goes to the ONE canonical authoring
+ * surface, /creative-editor/video/[draftId]. The pre-Creative-Editor
+ * workspace that used to live here (SceneCards, Storyboard, 800 ms autosave,
+ * render, result player) was removed: `/videos?draft=` is redirected by
+ * proxy.ts, with a client-side fallback below.
+ *
+ * Long-term /videos becomes AI video / clip source-media generation (like
+ * /imagens); that does not exist yet and is not simulated here.
+ */
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -9,16 +23,11 @@ import {
   DashboardPageContent,
 } from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
-import { SceneCard } from '@/components/videos/scene-card'
-import { StoryboardModal } from '@/components/videos/storyboard-modal'
-import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
-import { generateImagePrompt, PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ViewModeToggle, useViewModePreference } from '@/components/ui/view-mode-toggle'
-import { Card, CardActions, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardActions, CardContent, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -29,15 +38,11 @@ import {
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw, Download, ExternalLink, Clapperboard } from 'lucide-react'
+import { Video, Loader2, ChevronRight, ArrowLeft, Search, Zap, Clapperboard } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import type { LibraryFile, Project, Production, VideoScene, VideoDraft, RenderExecutionSummary } from '@/lib/types'
-import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import type { Project, Production, VideoDraft } from '@/lib/types'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
-import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
-import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import { draftLoadingMessage } from '@/lib/ux-production-hardening'
-import { updateVideoSceneLibraryFile } from '@/lib/video-scene-state'
 import {
   buildVideoDraftHubCards,
   filterDraftHubCards,
@@ -45,653 +50,67 @@ import {
   getDraftHubProductionLabel,
   getProductionsForProject,
 } from '@/lib/draft-hub'
-import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-workspace'
-import { createVideoScene } from '@/lib/creative/video-editor/video-authoring'
+import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-routes'
+import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
 
 function VideosPageContent() {
   const { toast } = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
-  
+  const contextProjectId = searchParams.get('project')
+  const contextProductionId = searchParams.get('production')
+  const legacyTarget = legacyVideoAuthoringRedirect('/videos', new URLSearchParams(searchParams.toString()))
+
   const [projects, setProjects] = useState<Project[]>([])
   const [productions, setProductions] = useState<Production[]>([])
-  const [selectedProject, setSelectedProject] = useState<string | null>(null)
-  const [productionId, setProductionId] = useState<string | null>(null)
-  const [productionTitle, setProductionTitle] = useState<string | null>(null)
-  const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
-  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([])
-  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
-  
-  const [videoName, setVideoName] = useState('')
-  const [scenes, setScenes] = useState<VideoScene[]>([])
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isSavingDraft, setIsSavingDraft] = useState(false)
-  
-  // Render execution state
-  const [renderExecution, setRenderExecution] = useState<RenderExecutionSummary | null>(null)
-  const [renderIdempotencyKey, setRenderIdempotencyKey] = useState<string>(() => crypto.randomUUID())
-  const [renderOutputUrl, setRenderOutputUrl] = useState<string | null>(null)
-  const [renderOutputUrlError, setRenderOutputUrlError] = useState<string | null>(null)
-  
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
-  const [isLoadingDrafts, setIsLoadingDrafts] = useState(true)
   const [isDataReady, setIsDataReady] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
-  const [showStoryboard, setShowStoryboard] = useState(false)
-  const [showQuickFlowDialog, setShowQuickFlowDialog] = useState(false)
   const [hubProjectFilter, setHubProjectFilter] = useState('all')
   const [hubProductionFilter, setHubProductionFilter] = useState('all')
   const [hubStatusFilter, setHubStatusFilter] = useState('all')
   const [hubSearch, setHubSearch] = useState('')
-  const [hubCreateProjectId, setHubCreateProjectId] = useState('')
-  const [hubCreateProductionId, setHubCreateProductionId] = useState('')
+  // A Production entry (…?project=&production=) preselects the creation context; it never opens an editor here.
+  const [hubCreateProjectId, setHubCreateProjectId] = useState(contextProjectId ?? '')
+  const [hubCreateProductionId, setHubCreateProductionId] = useState(contextProductionId ?? '')
   const [hubViewMode, setHubViewMode] = useViewModePreference('video-draft-hub-view', 'list')
   const [isCreatingInEditor, setIsCreatingInEditor] = useState(false)
-  const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
 
-  // Fetch projects and drafts on mount
+  // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {
+    if (legacyTarget) router.replace(legacyTarget)
+  }, [legacyTarget, router])
+
+  useEffect(() => {
+    if (legacyTarget) return
     let cancelled = false
-    setLoadError(null)
-
     const fetchData = async () => {
-      // Apply URL params before any await so the banner and project selector
-      // are visible even when subsequent async fetches fail.
-      const projectId = searchParams.get('project')
-      const prodId = searchParams.get('production')
-      if (projectId) setSelectedProject(projectId)
-      if (prodId) setProductionId(prodId)
-
       try {
         const supabase = createClient()
-
-        const { data: projectsData } = await supabase
-          .from('projects')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (!cancelled && projectsData) setProjects(projectsData)
-
-        const { data: productionsData } = await supabase
-          .from('productions')
-          .select('*')
-          .order('updated_at', { ascending: false })
-
-        if (!cancelled && productionsData) setProductions(productionsData)
-        if (!cancelled) setIsLoadingProjects(false)
-
-        const draftsResponse = await fetch('/api/video-drafts?limit=50')
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse] = await Promise.all([
+          supabase.from('projects').select('*').order('created_at', { ascending: false }),
+          supabase.from('productions').select('*').order('updated_at', { ascending: false }),
+          fetch('/api/video-drafts?limit=50'),
+        ])
         const draftsData = await draftsResponse.json()
-
-        if (!cancelled) {
-          if (draftsResponse.ok) {
-            setDrafts(draftsData.drafts || [])
-          } else {
-            console.error('[v0] Video drafts load error:', draftsData)
-          }
-          setIsLoadingDrafts(false)
-        }
-
-        const draftId = searchParams.get('draft')
-        if (draftId && !cancelled) {
-          const draftResponse = await fetch(`/api/video-drafts?id=${draftId}`)
-          const draftPayload = await draftResponse.json()
-
-          if (draftResponse.ok && draftPayload.draft && !cancelled) {
-            const draftData = draftPayload.draft as VideoDraft
-            setCurrentDraftId(draftData.id)
-            setVideoName(draftData.name)
-            setSelectedProject(draftData.project_id)
-            if (draftData.production_id) setProductionId(draftData.production_id)
-            setScenes(draftData.scenes || [])
-
-            // Fetch latest execution
-            const execRes = await fetch(`/api/render-executions?videoDraftId=${draftData.id}`)
-            if (execRes.ok && !cancelled) {
-              const execPayload = await execRes.json()
-              if (execPayload.execution) {
-                setRenderExecution(execPayload.execution)
-              }
-            }
-          } else if (!draftResponse.ok) {
-            console.error('[v0] Video draft load error:', draftPayload)
-          }
-        }
-
-        if (prodId && !cancelled) {
-          const prodRes = await fetch(`/api/productions/${prodId}`)
-          if (prodRes.ok && !cancelled) {
-            const prodData = await prodRes.json()
-            if (!cancelled) {
-              setProductionTitle(prodData.production?.title || null)
-              setProductionProjectId(prodData.production?.project_id || null)
-            }
-          }
-        }
-
-        if (!cancelled) setIsDataReady(true)
+        if (cancelled) return
+        if (projectsData) setProjects(projectsData)
+        if (productionsData) setProductions(productionsData)
+        if (draftsResponse.ok) setDrafts(draftsData.drafts || [])
+        else console.error('[v0] Video drafts load error:', draftsData)
+        setLoadError(null)
+        setIsDataReady(true)
       } catch (error) {
         console.error('[v0] Video data load error:', error)
-        if (!cancelled) {
-          setLoadError('Não foi possível carregar os dados. Verifique sua conexão e tente novamente.')
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingProjects(false)
-          setIsLoadingDrafts(false)
-        }
+        if (!cancelled) setLoadError('Não foi possível carregar os dados. Verifique sua conexão e tente novamente.')
       }
     }
-
     fetchData()
     return () => { cancelled = true }
-  }, [searchParams, retryKey])
+  }, [legacyTarget, retryKey])
 
-  useEffect(() => {
-    if (!selectedProject) {
-      setLibraryFiles([])
-      return
-    }
-
-    const controller = new AbortController()
-    fetch(`/api/library-files?projectId=${encodeURIComponent(selectedProject)}&kind=image`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const payload = await response.json()
-        if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar os assets do Projeto.')
-        setLibraryFiles(payload.files || [])
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        console.error('[v0] Video library files load error:', error)
-        setLibraryFiles([])
-      })
-
-    return () => controller.abort()
-  }, [selectedProject])
-
-  useEffect(() => {
-    if (!isDataReady) return
-
-    const autoSaveDraft = async () => {
-      if (!productionId) return
-      const hasSceneContent = scenes.some((scene) =>
-        scene.description.trim() ||
-        scene.prompt?.trim() ||
-        scene.image_url
-      )
-
-      if (!videoName.trim() && !hasSceneContent) return
-
-      try {
-        const firstSceneDescription = scenes
-          .find((scene) => scene.description.trim())
-          ?.description.trim()
-
-        const draftName =
-          videoName.trim() ||
-          firstSceneDescription?.slice(0, 50) ||
-          'Auto-save'
-
-        const response = await fetch('/api/video-drafts', {
-          method: currentDraftId ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: currentDraftId,
-            name: draftName,
-            projectId: selectedProject,
-            productionId,
-            scenes,
-          }),
-        })
-        const data = await response.json()
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Erro ao salvar rascunho')
-        }
-
-        if (data.draft) {
-          setCurrentDraftId(data.draft.id)
-          setDrafts((prev) => {
-            const withoutCurrent = prev.filter((draft) => draft.id !== data.draft.id)
-            return [data.draft, ...withoutCurrent].slice(0, 5)
-          })
-        }
-      } catch (error) {
-        console.error('[v0] Video auto-save error:', error)
-      }
-    }
-
-    const timeoutId = window.setTimeout(autoSaveDraft, 800)
-
-    const handleBeforeUnload = () => {
-      autoSaveDraft()
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, [videoName, scenes, selectedProject, productionId, currentDraftId, isDataReady])
-
-  const addScene = () => {
-    const newScene: VideoScene = {
-      id: crypto.randomUUID(),
-      order: scenes.length + 1,
-      description: '',
-      prompt: null,
-      image_url: null,
-      duration: 3,
-      movement: 'static',
-    }
-    setScenes([...scenes, newScene])
-  }
-
-  const updateScene = (index: number, updatedScene: VideoScene) => {
-    const newScenes = [...scenes]
-    newScenes[index] = updatedScene
-    setScenes(newScenes)
-  }
-
-  const setSceneLibraryFile = (sceneId: string, libraryFileId: string | null) => {
-    setScenes((currentScenes) => updateVideoSceneLibraryFile(currentScenes, sceneId, libraryFileId))
-  }
-
-  const deleteScene = (index: number) => {
-    const newScenes = scenes.filter((_, i) => i !== index)
-    newScenes.forEach((scene, i) => {
-      scene.order = i + 1
-    })
-    setScenes(newScenes)
-  }
-
-  const handleGenerateScenePrompt = async (
-    scene: VideoScene,
-    sceneNumber: number,
-  ) => {
-    const response = await fetch('/api/videos/generate-scene-prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: scene.description,
-        sceneNumber,
-        duration: scene.duration,
-        movement: scene.movement,
-        projectId: selectedProject,
-        videoName,
-      }),
-    })
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Erro ao gerar prompt da cena')
-    }
-
-    return data.prompt as string
-  }
-
-  const handleSaveDraft = async (showToast = true) => {
-    const hasSceneContent = scenes.some((scene) =>
-      scene.description.trim() ||
-      scene.prompt?.trim() ||
-      scene.image_url
-    )
-
-    if (!videoName.trim() && !hasSceneContent) {
-      if (showToast) {
-        toast({
-          title: 'Nome obrigatorio',
-          description: 'Por favor, insira um nome ou uma cena para o video.',
-          variant: 'destructive',
-        })
-      }
-      return null
-    }
-
-    if (!productionId) {
-      if (showToast) {
-        toast({
-          title: 'Production obrigatória',
-          description: 'Acesse esta página a partir de uma Production para salvar o rascunho.',
-          variant: 'destructive',
-        })
-      }
-      return null
-    }
-
-    setIsSavingDraft(true)
-
-    try {
-      const firstSceneDescription = scenes
-        .find((scene) => scene.description.trim())
-        ?.description.trim()
-
-      const draftName =
-        videoName.trim() ||
-        firstSceneDescription?.slice(0, 50) ||
-        'Rascunho sem titulo'
-
-      const response = await fetch('/api/video-drafts', {
-        method: currentDraftId ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: currentDraftId,
-          name: draftName,
-          projectId: selectedProject,
-          productionId,
-          scenes,
-        }),
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao salvar rascunho')
-      }
-
-      if (data.draft) {
-        setCurrentDraftId(data.draft.id)
-          if (data.draft.production_id) setProductionId(data.draft.production_id)
-          setDrafts((prev) => {
-          const withoutCurrent = prev.filter((draft) => draft.id !== data.draft.id)
-          return [data.draft, ...withoutCurrent].slice(0, 5)
-        })
-      }
-
-      if (showToast) {
-        toast({
-          title: currentDraftId ? 'Rascunho atualizado!' : 'Rascunho salvo!',
-          description: currentDraftId
-            ? 'As alterações foram salvas.'
-            : 'Voce pode continuar editando mais tarde.',
-        })
-      }
-
-      return data.draft || null
-    } catch (error) {
-      console.error('[v0] Video draft save error:', error)
-      if (showToast) {
-        toast({
-          title: 'Erro',
-          description: 'Nao foi possivel salvar o rascunho.',
-          variant: 'destructive',
-        })
-      }
-      return null
-    } finally {
-      setIsSavingDraft(false)
-    }
-  }
-
-  const loadDraft = async (draft: VideoDraft) => {
-    if (currentDraftId !== draft.id) {
-      await handleSaveDraft(false)
-    }
-
-    setCurrentDraftId(draft.id)
-    setVideoName(draft.name)
-    setSelectedProject(draft.project_id)
-    if (draft.production_id && !productionId) {
-      setProductionId(draft.production_id)
-      fetch(`/api/productions/${draft.production_id}`)
-        .then((r) => r.ok ? r.json() : null)
-        .then((d) => {
-          if (d?.production) {
-            setProductionTitle(d.production.title || null)
-            setProductionProjectId(d.production.project_id || null)
-          }
-        })
-        .catch(() => null)
-    }
-    setScenes(draft.scenes || [])
-    
-    // Reset execution state, load new if exists
-    setRenderExecution(null)
-    setRenderOutputUrl(null)
-    setRenderOutputUrlError(null)
-    setRenderIdempotencyKey(crypto.randomUUID())
-    fetch(`/api/render-executions?videoDraftId=${draft.id}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(payload => {
-        if (payload?.execution) {
-          setRenderExecution(payload.execution)
-        }
-      })
-      .catch(() => null)
-
-    toast({
-      title: 'Rascunho carregado',
-      description: `"${draft.name}" foi carregado para edição.`,
-    })
-  }
-
-  // Polling configuration
-  const pendingNotification = useRef(false)
-
-  const fetchOutputUrl = async (executionId: string) => {
-    try {
-      const res = await fetch(`/api/render-executions/${executionId}/output-url`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.url) {
-          setRenderOutputUrl(data.url)
-          return
-        }
-      }
-      setRenderOutputUrlError('Não foi possível carregar o vídeo para reprodução.')
-    } catch (err) {
-      console.error('[v0] Error fetching output url:', err)
-      setRenderOutputUrlError('Não foi possível carregar o vídeo para reprodução.')
-    }
-  }
-
-  // Terminal-state hydration: fires unconditionally whenever the execution
-  // reaches (or is already restored in) a terminal status — covering BOTH
-  // the live queued/claimed -> completed transition AND a page load that
-  // restores an already-completed execution. Previously this logic lived
-  // only inside the polling function below, which was never invoked at all
-  // for an execution that loaded already-completed (the poll scheduler only
-  // ever ran for queued/claimed), so the inline player never requested
-  // output-url on a normal page load — the reported "player stuck loading
-  // forever" bug.
-  useEffect(() => {
-    if (!renderExecution?.id) return
-    if (renderExecution.status !== 'completed' && renderExecution.status !== 'failed') return
-
-    if (pendingNotification.current) {
-      pendingNotification.current = false
-      if (renderExecution.status === 'completed') {
-        toast({ title: 'Vídeo renderizado com sucesso.' })
-      } else {
-        toast({ title: 'A renderização falhou.', variant: 'destructive' })
-      }
-    }
-
-    if (renderExecution.status === 'completed' && !renderOutputUrl && !renderOutputUrlError) {
-      // Fire-and-forget data fetch, same accepted pattern as this file's own
-      // initial fetchData() effect above — all of its setState calls happen
-      // after the internal `await`, never synchronously in this effect body.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      fetchOutputUrl(renderExecution.id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderExecution?.id, renderExecution?.status])
-
-  // Polling: only while queued/claimed. One request in flight at a time (a
-  // single recursive setTimeout chain, never overlapping calls); stops the
-  // instant the execution reaches a terminal status because the effect
-  // condition below simply does not schedule anything for it.
-  useEffect(() => {
-    if (!renderExecution?.id) return
-    if (renderExecution.status !== 'queued' && renderExecution.status !== 'claimed') return
-
-    let cancelled = false
-    let timeoutId: number | undefined
-    const executionId = renderExecution.id
-
-    const poll = async () => {
-      if (cancelled) return
-      try {
-        const res = await fetch(`/api/render-executions/${executionId}`)
-        if (res.ok && !cancelled) {
-          const payload = await res.json()
-          if (payload.execution) setRenderExecution(payload.execution)
-        }
-      } catch (err) {
-        console.error('[v0] Error polling render execution:', err)
-      }
-      if (!cancelled) {
-        timeoutId = window.setTimeout(poll, 3000)
-      }
-    }
-
-    timeoutId = window.setTimeout(poll, 3000)
-
-    return () => {
-      cancelled = true
-      if (timeoutId) window.clearTimeout(timeoutId)
-    }
-  }, [renderExecution?.id, renderExecution?.status])
-
-  const handleGenerateVideo = async () => {
-    if (!videoName.trim() || scenes.length === 0) return
-
-    setIsGenerating(true)
-    pendingNotification.current = true
-    setRenderOutputUrl(null)
-    setRenderOutputUrlError(null)
-
-    try {
-      // 1. Force a save first
-      const draft = await handleSaveDraft(false)
-      if (!draft) {
-        setIsGenerating(false)
-        pendingNotification.current = false
-        return
-      }
-      
-      // 2. Submit render request
-      const response = await fetch(`/api/video-drafts/${draft.id}/render`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idempotencyKey: renderIdempotencyKey })
-      })
-      
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload.error || 'Erro ao agendar renderização.')
-      }
-      
-      setRenderExecution({
-        id: payload.executionId,
-        video_draft_id: draft.id,
-        status: payload.status,
-        queued_at: payload.queuedAt,
-        attempt: 1,
-        claimed_at: null,
-        completed_at: null,
-        failed_at: null,
-        output_mime_type: null,
-        output_size_bytes: null,
-        output_duration_ms: null,
-        error_code: null,
-        error_message: null
-      })
-      
-    } catch (err) {
-      console.error('[v0] Render error:', err)
-      toast({
-        title: 'Erro de renderização',
-        description: err instanceof Error ? err.message : 'Nao foi possivel iniciar a renderizacao.',
-        variant: 'destructive',
-      })
-      pendingNotification.current = false
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const handleDownloadOutput = async () => {
-    if (!renderExecution?.id) return
-    try {
-      const res = await fetch(`/api/render-executions/${renderExecution.id}/output-url?disposition=attachment`)
-      const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch {
-      toast({ title: 'Erro ao baixar o vídeo.', variant: 'destructive' })
-    }
-  }
-
-  const handleRetryRender = () => {
-    setRenderIdempotencyKey(crypto.randomUUID())
-    handleGenerateVideo()
-  }
-
-  const clearForm = () => {
-    setVideoName('')
-    setScenes([])
-    setCurrentDraftId(null)
-    setRenderExecution(null)
-    setRenderOutputUrl(null)
-    setRenderOutputUrlError(null)
-    setRenderIdempotencyKey(crypto.randomUUID())
-    // Production context and project are preserved intentionally:
-    // creating a new video within a Production keeps the workspace context.
-  }
-
-  const handleNewVideo = async () => {
-    await handleSaveDraft(false)
-    clearForm()
-  }
-
-  const totalDuration = scenes.reduce((acc, scene) => acc + scene.duration, 0)
-
-  const handleSelectStoryboardScene = (index: number) => {
-    const scene = scenes[index]
-    setShowStoryboard(false)
-
-    window.setTimeout(() => {
-      sceneRefs.current[scene.id]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      })
-    }, 100)
-  }
-
-  const requestedDraftId = searchParams.get('draft')
-  const selectedProjectData = selectedProject
-    ? projects.find((project) => project.id === selectedProject) ?? null
-    : null
-  let videoIdentity: ProjectIdentity | null = null
-  let videoIdentityReadError = false
-
-  try {
-    videoIdentity = normalizeProjectIdentity(selectedProjectData?.identity ?? null)
-  } catch {
-    videoIdentityReadError = true
-  }
-
-  const videoIdentitySummary = resolveInheritedIdentitySummary({
-    identity: videoIdentity,
-    projectName: selectedProjectData?.name,
-    hasLegacyContext: !!selectedProjectData?.context?.trim(),
-    readError: videoIdentityReadError,
-    isLoading: !isDataReady,
-  })
-  const projectIdentityHref = selectedProjectData
-    ? `/projetos/${selectedProjectData.id}#project-identity`
-    : undefined
-  const productionHref =
-    productionId && (productionProjectId || selectedProject)
-      ? `/projetos/${productionProjectId || selectedProject}/producoes/${productionId}`
-      : undefined
   const hubCards = buildVideoDraftHubCards({ drafts, projects, productions })
   const hubFilteredProductions = hubProjectFilter === 'all'
     ? productions
@@ -713,27 +132,20 @@ function VideosPageContent() {
     hasError: !!loadError,
   })
   const hubCreateProductions = getProductionsForProject(productions, hubCreateProjectId)
-  const openVideoWorkspace = () => {
-    if (!hubCreateProjectId || !hubCreateProductionId) return
-    router.push(`/videos?project=${hubCreateProjectId}&production=${hubCreateProductionId}`)
-  }
-  // Creative Editor Video: create the VideoDraft (same POST /api/video-drafts) and open it in the editor.
+  const contextProduction = contextProductionId ? productions.find((production) => production.id === contextProductionId) ?? null : null
+  const draftById = new Map(drafts.map((draft) => [draft.id, draft]))
+
+  // CREATE → receive draft id → canonical Creative Editor (creating is not editing).
   const createInCreativeEditor = async () => {
     if (!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor) return
     setIsCreatingInEditor(true)
-    try {
-      const response = await fetch('/api/video-drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Novo vídeo', projectId: hubCreateProjectId, productionId: hubCreateProductionId, scenes: [createVideoScene([])] }),
-      })
-      const payload = await response.json()
-      if (!response.ok || !payload.draft?.id) throw new Error(payload.error || 'Não foi possível criar o vídeo.')
-      router.push(videoCreativeEditorHref(payload.draft.id))
-    } catch (error) {
-      toast({ title: 'Erro', description: error instanceof Error ? error.message : 'Não foi possível criar o vídeo.', variant: 'destructive' })
-      setIsCreatingInEditor(false)
+    const result = await createVideoDraftForCreativeEditor({ projectId: hubCreateProjectId, productionId: hubCreateProductionId })
+    if (result.ok) {
+      router.push(result.href)
+      return
     }
+    toast({ title: 'Erro', description: result.error, variant: 'destructive' })
+    setIsCreatingInEditor(false)
   }
   const clearHubFilters = () => {
     setHubProjectFilter('all')
@@ -741,325 +153,63 @@ function VideosPageContent() {
     setHubStatusFilter('all')
     setHubSearch('')
   }
-  const renderVideoHub = () => (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Video className="h-5 w-5 text-pink-300" />
-              <p className="text-sm font-medium text-foreground">Criação contextual</p>
-            </div>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Entre no workspace com Project e Production definidos antes de criar novos videos.
-            </p>
-          </div>
-          <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
-            <h2 className="text-base font-semibold text-foreground">Criar novo vídeo</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Escolha o Project e a Production para abrir o workspace contextual.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              A identidade do Project estará disponível como referência na Production.
-            </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="space-y-2">
-                <Label htmlFor="video-hub-project">Project</Label>
-                <Select
-                  value={hubCreateProjectId}
-                  onValueChange={(value) => {
-                    setHubCreateProjectId(value)
-                    setHubCreateProductionId('')
-                  }}
-                >
-                  <SelectTrigger id="video-hub-project" className="bg-background/50">
-                    <SelectValue placeholder="Selecione um Project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="video-hub-production">Production</Label>
-                <Select
-                  value={hubCreateProductionId}
-                  onValueChange={setHubCreateProductionId}
-                  disabled={!hubCreateProjectId || hubCreateProductions.length === 0}
-                >
-                  <SelectTrigger id="video-hub-production" className="bg-background/50">
-                    <SelectValue placeholder="Selecione uma Production" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {hubCreateProductions.map((production) => (
-                      <SelectItem key={production.id} value={production.id}>
-                        {getDraftHubProductionLabel(production, projects)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {hubCreateProjectId && hubCreateProductions.length === 0 && (
-              <p className="mt-3 text-xs text-amber-200">
-                Este Project ainda nao possui Production. Crie uma Production antes de iniciar um video.
-              </p>
-            )}
-            <Button
-              className="mt-4 w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
-              onClick={() => void createInCreativeEditor()}
-              disabled={!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor}
-              data-testid="create-in-creative-editor"
-            >
-              {isCreatingInEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-              Criar no Creative Editor
-            </Button>
-            <Button
-              variant="outline"
-              className="mt-2 w-full"
-              onClick={openVideoWorkspace}
-              disabled={!hubCreateProjectId || !hubCreateProductionId}
-            >
-              Criar na Production (editor clássico)
-            </Button>
-          </div>
-        </div>
-      </section>
 
-      <section className="space-y-4" aria-labelledby="video-draft-filters">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 id="video-draft-filters" className="text-lg font-semibold text-foreground">
-              Rascunhos recentes
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Retome trabalhos no Project e na Production corretos.
-            </p>
-          </div>
-          <ViewModeToggle value={hubViewMode} onValueChange={setHubViewMode} />
-        </div>
+  if (legacyTarget) {
+    return (
+      <div className="flex h-full items-center justify-center py-24" data-testid="legacy-video-redirect">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
-        <div className="grid gap-3 rounded-xl border border-border/50 bg-card/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-2">
-            <Label htmlFor="video-filter-search">Buscar</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="video-filter-search"
-                value={hubSearch}
-                onChange={(event) => setHubSearch(event.target.value)}
-                placeholder="Titulo, Project ou Production"
-                className="bg-background/50 pl-9"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="video-filter-project">Project</Label>
-            <Select
-              value={hubProjectFilter}
-              onValueChange={(value) => {
-                setHubProjectFilter(value)
-                setHubProductionFilter('all')
-              }}
-            >
-              <SelectTrigger id="video-filter-project" className="bg-background/50">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os Projects</SelectItem>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="video-filter-production">Production</Label>
-            <Select value={hubProductionFilter} onValueChange={setHubProductionFilter}>
-              <SelectTrigger id="video-filter-production" className="bg-background/50">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as Productions</SelectItem>
-                {hubFilteredProductions.map((production) => (
-                  <SelectItem key={production.id} value={production.id}>
-                    {getDraftHubProductionLabel(production, projects)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="video-filter-status">Status</Label>
-            <Select value={hubStatusFilter} onValueChange={setHubStatusFilter}>
-              <SelectTrigger id="video-filter-status" className="bg-background/50">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os status</SelectItem>
-                <SelectItem value="Rascunho">Rascunho</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {hubEmptyState ? (
-          <div className="rounded-xl border border-dashed border-border/50 bg-card/30 p-10 text-center">
-            <h3 className="text-lg font-semibold text-foreground">{hubEmptyState.title}</h3>
-            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              {hubEmptyState.description}
-            </p>
-            {hubEmptyState.kind === 'no-filter-results' ? (
-              <Button className="mt-4" variant="outline" onClick={clearHubFilters}>
-                Limpar filtros
-              </Button>
-            ) : hubEmptyState.href && hubEmptyState.actionLabel ? (
-              <Button className="mt-4" onClick={() => router.push(hubEmptyState.href!)}>
-                {hubEmptyState.actionLabel}
-              </Button>
-            ) : null}
-          </div>
-        ) : hubViewMode === 'list' ? (
-          <div role="list" className="space-y-2">
-              {filteredHubCards.map((draft) => (
-                <Card
-                  key={draft.id}
-                  role="listitem"
-                  className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                >
-                  <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-                    <div className="min-w-0 space-y-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
-                          <CardTitle className="truncate text-sm" title={draft.title}>
-                            {draft.title}
-                          </CardTitle>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
-                      </div>
-                      <ContextMetadata
-                        dense
-                        items={[
-                          { label: 'Project', value: draft.projectName, title: draft.projectName },
-                          { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
-                          { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
-                          { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
-                        ]}
-                      />
-                    </div>
-                    <CardActions className="flex flex-wrap gap-2 md:justify-end">
-                      <Button size="sm" onClick={() => router.push(videoCreativeEditorHref(draft.id))} className="gap-1" data-testid="open-in-creative-editor">
-                        <Clapperboard className="h-4 w-4" />
-                        Creative Editor
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => router.push(draft.href)} className="gap-1">
-                        Abrir (clássico)
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                      {draft.productionHref && (
-                        <Button size="sm" variant="outline" onClick={() => router.push(draft.productionHref!)}>
-                          Ver Production
-                        </Button>
-                      )}
-                    </CardActions>
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {filteredHubCards.map((draft) => (
-              <Card key={draft.id} className="border-border/50 bg-card/30 backdrop-blur-sm">
-                <CardContent className="space-y-4 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
-                      <Video className="h-5 w-5 text-pink-300" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="line-clamp-2 text-base" title={draft.title}>
-                        {draft.title}
-                      </CardTitle>
-                      <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
-                    </div>
-                  </div>
-                  <ContextMetadata
-                    dense
-                    items={[
-                      { label: 'Project', value: draft.projectName, title: draft.projectName },
-                      { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
-                      { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
-                      { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
-                    ]}
-                  />
-                  <CardActions className="flex flex-wrap gap-2">
-                    <Button onClick={() => router.push(videoCreativeEditorHref(draft.id))} className="gap-2" data-testid="open-in-creative-editor">
-                      <Clapperboard className="h-4 w-4" />
-                      Creative Editor
-                    </Button>
-                    <Button variant="outline" onClick={() => router.push(draft.href)} className="gap-2">
-                      Abrir (clássico)
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    {draft.productionHref && (
-                      <Button variant="outline" onClick={() => router.push(draft.productionHref!)}>
-                        Ver Production
-                      </Button>
-                    )}
-                  </CardActions>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+  const renderDraftActions = (draft: (typeof filteredHubCards)[number], size: 'sm' | 'default') => (
+    <>
+      <Button size={size} onClick={() => router.push(draft.href)} className="gap-1" data-testid="open-in-creative-editor">
+        <Clapperboard className="h-4 w-4" />
+        Abrir
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      {draftById.get(draft.id) && (
+        <Button size={size} variant="outline" onClick={() => setPublicationDraft(draftById.get(draft.id) ?? null)} className="gap-1" data-testid="prepare-publication">
+          <Zap className="h-4 w-4" />
+          Preparar publicação
+        </Button>
+      )}
+      {draft.productionHref && (
+        <Button size={size} variant="outline" onClick={() => router.push(draft.productionHref!)}>
+          Ver Production
+        </Button>
+      )}
+    </>
   )
 
   return (
     <>
       <DashboardPage>
-        {productionId && (
+        {contextProductionId && contextProjectId && (
           <DashboardPageBar>
             <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-2 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              const projId = productionProjectId || selectedProject
-              if (projId && productionId) {
-                router.push(`/projetos/${projId}/producoes/${productionId}`)
-              } else {
-                router.back()
-              }
-            }}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Voltar para a Produção
-          </Button>
-          {productionTitle && (
-            <span className="text-sm text-muted-foreground">
-              · {productionTitle}
-            </span>
-          )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-muted-foreground hover:text-foreground"
+                onClick={() => router.push(`/projetos/${contextProjectId}/producoes/${contextProductionId}`)}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Voltar para a Produção
+              </Button>
+              {contextProduction?.title && (
+                <span className="text-sm text-muted-foreground">· {contextProduction.title}</span>
+              )}
             </div>
           </DashboardPageBar>
         )}
         <DashboardPageContent width="4xl" className="space-y-6">
-          {!productionId && (
-            <PageHeader
-              context="Criação"
-              title="Vídeos"
-              description="Crie um novo vídeo dentro de uma Production ou retome um rascunho existente."
-            />
-          )}
+          <PageHeader
+            context="Criação"
+            title="Vídeos"
+            description="Crie um vídeo no Creative Editor dentro de uma Production ou retome um rascunho existente."
+          />
 
           {loadError && (
             <StateMessage
@@ -1071,425 +221,279 @@ function VideosPageContent() {
               compact
             />
           )}
-          {/* Drafts Section */}
-          {productionId && !isLoadingDrafts && drafts.length > 0 && (
-            <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle className="text-base">Rascunhos</CardTitle>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {drafts.length}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => router.push('/videos/rascunhos')}
-                    className="gap-1 text-sm"
-                  >
-                    Ver todos
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                  {drafts.slice(0, 3).map((draft) => (
-                    <button
-                      key={draft.id}
-                      type="button"
-                      onClick={() => loadDraft(draft)}
-                      className="flex min-w-[180px] flex-col rounded-lg border border-[var(--control-border)] bg-[var(--control-background)] p-3 text-left shadow-elevation-low transition-[background-color,border-color,box-shadow] hover:border-[var(--control-border-hover)] hover:bg-[var(--control-background-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[color:var(--control-focus)]"
-                    >
-                      <span className="font-medium text-foreground line-clamp-1">
-                        {draft.name}
-                      </span>
-                      <span className="mt-1 text-xs text-muted-foreground">
-                        {(draft.scenes || []).length} cenas
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {loadError ? null : !isDataReady ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-border/50 bg-card/30 p-12 text-center">
               <Loader2 className="mb-3 h-8 w-8 animate-spin text-muted-foreground" />
-              <h3 className="text-lg font-semibold text-foreground">
-                {draftLoadingMessage('video', !!requestedDraftId)}
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground">{draftLoadingMessage('video', false)}</h3>
             </div>
-          ) : !productionId ? (
-            renderVideoHub()
           ) : (
-          <>
-          {selectedProjectData && (
-            <WorkspaceIdentityContext
-              surface="video"
-              summary={videoIdentitySummary}
-              productionTitle={productionTitle}
-              projectHref={projectIdentityHref}
-              productionHref={productionHref}
-            />
-          )}
-
-          {/* Video Settings */}
-          <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-pink-500 to-pink-400">
-                    <Video className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <CardTitle>
-                      {currentDraftId ? 'Editando Rascunho' : 'Novo Vídeo'}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Crie vídeos a partir de cenas personalizadas
+            <div className="space-y-6">
+              <section className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Video className="h-5 w-5 text-pink-300" />
+                      <p className="text-sm font-medium text-foreground">Criação contextual</p>
+                    </div>
+                    <p className="max-w-2xl text-sm text-muted-foreground">
+                      Todo vídeo é criado e editado no Creative Editor, dentro de um Project e de uma Production.
                     </p>
                   </div>
-                </div>
-                {/* Action Buttons - Fixed Position */}
-                <div className="flex flex-wrap justify-end gap-2">
-                  {currentDraftId && (
+                  <div className="w-full rounded-lg border border-border/50 bg-background/40 p-4 lg:max-w-md">
+                    <h2 className="text-base font-semibold text-foreground">Criar novo vídeo</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Escolha o Project e a Production; o rascunho abre no Creative Editor.
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                      <div className="space-y-2">
+                        <Label htmlFor="video-hub-project">Project</Label>
+                        <Select
+                          value={hubCreateProjectId}
+                          onValueChange={(value) => {
+                            setHubCreateProjectId(value)
+                            setHubCreateProductionId('')
+                          }}
+                        >
+                          <SelectTrigger id="video-hub-project" className="bg-background/50">
+                            <SelectValue placeholder="Selecione um Project" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projects.map((project) => (
+                              <SelectItem key={project.id} value={project.id}>
+                                {project.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="video-hub-production">Production</Label>
+                        <Select
+                          value={hubCreateProductionId}
+                          onValueChange={setHubCreateProductionId}
+                          disabled={!hubCreateProjectId || hubCreateProductions.length === 0}
+                        >
+                          <SelectTrigger id="video-hub-production" className="bg-background/50">
+                            <SelectValue placeholder="Selecione uma Production" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {hubCreateProductions.map((production) => (
+                              <SelectItem key={production.id} value={production.id}>
+                                {getDraftHubProductionLabel(production, projects)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    {hubCreateProjectId && hubCreateProductions.length === 0 && (
+                      <p className="mt-3 text-xs text-amber-200">
+                        Este Project ainda nao possui Production. Crie uma Production antes de iniciar um video.
+                      </p>
+                    )}
                     <Button
-                      onClick={async () => {
-                        const saved = await handleSaveDraft(false)
-                        router.push(videoCreativeEditorHref(saved?.id ?? currentDraftId))
-                      }}
-                      className="gap-2"
-                      data-testid="open-in-creative-editor"
+                      className="mt-4 w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
+                      onClick={() => void createInCreativeEditor()}
+                      disabled={!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor}
+                      data-testid="create-in-creative-editor"
                     >
-                      <Clapperboard className="h-4 w-4" />
-                      Abrir no Creative Editor
+                      {isCreatingInEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                      Criar no Creative Editor
                     </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSaveDraft()}
-                    disabled={isSavingDraft || (!videoName.trim() && scenes.length === 0)}
-                    className="gap-2"
-                  >
-                    {isSavingDraft ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Salvar Rascunho
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleNewVideo}
-                    className="gap-2"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Novo Vídeo
-                  </Button>
-                  <Button
-                    onClick={handleRetryRender}
-                    disabled={isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed' || scenes.length === 0 || !videoName.trim()}
-                    className="gap-2 bg-gradient-to-r from-pink-500 to-violet-500 text-white hover:from-pink-600 hover:to-violet-600"
-                  >
-                    {isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    {renderExecution?.status === 'completed' || renderExecution?.status === 'failed' ? 'Renderizar Novamente' : 'Gerar Vídeo'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowQuickFlowDialog(true)}
-                    disabled={!videoName.trim() && scenes.length === 0}
-                    className="gap-2"
-                  >
-                    <Zap className="h-4 w-4" />
-                    Preparar publicação
-                  </Button>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Project Selector */}
-              <div className="space-y-2">
-                <Label htmlFor="project">Projeto</Label>
-                <Select
-                  value={selectedProject || ''}
-                  onValueChange={(value) => setSelectedProject(value || null)}
-                  disabled={isLoadingProjects}
-                >
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder="Selecione um projeto (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
+              </section>
+
+              <section className="space-y-4" aria-labelledby="video-draft-filters">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 id="video-draft-filters" className="text-lg font-semibold text-foreground">
+                      Rascunhos recentes
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Abra um rascunho no Creative Editor.
+                    </p>
+                  </div>
+                  <ViewModeToggle value={hubViewMode} onValueChange={setHubViewMode} />
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-border/50 bg-card/30 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="video-filter-search">Buscar</Label>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="video-filter-search"
+                        value={hubSearch}
+                        onChange={(event) => setHubSearch(event.target.value)}
+                        placeholder="Titulo, Project ou Production"
+                        className="bg-background/50 pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="video-filter-project">Project</Label>
+                    <Select
+                      value={hubProjectFilter}
+                      onValueChange={(value) => {
+                        setHubProjectFilter(value)
+                        setHubProductionFilter('all')
+                      }}
+                    >
+                      <SelectTrigger id="video-filter-project" className="bg-background/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os Projects</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="video-filter-production">Production</Label>
+                    <Select value={hubProductionFilter} onValueChange={setHubProductionFilter}>
+                      <SelectTrigger id="video-filter-production" className="bg-background/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Productions</SelectItem>
+                        {hubFilteredProductions.map((production) => (
+                          <SelectItem key={production.id} value={production.id}>
+                            {getDraftHubProductionLabel(production, projects)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="video-filter-status">Status</Label>
+                    <Select value={hubStatusFilter} onValueChange={setHubStatusFilter}>
+                      <SelectTrigger id="video-filter-status" className="bg-background/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os status</SelectItem>
+                        <SelectItem value="Rascunho">Rascunho</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {hubEmptyState ? (
+                  <div className="rounded-xl border border-dashed border-border/50 bg-card/30 p-10 text-center">
+                    <h3 className="text-lg font-semibold text-foreground">{hubEmptyState.title}</h3>
+                    <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                      {hubEmptyState.description}
+                    </p>
+                    {hubEmptyState.kind === 'no-filter-results' ? (
+                      <Button className="mt-4" variant="outline" onClick={clearHubFilters}>
+                        Limpar filtros
+                      </Button>
+                    ) : hubEmptyState.href && hubEmptyState.actionLabel ? (
+                      <Button className="mt-4" onClick={() => router.push(hubEmptyState.href!)}>
+                        {hubEmptyState.actionLabel}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : hubViewMode === 'list' ? (
+                  <div role="list" className="space-y-2">
+                    {filteredHubCards.map((draft) => (
+                      <Card
+                        key={draft.id}
+                        role="listitem"
+                        className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
+                      >
+                        <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                          <div className="min-w-0 space-y-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
+                                <CardTitle className="truncate text-sm" title={draft.title}>
+                                  {draft.title}
+                                </CardTitle>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
+                            </div>
+                            <ContextMetadata
+                              dense
+                              items={[
+                                { label: 'Project', value: draft.projectName, title: draft.projectName },
+                                { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                                { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                                { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
+                              ]}
+                            />
+                          </div>
+                          <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                            {renderDraftActions(draft, 'sm')}
+                          </CardActions>
+                        </CardContent>
+                      </Card>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="video-name">Nome do Vídeo</Label>
-                  <Input
-                    id="video-name"
-                    placeholder="Ex: Teaser Produto X"
-                    value={videoName}
-                    onChange={(e) => setVideoName(e.target.value)}
-                    className="bg-background/50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Informações</Label>
-                  <div className="flex h-10 items-center gap-4 rounded-lg border border-border/50 bg-background/50 px-3">
-                    <span className="text-sm text-muted-foreground">
-                      {scenes.length} {scenes.length === 1 ? 'cena' : 'cenas'}
-                    </span>
-                    <span className="text-border">|</span>
-                    <span className="text-sm text-muted-foreground">
-                      {totalDuration}s total
-                    </span>
                   </div>
-                </div>
-              </div>
-
-              {currentDraftId && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleNewVideo}
-                  className="text-muted-foreground"
-                >
-                  Limpar e criar novo
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Inline Render Result Area */}
-          {(renderExecution || isGenerating) && (
-            <Card className="border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden">
-               <CardHeader className="bg-muted/50 pb-4">
-                 <div className="flex items-center justify-between">
-                   <div className="flex items-center gap-2">
-                     <Video className="h-5 w-5 text-pink-400" />
-                     <CardTitle className="text-base font-semibold">
-                       Resultado
-                     </CardTitle>
-                   </div>
-                   <Badge 
-                     variant="outline" 
-                     className={
-                       isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed'
-                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                         : renderExecution?.status === 'completed'
-                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                         : renderExecution?.status === 'failed'
-                         ? 'bg-red-500/20 text-red-300 border-red-500/30'
-                         : 'bg-muted'
-                     }
-                   >
-                     {isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed'
-                       ? 'Renderizando...'
-                       : renderExecution?.status === 'completed'
-                       ? 'Concluído'
-                       : renderExecution?.status === 'failed'
-                       ? 'Falhou'
-                       : 'Rascunho'}
-                   </Badge>
-                 </div>
-               </CardHeader>
-               
-               <CardContent className="p-6">
-                 {(isGenerating || renderExecution?.status === 'queued' || renderExecution?.status === 'claimed') && (
-                    <div className="flex flex-col items-center justify-center py-12 rounded-lg border border-dashed border-border/50 bg-background/50">
-                      <Loader2 className="mx-auto h-10 w-10 animate-spin text-pink-500" />
-                      <p className="mt-4 text-sm font-medium text-foreground">
-                        Processando no servidor...
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Você pode continuar editando suas cenas enquanto aguarda.
-                      </p>
-                    </div>
-                 )}
-
-                 {renderExecution?.status === 'completed' && (
-                    <div className="flex flex-col items-center justify-center p-2 rounded-lg border border-emerald-500/20 bg-background/50">
-                      <div className="w-full flex items-center justify-between mb-4 px-2 pt-2">
-                        <h4 className="text-base font-semibold text-foreground flex items-center gap-2">
-                          <CheckCircle2 className="h-5 w-5 text-emerald-400" /> Último render concluído
-                        </h4>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={handleDownloadOutput} className="gap-2">
-                            <Download className="h-4 w-4" /> Baixar
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => router.push('/galeria')} className="gap-2">
-                            <ExternalLink className="h-4 w-4" /> Abrir na Galeria
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="w-full relative aspect-video bg-black rounded-md overflow-hidden">
-                        {renderOutputUrl ? (
-                          <video
-                            src={renderOutputUrl}
-                            controls
-                            playsInline
-                            className="w-full h-full object-contain"
-                            crossOrigin="anonymous"
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {filteredHubCards.map((draft) => (
+                      <Card key={draft.id} className="border-border/50 bg-card/30 backdrop-blur-sm">
+                        <CardContent className="space-y-4 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
+                              <Video className="h-5 w-5 text-pink-300" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <CardTitle className="line-clamp-2 text-base" title={draft.title}>
+                                {draft.title}
+                              </CardTitle>
+                              <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
+                            </div>
+                          </div>
+                          <ContextMetadata
+                            dense
+                            items={[
+                              { label: 'Project', value: draft.projectName, title: draft.projectName },
+                              { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
+                              { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
+                              { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
+                            ]}
                           />
-                        ) : renderOutputUrlError ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
-                            <AlertCircle className="h-8 w-8 text-red-400" />
-                            <p className="text-sm text-muted-foreground">{renderOutputUrlError}</p>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-2"
-                              onClick={() => {
-                                setRenderOutputUrlError(null)
-                                fetchOutputUrl(renderExecution.id)
-                              }}
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              Tentar novamente
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                 )}
-                 
-                 {renderExecution?.status === 'failed' && (
-                    <div className="space-y-4 rounded-lg border border-red-500/30 bg-red-500/5 p-6">
-                      <div className="flex items-start gap-4">
-                        <AlertCircle className="mt-0.5 h-5 w-5 text-red-400" />
-                        <div className="flex-1 space-y-1">
-                          <h4 className="text-sm font-medium text-foreground">A renderização falhou</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {renderExecution.error_message || 'Um erro inesperado ocorreu durante a geração.'}
-                          </p>
-                          {renderExecution.error_code && (
-                             <p className="text-xs text-muted-foreground/75 font-mono bg-background/50 px-2 py-1 rounded inline-block mt-2">
-                               {renderExecution.error_code}
-                             </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="pl-9">
-                        <Button variant="outline" size="sm" onClick={handleRetryRender} className="gap-2">
-                          <RefreshCw className="h-3 w-3" />
-                          Tentar Novamente
-                        </Button>
-                      </div>
-                    </div>
-                 )}
-               </CardContent>
-            </Card>
-          )}
-
-          {/* Scenes */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">Cenas</h2>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowStoryboard(true)}
-                  disabled={scenes.length === 0}
-                  className="gap-2"
-                >
-                  <PanelsTopLeft className="h-4 w-4" />
-                  Storyboard
-                </Button>
-                <Button variant="outline" onClick={addScene} className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Adicionar Cena
-                </Button>
-              </div>
-            </div>
-
-            {scenes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
-                <Video className="mb-4 h-12 w-12 text-muted-foreground" />
-                <h3 className="text-lg font-semibold text-foreground">
-                  Nenhuma cena ainda
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Adicione cenas para começar a criar seu vídeo.
-                </p>
-                <Button onClick={addScene} className="mt-4 gap-2">
-                  <Plus className="h-4 w-4" />
-                  Adicionar Primeira Cena
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {scenes.map((scene, index) => (
-                  <div
-                    key={scene.id}
-                    ref={(element) => {
-                      sceneRefs.current[scene.id] = element
-                    }}
-                  >
-                    <SceneCard
-                      scene={scene}
-                      sceneNumber={index + 1}
-                      projectId={selectedProject}
-                      libraryFiles={libraryFiles}
-                      onUpdate={(updatedScene) => updateScene(index, updatedScene)}
-                      onLibraryFileChange={(libraryFileId) => setSceneLibraryFile(scene.id, libraryFileId)}
-                      onDelete={() => deleteScene(index)}
-                      onGeneratePrompt={handleGenerateScenePrompt}
-                    />
+                          <CardActions className="flex flex-wrap gap-2">
+                            {renderDraftActions(draft, 'default')}
+                          </CardActions>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          </>
+                )}
+              </section>
+            </div>
           )}
         </DashboardPageContent>
       </DashboardPage>
 
-      <StoryboardModal
-        open={showStoryboard}
-        onOpenChange={setShowStoryboard}
-        scenes={scenes}
-        videoName={videoName}
-        onSelectScene={handleSelectStoryboardScene}
-      />
-
+      {/* Publication preparation (non-authoring): the only capability of the retired workspace not owned by the Creative Editor. */}
       <QuickFlowDialog
-        open={showQuickFlowDialog}
-        onOpenChange={setShowQuickFlowDialog}
+        open={Boolean(publicationDraft)}
+        onOpenChange={(open) => { if (!open) setPublicationDraft(null) }}
         projects={projects}
-        lockedProjectId={selectedProject ?? undefined}
-        lockedProductionId={productionId ?? undefined}
-        initialTitle={videoName}
-        initialBody={scenes
+        lockedProjectId={publicationDraft?.project_id ?? undefined}
+        lockedProductionId={publicationDraft?.production_id ?? undefined}
+        initialTitle={publicationDraft?.name ?? ''}
+        initialBody={(publicationDraft?.scenes ?? [])
           .map((s) => s.description)
           .filter(Boolean)
           .join('\n\n')
           .slice(0, 3000)}
-        initialAiContext={scenes
+        initialAiContext={(publicationDraft?.scenes ?? [])
           .map((s) => s.prompt)
           .filter(Boolean)
           .join('\n')
           .slice(0, 1500)}
-        sourceLabel={videoName || undefined}
+        sourceLabel={publicationDraft?.name || undefined}
       />
     </>
   )

@@ -76,21 +76,5 @@ export function sceneHeroSlotState(scene: Pick<VideoScene, 'library_file_id'>): 
   }
 }
 
-/**
- * Canonical Creative Editor Video route for ONE VideoDraft.
- *
- * Neutral on purpose: the Creative Editor (authoring / composition) is an
- * independent surface, not a child of /videos. Long-term, /videos is AI
- * video/clip source-media generation plus that workflow's history/results
- * (analogous to /imagens); reusable media lives in the Library; outputs live
- * in the Gallery. /videos' links into this route are migration shortcuts, not
- * ownership; other entries (Video ChannelPieces, Project/Production context,
- * a VideoDraft link) may open the same route. The VideoDraft
- * id is the only authority in the URL; Project/Production context is read from
- * the draft itself — no ChannelPiece <-> VideoDraft link is implied.
- */
-export const CREATIVE_EDITOR_VIDEO_BASE_PATH = '/creative-editor/video'
-
-export function videoCreativeEditorHref(videoDraftId: string): string {
-  return `${CREATIVE_EDITOR_VIDEO_BASE_PATH}/${encodeURIComponent(videoDraftId)}`
-}
+// Route helpers live in a dependency-free module (imported by proxy.ts and list pages).
+export { CREATIVE_EDITOR_VIDEO_BASE_PATH, videoCreativeEditorHref, legacyVideoAuthoringRedirect } from './video-routes'

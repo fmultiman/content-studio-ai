@@ -52,6 +52,8 @@ import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { QuickFlowDialog } from '@/components/publication/quick-flow-dialog'
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-routes'
+import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import {
   InheritedIdentityIndicator,
@@ -136,6 +138,8 @@ export default function ProductionDetailPage() {
   // Unlink state
   const [unlinkTarget, setUnlinkTarget] = useState<{ type: 'image' | 'video'; id: string; name: string } | null>(null)
   const [isUnlinking, setIsUnlinking] = useState(false)
+  // VideoDraft single writer: "Criar Vídeo" creates the draft here, then hands off to the canonical Creative Editor.
+  const [isCreatingVideo, setIsCreatingVideo] = useState(false)
   const identitySummaryRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -278,6 +282,18 @@ export default function ProductionDetailPage() {
       setIsDeleting(false)
       setShowDeleteDialog(false)
     }
+  }
+
+  const createVideoInCreativeEditor = async () => {
+    if (isCreatingVideo) return
+    setIsCreatingVideo(true)
+    const result = await createVideoDraftForCreativeEditor({ projectId, productionId })
+    if (result.ok) {
+      router.push(result.href)
+      return
+    }
+    toast({ title: 'Erro', description: result.error, variant: 'destructive' })
+    setIsCreatingVideo(false)
   }
 
   const handleUnlink = async () => {
@@ -577,9 +593,9 @@ export default function ProductionDetailPage() {
                         size="sm"
                         variant="outline"
                         className="gap-2"
-                        onClick={() =>
-                          router.push(`/videos?project=${projectId}&production=${productionId}`)
-                        }
+                        onClick={() => void createVideoInCreativeEditor()}
+                        disabled={isCreatingVideo}
+                        data-testid="production-create-video"
                       >
                         <Plus className="h-4 w-4" />
                         <Video className="h-4 w-4" />
@@ -722,9 +738,8 @@ export default function ProductionDetailPage() {
                     size="sm"
                     variant="outline"
                     className="gap-2"
-                    onClick={() =>
-                      router.push(`/videos?project=${projectId}&production=${productionId}`)
-                    }
+                    onClick={() => void createVideoInCreativeEditor()}
+                    disabled={isCreatingVideo}
                   >
                     <Plus className="h-4 w-4" />
                     Criar Vídeo
@@ -771,9 +786,8 @@ export default function ProductionDetailPage() {
                               variant="ghost"
                               size="sm"
                               className="gap-1 text-xs"
-                              onClick={() =>
-                                router.push(`/videos?draft=${draft.id}&project=${projectId}&production=${productionId}`)
-                              }
+                              onClick={() => router.push(videoCreativeEditorHref(draft.id))}
+                              data-testid="production-open-video-draft"
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                               Abrir

@@ -12,7 +12,8 @@
  * - precision view  = TIMELINE (primary-Scene Timeline Lite).
  *
  * Authority: VideoDraft + VideoScene[] only, saved through the same
- * `/api/video-drafts` PATCH the /videos workspace uses. `currentFrame` is the
+ * `/api/video-drafts` PATCH; it is the ONLY product surface that writes them
+ * (VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1). `currentFrame` is the
  * editor's single temporal cursor (UI state, never persisted); the Player is
  * its clock and the Timeline playhead follows/seeks it. Final render is the
  * unchanged server-authoritative path (`POST /api/video-drafts/:id/render`).
@@ -162,7 +163,8 @@ export default function VideoCreativeEditorPage() {
     async function load() {
       const response = await fetch(`/api/video-drafts?id=${encodeURIComponent(params.draftId)}`)
       const payload = await response.json().catch(() => null) as { draft?: VideoDraft; error?: string } | null
-      if (!response.ok || !payload?.draft) throw new Error(payload?.error || 'Rascunho de vídeo não encontrado.')
+      // The read is owner-scoped, so "missing" and "not yours" look the same; never surface the raw DB error.
+      if (!response.ok || !payload?.draft) throw new Error('Rascunho de vídeo não encontrado ou sem acesso.')
       const loaded = payload.draft
       const supabase = createClient()
       let project: EditorContext['project'] = null

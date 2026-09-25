@@ -2,52 +2,45 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
-describe('Videos Page Render UX', () => {
+/**
+ * Render UX of the ONLY VideoDraft writer. Since
+ * VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1 the legacy /videos
+ * workspace no longer renders; these guarantees are pinned on the canonical
+ * Creative Editor instead (see single-writer.test.ts for the hub side).
+ */
+describe('Video render UX (canonical Creative Editor)', () => {
   const pageSource = readFileSync(
-    join(process.cwd(), 'app', '(dashboard)', 'videos', 'page.tsx'),
+    join(process.cwd(), 'app', '(dashboard)', 'creative-editor', 'video', '[draftId]', 'page.tsx'),
     'utf-8'
-  )
+  ).replace(/\r\n/g, '\n')
 
-  it('removed the mocked timeout behavior and calls real POST /render', () => {
+  it('calls the real server-authoritative POST /render (no mocked timeout)', () => {
     expect(pageSource).not.toMatch(/setTimeout\(\s*resolve,\s*3000\s*\)/)
     expect(pageSource).toMatch(/fetch\(`\/api\/video-drafts\/\$\{draft\.id\}\/render`/)
     expect(pageSource).toMatch(/method:\s*'POST'/)
   })
 
-  it('implements duplicate-click protection via isGenerating/status disables', () => {
-    expect(pageSource).toMatch(/disabled=\{isGenerating \|\| renderExecution\?.status === 'queued' \|\| renderExecution\?.status === 'claimed'/)
+  it('protects against duplicate clicks while submitting / queued / claimed', () => {
+    expect(pageSource).toContain("const renderActive = renderSubmitting || executionStatus === 'queued' || executionStatus === 'claimed'")
+    expect(pageSource).toMatch(/disabled=\{!canRender \|\| renderActive/)
+    expect(pageSource).toContain('if (!draft || renderSubmitting) return')
   })
 
-  it('generates a new clientId (crypto.randomUUID) on first use and retry (idempotency)', () => {
-    expect(pageSource).toMatch(/useState<string>\(\(\) => crypto\.randomUUID\(\)\)/)
-    expect(pageSource).toMatch(/setRenderIdempotencyKey\(crypto\.randomUUID\(\)\)/)
-    expect(pageSource).toMatch(/JSON.stringify\(\{ idempotencyKey: renderIdempotencyKey \}\)/)
+  it('sends a fresh idempotency key per render request', () => {
+    expect(pageSource).toContain('JSON.stringify({ idempotencyKey: crypto.randomUUID() })')
   })
 
-  it('stops polling at terminal states (completed/failed) and emits exactly one toast', () => {
-    expect(pageSource).toMatch(/if \(pendingNotification\.current\)/)
-    expect(pageSource).toMatch(/pendingNotification\.current = false/)
-    // Phase 2I: the terminal-state guard now lives in its own effect (see
-    // c2-gallery-videos-product.test.ts for the reachability fix) as an
-    // early-return — De Morgan's equivalent of the old `=== || ===` guard,
-    // written this way specifically so it fires unconditionally rather than
-    // only from inside the poll-scheduling branch.
-    expect(pageSource).toMatch(/renderExecution\.status !== 'completed' && renderExecution\.status !== 'failed'/)
+  it('renders the SAVED draft: unsaved edits are saved first', () => {
+    expect(pageSource).toMatch(/if \(dirty\) \{[\s\S]*?const saved = await saveNow\(\)\s*\n\s*if \(!saved\) return/)
   })
 
-  it('displays the inline result area', () => {
-    expect(pageSource).toMatch(/Resultado/)
+  it('shows queued / failed / completed states in the header', () => {
+    expect(pageSource).toContain('Na fila…')
+    expect(pageSource).toContain('Render falhou')
+    expect(pageSource).toContain('Ver vídeo renderizado')
   })
 
-  it('supports reload restoration via GET /api/render-executions?videoDraftId=[id]', () => {
-    expect(pageSource).toMatch(/fetch\([^)]*\/api\/render-executions\?videoDraftId=/)
-  })
-
-  it('provides persistent completed state area (Último render concluído)', () => {
-    expect(pageSource).toMatch(/Último render concluído/)
-  })
-
-  it('provides persistent failed state area and UI mapping', () => {
-    expect(pageSource).toMatch(/A renderização falhou/)
+  it('restores the latest execution on reload via GET /api/render-executions?videoDraftId=[id]', () => {
+    expect(pageSource).toMatch(/fetch\(`\/api\/render-executions\?videoDraftId=\$\{loaded\.id\}`\)/)
   })
 })
