@@ -204,7 +204,31 @@ It starts with the first genuinely overlapping case: main visual / talking head 
 
 Gate B also covers the §14 authority decision.
 
-## 16. Delivery
+## 16. Delivery and production smoke
 
-- Implementation commit: see git history on `main` ("feat: creative editor video foundation v1").
-- Final SHA and production smoke: recorded in the follow-up docs commit.
+- **Implementation commit:** `beebffd59d550481604ccb45bd451d00d6ec0ab9` ("feat: creative editor video foundation v1").
+  - Pushed to `main`.
+  - `origin/main` = remote `main` = `beebffd…`.
+  - Vercel Production deployment `6655998524` (vercel[bot]) = `success` for `beebffd…`; commit status "Vercel — Deployment has completed".
+  - The Vercel MCP had no access to this team (403/404), so the exact SHA is confirmed through GitHub deployment statuses.
+- **Production smoke** (`https://content.multihuman.com.br`, authenticated, draft `7b12b65d…`):
+  - **Entry**
+    - `/videos` lists 9 drafts with **Creative Editor** + **Abrir (clássico)**, plus **Criar no Creative Editor**.
+    - Creative Editor opened `/creative-editor/video/7b12b65d…` with the saved state (4s / 2.77s / 1.57s, 250f).
+    - Floating Inspector (Template/Conteúdo/Assets/Estilo/Motion); the Player painted the S3 Library image.
+  - **Seek**
+    - Início → 0; Shift+→ ×2 → 60; ← → 59; Fim → 249.
+    - The Timeline playhead equalled the Player frame every time.
+    - Play/Pause toggled `false → true → false`.
+  - **Timeline edits, persisted**
+    - Scene-3 right-edge trim → 65f.
+    - Drag-reorder of that Scene to first place, with the insertion indicator visible → ranges 0/65, 65/120, 185/83. CENAS showed the same order.
+    - Salvar + reload restored it. DB `scenes` = 2.1667 / 4 / 2.7667 with bindings `ebe1ee88` / `da41299e` / `086cbeb9`.
+  - **Final render**
+    - Renderizar vídeo → `1e126533-6406-4c97-9e45-fce31a6f9640` queued → claimed → completed (~66s).
+    - Output: 1080×1920 MP4, 2.6 MB, 8.98s (≈ 268f).
+    - The Output Player loaded (readyState 4) and seeked to 5s.
+  - **Gallery:** `/api/gallery/video-outputs` lists it; `/galeria` "Visualizar" played the 8.98s video.
+  - **Static regression:** the Portal carousel editor (`…/channel-pieces/1247e54b…/editar-visual`) loads with Canvas, 9-slide nav, Template/Conteúdo/Assets/Estilo/Elementos, Salvo, Baixar ZIP, Gerar PNG.
+  - **Not measurable in production:** continuous Player advancement. During the production pass the host browser window had `requestAnimationFrame` suspended (0 callbacks/s, window not on screen), which also stops any Remotion Player. Real-time playback (~30 fps, playhead == Player on every sample) was measured on the same code against the same production data/VPS through `next dev` (§13).
+- No worker/runtime deployment was needed or done.
