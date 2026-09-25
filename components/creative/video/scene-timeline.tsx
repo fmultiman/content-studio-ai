@@ -10,7 +10,7 @@
  * existing VideoScene semantics: reorder (array order) and duration (seconds).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Maximize2, Minus, Plus } from 'lucide-react'
+import { HelpCircle, Magnet, Maximize2, Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { VideoScene } from '@/lib/types'
@@ -170,20 +170,19 @@ export function SceneTimeline({ scenes, cursor, playing, selectedSceneId, thumbn
   const trimGuideX = gesture?.kind === 'trim' ? CONTENT_PAD_LEFT + frameToX(ranges[gesture.index].endFrame, pixelsPerFrame) : null
 
   return (
-    <div className="flex min-w-0 flex-col" data-testid="scene-timeline" data-pixels-per-frame={pixelsPerFrame}>
-      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="scene-timeline" data-pixels-per-frame={pixelsPerFrame}>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">Cenas principais</span>
-        <span>· contíguas · arraste para reordenar · borda direita = duração</span>
+        <span className="inline-flex cursor-help items-center" title="As cenas principais são contíguas. Arraste uma cena para reordenar; arraste a borda direita para mudar a duração. Snap em segundos inteiros, no playhead e nas bordas (Alt desativa). Ctrl/⌘ + roda = zoom temporal." aria-label="Ajuda da Timeline"><HelpCircle className="h-3.5 w-3.5" aria-hidden="true" /></span>
         <div className="ml-auto flex items-center gap-1" role="group" aria-label="Zoom da Timeline">
           <Button size="icon-sm" variant={snapEnabled ? 'secondary' : 'ghost'} onClick={() => setSnapEnabled((value) => !value)} aria-pressed={snapEnabled} aria-label="Snap" title="Snap em segundos inteiros, playhead e bordas (Alt desativa durante o arraste)" data-testid="timeline-snap"><Magnet className="h-3.5 w-3.5" /></Button>
-          <Button size="icon-sm" variant="outline" onClick={() => zoomTo(stepTimelineZoom(pixelsPerFrame, -1), cursor.get())} aria-label="Diminuir zoom da Timeline" data-testid="timeline-zoom-out"><Minus className="h-3.5 w-3.5" /></Button>
-          <span className="w-16 text-center tabular-nums" data-testid="timeline-zoom-label">{Math.round(pixelsPerFrame * TIMELINE_FPS)} px/s</span>
+          <Button size="icon-sm" variant="outline" onClick={() => zoomTo(stepTimelineZoom(pixelsPerFrame, -1), cursor.get())} aria-label="Diminuir zoom da Timeline" title={`Zoom temporal (${Math.round(pixelsPerFrame * TIMELINE_FPS)} px/s)`} data-testid="timeline-zoom-out"><Minus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="outline" onClick={() => zoomTo(stepTimelineZoom(pixelsPerFrame, 1), cursor.get())} aria-label="Aumentar zoom da Timeline" data-testid="timeline-zoom-in"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="ghost" onClick={() => { const el = scrollerRef.current; setPixelsPerFrame(fitTimelineZoom(totalFrames, (el?.clientWidth ?? 600) - CONTENT_PAD_LEFT - 24)); if (el) el.scrollLeft = 0 }} aria-label="Ajustar Timeline" title="Ajustar a sequência inteira" data-testid="timeline-fit"><Maximize2 className="h-3.5 w-3.5" /></Button>
         </div>
       </div>
-      <div ref={scrollerRef} className="relative overflow-x-auto overflow-y-hidden border-t border-border/40" data-testid="timeline-scroller">
-        <div className="relative select-none" style={{ width: contentWidth, height: 104 }}>
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden border-t border-border/40" data-testid="timeline-scroller">
+        <div className="relative h-full min-h-[96px] select-none" style={{ width: contentWidth }}>
           {/* Ruler: click / drag = scrub */}
           <div
             className={cn('absolute inset-x-0 top-0 h-6 border-b border-border/50 bg-muted/40', scrubbing ? 'cursor-grabbing' : 'cursor-pointer')}
@@ -202,7 +201,7 @@ export function SceneTimeline({ scenes, cursor, playing, selectedSceneId, thumbn
             ))}
           </div>
           {/* Primary Scene track */}
-          <div className="absolute inset-x-0 top-8 h-16" onPointerDown={onScrubDown} onPointerMove={onScrubMove} onPointerUp={onScrubEnd} onPointerCancel={onScrubEnd} data-testid="timeline-track">
+          <div className="absolute inset-x-0 bottom-2 top-8" onPointerDown={onScrubDown} onPointerMove={onScrubMove} onPointerUp={onScrubEnd} onPointerCancel={onScrubEnd} data-testid="timeline-track">
             {ranges.map((range) => {
               const scene = previewScenes[range.index]
               const dragging = gesture?.kind === 'reorder' && gesture.index === range.index
@@ -259,9 +258,9 @@ export function SceneTimeline({ scenes, cursor, playing, selectedSceneId, thumbn
               )
             })}
           </div>
-          {reorderIndicatorX !== null ? <div className="pointer-events-none absolute top-7 z-30 h-[4.5rem] w-0.5 bg-primary" style={{ left: reorderIndicatorX - 1 }} data-testid="timeline-reorder-indicator" /> : null}
+          {reorderIndicatorX !== null ? <div className="pointer-events-none absolute bottom-1 top-7 z-30 w-0.5 bg-primary" style={{ left: reorderIndicatorX - 1 }} data-testid="timeline-reorder-indicator" /> : null}
           {trimGuideX !== null ? (
-            <div className="pointer-events-none absolute top-6 z-30 h-[4.75rem] w-px bg-amber-500" style={{ left: trimGuideX }} data-testid="timeline-snap-guide" data-snapped-to={gesture?.kind === 'trim' ? gesture.snappedTo ?? '' : ''}>
+            <div className="pointer-events-none absolute bottom-1 top-6 z-30 w-px bg-amber-500" style={{ left: trimGuideX }} data-testid="timeline-snap-guide" data-snapped-to={gesture?.kind === 'trim' ? gesture.snappedTo ?? '' : ''}>
               <span className="absolute -top-0.5 left-1 whitespace-nowrap rounded bg-amber-500 px-1 text-[10px] text-black">
                 {gesture?.kind === 'trim' ? `${formatSeconds(gesture.frames / TIMELINE_FPS)}${gesture.snappedTo ? ` · snap ${snapLabel(gesture.snappedTo)}` : ''}` : ''}
               </span>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Crosshair, Download, Loader2, Maximize, Minus, MoreHorizontal, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, Loader2, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
@@ -43,7 +43,8 @@ import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { StaticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
-import { CENTERED, applyViewportAction, calculatePreviewFitScale, canvasOrigin, clampPan, type ViewportAction, type ViewportPan } from '@/lib/creative/authoring/viewport'
+import { usePreviewViewport } from '@/components/creative/editor/use-preview-viewport'
+import { ViewportZoomControls } from '@/components/creative/editor/viewport-zoom-controls'
 import { removeSlideFromCollection } from '@/lib/creative/authoring/slide-collection'
 import { visibleSlideIndexes } from '@/lib/creative/authoring/pagination'
 import {
@@ -60,7 +61,6 @@ const RENDER_POLL_INTERVAL_MS = 2000
 type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; templateId?: string | null; slides: PersistedAuthoredSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
-const ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5]
 /** Instagram's carousel ceiling — "Adicionar slide" stops there. */
 const MAX_CAROUSEL_SLIDES = 20
 const AUTOSAVE_PREF_KEY = 'creative-editor:autosave-enabled'
@@ -140,12 +140,6 @@ export default function StaticAuthoringProductPage() {
   // after the async context/state load below (gated by the loading return),
   // so reading localStorage here carries no hydration-mismatch risk.
   const [autosaveEnabled, setAutosaveEnabledState] = useState(() => readAutosavePreference())
-  // VIEWPORT state (Static Detail Polish V1): the editor's camera only — never authoring state, never dirty.
-  const [zoom, setZoom] = useState<'fit' | number>('fit')
-  const [pan, setPan] = useState<ViewportPan>(CENTERED)
-  const [panning, setPanning] = useState(false)
-  const panDragRef = useRef<{ pointerId: number; x: number; y: number; from: ViewportPan } | null>(null)
-  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   // WORKSPACE UI state: the floating Inspector's open/closed state (never authoring state).
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
@@ -158,9 +152,9 @@ export default function StaticAuthoringProductPage() {
   const [addAppearance, setAddAppearance] = useState<TemplateAppearance>('light')
   const floating = useFloatingWorkbench()
   const skipNextAutosaveRef = useRef(true)
-  // Callback-ref state, not useRef: in the floating workbench the Canvas mounts inside a Dockview
-  // portal AFTER this component's effects run, so a ref read in an effect could miss it (Fit stuck at fallback).
-  const [previewContainer, setPreviewContainer] = useState<HTMLDivElement | null>(null)
+  // VIEWPORT (Static Detail Polish V1; shared with the Video Live Player since Video Static Parity V1):
+  // the editor's camera only — never authoring state, never dirty.
+  const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: context?.target.canvas.width ?? 1080, surfaceHeight: context?.target.canvas.height ?? 1350, floating })
 
   const isCarousel = context?.channelPiece.format === 'carousel'
   // Derived, not stored: comparing the live slides against the last-saved
@@ -171,17 +165,6 @@ export default function StaticAuthoringProductPage() {
     setAutosaveEnabledState(value)
     writeAutosavePreference(value)
   }
-
-  useEffect(() => {
-    const el = previewContainer
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver((entries) => {
-      const rect = entries[0]?.contentRect
-      if (rect) setPreviewSize({ width: rect.width, height: rect.height })
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [previewContainer])
 
   useEffect(() => {
     let cancelled = false
@@ -545,36 +528,6 @@ export default function StaticAuthoringProductPage() {
 
   const canvasW = context?.target.canvas.width ?? 1080
   const canvasH = context?.target.canvas.height ?? 1350
-  // Fit keeps a 12px margin on every side of the viewport (the old p-3 padding).
-  const measuredFitScale = calculatePreviewFitScale(previewSize.width - 24, previewSize.height - 24, canvasW, canvasH)
-  const fitScale = measuredFitScale > 0 ? measuredFitScale : 0.33
-  const effectiveScale = zoom === 'fit' ? fitScale : zoom
-  /** Ajustar / Centralizar / 100%: viewport only (never authoring, never dirty). */
-  function viewportAction(action: ViewportAction) {
-    const next = applyViewportAction({ zoom, pan }, action)
-    setZoom(next.zoom)
-    setPan(next.pan)
-  }
-  function stepZoom(direction: 1 | -1) {
-    const current = zoom === 'fit' ? fitScale : zoom
-    let closestIndex = 0
-    for (let i = 1; i < ZOOM_LEVELS.length; i++) if (Math.abs(ZOOM_LEVELS[i] - current) < Math.abs(ZOOM_LEVELS[closestIndex] - current)) closestIndex = i
-    const nextIndex = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, closestIndex + direction))
-    setZoom(ZOOM_LEVELS[nextIndex])
-  }
-
-  // Wheel pans the Canvas (desktop workbench only; the stacked fallback keeps normal page scrolling).
-  useEffect(() => {
-    const el = previewContainer
-    if (!el || !floating) return
-    const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey) return // browser/trackpad zoom stays the browser's
-      event.preventDefault()
-      setPan((current) => ({ x: current.x - event.deltaX, y: current.y - event.deltaY }))
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [previewContainer, floating])
 
   if (error && !context) return <DashboardPage><DashboardPageContent width="4xl"><Card><CardContent className="p-6"><p className="text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => router.back()}>Voltar</Button></CardContent></Card></DashboardPageContent></DashboardPage>
   if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
@@ -683,73 +636,37 @@ export default function StaticAuthoringProductPage() {
     </Tabs>
   )
 
-  // Floor the scaled box so Fit never overflows its viewport by a sub-pixel.
-  const scaledWidth = Math.floor(canvasW * effectiveScale)
-  const scaledHeight = Math.floor(canvasH * effectiveScale)
-  // The Canvas is positioned by the viewport (centered + pan), never scrolled: no scrollbars, no page scroll.
-  const viewSize = { width: previewSize.width || scaledWidth, height: previewSize.height || scaledHeight }
-  const scaledSize = { width: scaledWidth, height: scaledHeight }
-  const effectivePan = clampPan(pan, viewSize, scaledSize)
-  const origin = canvasOrigin(viewSize, scaledSize, effectivePan)
-  function onViewportPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) return
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    panDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: effectivePan }
-    setPanning(true)
-  }
-  function onViewportPointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    const drag = panDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    event.stopPropagation()
-    setPan(clampPan({ x: drag.from.x + event.clientX - drag.x, y: drag.from.y + event.clientY - drag.y }, viewSize, scaledSize))
-  }
-  function endViewportPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (!panDragRef.current || panDragRef.current.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    panDragRef.current = null
-    setPanning(false)
-  }
   const canvas = (
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
       <div
-        ref={setPreviewContainer}
+        ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
-        style={{ cursor: panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
-        onPointerDown={onViewportPointerDown}
-        onPointerMove={onViewportPointerMove}
-        onPointerUp={endViewportPan}
-        onPointerCancel={endViewportPan}
+        style={{ cursor: viewport.panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
+        {...viewport.panHandlers}
         aria-label="Canvas (arraste para mover a visualização)"
         data-testid="canvas-viewport"
-        data-pan={`${Math.round(effectivePan.x)},${Math.round(effectivePan.y)}`}
+        data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
       >
-        <div className="absolute overflow-hidden" style={{ left: origin.left, top: origin.top, width: scaledWidth, height: scaledHeight }} data-testid="canvas-surface">
-          <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
+        <div className="absolute overflow-hidden" style={{ left: viewport.origin.left, top: viewport.origin.top, width: viewport.scaledWidth, height: viewport.scaledHeight }} data-testid="canvas-surface">
+          <div style={{ width: canvasW, height: canvasH, transform: `scale(${viewport.scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
         </div>
       </div>
       <div className="flex shrink-0 flex-nowrap items-center justify-between gap-2 overflow-x-auto border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
         {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Slides" data-testid="slide-nav">
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
-          {visibleSlideIndexes(slideTotal, currentSlideIndex, previewSize.width > 0 && previewSize.width < 600 ? 3 : 5).map((index) => { const slide = slides[index]; return <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button> })}
+          {visibleSlideIndexes(slideTotal, currentSlideIndex, viewport.size.width > 0 && viewport.size.width < 600 ? 3 : 5).map((index) => { const slide = slides[index]; return <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button> })}
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={slideTotal <= 1} aria-label={`Remover slide ${currentSlideIndex + 1}`} title={slideTotal <= 1 ? 'O carrossel precisa de pelo menos um slide' : 'Remover slide'} data-testid="remove-slide"><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>}
-        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Zoom">
-          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
-          <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}><option value="fit">Fit · {Math.round(fitScale * 100)}%</option>{ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}</select>
-          <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label="Ações de viewport" title="Ações de viewport" data-testid="viewport-actions"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => viewportAction('fit')} data-testid="viewport-fit"><Maximize className="mr-2 h-3.5 w-3.5" />Ajustar à tela</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => viewportAction('center')} data-testid="viewport-center"><Crosshair className="mr-2 h-3.5 w-3.5" />Centralizar</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => viewportAction('actual')} data-testid="viewport-100">100% centralizado</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
-        </div>
+        <ViewportZoomControls
+          zoom={viewport.zoom}
+          fitScale={viewport.fitScale}
+          onZoomChange={viewport.setZoom}
+          onStep={viewport.step}
+          onAction={viewport.action}
+          trailing={floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
+        />
         {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado do slide">
           <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
           <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button>

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 // Creative Editor Video Foundation V1 — surface responsibility + authority wiring.
 const root = process.cwd()
-const read = (path: string) => readFileSync(join(root, path), 'utf8')
+const read = (path: string) => readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n')
 
 const editor = read('app/(dashboard)/creative-editor/video/[draftId]/page.tsx')
 const hub = read('app/(dashboard)/videos/page.tsx')

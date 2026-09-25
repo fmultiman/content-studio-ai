@@ -895,3 +895,8 @@
   .creative-editor-inspector-body .inspector-tab-full { display: none; }
   .creative-editor-inspector-body .inspector-tab-compact { display: inline; }
 }
+/* Creative Editor Video adds Motion as a sixth tab: the six full labels need ~360px of body inline-size. */
+@container inspector (max-width: 372px) {
+  .creative-editor-inspector-body [data-inspector-tabs='6'] .inspector-tab-full { display: none; }
+  .creative-editor-inspector-body [data-inspector-tabs='6'] .inspector-tab-compact { display: inline; }
+}

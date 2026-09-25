@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, ImageIcon, Loader2, Pause, PanelRight,
+  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, Loader2, Pause, PanelRight,
   Play, SkipBack, SkipForward, Sparkles, StepBack, StepForward, Trash2, Undo2,
 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
@@ -36,14 +36,18 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
-import { StyleSourcePanel } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy, TemplateFamilyAnatomy } from '@/components/creative/authoring/inspector-panels'
+import { ElementLayers } from '@/components/creative/authoring/element-layers'
+import { usePreviewViewport } from '@/components/creative/editor/use-preview-viewport'
+import { ViewportZoomControls } from '@/components/creative/editor/viewport-zoom-controls'
+import { AuthoringDock } from '@/components/creative/video/authoring-dock'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { SceneStrip } from '@/components/creative/video/scene-strip'
 import { SceneTimeline } from '@/components/creative/video/scene-timeline'
 import { createClient } from '@/lib/supabase/client'
 import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
-import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
+import { resolveSlotResource } from '@/lib/creative/authoring/asset-slots'
 import { cn } from '@/lib/utils'
 import { DEFAULT_HERO_ASSET_REF, DEFAULT_TIMELINE_CANVAS } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
@@ -57,7 +61,8 @@ import {
 } from '@/lib/creative/video-editor/video-authoring'
 import { buildLivePreviewInput, type PreviewLibraryFile } from '@/lib/creative/video-editor/live-preview-input'
 import { createFrameCursor, useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
-import { VIDEO_INSPECTOR_SECTIONS, type VideoInspectorSection } from '@/lib/creative/video-editor/video-workspace'
+import { VIDEO_INSPECTOR_SECTIONS, sceneHeroSlotState, videoSceneComposition, type VideoInspectorSection } from '@/lib/creative/video-editor/video-workspace'
+import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
 import type { LivePlayerController } from '@/remotion/player/LiveTimelinePlayer'
@@ -70,9 +75,10 @@ const LiveTimelinePlayer = dynamic(() => import('@/remotion/player/LiveTimelineP
 
 const AUTOSAVE_PREF_KEY = 'creative-editor-video:autosave-enabled'
 const RENDER_POLL_INTERVAL_MS = 3000
-const PREVIEW_ZOOM_LEVELS = [0.25, 0.33, 0.5] as const
 const TEMPLATE_HERO_URL = (() => { const resolved = resolveAsset(DEFAULT_HERO_ASSET_REF); return resolved.valid ? resolved.value.url : undefined })()
 const MOTION_OPTIONS = motionOptions()
+/** What every Scene renders with today (default Template, `cover`, default stack) — read-only in Template / Elementos. */
+const SCENE_COMPOSITION = videoSceneComposition()
 
 function readAutosavePreference(): boolean {
   if (typeof window === 'undefined') return false
@@ -127,9 +133,12 @@ export default function VideoCreativeEditorPage() {
   const [lowerMode, setLowerMode] = useState<'scenes' | 'timeline'>('scenes')
   const [activeTab, setActiveTab] = useState<VideoInspectorSection>('content')
   const [inspectorOpen, setInspectorOpen] = useState(true)
-  const [previewZoom, setPreviewZoom] = useState<'fit' | number>('fit')
-  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const [previewContainer, setPreviewContainer] = useState<HTMLDivElement | null>(null)
+  // VIEWPORT state (shared with Static): Player camera only — never authoring, never dirty, never render.
+  const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: DEFAULT_TIMELINE_CANVAS.width, surfaceHeight: DEFAULT_TIMELINE_CANVAS.height, floating, fallbackFitScale: 0.25 })
+  // DOCK state (UI only): CENAS/TIMELINE panel mode + height, derived from the measured preview panel.
+  const [dock, setDock] = useState<DockState>(INITIAL_DOCK_STATE)
+  const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null)
+  const [panelHeight, setPanelHeight] = useState(0)
   const [playerError, setPlayerError] = useState<string | null>(null)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
@@ -212,17 +221,17 @@ export default function VideoCreativeEditorPage() {
     return () => { cancelled = true }
   }, [projectId])
 
-  // Preview Surface size (callback-ref: the Player mounts inside a Dockview portal).
+  // Preview panel height (Player + transport + dock): the dock sizes are derived from it.
   useEffect(() => {
-    const el = previewContainer
+    const el = panelEl
     if (!el || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect
-      if (rect) setPreviewSize({ width: rect.width, height: rect.height })
+      if (rect) setPanelHeight(rect.height)
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [previewContainer])
+  }, [panelEl])
 
   // --- Derived temporal state (never stored) ---
   const ranges = useMemo(() => deriveSceneRanges(scenes), [scenes])
@@ -459,18 +468,15 @@ export default function VideoCreativeEditorPage() {
   // --- Preview Surface: Live Authoring Player ---
   const canvasW = livePreview?.ok ? livePreview.resolvedInput.manifest.specification.width : DEFAULT_TIMELINE_CANVAS.width
   const canvasH = livePreview?.ok ? livePreview.resolvedInput.manifest.specification.height : DEFAULT_TIMELINE_CANVAS.height
-  const measuredFit = calculatePreviewFitScale(previewSize.width - 24, previewSize.height - 24, canvasW, canvasH)
-  const fitScale = measuredFit > 0 ? measuredFit : 0.25
-  const scale = previewZoom === 'fit' ? fitScale : previewZoom
-  const playerWidth = Math.floor(canvasW * scale)
-  const playerHeight = Math.floor(canvasH * scale)
+  const playerWidth = viewport.scaledWidth
+  const playerHeight = viewport.scaledHeight
   const previewBlocker = context.identityError
     ?? (!livePreview ? null : !livePreview.ok ? livePreview.message : null)
   const renderActive = renderSubmitting || executionStatus === 'queued' || executionStatus === 'claimed'
   const canRender = Boolean(draft.project_id && draft.production_id && scenes.length > 0 && !context.identityError)
 
   const transport = (
-    <div className="flex shrink-0 flex-nowrap items-center justify-between gap-2 overflow-x-auto border-t border-border/40 px-3 py-1.5" data-testid="player-transport">
+    <div className={cn('flex shrink-0 items-center justify-between gap-2 border-t border-border/40 px-3 py-1.5', floating ? 'flex-nowrap overflow-x-auto' : 'flex-wrap')} data-testid="player-transport">
       <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Reprodução">
         <Button size="icon-sm" variant="ghost" onClick={() => seek(0)} aria-label="Ir para o início" title="Início (Home)"><SkipBack className="h-3.5 w-3.5" /></Button>
         <Button size="icon-sm" variant="ghost" onClick={() => seek(cursor.get() - 1)} aria-label="Frame anterior" title="Frame anterior (←, Shift = 1s)"><StepBack className="h-3.5 w-3.5" /></Button>
@@ -479,45 +485,93 @@ export default function VideoCreativeEditorPage() {
         <Button size="icon-sm" variant="ghost" onClick={() => seek(totalFrames - 1)} aria-label="Ir para o fim" title="Fim (End)"><SkipForward className="h-3.5 w-3.5" /></Button>
         <TransportReadout cursor={cursor} totalFrames={totalFrames} ranges={ranges} />
       </div>
-      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Zoom da prévia">
-        <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={previewZoom === 'fit' ? 'fit' : String(previewZoom)} onChange={(event) => setPreviewZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}>
-          <option value="fit">Fit · {Math.round(fitScale * 100)}%</option>
-          {PREVIEW_ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}
-        </select>
-        {floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
+      <ViewportZoomControls
+        zoom={viewport.zoom}
+        fitScale={viewport.fitScale}
+        onZoomChange={viewport.setZoom}
+        onStep={viewport.step}
+        onAction={viewport.action}
+        trailing={floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
+      />
+      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado do vídeo">
+        <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
+        <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
       </div>
     </div>
   )
 
+  const sceneViews = lowerMode === 'scenes' ? (
+    <SceneStrip
+      scenes={scenes}
+      ranges={ranges}
+      cursor={cursor}
+      selectedIndex={safeSelectedIndex}
+      thumbnails={thumbnails}
+      motionLabel={motionLabel}
+      canAdd={scenes.length < MAX_VIDEO_SCENES}
+      onSelect={(index) => selectScene(index)}
+      onAdd={addScene}
+    />
+  ) : (
+    <SceneTimeline
+      scenes={scenes}
+      cursor={cursor}
+      playing={playing}
+      selectedSceneId={selectedScene?.id ?? null}
+      thumbnails={thumbnails}
+      onSeek={seek}
+      onSelectScene={selectSceneById}
+      onReorder={moveScene}
+      onDurationChange={changeDuration}
+    />
+  )
+
   const canvas = (
-    <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
-      <div ref={setPreviewContainer} className={floating ? 'relative min-h-0 flex-1 overflow-auto' : 'relative h-[min(62vh,560px)] overflow-auto'} data-testid="live-player-viewport">
-        <div className="flex min-h-full min-w-full items-center justify-center p-3">
-          {previewBlocker ? (
-            <div className="flex max-w-sm flex-col items-center gap-2 text-center text-sm text-muted-foreground" role="alert"><AlertCircle className="h-5 w-5" />{previewBlocker}</div>
-          ) : livePreview?.ok ? (
-            <div className="relative overflow-hidden rounded-sm shadow-lg" style={{ width: playerWidth, height: playerHeight }} data-testid="live-player" data-live-duration-frames={livePreview.resolvedInput.manifest.specification.duration_frames}>
-              <LiveTimelinePlayer
-                resolvedInput={livePreview.resolvedInput}
-                width={playerWidth}
-                height={playerHeight}
-                controllerRef={playerRef}
-                onFrame={cursor.set}
-                onPlayingChange={setPlaying}
-                onError={setPlayerError}
-              />
-            </div>
-          ) : <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-        </div>
+    <div ref={setPanelEl} className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'} data-testid="video-preview-panel">
+      <div
+        ref={attachPreviewViewport}
+        className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
+        style={{ cursor: viewport.panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
+        {...viewport.panHandlers}
+        aria-label="Prévia ao vivo (arraste para mover a visualização)"
+        data-testid="live-player-viewport"
+        data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
+      >
+        {previewBlocker ? (
+          <div className="absolute inset-0 flex items-center justify-center p-3"><div className="flex max-w-sm flex-col items-center gap-2 text-center text-sm text-muted-foreground" role="alert"><AlertCircle className="h-5 w-5" />{previewBlocker}</div></div>
+        ) : livePreview?.ok ? (
+          // Same camera as the Static Canvas: centered + pan, never scrolled. The Player never takes pointer
+          // input (dragging pans the view; playback is the transport / Space), exactly like the Canvas card.
+          <div className="absolute overflow-hidden rounded-sm shadow-lg" style={{ left: viewport.origin.left, top: viewport.origin.top, width: playerWidth, height: playerHeight, pointerEvents: 'none' }} data-testid="live-player" data-live-duration-frames={livePreview.resolvedInput.manifest.specification.duration_frames}>
+            <LiveTimelinePlayer
+              resolvedInput={livePreview.resolvedInput}
+              width={playerWidth}
+              height={playerHeight}
+              controllerRef={playerRef}
+              onFrame={cursor.set}
+              onPlayingChange={setPlaying}
+              onError={setPlayerError}
+            />
+          </div>
+        ) : <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
         {playerError ? <p className="absolute bottom-2 left-2 right-2 rounded bg-destructive/90 px-2 py-1 text-xs text-destructive-foreground" role="alert">Prévia: {playerError}</p> : null}
         {livePreview?.ok && livePreview.missingAssets.length > 0 ? <p className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white">Carregando {livePreview.missingAssets.length} asset(s) da Biblioteca…</p> : null}
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-white/80">Prévia ao vivo</span>
       </div>
       {transport}
+      <AuthoringDock
+        view={lowerMode}
+        onViewChange={setLowerMode}
+        dock={dock}
+        onDockChange={setDock}
+        workbenchHeight={floating ? panelHeight : 720}
+        resizable={floating}
+        summary={sequenceSummary(scenes, totalFrames / TIMELINE_FPS)}
+      >
+        {sceneViews}
+      </AuthoringDock>
     </div>
   )
-
-  const selectedFile = selectedScene?.library_file_id ? libraryFiles.get(selectedScene.library_file_id) : undefined
 
   const inspector = (
     <div className="space-y-3">
@@ -554,7 +608,7 @@ export default function VideoCreativeEditorPage() {
         </section>
       ) : null}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VideoInspectorSection)}>
-        <TabsList className="flex w-full">
+        <TabsList className="flex w-full" data-inspector-tabs={VIDEO_INSPECTOR_SECTIONS.length}>
           {VIDEO_INSPECTOR_SECTIONS.map((section) => (
             <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label} aria-label={section.label}>
               <span className="inspector-tab-full">{section.label}</span>
@@ -567,16 +621,20 @@ export default function VideoCreativeEditorPage() {
             <Label htmlFor="video-name" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nome do vídeo</Label>
             <Input id="video-name" value={name} onChange={(event) => setName(event.target.value)} className="h-8" />
           </div>
-          <div className="space-y-1 text-xs">
-            <p className="font-medium uppercase tracking-wide text-muted-foreground">Template</p>
-            <p className="text-foreground">Documentary Card · Capa</p>
-            <p className="text-muted-foreground">Fixo nesta versão: cada cena usa a mesma estrutura do render final (título “Cena N”, imagem da cena, Identidade do Projeto).</p>
+          <div className="space-y-1.5" data-testid="video-template">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
+            <p className="text-sm">{SCENE_COMPOSITION.template.name}</p>
+            <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span><Button size="sm" variant="default" disabled>{SCENE_COMPOSITION.layout.label}</Button></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant="default" disabled>Dark</Button></div>
+            <p className="text-[11px] text-muted-foreground">Todas as cenas usam esta estrutura no vídeo e no render final. Escolher Template, estrutura ou aparência por cena ainda não existe em vídeo.</p>
           </div>
           <ContextMetadata dense items={[
             { label: 'Formato', value: `${canvasW}×${canvasH} · ${TIMELINE_FPS} fps` },
             { label: 'Cenas', value: String(scenes.length) },
             { label: 'Duração', value: formatSeconds(totalFrames / TIMELINE_FPS) },
           ]} />
+          <TemplateFamilyAnatomy template={SCENE_COMPOSITION.template} />
+          <TemplateAnatomy template={SCENE_COMPOSITION.template} layout={SCENE_COMPOSITION.layout} />
         </TabsContent>
         <TabsContent value="content" className="space-y-3 pt-3">
           {selectedScene ? <>
@@ -596,30 +654,38 @@ export default function VideoCreativeEditorPage() {
             </div>
           </> : <p className="text-xs text-muted-foreground">Selecione uma cena.</p>}
         </TabsContent>
-        <TabsContent value="assets" className="space-y-3 pt-3">
+        <TabsContent value="assets" className="space-y-2 pt-3">
           {selectedScene ? <>
-            <p className="text-[11px] text-muted-foreground">Imagem principal da cena (papel “hero” do Template).</p>
-            <div className="flex items-center gap-3 rounded-md border border-border/60 p-2" data-testid="scene-asset">
-              <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded bg-muted">
-                {thumbnails[selectedScene.id]
-                  // eslint-disable-next-line @next/next/no-img-element -- short-lived signed display URL
-                  ? <img src={thumbnails[selectedScene.id]} alt="" className="h-full w-full object-cover" />
-                  : <ImageIcon className="m-3 h-5 w-5 text-muted-foreground" />}
-              </div>
-              <div className="min-w-0 text-xs">
-                <p className="truncate font-medium">{selectedFile ? selectedFile.name : selectedScene.library_file_id ? 'Asset da Biblioteca (carregando…)' : 'Padrão do Template'}</p>
-                <p className="text-muted-foreground">{selectedScene.library_file_id ? 'Biblioteca do Projeto' : 'Imagem de exemplo do Template'}</p>
-              </div>
+            {/* Same slot card + resolver as Static: VideoScene.library_file_id is this Scene's `hero` override. */}
+            <p className="text-[11px] text-muted-foreground">Recurso que preenche a imagem principal desta cena. Os demais papéis visuais seguem o padrão do Template.</p>
+            <div data-testid="scene-asset">
+              <AssetSlotCard
+                slot={SCENE_COMPOSITION.heroSlot}
+                resource={resolveSlotResource(SCENE_COMPOSITION.heroSlot, sceneHeroSlotState(selectedScene), libraryFiles, [])}
+                usedBy={SCENE_COMPOSITION.heroUsedBy}
+                onReplace={() => setAssetPickerOpen(true)}
+                onUseDefault={() => patchSelectedScene({ library_file_id: null })}
+              />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => setAssetPickerOpen(true)} data-testid="scene-asset-pick">{selectedScene.library_file_id ? 'Trocar da Biblioteca' : 'Escolher da Biblioteca'}</Button>
-              {selectedScene.library_file_id ? <Button size="sm" variant="ghost" onClick={() => patchSelectedScene({ library_file_id: null })}>Usar padrão do Template</Button> : null}
-            </div>
-            {selectedScene.image_url ? <p className="text-[11px] text-amber-600 dark:text-amber-400">Esta cena tem uma imagem legada enviada no editor antigo; ela não é usada na prévia nem no render. Escolha um asset da Biblioteca.</p> : null}
+            {selectedScene.image_url ? <p className="text-[11px] text-amber-600 dark:text-amber-400">Esta cena tem uma imagem legada enviada no editor antigo; ela não é usada na prévia nem no render. Use Trocar para escolher um asset da Biblioteca.</p> : null}
           </> : null}
         </TabsContent>
         <TabsContent value="style" className="pt-3">
           <StyleSourcePanel tokens={context.identitySnapshot ?? undefined} unitLabel="cena" />
+        </TabsContent>
+        <TabsContent value="element" className="pt-3">
+          <ElementLayers
+            readOnly
+            order={SCENE_COMPOSITION.stackOrder}
+            labels={SCENE_COMPOSITION.elementLabels}
+            openId={null}
+            isDefault
+            onToggle={() => {}}
+            onReorder={() => {}}
+            onRestoreDefault={() => {}}
+            renderPanel={() => null}
+            note={<p className="text-[11px] leading-snug text-muted-foreground" data-testid="video-elements-gap">Camadas da cena, na ordem em que o vídeo e o render final as desenham. Ajustar, reordenar ou ocultar elementos por cena ainda não existe em vídeo.</p>}
+          />
         </TabsContent>
         <TabsContent value="motion" className="space-y-2 pt-3">
           {selectedScene ? <>
@@ -641,48 +707,6 @@ export default function VideoCreativeEditorPage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-
-  const lower = (
-    <section className="shrink-0 overflow-hidden rounded-lg border border-border/50 bg-background" aria-label="Autoria temporal" data-testid="video-lower-region" data-mode={lowerMode}>
-      <div className="flex items-center gap-2 border-b border-border/40 px-3 py-1">
-        <div className="flex rounded-md border border-border/60 p-0.5" role="tablist" aria-label="Vista">
-          {(['scenes', 'timeline'] as const).map((mode) => (
-            <button key={mode} type="button" role="tab" aria-selected={lowerMode === mode} onClick={() => setLowerMode(mode)}
-              className={cn('rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide', lowerMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}
-              data-testid={`lower-mode-${mode}`}>
-              {mode === 'scenes' ? 'Cenas' : 'Timeline'}
-            </button>
-          ))}
-        </div>
-        <span className="text-xs text-muted-foreground" data-testid="sequence-summary">{scenes.length} {scenes.length === 1 ? 'cena' : 'cenas'} · {formatSeconds(totalFrames / TIMELINE_FPS)}</span>
-      </div>
-      {lowerMode === 'scenes' ? (
-        <SceneStrip
-          scenes={scenes}
-          ranges={ranges}
-          cursor={cursor}
-          selectedIndex={safeSelectedIndex}
-          thumbnails={thumbnails}
-          motionLabel={motionLabel}
-          canAdd={scenes.length < MAX_VIDEO_SCENES}
-          onSelect={(index) => selectScene(index)}
-          onAdd={addScene}
-        />
-      ) : (
-        <SceneTimeline
-          scenes={scenes}
-          cursor={cursor}
-          playing={playing}
-          selectedSceneId={selectedScene?.id ?? null}
-          thumbnails={thumbnails}
-          onSeek={seek}
-          onSelectScene={selectSceneById}
-          onReorder={moveScene}
-          onDurationChange={changeDuration}
-        />
-      )}
-    </section>
   )
 
   const saveStatusLabel = saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Falha ao salvar' : dirty ? 'Alterações não salvas' : 'Salvo'
@@ -711,10 +735,6 @@ export default function VideoCreativeEditorPage() {
         {executionStatus === 'failed' && !renderActive ? <span className="flex max-w-[16rem] items-center gap-1 text-xs text-destructive" role="alert" title={renderExecution?.error_message ?? undefined} data-testid="render-status" data-phase="failed"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Render falhou{renderExecution?.error_message ? ` · ${renderExecution.error_message}` : ''}</span></span> : null}
         {executionStatus === 'completed' && !renderActive ? <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={openOutput} data-testid="render-status" data-phase="completed"><Film className="h-3.5 w-3.5" />Ver vídeo renderizado</Button> : null}
         {renderError ? <span className="max-w-[14rem] truncate text-xs text-destructive" role="alert" title={renderError}>{renderError}</span> : null}
-        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado de autoria">
-          <Button size="sm" variant="ghost" className="h-8 gap-1 px-1.5 text-[11px]" disabled={!dirty} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
-          <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
-        </div>
         <span className="text-xs text-muted-foreground" data-testid="save-status" title={saveError ?? undefined}>{saveStatusLabel}</span>
         <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()} title="Salvar o VideoDraft (não renderiza)." data-testid="save-button">{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>
         <Button size="sm" className="gap-1.5" onClick={() => void renderVideo()} disabled={!canRender || renderActive || saveStatus === 'saving'} title={dirty ? 'O render usa o VideoDraft salvo: salva as alterações e então renderiza o MP4 no servidor.' : 'Renderizar o MP4 final no servidor a partir do VideoDraft salvo.'} data-testid="render-button">
@@ -774,7 +794,7 @@ export default function VideoCreativeEditorPage() {
       <DashboardPage>
         <div className="min-w-0 space-y-3 px-4 py-3">
           {header}
-          <StackedWorkbench canvas={<>{canvas}{lower}</>} inspector={inspector} />
+          <StackedWorkbench canvas={canvas} inspector={inspector} />
           {dialogs}
         </div>
       </DashboardPage>
@@ -783,10 +803,9 @@ export default function VideoCreativeEditorPage() {
 
   return (
     <DashboardPage>
-      <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col gap-2 px-[var(--studio-shell-page-padding)] pb-3 pt-2">
+      <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
         <CreativeWorkbench className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
-        {lower}
         {dialogs}
       </div>
     </DashboardPage>

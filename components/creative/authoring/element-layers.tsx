@@ -44,6 +44,8 @@ export function ElementLayers({
   renderPanel,
   hidden,
   onToggleVisibility,
+  readOnly = false,
+  note,
 }: {
   /** Normalized paint order, back -> front. */
   order: readonly string[]
@@ -61,6 +63,14 @@ export function ElementLayers({
   hidden?: ReadonlySet<string>
   /** Eye click: show/hide ONE element. Absent = no eye (e.g. read-only contexts). */
   onToggleVisibility?: (id: string) => void
+  /**
+   * Read-only anatomy (Creative Editor Video Static Parity V1): the same list,
+   * front-first, with no grip, no reorder, no eye, no disclosure and no
+   * restore — for compositions whose element state is not authorable yet.
+   */
+  readOnly?: boolean
+  /** Replaces the interaction hint (e.g. why the stack is read-only). */
+  note?: ReactNode
 }) {
   const listRef = useRef<HTMLOListElement>(null)
   const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
@@ -127,9 +137,11 @@ export function ElementLayers({
     <section className="space-y-1.5" aria-label="Camadas" data-testid="element-layers">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Camadas</span>
-        <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar ordem de camadas do Template">Ordem padrão</button>
+        {readOnly
+          ? <span className="text-[10px] text-muted-foreground">somente leitura</span>
+          : <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar ordem de camadas do Template">Ordem padrão</button>}
       </div>
-      <p className="text-[11px] leading-snug text-muted-foreground">Clique em um elemento para ajustá-lo. Arraste ≡ para trazer à frente ou levar para trás. O olho mostra ou oculta o elemento.</p>
+      {note ?? <p className="text-[11px] leading-snug text-muted-foreground">Clique em um elemento para ajustá-lo. Arraste ≡ para trazer à frente ou levar para trás. O olho mostra ou oculta o elemento.</p>}
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Frente</p>
       <ol ref={listRef} className="min-w-0 space-y-0.5 overflow-x-hidden" data-dragging={drag ? 'true' : undefined}>
         {shown.map((id, index) => {
@@ -138,6 +150,13 @@ export function ElementLayers({
           const label = labels[id] ?? id
           const panelId = `element-panel-${id}`
           const isHidden = hidden?.has(id) ?? false
+          if (readOnly) {
+            return (
+              <li key={id} data-layer-id={id} data-read-only="true" className="min-w-0 rounded-md border border-border/60 px-2 py-1.5 text-xs">
+                <span className="block min-w-0 truncate">{label}</span>
+              </li>
+            )
+          }
           return (
             <li key={id} data-layer-id={id} data-open={open ? 'true' : undefined} data-hidden={isHidden ? 'true' : undefined} className={`min-w-0 rounded-md border text-xs ${open ? 'border-primary/70 bg-primary/5' : 'border-border/60'} ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
               <div className="flex min-w-0 items-center gap-1">

@@ -29,7 +29,7 @@ type SceneStripProps = {
 
 export function SceneStrip({ scenes, ranges, cursor, selectedIndex, thumbnails, motionLabel, canAdd, onSelect, onAdd }: SceneStripProps) {
   return (
-    <div className="flex min-w-0 items-stretch gap-2 px-3 py-2" data-testid="scene-strip">
+    <div className="flex h-full min-w-0 items-start gap-2 overflow-y-auto px-3 py-2" data-testid="scene-strip">
       <div className="flex shrink-0 flex-col justify-center gap-1">
         <Button size="icon-sm" variant="outline" onClick={() => onSelect(Math.max(0, selectedIndex - 1))} disabled={selectedIndex <= 0} aria-label="Cena anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
         <Button size="icon-sm" variant="outline" onClick={() => onSelect(Math.min(scenes.length - 1, selectedIndex + 1))} disabled={selectedIndex >= scenes.length - 1} aria-label="Próxima cena"><ArrowRight className="h-3.5 w-3.5" /></Button>

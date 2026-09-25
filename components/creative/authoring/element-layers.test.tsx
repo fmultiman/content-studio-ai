@@ -249,3 +249,34 @@ describe('ElementLayers — stack order (grip only)', () => {
     expect(screen.getByTestId('log').textContent).toBe('')
   })
 })
+
+describe('ElementLayers — read-only anatomy (Creative Editor Video Static Parity V1)', () => {
+  it('lists the stack front-first with no grip, eye, disclosure or restore, and never calls back', () => {
+    const calls: string[] = []
+    render(
+      <ElementLayers
+        readOnly
+        order={DEFAULT}
+        labels={LABELS}
+        openId={null}
+        isDefault
+        onToggle={() => calls.push('toggle')}
+        onReorder={() => calls.push('reorder')}
+        onRestoreDefault={() => calls.push('restore')}
+        renderPanel={() => null}
+        onToggleVisibility={() => calls.push('eye')}
+        note={<p>gap note</p>}
+      />,
+    )
+    const rows = screen.getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual(['Título', 'Fita da imagem', 'Imagem principal', 'Papel do título'])
+    expect(document.querySelector('[data-layer-grip]')).toBeNull()
+    expect(document.querySelector('[data-layer-eye]')).toBeNull()
+    expect(document.querySelector('[data-layer-toggle]')).toBeNull()
+    expect(screen.queryByText('Ordem padrão')).toBeNull()
+    expect(screen.getByText('somente leitura')).toBeTruthy()
+    expect(screen.getByText('gap note')).toBeTruthy()
+    fireEvent.click(rows[0])
+    expect(calls).toEqual([])
+  })
+})

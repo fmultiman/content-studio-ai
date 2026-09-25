@@ -56,3 +56,14 @@ export function applyViewportAction(state: ViewportState, action: ViewportAction
   if (action === 'actual') return { zoom: 1, pan: CENTERED }
   return { zoom: state.zoom, pan: CENTERED }
 }
+
+/** Explicit zoom steps shared by every Creative Editor Preview Surface (Canvas and Live Player). */
+export const VIEWPORT_ZOOM_LEVELS = [0.25, 0.33, 0.4, 0.5, 0.75, 1, 1.25, 1.5] as const
+
+/** −/+ : the level nearest to the current scale, one step in `direction` (clamped). */
+export function stepViewportZoom(currentScale: number, direction: 1 | -1): number {
+  const levels = VIEWPORT_ZOOM_LEVELS as readonly number[]
+  let closestIndex = 0
+  for (let i = 1; i < levels.length; i++) if (Math.abs(levels[i] - currentScale) < Math.abs(levels[closestIndex] - currentScale)) closestIndex = i
+  return levels[Math.min(levels.length - 1, Math.max(0, closestIndex + direction))]
+}

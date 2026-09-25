@@ -35,8 +35,8 @@ const SCENES = [
 ]
 
 const FILES = new Map<string, PreviewLibraryFile>([
-  [FILE_A, { id: FILE_A, name: 'a.jpg', public_url: 'https://storage.example/a.jpg?X-Amz-Signature=abc', mime_type: 'image/jpeg' }],
-  [FILE_B, { id: FILE_B, name: 'b.png', public_url: 'https://storage.example/b.png?X-Amz-Signature=def', mime_type: 'image/png' }],
+  [FILE_A, { id: FILE_A, name: 'a.jpg', public_url: 'https://storage.example/a.jpg?X-Amz-Signature=abc', mime_type: 'image/jpeg', thumbnail_url: null }],
+  [FILE_B, { id: FILE_B, name: 'b.png', public_url: 'https://storage.example/b.png?X-Amz-Signature=def', mime_type: 'image/png', thumbnail_url: null }],
 ])
 
 describe('Live Authoring Player input', () => {
@@ -75,7 +75,7 @@ describe('Live Authoring Player input', () => {
     const live = buildLivePreviewInput({ draft: DRAFT, scenes: SCENES, identitySnapshot: IDENTITY_SNAPSHOT, libraryFiles: new Map() })
     if (!live.ok) throw new Error('expected ok')
     expect(live.missingAssets).toEqual([FILE_A, FILE_B])
-    expect(previewLibraryFileAsset({ id: 'x', name: 'x', public_url: '', mime_type: 'image/png' })).toBeNull()
+    expect(previewLibraryFileAsset({ id: 'x', name: 'x', public_url: '', mime_type: 'image/png', thumbnail_url: null })).toBeNull()
   })
 
   it('refuses honestly without scenes or Project/Production context', () => {
@@ -142,9 +142,9 @@ describe('Scene authoring over VideoScene[]', () => {
 })
 
 describe('Video workspace surface', () => {
-  it('Inspector has Motion, no generic Timing tab and no empty Elementos tab', () => {
+  it('Inspector has Elementos + Motion and no generic Timing tab', () => {
     const values = VIDEO_INSPECTOR_SECTIONS.map((s) => s.value)
-    expect(values).toEqual(['template', 'content', 'assets', 'style', 'motion'])
+    expect(values).toEqual(['template', 'content', 'assets', 'style', 'element', 'motion'])
     expect(VIDEO_INSPECTOR_SECTIONS.map((s) => s.label.toLowerCase())).not.toContain('timing')
   })
 

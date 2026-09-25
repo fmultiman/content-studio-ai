@@ -102,7 +102,8 @@ export function LiveTimelinePlayer({ resolvedInput, width, height, controllerRef
       compositionHeight={specification.height}
       style={{ width, height }}
       controls={false}
-      clickToPlay
+      // The Preview Surface pans on drag (shared Creative Editor viewport); playback = transport / Space.
+      clickToPlay={false}
       spaceKeyToPlayOrPause={false}
       moveToBeginningWhenEnded
     />

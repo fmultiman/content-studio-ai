@@ -20,12 +20,14 @@ import type { VideoDraft, VideoScene, LibraryFile } from '@/lib/types'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
+import type { SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { resolveTimelineManifest, type ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import { patchResolvedTimelineAssets } from '@/lib/creative/timeline-adapter/prepare-scene-assets'
 import type { AdapterDiagnostic } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { buildRenderExecutionSnapshot } from '@/lib/render-execution/build-snapshot'
 
-export type PreviewLibraryFile = Pick<LibraryFile, 'id' | 'name' | 'public_url' | 'mime_type'> & Partial<Pick<LibraryFile, 'kind' | 'thumbnail_url'>>
+/** Same LibraryFile projection the Static slot cards use (signed display URL included). */
+export type PreviewLibraryFile = SlotLibraryFile & Partial<Pick<LibraryFile, 'kind'>>
 
 export type LivePreviewInputArgs = {
   draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id'>
