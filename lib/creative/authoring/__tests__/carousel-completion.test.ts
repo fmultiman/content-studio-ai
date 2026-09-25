@@ -328,6 +328,13 @@ describe('Renderer — layout dispatch and geometry', () => {
   })
 })
 
+describe('Editor navigation with 10 slides', () => {
+  const page = readFileSync(join(process.cwd(), 'app', '(dashboard)', 'projetos', '[id]', 'conteudos', '[editorialContentId]', 'channel-pieces', '[channelPieceId]', 'editar-visual', 'page.tsx'), 'utf-8')
+  it('the slide navigation wraps instead of running off a phone-width viewport', () => {
+    expect(page).toMatch(/className="flex max-w-full flex-wrap items-center justify-center gap-1" role="group" aria-label="Slides"/)
+  })
+})
+
 describe('Worker runtime export covers every layout', () => {
   const exportScript = readFileSync(join(process.cwd(), 'infra', 'render-worker-runtime', 'export.mjs'), 'utf-8')
   it.each(['ListVariant', 'GridVariant', 'MapVariant', 'NetworkVariant', 'QuoteVariant', 'ClosingVariant', 'layout-kit', 'icons', 'brazil-uf-geometry'])('%s is exported to the VPS runtime', (file) => {
