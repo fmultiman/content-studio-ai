@@ -76,6 +76,12 @@ export type DocumentaryCardProps = {
   templateId?: string
   elementOrder?: readonly string[]
   /**
+   * Static Detail Polish V1 — authored hidden elements of this slide
+   * (template element ids). A hidden element paints nothing; it keeps its
+   * place in the stack and its transform. Absent = every element visible.
+   */
+  hiddenElements?: readonly string[]
+  /**
    * Wave 6 authoring-only: runtime visual tuning applied on top of the default
    * artifact plan. NEVER serialised into a StaticRenderManifest.
    * When absent, the component renders exactly as the Wave 5 still would.
@@ -91,4 +97,6 @@ export type DocumentaryCardVisualContext = DocumentaryCardProps & {
   resolvedAppearance: DocumentaryCardAppearance
   /** Normalized element stack for this variant (never undefined). */
   stack: ElementStack
+  /** Hidden element ids (never undefined). */
+  hidden: ReadonlySet<string>
 }

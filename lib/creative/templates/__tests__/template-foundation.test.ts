@@ -226,7 +226,7 @@ describe('Preview / worker parity wiring (one normalizer, one renderer)', () => 
   })
 
   it('the Editor preview passes the slide templateId + elementOrder to DocumentaryCard', () => {
-    expect(page).toMatch(/\{ templateId, elementOrder: state\.elementOrder \}/)
+    expect(page).toMatch(/templateId, elementOrder: state\.elementOrder, hiddenElements: deriveHiddenElementsRequest\(state, templateId\)/)
   })
 
   it('Gerar PNG sends the full normalized order and templateId', () => {
@@ -236,13 +236,13 @@ describe('Preview / worker parity wiring (one normalizer, one renderer)', () => 
   it('the enqueue route re-normalizes and freezes the order into the snapshot', () => {
     const route = read('app', 'api', 'creative', 'static-authoring', 'render', 'route.ts')
     expect(route).toMatch(/const elementOrder = normalizeElementOrder\(layout, input\.elementOrder\)/)
-    expect(route).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*assetOverrides,\s*\n\s*slide,/)
+    expect(route).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*hiddenElements,\s*\n\s*assetOverrides,\s*\n\s*slide,/)
     expect(route).toMatch(/template\.renderer\.templateRef\.id !== input\.manifest\.template\.id/)
   })
 
   it('the worker composition forwards templateId + elementOrder to the same binding', () => {
     expect(read('infra', 'render-worker-runtime', 'server.mjs')).toMatch(/templateId: staticInput\.templateId,\s*\n\s*elementOrder: staticInput\.elementOrder,/)
-    expect(read('remotion', 'DocumentaryCardComposition.tsx')).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*\}, \{ mode: 'still', overrides \}\)/)
+    expect(read('remotion', 'DocumentaryCardComposition.tsx')).toMatch(/templateId,\s*\n\s*elementOrder,\s*\n\s*hiddenElements,\s*\n\s*\}, \{ mode: 'still', overrides \}\)/)
   })
 
   it('the exported worker ships the registry modules and every Pack B slot asset', () => {

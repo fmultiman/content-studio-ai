@@ -123,6 +123,7 @@ export function AssetLayer({
   filter,
   shadow = false,
   contain = false,
+  hidden = false,
   label,
   children,
 }: {
@@ -134,6 +135,8 @@ export function AssetLayer({
    * element's visible box instead of being placed by the default's metrics.
    */
   contain?: boolean
+  /** Static Detail Polish V1: an authored element the slide hides paints nothing (it keeps its stack place). */
+  hidden?: boolean
   box: LayerBox
   rotation?: number
   transform?: PrimitiveTransforms
@@ -144,6 +147,7 @@ export function AssetLayer({
   label?: string
   children?: ReactNode
 }) {
+  if (hidden) return null
   const height = box.height ?? (box.width * metrics.visible.height) / metrics.visible.width
   const scaleX = box.width / metrics.visible.width
   const scaleY = height / metrics.visible.height

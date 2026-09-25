@@ -43,7 +43,7 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
     <>
       <LayoutBackground kit={kit} stars={[[1020, 560, 10], [620, 1250, 12]]} />
 
-      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(880), top: y(1080), width: x(260) }} rotation={-18} transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 11)} />
+      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(880), top: y(1080), width: x(260) }} rotation={-18} transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 11)} hidden={kit.hidden('botanicalLeaf')} />
 
       <ElementGroup id="map" label="Mapa do Brasil" kit={kit} transformKey="card1" zFallback={12}>
         <div style={{ height: x(mapSize), left: x(24), position: 'absolute', top: y(580), width: x(mapSize) }}>
@@ -61,15 +61,15 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
         </div>
       </ElementGroup>
 
-      <AssetLayer label="Botânica seca" url={kit.url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(340), width: x(112) }} rotation={12} transform={transforms?.botanical} zIndex={kit.z('botanical', 13)} />
+      <AssetLayer label="Botânica seca" url={kit.url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(340), width: x(112) }} rotation={12} transform={transforms?.botanical} zIndex={kit.z('botanical', 13)} hidden={kit.hidden('botanical')} />
 
       {/* Nota do mapa: the disclaimer on a paper scrap. */}
       {content.note ? (
         <>
-          <AssetLayer label="Nota do mapa" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(1106), width: x(450), height: y(210) }} rotation={-2.5} transform={transforms?.note} zIndex={kit.z('note', 14)} shadow>
+          <AssetLayer label="Nota do mapa" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(1106), width: x(450), height: y(210) }} rotation={-2.5} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow>
             <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(25), inset: 0, justifyContent: 'center', lineHeight: 1.3, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center' }}>{content.note}</div>
           </AssetLayer>
-          <AssetLayer label="Fita da nota" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(190), top: y(1088), width: x(130) }} rotation={4} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 15)} filter="saturate(.85)" />
+          <AssetLayer label="Fita da nota" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(190), top: y(1088), width: x(130) }} rotation={4} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 15)} hidden={kit.hidden('tape1')} filter="saturate(.85)" />
         </>
       ) : null}
 

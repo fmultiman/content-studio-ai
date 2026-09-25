@@ -66,7 +66,7 @@ export function NetworkVariant({ context }: { context: DocumentaryCardVisualCont
     <>
       <LayoutBackground kit={kit} stars={[[640, 40, 14], [1040, 470, 10], [30, 590, 12]]} />
 
-      <AssetLayer label="Ornamento celeste" url={kit.url('ornament')} metrics={materialMetrics('ornament')} contain={context.materialContain?.ornament} box={{ left: x(720), top: y(-40), width: x(400) }} transform={transforms?.ornament} zIndex={kit.z('ornament', 11)} filter={isDark ? undefined : 'brightness(.7)'} />
+      <AssetLayer label="Ornamento celeste" url={kit.url('ornament')} metrics={materialMetrics('ornament')} contain={context.materialContain?.ornament} box={{ left: x(720), top: y(-40), width: x(400) }} transform={transforms?.ornament} zIndex={kit.z('ornament', 11)} hidden={kit.hidden('ornament')} filter={isDark ? undefined : 'brightness(.7)'} />
 
       <ElementGroup id="cards" label="Cartões da rede" kit={kit} transformKey="card1" zFallback={12}>
         <svg aria-hidden="true" width={x(1080)} height={y(1350)} viewBox="0 0 1080 1350" preserveAspectRatio="none" style={{ inset: 0, position: 'absolute' }}>
@@ -100,7 +100,7 @@ export function NetworkVariant({ context }: { context: DocumentaryCardVisualCont
 
       {/* Caixa de destaque: icon + text + bullets on dark paper. */}
       {callout ? (
-        <AssetLayer label="Caixa de destaque" url={kit.url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(40), top: y(1040), width: x(1000), height: y(292) }} rotation={-0.4} transform={transforms?.paperDark} zIndex={kit.z('callout', 13)} shadow>
+        <AssetLayer label="Caixa de destaque" url={kit.url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(40), top: y(1040), width: x(1000), height: y(292) }} rotation={-0.4} transform={transforms?.paperDark} zIndex={kit.z('callout', 13)} hidden={kit.hidden('callout')} shadow>
           <div style={{ color: '#efe4cc', display: 'flex', flexDirection: 'column', gap: y(16), inset: 0, justifyContent: 'center', padding: `0 ${x(56)}px`, position: 'absolute' }}>
             <div style={{ alignItems: 'center', display: 'flex', gap: x(28) }}>
               <DocumentaryIcon icon={callout.icon} color="#c9a45c" size={x(88)} strokeWidth={2} />

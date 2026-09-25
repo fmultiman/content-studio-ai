@@ -52,7 +52,7 @@ import {
   isRegisteredTemplateId,
   type AuthoringAssetSlotId,
 } from '@/lib/creative/templates/template-definitions'
-import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder } from '@/lib/creative/templates/element-stack'
+import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
 
 export const STATIC_AUTHORING_STATE_SCHEMA_VERSION = 'static-authoring-state.v1' as const
 
@@ -107,13 +107,19 @@ const heroTuningSchema = z
   })
   .strict()
 
-const titleTuningSchema = z
+const positionTuningSchema = z
   .object({
     offsetX: z.number().finite().min(TUNING_BOUNDS.title.offsetX.min).max(TUNING_BOUNDS.title.offsetX.max),
     offsetY: z.number().finite().min(TUNING_BOUNDS.title.offsetY.min).max(TUNING_BOUNDS.title.offsetY.max),
     rotation: z.number().finite().min(TUNING_BOUNDS.title.rotation.min).max(TUNING_BOUNDS.title.rotation.max),
   })
   .strict()
+
+// Static Detail Polish V1: the title also carries an optional "Entrelinha"
+// override (absent on every row persisted before it = Template default).
+const titleTuningSchema = positionTuningSchema.extend({
+  lineHeight: z.number().finite().min(TUNING_BOUNDS.title.lineHeight.min).max(TUNING_BOUNDS.title.lineHeight.max).optional(),
+}).strict()
 
 const tuningSchema = z
   .object({
@@ -122,7 +128,7 @@ const tuningSchema = z
     // Optional, not required: rows persisted before Final Authoring Polish
     // V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source` at all.
     // Absence means "template default", read back as DEFAULT_TUNING.source.
-    source: titleTuningSchema.optional(),
+    source: positionTuningSchema.optional(),
   })
   .strict()
 
@@ -160,6 +166,9 @@ export const PersistedAuthoredSlideSchema = z
     // Authoring Usability Completion V1 — Project LibraryFile per slot
     // (identity only). Absent = Project primitive / Template default.
     assetOverrides: AssetOverridesSchema.optional(),
+    // Static Detail Polish V1 — hidden template element ids (Camadas eye).
+    // Absent = every element visible; unknown ids are normalized away on read.
+    hiddenElements: z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH).optional(),
   })
   .strict()
 
@@ -221,7 +230,14 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     // Only an authored override is persisted; absence keeps following the template default.
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
     ...(state.assetOverrides && Object.keys(state.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(state.assetOverrides) } : {}),
+    ...hiddenEntry(layout, state.hiddenElements),
   }
+}
+
+/** Only a non-empty, layout-normalized hidden list is persisted; absence = all visible. */
+function hiddenEntry(layout: ReturnType<typeof layoutFor>, hidden: readonly string[] | undefined): { hiddenElements?: string[] } {
+  const normalized = layout ? normalizeHiddenElements(layout, hidden) : []
+  return normalized.length > 0 ? { hiddenElements: normalized } : {}
 }
 
 function copyOverrides(overrides: NonNullable<AuthoringState['assetOverrides']>): NonNullable<AuthoringState['assetOverrides']> {
@@ -258,6 +274,7 @@ export function persistedSlideToAuthoringState(
     primitiveTransforms: completeTransforms(slide.primitiveTransforms as Partial<AuthoringPrimitiveTransforms>),
     ...(slide.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, slide.elementOrder) } : {}),
     ...(slide.assetOverrides && Object.keys(slide.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(slide.assetOverrides) } : {}),
+    ...hiddenEntry(layout, slide.hiddenElements),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
     // adjustment, identical to how those slides always rendered. `source`

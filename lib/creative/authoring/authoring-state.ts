@@ -13,8 +13,8 @@ import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolv
 import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
-import { DEFAULT_TEMPLATE_ID } from '@/lib/creative/templates/template-definitions'
-import { resolveElementStack } from '@/lib/creative/templates/element-stack'
+import { DEFAULT_TEMPLATE_ID, TITLE_LINE_HEIGHT_BOUNDS, getTemplateDefinition, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
+import { normalizeHiddenElements, resolveElementStack } from '@/lib/creative/templates/element-stack'
 import {
   CLOSING_EXAMPLE_CONTENT, GRID_EXAMPLE_CONTENT, LIST_EXAMPLE_CONTENT, MAP_EXAMPLE_CONTENT, NETWORK_EXAMPLE_CONTENT, QUOTE_EXAMPLE_CONTENT, cloneExample,
 } from '@/lib/creative/templates/layout-examples'
@@ -363,6 +363,14 @@ export function deriveAssetOverridesRequest(state: AuthoringState): AuthoringSta
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
+/** Static Detail Polish V1: the slide's hidden elements as sent with a render request (normalized; undefined when none). */
+export function deriveHiddenElementsRequest(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): string[] | undefined {
+  const template = getTemplateDefinition(templateId) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
+  const layout = template ? getTemplateLayout(template, state.variant) : null
+  const hidden = layout ? normalizeHiddenElements(layout, state.hiddenElements) : []
+  return hidden.length > 0 ? hidden : undefined
+}
+
 export function deriveElementOrderRequest(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): string[] {
   return resolveElementStack(templateId, state.variant, state.elementOrder).order
 }
@@ -380,6 +388,7 @@ export const TUNING_BOUNDS = {
     offsetX: { min: -60, max: 60 },
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
+    lineHeight: TITLE_LINE_HEIGHT_BOUNDS,
   },
   // Same bounds as title — no parallel positioning system for the source/credit line.
   source: {

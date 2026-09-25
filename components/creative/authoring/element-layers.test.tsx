@@ -48,6 +48,11 @@ function Harness({ onParentPointerDown, elements = LABELS, defaultOrder = DEFAUL
   )
 }
 
+function VisibilityHarness() {
+  const [hidden, setHidden] = useState<Set<string>>(new Set(['hero']))
+  return <ElementLayers order={DEFAULT} labels={LABELS} openId={null} isDefault onToggle={() => {}} onReorder={() => {}} onRestoreDefault={() => {}} renderPanel={() => null} hidden={hidden} onToggleVisibility={(id) => setHidden((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next })} />
+}
+
 /** Lay rows out 28px tall from `offset` (a scroll position), by their live DOM order. */
 function layoutRows(offset = 0) {
   const items = within(screen.getByTestId('element-layers')).getAllByRole('listitem')
@@ -67,6 +72,24 @@ const panels = () => screen.queryAllByRole('region').filter((region) => region.h
 const openRows = () => within(screen.getByTestId('element-layers')).getAllByRole('listitem').filter((row) => row.getAttribute('data-open') === 'true').map((row) => row.getAttribute('data-layer-id'))
 
 describe('ElementLayers — element navigator (accordion)', () => {
+  it('keeps hidden elements listed and toggles only through the eye target', () => {
+    render(<VisibilityHarness />)
+    const eye = screen.getByRole('button', { name: 'Mostrar Imagem principal' })
+    expect(eye.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByTestId('element-layers').querySelector('[data-layer-id="hero"]')?.hasAttribute('data-hidden')).toBe(true)
+    fireEvent.click(eye)
+    expect(screen.getByRole('button', { name: 'Ocultar Imagem principal' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('element-layers').querySelector('[data-layer-id="hero"]')?.hasAttribute('data-hidden')).toBe(false)
+  })
+
+  it('exposes the bounded Entrelinha slider only when the title capability is supplied', () => {
+    render(<TitleTuningControls tuning={{ offsetX: 0, offsetY: 0, rotation: 0 }} lineHeight={{ defaultValue: 1.04, min: 0.8, max: 1.5 }} onChange={() => {}} onReset={() => {}} />)
+    const slider = screen.getByRole('slider', { name: 'Entrelinha' }) as HTMLInputElement
+    expect(slider.min).toBe('0.8')
+    expect(slider.max).toBe('1.5')
+    expect(slider.value).toBe('1.04')
+  })
+
   it('lists the front-most element on top with product labels and Frente/Trás cues, never raw ids or z-index numbers', () => {
     render(<Harness />)
     expect(rows()).toEqual(['title', 'tape1', 'hero', 'paper'])

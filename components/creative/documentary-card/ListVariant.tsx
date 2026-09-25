@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
+import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
 import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 import { DocumentaryIcon } from './icons'
@@ -37,6 +38,8 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
   const gold = isDark ? '#c9a45c' : '#9a7a3a'
   const paperInk = '#1d2a22'
   const z = (id: string, fallback: number) => context.stack.zIndex[id] ?? fallback
+  const isHidden = (id: string) => context.hidden.has(id)
+  const hideStyle = (id: string): CSSProperties => (isHidden(id) ? { display: 'none' } : {})
   const transforms = context.primitiveTransforms
   const url = (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls)
   const fixedText: CSSProperties = { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z }
@@ -59,8 +62,8 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
       ))}
 
       {/* Authored elements — painted from the normalized stack. */}
-      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(292), top: y(1150), width: x(390) }} rotation={-4} transform={transforms?.archival} zIndex={z('archival', 11)} filter="sepia(.35)" shadow />
-      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-150), top: y(1086), width: x(360) }} rotation={38} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} />
+      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(292), top: y(1150), width: x(390) }} rotation={-4} transform={transforms?.archival} zIndex={z('archival', 11)} hidden={isHidden('archival')} filter="sepia(.35)" shadow />
+      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-150), top: y(1086), width: x(360) }} rotation={38} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} hidden={isHidden('botanicalLeaf')} />
 
       {/* Imagem do documento: the content image in a pale archival border, pinned like evidence. */}
       <div
@@ -74,7 +77,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           position: 'absolute',
           top: y(430),
           width: x(426),
-          zIndex: z('hero', 13),
+          zIndex: z('hero', 13), ...hideStyle('hero'),
           transform: `translate(${heroTuning?.offsetX ?? 0}px, ${heroTuning?.offsetY ?? 0}px) rotate(${2.2 + (heroTuning?.rotation ?? 0)}deg) scale(${heroTuning?.scale ?? 1})`,
           transformOrigin: 'center',
         }}
@@ -83,24 +86,24 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           <AssetSurface asset={context.assets.hero} label="Imagem do documento" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.85) contrast(1.04)', inset: 0, position: 'absolute' }} />
         </div>
       </div>
-      <AssetLayer label="Fita do documento" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(402), width: x(150) }} rotation={-5} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 14)} filter="saturate(.85)" />
-      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(992), top: y(700), width: x(116) }} rotation={-12} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
+      <AssetLayer label="Fita do documento" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(402), width: x(150) }} rotation={-5} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 14)} hidden={isHidden('tape1')} filter="saturate(.85)" />
+      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(992), top: y(700), width: x(116) }} rotation={-12} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
 
       {/* Papel da legenda: image_caption on its own paper scrap (only when there is a caption). */}
       {content.image_caption ? (
         <>
-          <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(588), top: y(compact ? 988 : 1052), width: x(420), height: y(compact ? 150 : 190) }} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} shadow>
+          <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(588), top: y(compact ? 988 : 1052), width: x(420), height: y(compact ? 150 : 190) }} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} hidden={isHidden('note')} shadow>
             <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(23), fontStyle: 'italic', inset: 0, lineHeight: 1.32, padding: `0 ${x(44)}px`, position: 'absolute' }}>
               {content.image_caption}
             </div>
           </AssetLayer>
-          <AssetLayer label="Fita da legenda" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(676), top: y(compact ? 968 : 1030), width: x(118) }} rotation={4} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 17)} filter="saturate(.85)" />
+          <AssetLayer label="Fita da legenda" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(676), top: y(compact ? 968 : 1030), width: x(118) }} rotation={4} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 17)} hidden={isHidden('tape2')} filter="saturate(.85)" />
         </>
       ) : null}
 
       {/* Caixa de destaque (optional): the closing thought on dark paper, full width. */}
       {hasCallout ? (
-        <AssetLayer label="Caixa de destaque" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(48), top: y(1134), width: x(984), height: y(176) }} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('callout', 16)} shadow>
+        <AssetLayer label="Caixa de destaque" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(48), top: y(1134), width: x(984), height: y(176) }} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('callout', 16)} hidden={isHidden('callout')} shadow>
           <div style={{ alignItems: 'center', color: '#efe4cc', display: 'flex', fontFamily: body, fontSize: x(28), gap: x(28), inset: 0, lineHeight: 1.36, padding: `0 ${x(56)}px 0 ${x(64)}px`, position: 'absolute' }}>
             <div style={{ flex: 1 }}>{renderEmphasis(content.callout ?? '')}</div>
             <DocumentaryIcon icon="leaf" color="#c9a45c" size={x(64)} />
@@ -109,7 +112,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
       ) : null}
 
       {/* Faixa do título + Título: siblings, so each owns its own layer. */}
-      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(40), top: y(158), width: x(1000), height: y(236) }} rotation={-0.8} transform={transforms?.paperStrip} zIndex={z('paperStrip', 18)} shadow />
+      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(40), top: y(158), width: x(1000), height: y(236) }} rotation={-0.8} transform={transforms?.paperStrip} zIndex={z('paperStrip', 18)} hidden={isHidden('paperStrip')} shadow />
       <div
         style={{
           color: green,
@@ -118,12 +121,12 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           fontWeight: display.weight,
           left: x(96),
           letterSpacing: '-.01em',
-          lineHeight: 1.04,
+          lineHeight: titleTuning?.lineHeight ?? layoutTitleLineHeight(context.templateId, 'list') ?? 1.04,
           position: 'absolute',
           textTransform: 'uppercase',
           top: y(206),
           width: x(880),
-          zIndex: z('title', 19),
+          zIndex: z('title', 19), ...hideStyle('title'),
           transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${-0.8 + (titleTuning?.rotation ?? 0)}deg)`,
           transformOrigin: 'top left',
         }}
@@ -133,9 +136,9 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
 
       {/* Template text (fixed layer): sequence badge, intro, icon rows, brand. */}
       {context.sequence?.index && context.sequence?.total ? (
-        <div style={{ ...fixedText, background: '#d6c29a', clipPath: 'polygon(3% 8%, 97% 0, 100% 90%, 5% 100%, 0 22%)', height: y(112), left: x(16), top: y(28), transform: 'rotate(-2deg)', width: x(230) }}>
+        <div aria-label={`Página ${context.sequence.index} de ${context.sequence.total}`} style={{ ...fixedText, background: '#d6c29a', clipPath: 'polygon(3% 8%, 97% 0, 100% 90%, 5% 100%, 0 22%)', height: y(112), left: x(16), top: y(28), transform: 'rotate(-2deg)', width: x(230) }}>
           <div style={{ border: `2px solid ${green}`, borderRadius: '50%', color: green, fontFamily: display.family, fontSize: x(34), fontWeight: display.weight, left: x(52), padding: `${y(6)}px ${x(22)}px`, position: 'absolute', top: y(26) }}>
-            {context.sequence.index}/{context.sequence.total}
+            {context.sequence.index}
           </div>
         </div>
       ) : null}

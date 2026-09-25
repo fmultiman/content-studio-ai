@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Loader2, Minus, Play, Plus, RotateCcw, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Crosshair, Loader2, Maximize, Minus, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,14 +25,14 @@ import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
 import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
 import {
-  DEFAULT_TEMPLATE_ID, getTemplateLayout, isAppearanceSupported, layoutAssetSlots, listTemplateDefinitions, resolveAuthoringTemplate,
+  DEFAULT_TEMPLATE_ID, TITLE_LINE_HEIGHT_BOUNDS, getLayoutElement, getTemplateLayout, isAppearanceSupported, layoutAssetSlots, listTemplateDefinitions, resolveAuthoringTemplate,
   type AuthoringAssetSlotId, type TemplateAppearance,
 } from '@/lib/creative/templates/template-definitions'
 import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
-  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_TUNING,
+  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_TUNING,
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
@@ -43,7 +43,8 @@ import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { StaticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
-import { calculatePreviewFitScale } from '@/lib/creative/authoring/viewport'
+import { CENTERED, applyViewportAction, calculatePreviewFitScale, canvasOrigin, clampPan, type ViewportAction, type ViewportPan } from '@/lib/creative/authoring/viewport'
+import { removeSlideFromCollection } from '@/lib/creative/authoring/slide-collection'
 import {
   activeExecutionIds, applyExecutionUpdate, attachExecution, failEnqueue, hydrateRenderJobs, isActiveRenderPhase, isRenderStale,
   patchJobByExecution, renderPhaseLabel, startRenderJob, type StaticRenderJob, type StaticRenderJobs,
@@ -136,8 +137,17 @@ export default function StaticAuthoringProductPage() {
   // after the async context/state load below (gated by the loading return),
   // so reading localStorage here carries no hydration-mismatch risk.
   const [autosaveEnabled, setAutosaveEnabledState] = useState(() => readAutosavePreference())
+  // VIEWPORT state (Static Detail Polish V1): the editor's camera only — never authoring state, never dirty.
   const [zoom, setZoom] = useState<'fit' | number>('fit')
+  const [pan, setPan] = useState<ViewportPan>(CENTERED)
+  const [panning, setPanning] = useState(false)
+  const panDragRef = useRef<{ pointerId: number; x: number; y: number; from: ViewportPan } | null>(null)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  // WORKSPACE UI state: the floating Inspector's open/closed state (never authoring state).
+  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
+  // Slide ids never to reuse in this session: removed slides and slides with render history.
+  const reservedSlideIdsRef = useRef(new Set<string>())
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
   // "Adicionar slide" dialog: the Layout/Appearance the new slide starts from.
   const [addSlideOpen, setAddSlideOpen] = useState(false)
@@ -330,7 +340,7 @@ export default function StaticAuthoringProductPage() {
       templateId,
       layoutId: addLayoutId,
       appearance: addAppearance,
-      id: nextSlideId(slides.map((slide) => slide.id)),
+      id: nextSlideId([...slides.map((slide) => slide.id), ...reservedSlideIdsRef.current]),
       order: nextSlideOrder(slides),
       primitiveProjectRef: context.primitiveProjectRef,
     })
@@ -340,6 +350,22 @@ export default function StaticAuthoringProductPage() {
     setCurrentSlideIndex(slides.length)
     setOpenElementId(null)
     setAddSlideOpen(false)
+  }
+
+  /**
+   * Static Detail Polish V1 — "Remover slide": authored collection only (unsaved
+   * until Salvar/autosave; Voltar ao salvo brings it back). Stable ids are kept,
+   * orders are renumbered; durable outputs (LibraryFile, ChannelPieceMedia,
+   * render executions, Gallery) are never touched.
+   */
+  function removeCurrentSlide() {
+    if (!slides || !currentSlide || slides.length <= 1) return
+    const result = removeSlideFromCollection(slides, currentSlideIndex)
+    reservedSlideIdsRef.current.add(currentSlide.id)
+    setSlides(result.slides)
+    setCurrentSlideIndex(result.selectedIndex)
+    setOpenElementId(null)
+    setRemoveDialogOpen(false)
   }
 
   const previewInput = useMemo(() => state ? resolvePreviewInput(state) : null, [state])
@@ -356,7 +382,7 @@ export default function StaticAuthoringProductPage() {
     }
     const materials = Object.keys(overrideAssets.materials).length > 0 ? overrideAssets.materials : undefined
     // Same templateId + element stack the render request freezes; DocumentaryCard normalizes both identically in preview and worker.
-    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
+    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder, hiddenElements: deriveHiddenElementsRequest(state, templateId) }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
   }, [previewInput, state, slides, currentSlideIndex, templateId, projectImages])
 
   async function render() {
@@ -372,6 +398,7 @@ export default function StaticAuthoringProductPage() {
     const sequence = slides.length > 1 ? { index: slideRef.index, total: slideRef.total } : undefined
     const manifest = deriveManifestFromState(state, sequence)
     const assetOverrides = deriveAssetOverridesRequest(state)
+    const hiddenElements = deriveHiddenElementsRequest(state, templateId)
     const body = {
       manifest,
       context: { projectId: state.productContext.projectId, editorialContentId: state.productContext.editorialContentId, channelPieceId: state.productContext.channelPieceId },
@@ -380,6 +407,7 @@ export default function StaticAuthoringProductPage() {
       ...(overrides ? { overrides } : {}),
       templateId,
       elementOrder: deriveElementOrderRequest(state, templateId),
+      ...(hiddenElements ? { hiddenElements } : {}),
       ...(assetOverrides ? { assetOverrides } : {}),
       idempotencyKey: crypto.randomUUID(),
       slide: slideRef,
@@ -454,6 +482,7 @@ export default function StaticAuthoringProductPage() {
         const response = await fetch(`/api/render-executions?channelPieceId=${channelPieceIdForRenders}`)
         if (!response.ok) return
         const payload = await response.json() as { executions?: RenderExecutionSummary[] }
+        for (const execution of payload.executions ?? []) if (execution.slide?.id) reservedSlideIdsRef.current.add(execution.slide.id)
         // Baseline for "Alterações ainda não renderizadas": the authored state at load. Any later edit is provably absent from these older renders.
         const signaturesAtLoad = Object.fromEntries((slidesRef.current ?? []).map((slide) => [slide.id, slideSignature(slide.state)]))
         if (!cancelled && payload.executions?.length) setRenderJobs((jobs) => hydrateRenderJobs(jobs, payload.executions ?? [], new Set(slideIdsKey.split(',')), signaturesAtLoad))
@@ -487,9 +516,16 @@ export default function StaticAuthoringProductPage() {
 
   const canvasW = context?.target.canvas.width ?? 1080
   const canvasH = context?.target.canvas.height ?? 1350
-  const measuredFitScale = calculatePreviewFitScale(previewSize.width, previewSize.height, canvasW, canvasH)
+  // Fit keeps a 12px margin on every side of the viewport (the old p-3 padding).
+  const measuredFitScale = calculatePreviewFitScale(previewSize.width - 24, previewSize.height - 24, canvasW, canvasH)
   const fitScale = measuredFitScale > 0 ? measuredFitScale : 0.33
   const effectiveScale = zoom === 'fit' ? fitScale : zoom
+  /** Ajustar / Centralizar / 100%: viewport only (never authoring, never dirty). */
+  function viewportAction(action: ViewportAction) {
+    const next = applyViewportAction({ zoom, pan }, action)
+    setZoom(next.zoom)
+    setPan(next.pan)
+  }
   function stepZoom(direction: 1 | -1) {
     const current = zoom === 'fit' ? fitScale : zoom
     let closestIndex = 0
@@ -497,6 +533,19 @@ export default function StaticAuthoringProductPage() {
     const nextIndex = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, closestIndex + direction))
     setZoom(ZOOM_LEVELS[nextIndex])
   }
+
+  // Wheel pans the Canvas (desktop workbench only; the stacked fallback keeps normal page scrolling).
+  useEffect(() => {
+    const el = previewContainer
+    if (!el || !floating) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return // browser/trackpad zoom stays the browser's
+      event.preventDefault()
+      setPan((current) => ({ x: current.x - event.deltaX, y: current.y - event.deltaY }))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [previewContainer, floating])
 
   if (error && !context) return <DashboardPage><DashboardPageContent width="4xl"><Card><CardContent className="p-6"><p className="text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => router.back()}>Voltar</Button></CardContent></Card></DashboardPageContent></DashboardPage>
   if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
@@ -511,7 +560,9 @@ export default function StaticAuthoringProductPage() {
   const currentRenderStale = isRenderStale(currentRenderJob, slideSignature(state))
   const previewJob = previewJobSlideId ? renderJobs[previewJobSlideId] : undefined
   const slideTotal = slides.length
-  const slideLabel = `${currentSlideIndex + 1}/${slideTotal}`
+  // Static Detail Polish V1 (O): the UI shows the page NUMBER only; the total stays in state/aria/render metadata.
+  const slideLabel = `Slide ${currentSlideIndex + 1}`
+  const currentHasSavedOutput = Boolean(currentSlide && renderJobs[currentSlide.id]?.save === 'saved')
   // An expanded element the active layout does not have (layout switch) is simply closed.
   const openElement = openElementId && elements.some((element) => element.key === openElementId) ? openElementId : null
   const elementLabels = Object.fromEntries(elements.map((element) => [element.key, element.label]))
@@ -525,7 +576,12 @@ export default function StaticAuthoringProductPage() {
     const control = elements.find((element) => element.key === id)?.control
     if (!control || !state) return null
     if (control.type === 'tuning' && control.group === 'hero') return <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />
-    if (control.type === 'tuning') { const group = control.group; return <TitleTuningControls tuning={state.tuning[group]} onChange={(field, value) => setTuningField(group, field, value)} onReset={() => resetTuningField(group)} /> }
+    if (control.type === 'tuning') {
+      const group = control.group
+      const typography = layout ? getLayoutElement(layout, id)?.typography : undefined
+      const lineHeight = group === 'title' && typography ? { defaultValue: typography.lineHeight, min: TITLE_LINE_HEIGHT_BOUNDS.min, max: TITLE_LINE_HEIGHT_BOUNDS.max } : undefined
+      return <TitleTuningControls tuning={state.tuning[group]} lineHeight={lineHeight} onChange={(field, value) => setTuningField(group, field, value)} onReset={() => resetTuningField(group)} />
+    }
     const key = control.key
     return <PrimitiveTransformControls slot={key} transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })} />
   }
@@ -537,7 +593,7 @@ export default function StaticAuthoringProductPage() {
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
       <TabsList className="flex w-full">
         {INSPECTOR_SECTIONS.map((section) => (
-          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label}>
+          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label} aria-label={section.label}>
             <span className="inspector-tab-full">{section.label}</span>
             <span className="inspector-tab-compact" aria-hidden="true">{section.compactLabel}</span>
           </TabsTrigger>
@@ -590,32 +646,74 @@ export default function StaticAuthoringProductPage() {
           onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })}
           onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })}
           renderPanel={renderElementPanel}
+          hidden={new Set(state.hiddenElements ?? [])}
+          onToggleVisibility={(id) => dispatch({ type: 'TOGGLE_ELEMENT_VISIBILITY', id })}
         />
       </TabsContent>
     </Tabs>
   )
 
-  // Floor the scaled box so Fit never overflows its viewport by a sub-pixel and summons scrollbars.
+  // Floor the scaled box so Fit never overflows its viewport by a sub-pixel.
   const scaledWidth = Math.floor(canvasW * effectiveScale)
   const scaledHeight = Math.floor(canvasH * effectiveScale)
+  // The Canvas is positioned by the viewport (centered + pan), never scrolled: no scrollbars, no page scroll.
+  const viewSize = { width: previewSize.width || scaledWidth, height: previewSize.height || scaledHeight }
+  const scaledSize = { width: scaledWidth, height: scaledHeight }
+  const effectivePan = clampPan(pan, viewSize, scaledSize)
+  const origin = canvasOrigin(viewSize, scaledSize, effectivePan)
+  function onViewportPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    panDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, from: effectivePan }
+    setPanning(true)
+  }
+  function onViewportPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = panDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    setPan(clampPan({ x: drag.from.x + event.clientX - drag.x, y: drag.from.y + event.clientY - drag.y }, viewSize, scaledSize))
+  }
+  function endViewportPan(event: React.PointerEvent<HTMLDivElement>) {
+    if (!panDragRef.current || panDragRef.current.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    panDragRef.current = null
+    setPanning(false)
+  }
   const canvas = (
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
-      <div ref={setPreviewContainer} className={floating ? 'flex min-h-0 flex-1 overflow-auto p-3' : 'flex h-[min(62vh,560px)] overflow-auto p-2'} data-testid="canvas-viewport">
-        <div className="m-auto shrink-0 overflow-hidden" style={{ width: scaledWidth, height: scaledHeight }}>
-          <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
+      <div
+        ref={setPreviewContainer}
+        className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
+        style={{ cursor: panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
+        onPointerDown={onViewportPointerDown}
+        onPointerMove={onViewportPointerMove}
+        onPointerUp={endViewportPan}
+        onPointerCancel={endViewportPan}
+        aria-label="Canvas (arraste para mover a visualização)"
+        data-testid="canvas-viewport"
+        data-pan={`${Math.round(effectivePan.x)},${Math.round(effectivePan.y)}`}
+      >
+        <div className="absolute overflow-hidden" style={{ left: origin.left, top: origin.top, width: scaledWidth, height: scaledHeight }} data-testid="canvas-surface">
+          <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
         {isCarousel && <div className="flex max-w-full flex-wrap items-center justify-center gap-1" role="group" aria-label="Slides" data-testid="slide-nav">
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
-          {slides.map((slide, index) => <Button key={slide.id} size="sm" className="px-2.5 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} onClick={() => switchSlide(index)}>{index + 1}/{slideTotal}</Button>)}
+          {slides.map((slide, index) => <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button>)}
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
+          <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={slideTotal <= 1} aria-label={`Remover slide ${currentSlideIndex + 1}`} title={slideTotal <= 1 ? 'O carrossel precisa de pelo menos um slide' : 'Remover slide'} data-testid="remove-slide"><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>}
         <div className="flex items-center gap-1" role="group" aria-label="Zoom">
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
           <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}><option value="fit">Fit · {Math.round(fitScale * 100)}%</option>{ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}</select>
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
+          <Button size="icon-sm" variant="ghost" onClick={() => viewportAction('fit')} aria-label="Ajustar" title="Ajustar: caber o Canvas inteiro e centralizar" data-testid="viewport-fit"><Maximize className="h-3.5 w-3.5" /></Button>
+          <Button size="icon-sm" variant="ghost" onClick={() => viewportAction('center')} aria-label="Centralizar" title="Centralizar (mantém o zoom)" data-testid="viewport-center"><Crosshair className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" variant="ghost" className="h-8 px-1.5 text-xs" onClick={() => viewportAction('actual')} aria-label="Zoom 100%" title="100% e centralizar" data-testid="viewport-100">100%</Button>
+          {floating && !inspectorOpen ? <Button size="sm" variant="outline" className="ml-1 h-8 gap-1 px-2 text-xs" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" />Inspector</Button> : null}
         </div>
         {isCarousel && <div className="flex items-center gap-1" role="group" aria-label="Estado do slide">
           <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
@@ -653,7 +751,7 @@ export default function StaticAuthoringProductPage() {
         {currentRenderJob && currentRenderActive && <span className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="render-status" data-phase={currentRenderJob.phase}><Loader2 className="h-3.5 w-3.5 animate-spin" />{renderPhaseLabel(currentRenderJob.phase)}</span>}
         {currentRenderJob?.phase === 'failed' && <span className="flex max-w-[18rem] items-center gap-1 text-xs text-destructive" title={currentRenderJob.errorMessage ?? undefined} role="alert" data-testid="render-status" data-phase="failed"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{renderPhaseLabel('failed')}{currentRenderJob.errorMessage ? ` · ${currentRenderJob.errorMessage}` : ''}</span></span>}
         {currentRenderJob?.phase === 'ready' && <span className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="render-status" data-phase="ready">
-          <button type="button" className="h-7 w-[22px] shrink-0 overflow-hidden rounded border border-border/60 bg-muted" onClick={() => setPreviewJobSlideId(currentRenderJob.slideId)} aria-label={`Ver PNG do slide ${currentRenderJob.slideIndex}/${currentRenderJob.slideTotal}`} title="Ver PNG">
+          <button type="button" className="h-7 w-[22px] shrink-0 overflow-hidden rounded border border-border/60 bg-muted" onClick={() => setPreviewJobSlideId(currentRenderJob.slideId)} aria-label={`Ver PNG do slide ${currentRenderJob.slideIndex} de ${currentRenderJob.slideTotal}`} title="Ver PNG">
             {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
             {currentRenderJob.imageUrl ? <img src={currentRenderJob.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
           </button>
@@ -670,7 +768,8 @@ export default function StaticAuthoringProductPage() {
     </header>
   )
 
-  const restoreDialog = <><AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados ao slide atual. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const removeDialog = <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}><AlertDialogContent data-testid="remove-slide-dialog"><AlertDialogHeader><AlertDialogTitle>Remover slide {currentSlideIndex + 1}?</AlertDialogTitle><AlertDialogDescription>Este slide será removido do estado de autoria (clique em Salvar para persistir). Arquivos e renders já salvos na peça não serão excluídos automaticamente.{currentHasSavedOutput ? ' Este slide tem um PNG salvo nesta peça: ele continua anexado à peça e na Galeria.' : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={removeCurrentSlide}>Remover slide</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const restoreDialog = <>{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados ao slide atual. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <ProjectLibraryAssetPicker
       open={Boolean(pickerSlot)}
       onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}
@@ -707,7 +806,7 @@ export default function StaticAuthoringProductPage() {
               {(getTemplateLayout(template, addLayoutId)?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={addAppearance === appearance ? 'default' : 'outline'} aria-pressed={addAppearance === appearance} onClick={() => setAddAppearance(appearance)}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">Será o slide {slideTotal + 1}/{slideTotal + 1}.</p>
+          <p className="text-xs text-muted-foreground">Será o slide {slideTotal + 1}.</p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setAddSlideOpen(false)}>Cancelar</Button>
@@ -718,11 +817,11 @@ export default function StaticAuthoringProductPage() {
     <Dialog open={Boolean(previewJob?.imageUrl)} onOpenChange={(open) => { if (!open) setPreviewJobSlideId(null) }}>
       <DialogContent className="max-w-[min(92vw,540px)]">
         <DialogHeader>
-          <DialogTitle>PNG · Slide {previewJob?.slideIndex}/{previewJob?.slideTotal}</DialogTitle>
+          <DialogTitle>PNG · Slide {previewJob?.slideIndex}</DialogTitle>
           <DialogDescription>Render gerado (rascunho). Use “Salvar nesta peça” para anexá-lo à peça.</DialogDescription>
         </DialogHeader>
         {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
-        {previewJob?.imageUrl ? <img src={previewJob.imageUrl} alt={`PNG do slide ${previewJob.slideIndex}/${previewJob.slideTotal}`} className="max-h-[70vh] w-full rounded border border-border/60 object-contain" data-testid="render-preview-image" /> : null}
+        {previewJob?.imageUrl ? <img src={previewJob.imageUrl} alt={`PNG do slide ${previewJob.slideIndex} de ${previewJob.slideTotal}`} className="max-h-[70vh] w-full rounded border border-border/60 object-contain" data-testid="render-preview-image" /> : null}
       </DialogContent>
     </Dialog></>
 
@@ -735,7 +834,7 @@ export default function StaticAuthoringProductPage() {
     <DashboardPage>
       <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
-        <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} />
+        <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
         {restoreDialog}
       </div>
     </DashboardPage>

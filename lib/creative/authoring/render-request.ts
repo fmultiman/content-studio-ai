@@ -17,6 +17,7 @@ import type { DocumentaryCardPreviewTuning } from './types'
 import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
 import { AUTHORING_ASSET_SLOT_IDS, isRegisteredTemplateId, type AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH } from '@/lib/creative/templates/element-stack'
+import { TITLE_LINE_HEIGHT_BOUNDS } from '@/lib/creative/templates/template-definitions'
 
 const heroTuningSchema = z.object({
   offsetX: z.number().finite().min(-120).max(120),
@@ -29,10 +30,16 @@ const titleTuningSchema = z.object({
   offsetX: z.number().finite().min(-60).max(60),
   offsetY: z.number().finite().min(-60).max(60),
   rotation: z.number().finite().min(-2).max(2),
+  // Static Detail Polish V1 — "Entrelinha" override; absent = the Template layout's title line-height.
+  lineHeight: z.number().finite().min(TITLE_LINE_HEIGHT_BOUNDS.min).max(TITLE_LINE_HEIGHT_BOUNDS.max).optional(),
 }).strict()
 
-// Same bounded shape as title — Info variant's independent source/credit line.
-const sourceTuningSchema = titleTuningSchema
+// Bounded position shape (no line-height) — Info variant's independent source/credit line.
+const sourceTuningSchema = z.object({
+  offsetX: z.number().finite().min(-60).max(60),
+  offsetY: z.number().finite().min(-60).max(60),
+  rotation: z.number().finite().min(-2).max(2),
+}).strict()
 
 export const documentaryCardPreviewTuningSchema = z.object({
   hero: heroTuningSchema,
@@ -93,6 +100,9 @@ export const assetOverridesRequestSchema = z.record(
 /** Template Foundation V1: element stack, paint order back -> front. Normalized server-side before freezing. */
 export const elementOrderSchema = z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH)
 
+/** Static Detail Polish V1: authored hidden elements of the slide (template element ids). Normalized server-side before freezing. */
+export const hiddenElementsSchema = z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH)
+
 export const authoringRenderRequestSchema = z.object({
   manifest: StaticRenderManifestSchema,
   overrides: authoringRenderOverridesSchema.optional(),
@@ -101,6 +111,7 @@ export const authoringRenderRequestSchema = z.object({
   primitiveTransforms: primitiveTransformsBySlotSchema.optional(),
   templateId: templateIdSchema.optional(),
   elementOrder: elementOrderSchema.optional(),
+  hiddenElements: hiddenElementsSchema.optional(),
   assetOverrides: assetOverridesRequestSchema.optional(),
   context: z.object({
     projectId: z.string().min(1),
@@ -129,6 +140,7 @@ export type AuthoringRenderRequest = {
   primitiveTransforms?: PrimitiveTransformsRequest
   templateId?: string
   elementOrder?: string[]
+  hiddenElements?: string[]
   assetOverrides?: Partial<Record<AuthoringAssetSlotId, { libraryFileId: string }>>
   context?: { projectId: string; editorialContentId: string; channelPieceId: string }
   identitySnapshot?: VisualTokensSnapshot

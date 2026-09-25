@@ -50,6 +50,7 @@ export function DocumentaryCard({
   primitiveTransforms,
   templateId,
   elementOrder,
+  hiddenElements,
   previewTuning,
   frame = 0,
   durationInFrames = 180,
@@ -87,7 +88,9 @@ export function DocumentaryCard({
     primitiveTransforms,
     templateId,
     elementOrder,
+    hiddenElements,
     stack,
+    hidden: new Set(hiddenElements ?? []),
     previewTuning,
     frame,
     durationInFrames,
@@ -119,7 +122,7 @@ export function DocumentaryCard({
 
 export type DocumentaryCardRuntimeInput = Pick<
   DocumentaryCardProps,
-  'variant' | 'appearance' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms' | 'templateId' | 'elementOrder'
+  'variant' | 'appearance' | 'content' | 'assets' | 'tokens' | 'canvas' | 'sequence' | 'primitiveMaterials' | 'primitiveTransforms' | 'templateId' | 'elementOrder' | 'hiddenElements'
 >
 
 export type DocumentaryCardRuntimeOptions = Pick<
@@ -187,7 +190,7 @@ export function documentaryCardPropsFromResolvedInput(
   previewTuning?: DocumentaryCardPreviewTuning,
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials'],
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms'],
-  layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder'>,
+  layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder' | 'hiddenElements'>,
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (!variant || !(DOCUMENTARY_CARD_VARIANTS as readonly string[]).includes(variant)) throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -203,5 +206,6 @@ export function documentaryCardPropsFromResolvedInput(
     primitiveTransforms,
     templateId: layering?.templateId,
     elementOrder: layering?.elementOrder,
+    hiddenElements: layering?.hiddenElements,
   }, { mode, motion, previewTuning })
 }

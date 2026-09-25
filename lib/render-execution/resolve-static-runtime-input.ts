@@ -26,6 +26,7 @@ export type ResolvedStaticWorkerInput = {
   primitiveTransforms?: PrimitiveTransformsRequest
   templateId?: string
   elementOrder?: string[]
+  hiddenElements?: string[]
   output: { format: 'png'; width: number; height: number }
   slide: StaticRenderSlideRef | null
 }
@@ -118,6 +119,7 @@ export async function resolveStaticRuntimeInput(input: {
       ...(snapshot.primitiveTransforms ? { primitiveTransforms: snapshot.primitiveTransforms } : {}),
       ...(snapshot.templateId ? { templateId: snapshot.templateId } : {}),
       ...(snapshot.elementOrder ? { elementOrder: snapshot.elementOrder } : {}),
+      ...(snapshot.hiddenElements ? { hiddenElements: snapshot.hiddenElements } : {}),
       output: snapshot.output,
       slide: snapshot.slide,
     },

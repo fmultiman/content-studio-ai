@@ -67,6 +67,8 @@ export type AuthoringAction =
   | { type: 'SET_ELEMENT_ORDER'; order: string[] }
   /** Back to the template layout's default stack. */
   | { type: 'RESET_ELEMENT_ORDER' }
+  /** Static Detail Polish V1 — Camadas eye: show/hide ONE element (authored; stack, transform and tuning untouched). */
+  | { type: 'TOGGLE_ELEMENT_VISIBILITY'; id: string }
   /** Assets "Trocar": a Project LibraryFile fills this slot. */
   | { type: 'SET_ASSET_OVERRIDE'; slot: AuthoringAssetSlotId; libraryFileId: string }
   /** Assets "Usar padrão": drop the slot's Project resource (override AND catalog primitive) -> Template default. */
@@ -111,6 +113,11 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
     case 'SET_PRIMITIVE_TRANSFORM': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...(state.primitiveTransforms[action.slot] ?? DEFAULT_PRIMITIVE_TRANSFORMS), [action.field]: action.value } } }
     case 'RESET_PRIMITIVE_TRANSFORMS': return { ...state, primitiveTransforms: { ...state.primitiveTransforms, [action.slot]: { ...DEFAULT_PRIMITIVE_TRANSFORMS } } }
     case 'SET_ELEMENT_ORDER': return { ...state, elementOrder: [...action.order] }
+    case 'TOGGLE_ELEMENT_VISIBILITY': {
+      const current = state.hiddenElements ?? []
+      const next = current.includes(action.id) ? current.filter((id) => id !== action.id) : [...current, action.id]
+      return { ...state, hiddenElements: next.length > 0 ? next : undefined }
+    }
     case 'RESET_ELEMENT_ORDER': return { ...state, elementOrder: undefined }
     case 'SET_ASSET_OVERRIDE': return { ...state, assetOverrides: { ...(state.assetOverrides ?? {}), [action.slot]: { libraryFileId: action.libraryFileId } } }
     case 'USE_TEMPLATE_DEFAULT_ASSET': {

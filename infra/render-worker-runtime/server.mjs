@@ -221,6 +221,8 @@ async function handleRenderStill(req, res) {
       // Editor preview uses (lib/creative/templates/element-stack.ts).
       templateId: staticInput.templateId,
       elementOrder: staticInput.elementOrder,
+      // Static Detail Polish V1: frozen authored hidden elements.
+      hiddenElements: staticInput.hiddenElements,
     }
     const composition = await selectComposition({ serveUrl: bundleLocation, id: 'StaticRenderManifestStill', inputProps })
 

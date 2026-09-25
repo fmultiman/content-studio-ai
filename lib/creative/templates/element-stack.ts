@@ -79,6 +79,18 @@ export function elementStackFromOrder(order: readonly string[]): ElementStack {
  * render contract already validated them upstream); it yields an empty stack
  * so the renderer falls back to its own document order.
  */
+/**
+ * Static Detail Polish V1 — authored hidden elements, normalized the same way
+ * everywhere (Editor, persistence, enqueue): only ids the layout defines,
+ * deduplicated, in the layout's default paint order (so equal sets always
+ * serialize identically). Unknown/legacy ids are dropped, never an error.
+ */
+export function normalizeHiddenElements(layout: Pick<TemplateLayoutDefinition, 'defaultStackOrder'>, hidden: readonly unknown[] | undefined): string[] {
+  if (!Array.isArray(hidden) || hidden.length === 0) return []
+  const wanted = new Set(hidden.filter((id): id is string => typeof id === 'string'))
+  return layout.defaultStackOrder.filter((id) => wanted.has(id))
+}
+
 export function resolveElementStack(templateId: string | undefined, layoutId: string, rawOrder: unknown): ElementStack {
   const template = getTemplateDefinition(templateId ?? DEFAULT_TEMPLATE_ID)
   const layout = template ? getTemplateLayout(template, layoutId) : null

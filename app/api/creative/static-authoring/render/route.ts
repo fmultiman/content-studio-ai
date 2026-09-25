@@ -33,7 +33,7 @@ import { listPrimitivesForProject, PORTAL_PROJECT_REF, selectPrimitiveAssetRef }
 import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
-import { normalizeElementOrder } from '@/lib/creative/templates/element-stack'
+import { normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
 import type { FrozenAssetOverrides } from '@/lib/render-execution/static-snapshot'
 import {
   StaticRenderSlideRefSchema,
@@ -238,6 +238,8 @@ export async function POST(request: Request) {
     }
 
     const elementOrder = normalizeElementOrder(layout, input.elementOrder)
+    // Static Detail Polish V1: authored hidden elements, normalized against the layout and frozen.
+    const hiddenElements = normalizeHiddenElements(layout, input.hiddenElements)
 
     const snapshot = buildStaticRenderExecutionSnapshot({
       manifest,
@@ -248,6 +250,7 @@ export async function POST(request: Request) {
       primitiveTransforms: input.primitiveTransforms,
       templateId,
       elementOrder,
+      hiddenElements,
       assetOverrides,
       slide,
     })

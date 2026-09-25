@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { moveElementInOrder } from '@/lib/creative/templates/element-stack'
 
 /** Paint order (back -> front) index for a row shown at `displayIndex` in the front-first list. */
@@ -22,6 +22,8 @@ function orderIndex(length: number, displayIndex: number): number {
  * Interaction targets are separate on purpose:
  *  - the grip (≡) is the ONLY thing that reorders — pointer drag with capture,
  *    or ArrowUp/ArrowDown when focused — and never toggles the disclosure;
+ *  - the eye (Static Detail Polish V1) only shows/hides the element — it
+ *    never reorders, never toggles the disclosure and stops its own events;
  *  - the row body toggles the disclosure and never reorders;
  *  - controls inside an open panel never start a reorder (they are outside
  *    the grip) and stop pointer propagation so they cannot reach the Inspector.
@@ -40,6 +42,8 @@ export function ElementLayers({
   onReorder,
   onRestoreDefault,
   renderPanel,
+  hidden,
+  onToggleVisibility,
 }: {
   /** Normalized paint order, back -> front. */
   order: readonly string[]
@@ -53,6 +57,10 @@ export function ElementLayers({
   onRestoreDefault: () => void
   /** The open element's own controls. */
   renderPanel: (id: string) => ReactNode
+  /** Authored hidden elements (Static Detail Polish V1). A hidden element stays listed, selectable and editable. */
+  hidden?: ReadonlySet<string>
+  /** Eye click: show/hide ONE element. Absent = no eye (e.g. read-only contexts). */
+  onToggleVisibility?: (id: string) => void
 }) {
   const listRef = useRef<HTMLOListElement>(null)
   const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
@@ -121,7 +129,7 @@ export function ElementLayers({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Camadas</span>
         <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar ordem de camadas do Template">Ordem padrão</button>
       </div>
-      <p className="text-[11px] leading-snug text-muted-foreground">Clique em um elemento para ajustá-lo. Arraste ≡ para trazer à frente ou levar para trás.</p>
+      <p className="text-[11px] leading-snug text-muted-foreground">Clique em um elemento para ajustá-lo. Arraste ≡ para trazer à frente ou levar para trás. O olho mostra ou oculta o elemento.</p>
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Frente</p>
       <ol ref={listRef} className="min-w-0 space-y-0.5 overflow-x-hidden" data-dragging={drag ? 'true' : undefined}>
         {shown.map((id, index) => {
@@ -129,8 +137,9 @@ export function ElementLayers({
           const dragging = drag?.id === id
           const label = labels[id] ?? id
           const panelId = `element-panel-${id}`
+          const isHidden = hidden?.has(id) ?? false
           return (
-            <li key={id} data-layer-id={id} data-open={open ? 'true' : undefined} className={`min-w-0 rounded-md border text-xs ${open ? 'border-primary/70 bg-primary/5' : 'border-border/60'} ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
+            <li key={id} data-layer-id={id} data-open={open ? 'true' : undefined} data-hidden={isHidden ? 'true' : undefined} className={`min-w-0 rounded-md border text-xs ${open ? 'border-primary/70 bg-primary/5' : 'border-border/60'} ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
               <div className="flex min-w-0 items-center gap-1">
                 <button
                   type="button"
@@ -146,6 +155,20 @@ export function ElementLayers({
                 >
                   <GripVertical className="h-3.5 w-3.5" />
                 </button>
+                {onToggleVisibility ? (
+                  <button
+                    type="button"
+                    data-layer-eye
+                    aria-label={isHidden ? `Mostrar ${label}` : `Ocultar ${label}`}
+                    aria-pressed={!isHidden}
+                    title={isHidden ? 'Mostrar elemento' : 'Ocultar elemento'}
+                    className={`flex h-7 w-6 shrink-0 items-center justify-center rounded-sm hover:bg-muted ${isHidden ? 'text-muted-foreground/60' : 'text-muted-foreground'}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => { event.stopPropagation(); onToggleVisibility(id) }}
+                  >
+                    {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center justify-between gap-1 py-1 pr-2 text-left"
@@ -154,7 +177,7 @@ export function ElementLayers({
                   aria-controls={open ? panelId : undefined}
                   data-layer-toggle
                 >
-                  <span className="min-w-0 truncate">{label}</span>
+                  <span className={`min-w-0 truncate ${isHidden ? 'italic text-muted-foreground' : ''}`}>{label}</span>
                   {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
                 </button>
               </div>

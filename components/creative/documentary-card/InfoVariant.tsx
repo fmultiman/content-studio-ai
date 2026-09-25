@@ -38,6 +38,8 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
   const cream = '#f1e7d2'
   const gold = '#b8923f'
   const z = (id: string, fallback: number) => context.stack.zIndex[id] ?? fallback
+  const isHidden = (id: string) => context.hidden.has(id)
+  const hideStyle = (id: string): CSSProperties => (isHidden(id) ? { display: 'none' } : {})
   const transforms = context.primitiveTransforms
   const url = (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls)
   const fixedText: CSSProperties = { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z }
@@ -65,32 +67,32 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       <GrainOverlay color={isDark ? '#f0d9a8' : '#6b5a3a'} style={{ inset: 0, position: 'absolute' }} />
 
       {/* Authored elements — painted from the normalized stack. */}
-      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(650), top: y(660), width: x(560) }} rotation={87} transform={transforms?.archival} zIndex={z('archival', 11)} filter="sepia(.35)" shadow />
-      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-176), top: y(246), width: x(420) }} rotation={-42} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} />
-      <AssetLayer label="Fita do ramo 1" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(26), top: y(456), width: x(128) }} rotation={-20} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 13)} filter="saturate(.7) brightness(1.08)" />
-      <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} filter="saturate(.7) brightness(1.08)" />
-      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} />
+      <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(650), top: y(660), width: x(560) }} rotation={87} transform={transforms?.archival} zIndex={z('archival', 11)} hidden={isHidden('archival')} filter="sepia(.35)" shadow />
+      <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-176), top: y(246), width: x(420) }} rotation={-42} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} hidden={isHidden('botanicalLeaf')} />
+      <AssetLayer label="Fita do ramo 1" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(26), top: y(456), width: x(128) }} rotation={-20} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 13)} hidden={isHidden('tape1')} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} hidden={isHidden('tape2')} filter="saturate(.7) brightness(1.08)" />
+      <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
 
       {content.fact_cards[0] ? (
-        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} shadow>
+        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} hidden={isHidden('card1')} shadow>
           {factCard(content.fact_cards[0], cream)}
         </AssetLayer>
       ) : null}
-      <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} />
+      <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} hidden={isHidden('pin')} />
       {content.fact_cards[1] ? (
-        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} shadow>
+        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} hidden={isHidden('paper')} shadow>
           {factCard(content.fact_cards[1], green)}
         </AssetLayer>
       ) : null}
-      <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} />
-      <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} filter="saturate(.8)" />
+      <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} hidden={isHidden('pin2')} />
+      <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} hidden={isHidden('tape3')} filter="saturate(.8)" />
 
       {/* Título: light strip (first clause) over which the dark strip (rest) sits. */}
-      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(116), top: y(152), width: x(748), height: y(170) }} rotation={-1} transform={transforms?.paperStrip} zIndex={z('paperStrip', 21)} shadow />
+      <AssetLayer label="Faixa do título" url={url('paperStrip')} metrics={materialMetrics('paperStrip')} contain={context.materialContain?.paperStrip} box={{ left: x(116), top: y(152), width: x(748), height: y(170) }} rotation={-1} transform={transforms?.paperStrip} zIndex={z('paperStrip', 21)} hidden={isHidden('paperStrip')} shadow />
       {titleLineTwo ? (
-        <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} shadow />
+        <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} hidden={isHidden('paperDark')} shadow />
       ) : null}
-      <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), transform: titleTransform, transformOrigin: 'top left' }}>
+      <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), ...hideStyle('title'), transform: titleTransform, transformOrigin: 'top left' }}>
         <div style={{ color: green, fontSize: x(86), left: x(152), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(196), transform: 'rotate(-1deg)', whiteSpace: 'nowrap' }}>{titleLineOne}</div>
         {titleLineTwo ? (
           <div style={{ color: cream, fontSize: x(82), left: x(196), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(344), transform: 'rotate(1deg)', whiteSpace: 'nowrap' }}>
@@ -101,16 +103,16 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       </div>
 
       {content.source_line ? (
-        <div style={{ color: isDark ? '#cdbf9f' : '#6d6150', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(56), lineHeight: 1.3, maxWidth: x(300), position: 'absolute', top: y(1152), zIndex: z('source', 24), transform: `translate(${sourceTuning?.offsetX ?? 0}px, ${sourceTuning?.offsetY ?? 0}px) rotate(${-4 + (sourceTuning?.rotation ?? 0)}deg)`, transformOrigin: 'top left' }}>
+        <div style={{ color: isDark ? '#cdbf9f' : '#6d6150', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(56), lineHeight: 1.3, maxWidth: x(300), position: 'absolute', top: y(1152), zIndex: z('source', 24), ...hideStyle('source'), transform: `translate(${sourceTuning?.offsetX ?? 0}px, ${sourceTuning?.offsetY ?? 0}px) rotate(${-4 + (sourceTuning?.rotation ?? 0)}deg)`, transformOrigin: 'top left' }}>
           {content.source_line}
         </div>
       ) : null}
 
       {/* Template text (fixed layer). */}
       {context.sequence?.index && context.sequence?.total ? (
-        <div style={{ ...fixedText, background: '#d6c29a', clipPath: 'polygon(3% 8%, 97% 0, 100% 90%, 5% 100%, 0 22%)', height: y(112), left: x(16), top: y(28), transform: 'rotate(-2deg)', width: x(230) }}>
+        <div aria-label={`Página ${context.sequence.index} de ${context.sequence.total}`} style={{ ...fixedText, background: '#d6c29a', clipPath: 'polygon(3% 8%, 97% 0, 100% 90%, 5% 100%, 0 22%)', height: y(112), left: x(16), top: y(28), transform: 'rotate(-2deg)', width: x(230) }}>
           <div style={{ border: `2px solid ${green}`, borderRadius: '50%', color: green, fontFamily: display.family, fontSize: x(34), fontWeight: display.weight, left: x(52), padding: `${y(6)}px ${x(22)}px`, position: 'absolute', top: y(26) }}>
-            {context.sequence.index}/{context.sequence.total}
+            {context.sequence.index}
           </div>
         </div>
       ) : null}

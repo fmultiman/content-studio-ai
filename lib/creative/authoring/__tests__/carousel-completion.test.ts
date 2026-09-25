@@ -299,7 +299,7 @@ describe('Renderer — layout dispatch and geometry', () => {
     const markup = render(documentaryCardFixtures[fixture], variant)
     expect(markup).toContain(`aria-label="Editorial documentary card ${variant}"`)
     for (const needle of needles) expect(markup).toContain(needle)
-    expect(markup).toContain('>6/10</div>')
+    expect(markup).toContain('>6</div>')
   })
 
   it('Lista draws the optional callout only when present (Slide 5), never an empty caption paper', () => {

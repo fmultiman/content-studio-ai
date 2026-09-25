@@ -146,6 +146,11 @@ export interface TitleTuning {
   offsetY: number
   /** degrees, clamped to approximately ±2 */
   rotation: number
+  /**
+   * Static Detail Polish V1 — "Entrelinha" override (title only). Absent =
+   * the Template layout's default line-height; bounded by TITLE_LINE_HEIGHT_BOUNDS.
+   */
+  lineHeight?: number
 }
 
 export interface DocumentaryCardPreviewTuning {
@@ -306,6 +311,14 @@ export interface AuthoringState {
    * Template default. Identity only (LibraryFile id): never a URL or path.
    */
   assetOverrides?: AuthoringAssetOverrides
+
+  /**
+   * Static Detail Polish V1 — template element ids this slide hides (Camadas
+   * eye). Authored state: persisted, rendered, frozen in render snapshots.
+   * A hidden element keeps its stack place, transform and tuning. Absent or
+   * empty = every element visible (the Template default).
+   */
+  hiddenElements?: string[]
 
   /** UI-only: which debug panel tabs are open */
   debugPanelOpen: boolean

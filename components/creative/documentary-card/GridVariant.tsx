@@ -34,8 +34,8 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
       <LayoutBackground kit={kit} stars={[[1030, 520, 10], [40, 1030, 12]]} />
 
       {/* Authored elements — painted from the normalized stack. */}
-      <AssetLayer label="Fragmento de arquivo" url={kit.url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(760), top: y(1190), width: x(360) }} rotation={6} transform={transforms?.archival} zIndex={kit.z('archival', 11)} filter="sepia(.35)" shadow />
-      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(912), top: y(430), width: x(200) }} rotation={160} flipX transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 12)} />
+      <AssetLayer label="Fragmento de arquivo" url={kit.url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(760), top: y(1190), width: x(360) }} rotation={6} transform={transforms?.archival} zIndex={kit.z('archival', 11)} hidden={kit.hidden('archival')} filter="sepia(.35)" shadow />
+      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(912), top: y(430), width: x(200) }} rotation={160} flipX transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 12)} hidden={kit.hidden('botanicalLeaf')} />
 
       <ElementGroup id="tiles" label="Grade de temas" kit={kit} transformKey="card1" zFallback={13}>
         {tiles.map((tile, index) => {
@@ -57,7 +57,7 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
 
       {/* Papel das ideias: the cross-cutting ideas on a wide paper scrap. */}
       {hasIdeas ? (
-        <AssetLayer label="Papel das ideias" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(34), top: y(1046), width: x(1012), height: y(280) }} rotation={-0.6} transform={transforms?.note} zIndex={kit.z('note', 14)} shadow>
+        <AssetLayer label="Papel das ideias" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(34), top: y(1046), width: x(1012), height: y(280) }} rotation={-0.6} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow>
           <div style={{ color: paperInk, display: 'flex', flexDirection: 'column', inset: 0, justifyContent: 'center', padding: `0 ${x(36)}px`, position: 'absolute' }}>
             {content.ideas_title ? <div style={{ fontFamily: body, fontSize: x(27), fontWeight: 600, marginBottom: y(18), textAlign: 'center' }}>{content.ideas_title}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'space-around' }}>
@@ -73,7 +73,7 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
       ) : null}
 
       <TitleOnStrip context={context} kit={kit} title={content.title} fontSize={58} />
-      <AssetLayer label="Fita do título" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(64), top: y(140), width: x(140) }} rotation={-9} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 32)} filter="saturate(.85)" />
+      <AssetLayer label="Fita do título" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(64), top: y(140), width: x(140) }} rotation={-9} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 32)} hidden={kit.hidden('tape1')} filter="saturate(.85)" />
 
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />

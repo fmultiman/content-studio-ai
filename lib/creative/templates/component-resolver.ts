@@ -22,6 +22,8 @@ export type TemplateComponentInput = {
   /** Template Foundation V1: authoring template + element stack (paint order). Templates without them ignore both. */
   templateId?: string
   elementOrder?: string[]
+  /** Static Detail Polish V1: authored hidden elements. Templates without them ignore it. */
+  hiddenElements?: string[]
 }
 
 export type TemplateComponentRuntime = {
@@ -55,6 +57,7 @@ const COMPONENT_BINDINGS: Readonly<Record<string, TemplateComponentBinding>> = {
       primitiveTransforms: input.primitiveTransforms,
       templateId: input.templateId,
       elementOrder: input.elementOrder,
+      hiddenElements: input.hiddenElements,
     }, {
       mode: runtime.mode,
       motion: runtime.motion,

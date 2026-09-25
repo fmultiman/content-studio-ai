@@ -4,6 +4,7 @@ import { DocumentaryIcon } from './icons'
 import { LayoutBackground, SequenceBadge, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
 import type { DocumentaryCardVisualContext } from './types'
+import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
 
 /**
  * Editorial Documentary Collage · layout "closing" (Encerramento) — Portal
@@ -25,14 +26,14 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
     <>
       <LayoutBackground kit={kit} night stars={[[560, 60, 12], [880, 420, 14], [980, 900, 10], [60, 820, 10]]} />
 
-      <AssetLayer label="Ornamento celeste" url={kit.url('ornament')} metrics={materialMetrics('ornament')} contain={context.materialContain?.ornament} box={{ left: x(660), top: y(-50), width: x(460) }} transform={transforms?.ornament} zIndex={kit.z('ornament', 11)} filter={isDark ? undefined : 'brightness(.7)'} />
-      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(860), top: y(1060), width: x(280) }} rotation={-16} transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 12)} />
-      <AssetLayer label="Botânica seca" url={kit.url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(-26), top: y(1040), width: x(140) }} rotation={18} transform={transforms?.botanical} zIndex={kit.z('botanical', 13)} />
+      <AssetLayer label="Ornamento celeste" url={kit.url('ornament')} metrics={materialMetrics('ornament')} contain={context.materialContain?.ornament} box={{ left: x(660), top: y(-50), width: x(460) }} transform={transforms?.ornament} zIndex={kit.z('ornament', 11)} hidden={kit.hidden('ornament')} filter={isDark ? undefined : 'brightness(.7)'} />
+      <AssetLayer label="Ramo de folhas" url={kit.url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(860), top: y(1060), width: x(280) }} rotation={-16} transform={transforms?.botanicalLeaf} zIndex={kit.z('botanicalLeaf', 12)} hidden={kit.hidden('botanicalLeaf')} />
+      <AssetLayer label="Botânica seca" url={kit.url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(-26), top: y(1040), width: x(140) }} rotation={18} transform={transforms?.botanical} zIndex={kit.z('botanical', 13)} hidden={kit.hidden('botanical')} />
 
       {/* Papel do convite: invitation + contact. */}
       {hasInvite ? (
         <>
-          <AssetLayer label="Papel do convite" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(846), width: x(1000), height: y(250) }} rotation={-0.8} transform={transforms?.note} zIndex={kit.z('note', 14)} shadow>
+          <AssetLayer label="Papel do convite" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(846), width: x(1000), height: y(250) }} rotation={-0.8} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow>
             <div style={{ alignItems: 'center', color: paperInk, display: 'flex', gap: x(30), inset: 0, padding: `0 ${x(64)}px`, position: 'absolute' }}>
               <DocumentaryIcon icon="envelope" color={green} size={x(76)} strokeWidth={2} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: y(6) }}>
@@ -42,12 +43,12 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
               </div>
             </div>
           </AssetLayer>
-          <AssetLayer label="Fita do convite" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(470), top: y(826), width: x(140) }} rotation={3} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 15)} filter="saturate(.85)" />
+          <AssetLayer label="Fita do convite" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(470), top: y(826), width: x(140) }} rotation={3} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 15)} hidden={kit.hidden('tape1')} filter="saturate(.85)" />
         </>
       ) : null}
 
       {/* Título: the closing statement, manual line breaks kept. */}
-      <div style={{ color: titleInk, fontFamily: display.family, fontSize: x(72), fontWeight: display.weight, left: x(70), letterSpacing: '.01em', lineHeight: 1.06, position: 'absolute', textTransform: 'uppercase', top: y(168), whiteSpace: 'pre-line', width: x(860), zIndex: kit.z('title', 16), transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${titleTuning?.rotation ?? 0}deg)`, transformOrigin: 'top left' }}>
+      <div style={{ color: titleInk, fontFamily: display.family, fontSize: x(72), fontWeight: display.weight, left: x(70), letterSpacing: '.01em', lineHeight: titleTuning?.lineHeight ?? layoutTitleLineHeight(context.templateId, 'closing') ?? 1.06, position: 'absolute', textTransform: 'uppercase', top: y(168), whiteSpace: 'pre-line', width: x(860), zIndex: kit.z('title', 16), ...kit.hideStyle('title'), transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${titleTuning?.rotation ?? 0}deg)`, transformOrigin: 'top left' }}>
         {content.title}
       </div>
 

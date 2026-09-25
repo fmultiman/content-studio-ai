@@ -75,6 +75,7 @@ import {
   STUDIO_SHELL_MOBILE_DRAWER_WIDTH,
   STUDIO_SHELL_PAGE_PADDING,
   STUDIO_SHELL_RAIL_MAX_HEIGHT,
+  STUDIO_SHELL_COMPACT_RAIL_MAX_HEIGHT,
   STUDIO_SHELL_RAIL_RADIUS,
   STUDIO_SHELL_RAIL_TOP_OFFSET,
   STUDIO_SHELL_STORAGE_KEY,
@@ -654,7 +655,7 @@ function StudioShellRail() {
         style={{
           borderRadius: STUDIO_SHELL_RAIL_RADIUS,
           boxShadow: 'var(--shadow-elevation-low)',
-          maxHeight: STUDIO_SHELL_RAIL_MAX_HEIGHT,
+          maxHeight: compact ? STUDIO_SHELL_COMPACT_RAIL_MAX_HEIGHT : STUDIO_SHELL_RAIL_MAX_HEIGHT,
         }}
       >
         <SidebarHeader
@@ -663,7 +664,15 @@ function StudioShellRail() {
           <StudioShellDesktopControls />
         </SidebarHeader>
 
-        <SidebarContent className="gap-2.5 px-2 py-1.5">
+        {/*
+          Static Detail Polish V1 — phantom left scrollbar: on short windows (≈ ≤503 CSS px tall:
+          non-maximized, or Windows display scaling) the expanded nav overflowed its viewport-capped
+          rail by a few px and SidebarContent's default overflow-auto summoned a 15px classic
+          scrollbar that also widened the rail. The rail now fits down to ~480px (compact group
+          labels) and, only when a window is genuinely too short, scrolls vertically with a thin
+          scrollbar in both modes (compact used to clip unreachable items instead).
+        */}
+        <SidebarContent className="gap-2.5 overflow-x-hidden overflow-y-auto px-2 py-1.5 [scrollbar-width:thin] group-data-[collapsible=icon]:overflow-y-auto">
           {navigationGroups.map((group) => (
             <SidebarGroup
               key={group.id}
@@ -674,7 +683,7 @@ function StudioShellRail() {
             >
               <SidebarGroupLabel
                 className={cn(
-                  'px-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70',
+                  'h-6 px-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70',
                   compact && 'hidden',
                 )}
               >

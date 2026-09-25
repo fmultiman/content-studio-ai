@@ -98,6 +98,16 @@ export type TemplateElementControl =
   | { type: 'transform'; key: ElementTransformKey }
   | { type: 'tuning'; group: 'hero' | 'title' | 'source' }
 
+/**
+ * Static Detail Polish V1 — bounded typographic capability of a text element.
+ * `lineHeight` is the Template default the renderer uses when the slide has
+ * no "Entrelinha" override; only elements that declare it expose the control.
+ */
+export type TemplateElementTypography = { lineHeight: number }
+
+/** Safe authored range for a title's line-height (display serif, uppercase). */
+export const TITLE_LINE_HEIGHT_BOUNDS = { min: 0.8, max: 1.5 } as const
+
 export type TemplateElementDefinition = {
   /** Stable, template-scoped element id (persisted in `elementOrder`). */
   id: string
@@ -106,6 +116,8 @@ export type TemplateElementDefinition = {
   kind: 'text' | 'image' | 'material'
   assetSlot?: AuthoringAssetSlotId
   control: TemplateElementControl
+  /** Authorable typography (Entrelinha). Absent = not exposed. */
+  typography?: TemplateElementTypography
 }
 
 export type TemplateLayoutDefinition = {
@@ -200,7 +212,7 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02 } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
     { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita da imagem', kind: 'material', assetSlot: 'tape', control: t('tape1') },
@@ -251,7 +263,7 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'hero', label: 'Imagem do documento', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita do documento', kind: 'material', assetSlot: 'tape', control: t('tape1') },
@@ -282,7 +294,7 @@ const GRID_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'tape1', label: 'Fita do título', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'tiles', label: 'Grade de temas', kind: 'text', control: t('card1') },
@@ -300,7 +312,7 @@ const MAP_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'map', label: 'Mapa do Brasil', kind: 'image', control: t('card1') },
     { id: 'note', label: 'Nota do mapa', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
@@ -318,7 +330,7 @@ const NETWORK_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'cards', label: 'Cartões da rede', kind: 'material', assetSlot: 'paperScrap', control: t('card1') },
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
@@ -334,7 +346,7 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper') },
     { id: 'tape1', label: 'Fita da citação', kind: 'material', assetSlot: 'tape', control: t('tape1') },
@@ -352,7 +364,7 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.06 } },
     { id: 'note', label: 'Papel do convite', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
     { id: 'tape1', label: 'Fita do convite', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
@@ -416,6 +428,18 @@ export function isAppearanceSupported(template: TemplateDefinition, layoutId: st
 
 export function getLayoutElement(layout: TemplateLayoutDefinition, elementId: string): TemplateElementDefinition | null {
   return layout.elements.find((element) => element.id === elementId) ?? null
+}
+
+/**
+ * Static Detail Polish V1 — the Template default line-height of a layout's
+ * Title element, or undefined when the layout does not expose Entrelinha
+ * (Info sets its title as two single-line strips). Shared by the Editor and
+ * the renderer so an absent override always paints the Template value.
+ */
+export function layoutTitleLineHeight(templateId: string | undefined, layoutId: string): number | undefined {
+  const template = getTemplateDefinition(templateId ?? DEFAULT_TEMPLATE_ID) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
+  const layout = template ? getTemplateLayout(template, layoutId) : null
+  return layout ? getLayoutElement(layout, 'title')?.typography?.lineHeight : undefined
 }
 
 /** True when the layout draws the content image ('hero'): Cover, Lista and Citação do; the others do not. */

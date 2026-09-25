@@ -25,6 +25,7 @@ import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/sch
 import {
   authoringRenderOverridesSchema,
   elementOrderSchema,
+  hiddenElementsSchema,
   primitiveSelectionSchema,
   primitiveTransformsBySlotSchema,
   templateIdSchema,
@@ -91,6 +92,8 @@ export const StaticRenderExecutionSnapshotSchema = z
     // frozen before them still parses (absent = default template / stack).
     templateId: templateIdSchema.optional(),
     elementOrder: elementOrderSchema.optional(),
+    // Static Detail Polish V1 — authored hidden elements, frozen (absent = all visible).
+    hiddenElements: hiddenElementsSchema.optional(),
     assetOverrides: z.record(z.enum(AUTHORING_ASSET_SLOT_IDS as [AuthoringAssetSlotId, ...AuthoringAssetSlotId[]]), FrozenLibraryAssetSchema).optional(),
     slide: StaticRenderSlideRefSchema.nullable(),
     output: z
@@ -115,6 +118,8 @@ export type StaticRenderExecutionSnapshot = {
   templateId?: string
   /** Frozen, already-normalized paint order (back -> front) the Editor showed at click time. */
   elementOrder?: string[]
+  /** Frozen, already-normalized hidden elements (absent = every element visible). */
+  hiddenElements?: string[]
   /** Frozen Project LibraryFiles per slot (Assets "Trocar"); hero included. */
   assetOverrides?: FrozenAssetOverrides
   slide: StaticRenderSlideRef | null
@@ -130,6 +135,7 @@ export function buildStaticRenderExecutionSnapshot(input: {
   primitiveTransforms?: PrimitiveTransformsRequest
   templateId?: string
   elementOrder?: string[]
+  hiddenElements?: string[]
   assetOverrides?: FrozenAssetOverrides
   slide: StaticRenderSlideRef | null
 }): StaticRenderExecutionSnapshot {
@@ -146,6 +152,7 @@ export function buildStaticRenderExecutionSnapshot(input: {
     ...(input.primitiveTransforms ? { primitiveTransforms: input.primitiveTransforms } : {}),
     ...(input.templateId ? { templateId: input.templateId } : {}),
     ...(input.elementOrder ? { elementOrder: input.elementOrder } : {}),
+    ...(input.hiddenElements && input.hiddenElements.length > 0 ? { hiddenElements: input.hiddenElements } : {}),
     ...(input.assetOverrides && Object.keys(input.assetOverrides).length > 0 ? { assetOverrides: input.assetOverrides } : {}),
     slide: input.slide,
     output: { format: 'png', width: input.manifest.canvas.width, height: input.manifest.canvas.height },

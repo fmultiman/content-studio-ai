@@ -187,7 +187,7 @@ describe('Slide 3 render path', () => {
     expect(markup).toContain('<strong style="font-weight:700">Carlos A. P. Tavares</strong>')
     expect(markup).toContain('data-list-items="3"')
     expect(markup).toContain('Revista Planeta, março de 1983, texto “Anarquismo vivo”.')
-    expect(markup).toContain('>3/3</div>')
+    expect(markup).toContain('>3</div>')
     expect(markup).not.toContain('**')
   })
 

@@ -10,6 +10,11 @@ export const STUDIO_SHELL_MOBILE_DRAWER_VIEWPORT_WIDTH = '56vw'
 export const STUDIO_SHELL_TOP_BAR_HEIGHT = '3.125rem'
 export const STUDIO_SHELL_RAIL_TOP_OFFSET = '3.75rem'
 export const STUDIO_SHELL_RAIL_MAX_HEIGHT = 'calc(100svh - 4.5rem)'
+/**
+ * The compact rail sits 1.5rem lower (mt-6), so its cap must subtract that too — otherwise
+ * a capped compact rail runs past the bottom of the viewport (Static Detail Polish V1).
+ */
+export const STUDIO_SHELL_COMPACT_RAIL_MAX_HEIGHT = 'calc(100svh - 6rem)'
 export const STUDIO_SHELL_RAIL_RADIUS = '1.25rem'
 export const STUDIO_SHELL_PAGE_PADDING = '1.5rem'
 export const STUDIO_SHELL_TRANSITION_MS = 200

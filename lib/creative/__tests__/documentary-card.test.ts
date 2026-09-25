@@ -24,7 +24,7 @@ describe('Wave 4 Documentary Card composition', () => {
     }))
 
     expect(markup).toContain('O que são comunidades alternativas?')
-    expect(markup).toContain('1/10')
+    expect(markup).toContain('Página 1 de 10')
     expect(markup).toContain('Documentary hero evidence')
     // Template Foundation V1: the old hardcoded "Field notes" placeholder is
     // gone — the brand label is content (brand_label), absent in this fixture.

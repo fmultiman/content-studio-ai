@@ -70,6 +70,7 @@ export type StaticRenderManifestStillProps = {
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
   templateId?: string
   elementOrder?: string[]
+  hiddenElements?: string[]
 }
 
 /**
@@ -77,7 +78,7 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
-export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms, templateId, elementOrder }) => {
+export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms, templateId, elementOrder, hiddenElements }) => {
   const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
@@ -92,6 +93,7 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     primitiveTransforms,
     templateId,
     elementOrder,
+    hiddenElements,
   }, { mode: 'still', overrides })
   const renderProps = remotionTemplateProps(props)
   // A still is one captured frame: hold it until every painted image loaded.
