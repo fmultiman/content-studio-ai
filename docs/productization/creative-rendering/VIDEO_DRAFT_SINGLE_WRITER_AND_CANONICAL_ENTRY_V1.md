@@ -139,7 +139,36 @@ The only remaining non-editor `PATCH /api/video-drafts` is the Production unlink
 
 ## 12. Production smoke
 
-Recorded in §14 after deploy.
+Run on `https://content.multihuman.com.br` against feature commit `ee3d46374533f87e55069dcae6ae228985001e5c`. The Vercel Production deployment for that SHA reported `success`.
+
+**Anonymous checks:**
+
+| Request | Result |
+|---|---|
+| `/dev/creative-preview` | **404** |
+| `/videos?draft=<id>&project=x` | 307 → `/creative-editor/video/<id>` |
+| `/videos?draft=bogus` | 307 → `/videos` |
+| `/creative-editor/video/<id>` | 307 → `/login` |
+| `/videos` | 307 → `/login` |
+
+**Authenticated checks:**
+
+| Check | Result |
+|---|---|
+| Legacy `/videos?draft=7b12b65d…&project=…` | Canonical editor, "Salvo"; `updated_at` unchanged (`2026-09-25T16:47:35Z`) |
+| `/videos` hub | 10 drafts, each with Abrir + Preparar publicação; create card present; no classic scene UI |
+| `/videos/rascunhos` row | Canonical editor |
+| Hub creation (`?project=&production=` preselected, "Voltar para a Produção" shown; double click) | Exactly 1 draft (10 → 11), `e35d7a14-93e2-4e05-acfe-c3b24cb06e36`, correct Project/Production, 1 scene → its editor |
+| Edit → Salvar → reload | Persisted, "Salvo" |
+| Production "Vídeos" tab | 3 drafts; "Abrir" → canonical editor; 0 `/videos?` links |
+| Live Player / Timeline | Plays (→ 00:02.40); "3 cenas · 9.17s" |
+| Output Player (execution `6633333e…`) | MP4 1080×1920, 9.2 s, `readyState 4` |
+| Gallery "Abrir origem" (video) | Canonical editor |
+| Dashboard | 4 canonical editor links, 0 legacy |
+| Unknown id through the legacy link | "Rascunho de vídeo não encontrado ou sem acesso." |
+| Static editor (ChannelPiece "editar-visual") | Loads, "Salvo" |
+
+Production test data: draft `e35d7a14-…` (in addition to the local-run draft `f2fd6913-…`).
 
 ## 13. Remaining legacy code
 
@@ -150,5 +179,7 @@ Recorded in §14 after deploy.
 
 ## 14. Final checkpoint
 
-- Feature SHA and production smoke: see the follow-up record commit.
-- The worker did not change.
+- Feature SHA: `ee3d46374533f87e55069dcae6ae228985001e5c`. It was equal on local HEAD, `origin/main` and remote `main`, and its Vercel Production deployment succeeded.
+- Final SHA: the docs commit recording this smoke, verified equal on local, `origin/main` and remote `main`.
+- The worker did not change. No schema, migration, API contract or render pipeline change.
+- Not committed: `.env.local`, `.next/`, `tsconfig.typecheck.tsbuildinfo`, browser data and scratch files.
