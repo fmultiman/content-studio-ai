@@ -166,3 +166,33 @@ Unchanged semantics: primary Scenes, contiguous, reorder, right-edge duration, s
 **Environment notes (not product defects)**
 - The embedded test browser renders only while its window is on screen. When covered: 0 rAF/s, ResizeObserver and CSS animations stall, Fit falls back, and Radix exit animations never emit `animationend`. The automation dispatches `animationend` to unmount closed dialogs.
 - The Static responsive re-check at 1024/390 ran while the window was not rendering and is inconclusive; it is repeated in the production smoke.
+
+### Delivery and production smoke
+
+- **Implementation commit:** `ac2a81b132507e92124e31678cf922f7a0927e91` ("feat: video creative editor static parity and bottom dock").
+  - Local HEAD = `origin/main` = remote `main`.
+  - Vercel Production deployment `6665861722` (vercel[bot]) = `success` for that SHA. The Vercel MCP has no access to this team, so the SHA is confirmed through GitHub deployment statuses.
+- **Production smoke** (`https://content.multihuman.com.br`, authenticated, draft `7b12b65d…`, window rendering at 62 fps):
+  - **Video structure:** dock inside the workbench; tabs Template/Conteúdo/Assets/Estilo/Elementos/Motion; "Estado do vídeo" group in the bottom toolbar, no longer in the header; shared zoom controls; Player `pointer-events:none`. The saved state loaded (3s / 2.17s / 4s, equal to the DB).
+  - **Dock**
+
+    | State | Dock | Player (Fit) |
+    |---|---|---|
+    | normal | 221px | 280×498 (26%) |
+    | collapsed | 36px | 384×683 (36%) |
+    | expanded | 433px | 160×286 (15%) |
+
+    Identical to local.
+  - **Playback:** advanced (0 → 37 in 1.5s); playhead == Player on every sample; pause stable at 39.
+  - **Player viewport:** zoom 33%, pan 120,60, Centralizar → 0,0. Stayed "Salvo".
+  - **Final render:** Renderizar vídeo → `a6e090c8-19a4-473f-abc1-9d5248ccfee0` completed, 1080×1920 MP4 of 2.6 MB. The output URL resolves; the Output Player loaded 9.216s (readyState 4); `/api/gallery/video-outputs` lists it.
+  - **Static:** Canvas; Fit 53% → 75% → 50%; pan 60,30; next slide → Slide 2; Inspector close / launcher / reopen; "Salvo"; ZIP button present. Responsive: 1440 Fit 53% floating, 1024 Fit 42% floating, 390 Fit 29% stacked. The Canvas stays inside the viewport and there is no page overflow.
+- No worker or runtime deployment.
+
+### Known remaining gaps (not solved here)
+
+- Per-Scene Template/layout/appearance, text content, element order/visibility/tuning, and material-slot overrides are not representable in VideoScene (class 5; next authoring-model decision).
+- The Scene hero is the only authored asset slot in Video.
+- **Element ≠ Track:** undecided. Gate B — main visual + B-roll + lower third + continuous audio — remains the next temporal-model mission, with its authority decision (see CREATIVE_EDITOR_VIDEO_FOUNDATION_V1 §14–15).
+- The six-tab Inspector uses compact labels at the default palette width; full labels appear when the palette is widened.
+- The Remotion license notice still logs in the console; `acknowledgeRemotionLicense` is the owner's decision.
