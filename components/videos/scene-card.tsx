@@ -268,6 +268,10 @@ export function SceneCard({ scene, sceneNumber, projectId, libraryFiles, onUpdat
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* A duration authored in the Creative Editor Timeline may not be a preset: keep it selectable. */}
+                    {!durationOptions.some((opt) => opt.value === scene.duration) && (
+                      <SelectItem value={String(scene.duration)}>{Number(scene.duration.toFixed(2))} segundos</SelectItem>
+                    )}
                     {durationOptions.map((opt) => (
                       <SelectItem key={opt.value} value={String(opt.value)}>
                         {opt.label}

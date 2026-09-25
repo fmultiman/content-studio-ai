@@ -9,13 +9,15 @@ export type TimelineCompositionProps = {
   resolvedInput: ResolvedTimelineInput
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
+  /** See TemplateSegment: omitted by the final render (Remotion bundle URLs); identity in the Live Player. */
+  adaptTemplateProps?: <T>(props: T) => T
 }
 
 /**
  * Remotion-only adapter: timeline owns WHEN; registered templates own HOW.
  * No Remotion types or state cross back into TimelineManifest/resolution.
  */
-export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolvedInput, primitiveMaterials, primitiveTransforms }) => {
+export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolvedInput, primitiveMaterials, primitiveTransforms, adaptTemplateProps }) => {
   const globalFrame = useCurrentFrame()
   const tracks = [...resolvedInput.manifest.tracks]
     .filter((track) => track.kind === 'video' || track.kind === 'overlay')
@@ -33,6 +35,7 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolv
             resolvedSegment={resolvedSegment}
             primitiveMaterials={primitiveMaterials}
             primitiveTransforms={primitiveTransforms}
+            adaptTemplateProps={adaptTemplateProps}
           />
         )))}
     </TypographyReadyBoundary>

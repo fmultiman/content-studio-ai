@@ -29,7 +29,7 @@ import {
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw, Download, ExternalLink } from 'lucide-react'
+import { Plus, Video, Play, Loader2, Save, FileText, ChevronRight, PanelsTopLeft, ArrowLeft, Zap, Search, AlertCircle, CheckCircle2, RefreshCw, Download, ExternalLink, Clapperboard } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { LibraryFile, Project, Production, VideoScene, VideoDraft, RenderExecutionSummary } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -45,6 +45,8 @@ import {
   getDraftHubProductionLabel,
   getProductionsForProject,
 } from '@/lib/draft-hub'
+import { videoCreativeEditorHref } from '@/lib/creative/video-editor/video-workspace'
+import { createVideoScene } from '@/lib/creative/video-editor/video-authoring'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -86,6 +88,7 @@ function VideosPageContent() {
   const [hubCreateProjectId, setHubCreateProjectId] = useState('')
   const [hubCreateProductionId, setHubCreateProductionId] = useState('')
   const [hubViewMode, setHubViewMode] = useViewModePreference('video-draft-hub-view', 'list')
+  const [isCreatingInEditor, setIsCreatingInEditor] = useState(false)
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Fetch projects and drafts on mount
@@ -714,6 +717,24 @@ function VideosPageContent() {
     if (!hubCreateProjectId || !hubCreateProductionId) return
     router.push(`/videos?project=${hubCreateProjectId}&production=${hubCreateProductionId}`)
   }
+  // Creative Editor Video: create the VideoDraft (same POST /api/video-drafts) and open it in the editor.
+  const createInCreativeEditor = async () => {
+    if (!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor) return
+    setIsCreatingInEditor(true)
+    try {
+      const response = await fetch('/api/video-drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Novo vídeo', projectId: hubCreateProjectId, productionId: hubCreateProductionId, scenes: [createVideoScene([])] }),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.draft?.id) throw new Error(payload.error || 'Não foi possível criar o vídeo.')
+      router.push(videoCreativeEditorHref(payload.draft.id))
+    } catch (error) {
+      toast({ title: 'Erro', description: error instanceof Error ? error.message : 'Não foi possível criar o vídeo.', variant: 'destructive' })
+      setIsCreatingInEditor(false)
+    }
+  }
   const clearHubFilters = () => {
     setHubProjectFilter('all')
     setHubProductionFilter('all')
@@ -789,11 +810,21 @@ function VideosPageContent() {
               </p>
             )}
             <Button
-              className="mt-4 w-full text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
+              className="mt-4 w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
+              onClick={() => void createInCreativeEditor()}
+              disabled={!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor}
+              data-testid="create-in-creative-editor"
+            >
+              {isCreatingInEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+              Criar no Creative Editor
+            </Button>
+            <Button
+              variant="outline"
+              className="mt-2 w-full"
               onClick={openVideoWorkspace}
               disabled={!hubCreateProjectId || !hubCreateProductionId}
             >
-              Criar na Production
+              Criar na Production (editor clássico)
             </Button>
           </div>
         </div>
@@ -924,8 +955,12 @@ function VideosPageContent() {
                       />
                     </div>
                     <CardActions className="flex flex-wrap gap-2 md:justify-end">
-                      <Button size="sm" onClick={() => router.push(draft.href)} className="gap-1">
-                        Abrir
+                      <Button size="sm" onClick={() => router.push(videoCreativeEditorHref(draft.id))} className="gap-1" data-testid="open-in-creative-editor">
+                        <Clapperboard className="h-4 w-4" />
+                        Creative Editor
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => router.push(draft.href)} className="gap-1">
+                        Abrir (clássico)
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                       {draft.productionHref && (
@@ -964,8 +999,12 @@ function VideosPageContent() {
                     ]}
                   />
                   <CardActions className="flex flex-wrap gap-2">
-                    <Button onClick={() => router.push(draft.href)} className="gap-2">
-                      Abrir
+                    <Button onClick={() => router.push(videoCreativeEditorHref(draft.id))} className="gap-2" data-testid="open-in-creative-editor">
+                      <Clapperboard className="h-4 w-4" />
+                      Creative Editor
+                    </Button>
+                    <Button variant="outline" onClick={() => router.push(draft.href)} className="gap-2">
+                      Abrir (clássico)
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                     {draft.productionHref && (
@@ -1116,7 +1155,20 @@ function VideosPageContent() {
                   </div>
                 </div>
                 {/* Action Buttons - Fixed Position */}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  {currentDraftId && (
+                    <Button
+                      onClick={async () => {
+                        const saved = await handleSaveDraft(false)
+                        router.push(videoCreativeEditorHref(saved?.id ?? currentDraftId))
+                      }}
+                      className="gap-2"
+                      data-testid="open-in-creative-editor"
+                    >
+                      <Clapperboard className="h-4 w-4" />
+                      Abrir no Creative Editor
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => handleSaveDraft()}

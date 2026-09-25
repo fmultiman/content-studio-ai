@@ -68,6 +68,30 @@ describe('Wave 1 — Remotion isolation', () => {
     expect(offenders).toEqual([])
   })
 
+  it('product code reaches the Remotion adapter only through the Live Authoring Player entry (Creative Editor Video Foundation V1)', () => {
+    // RENDER_ARCHITECTURE_V1 §36 allows a Remotion Player as the Video Preview
+    // Surface. It lives under remotion/player/ (adapter surface); product code
+    // may import that one module and nothing else from remotion/.
+    const ADAPTER_IMPORT_RE = /['"]@\/remotion\/([^'"]+)['"]/g
+    const offenders: string[] = []
+    for (const root of SCAN_ROOTS) {
+      let files: string[]
+      try {
+        files = listSourceFiles(join(PROJECT_ROOT, root))
+      } catch {
+        continue
+      }
+      for (const file of files) {
+        const relPath = relative(PROJECT_ROOT, file)
+        if (isAllowed(relPath)) continue
+        for (const match of readFileSync(file, 'utf8').matchAll(ADAPTER_IMPORT_RE)) {
+          if (match[1] !== 'player/LiveTimelinePlayer') offenders.push(`${relPath} -> @/remotion/${match[1]}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('the allowed preview route verifies isolation: Wave 6 authoring lab uses DocumentaryCard directly, not via @remotion/player', () => {
     // Wave 6 replaced the Thumbnail/@remotion/player usage with a direct
     // DocumentaryCard render. The preview route is still the allowed surface,

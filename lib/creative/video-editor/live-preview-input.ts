@@ -1,0 +1,91 @@
+/**
+ * Creative Editor Video Foundation V1 — Live Authoring Player input.
+ *
+ * Builds the ResolvedTimelineInput the browser Player paints from the CURRENT
+ * in-memory VideoScene[] (saved or not), through the SAME pure chain the final
+ * render uses:
+ *
+ *   VideoScene[] -> buildRenderExecutionSnapshot (deriveVideoSceneAssetBindings
+ *   + adaptVideoDraftToTimelineManifest) -> resolveTimelineManifest
+ *   (identitySnapshot override) -> patchResolvedTimelineAssets
+ *
+ * The only difference from claim-time resolution (resolve-runtime-input.ts)
+ * is WHERE LibraryFile URLs come from: here, the short-lived display URLs the
+ * authenticated `/api/library-files` listing already returns to the browser
+ * (the Static editor paints its slot overrides the same way). The manifest is
+ * transient; nothing here is persisted or sent to the render route, which
+ * re-derives everything server-side from the saved VideoDraft.
+ */
+import type { VideoDraft, VideoScene, LibraryFile } from '@/lib/types'
+import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
+import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
+import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
+import { resolveTimelineManifest, type ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
+import { patchResolvedTimelineAssets } from '@/lib/creative/timeline-adapter/prepare-scene-assets'
+import type { AdapterDiagnostic } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
+import { buildRenderExecutionSnapshot } from '@/lib/render-execution/build-snapshot'
+
+export type PreviewLibraryFile = Pick<LibraryFile, 'id' | 'name' | 'public_url' | 'mime_type'> & Partial<Pick<LibraryFile, 'kind' | 'thumbnail_url'>>
+
+export type LivePreviewInputArgs = {
+  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id'>
+  scenes: readonly VideoScene[]
+  identitySnapshot: VisualTokensSnapshot
+  libraryFiles: ReadonlyMap<string, PreviewLibraryFile>
+}
+
+export type LivePreviewInputResult =
+  | { ok: true; resolvedInput: ResolvedTimelineInput; manifest: TimelineManifest; diagnostics: AdapterDiagnostic[]; missingAssets: string[] }
+  | { ok: false; reason: 'no_scenes' | 'missing_context' | 'invalid_timeline'; message: string }
+
+/** Browser-display ResolvedAsset for a LibraryFile (same shape the Static preview paints). */
+export function previewLibraryFileAsset(file: PreviewLibraryFile): ResolvedAsset | null {
+  if (!file.public_url) return null
+  return {
+    ref: file.id,
+    source: 'library_file',
+    path: `library_file:${file.id}`,
+    url: file.public_url,
+    mime_type: file.mime_type ?? 'image/*',
+    alt: file.name,
+    fit: 'cover',
+  }
+}
+
+export function buildLivePreviewInput(args: LivePreviewInputArgs): LivePreviewInputResult {
+  if (args.scenes.length === 0) return { ok: false, reason: 'no_scenes', message: 'Adicione uma cena para ver a prévia.' }
+  if (!args.draft.project_id || !args.draft.production_id) {
+    return { ok: false, reason: 'missing_context', message: 'O rascunho precisa de Projeto e Production para a prévia.' }
+  }
+
+  const { snapshot, diagnostics } = buildRenderExecutionSnapshot({
+    draft: { id: args.draft.id, project_id: args.draft.project_id, production_id: args.draft.production_id, scenes: [...args.scenes] },
+    identitySnapshot: args.identitySnapshot,
+  })
+
+  const resolved = resolveTimelineManifest(snapshot.manifest, { identitySnapshot: args.identitySnapshot })
+  if (!resolved.valid) {
+    return { ok: false, reason: 'invalid_timeline', message: resolved.errors.map((error) => error.message).join('; ') }
+  }
+
+  const patch: Record<string, ResolvedAsset> = {}
+  const missingAssets: string[] = []
+  for (const segment of snapshot.manifest.segments) {
+    if (segment.kind !== 'template') continue
+    for (const [slot, assetRef] of Object.entries(segment.payload.assets)) {
+      if (assetRef.type !== 'library_file') continue
+      const file = args.libraryFiles.get(assetRef.ref)
+      const asset = file ? previewLibraryFileAsset(file) : null
+      if (asset) patch[`${segment.id}:${slot}`] = { ...asset, fit: assetRef.fit ?? asset.fit }
+      else missingAssets.push(assetRef.ref)
+    }
+  }
+
+  return {
+    ok: true,
+    resolvedInput: patchResolvedTimelineAssets(resolved.value, patch),
+    manifest: snapshot.manifest,
+    diagnostics,
+    missingAssets,
+  }
+}

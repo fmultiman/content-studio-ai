@@ -11,10 +11,16 @@ type TemplateSegmentProps = {
   resolvedSegment: ResolvedTimelineTemplateSegment
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
+  /**
+   * Final template-props step. Defaults to the Remotion-bundle URL normalizer
+   * (final render path, unchanged). The browser Live Authoring Player serves
+   * fixture/material URLs from Next's public root and passes an identity.
+   */
+  adaptTemplateProps?: <T>(props: T) => T
 }
 
 /** Maps one resolved, neutral template segment into the shared visual tree. */
-export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment, primitiveMaterials, primitiveTransforms }) => {
+export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, resolvedInput, resolvedSegment, primitiveMaterials, primitiveTransforms, adaptTemplateProps = remotionTemplateProps }) => {
   const { segment, resolvedAssets, resolvedTemplate } = resolvedSegment
   const state = segmentFrameState(globalFrame, segment.start_frame, segment.duration_frames)
   if (!state.visible || state.localFrame === null) return null
@@ -43,5 +49,5 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
     durationInFrames: segment.duration_frames,
   })
 
-  return <>{binding.component(remotionTemplateProps(props))}</>
+  return <>{binding.component(adaptTemplateProps(props))}</>
 }
