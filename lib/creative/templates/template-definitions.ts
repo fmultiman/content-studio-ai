@@ -146,6 +146,13 @@ export type AuthoringSlotView = {
   projectCategory?: 'paper' | 'tape'
 }
 
+/** Reusable semantic regions of a Template family, independent of one layout's concrete stack. */
+export type TemplateAnatomyRegion = {
+  id: string
+  label: string
+  description: string
+}
+
 export type TemplateDefinition = {
   id: string
   name: string
@@ -153,6 +160,8 @@ export type TemplateDefinition = {
   description: string
   /** Code-backed renderer this template is drawn by (StaticRenderManifest template ref + component binding). */
   renderer: { componentKey: string; templateRef: { id: string; version: string; scope: 'system' } }
+  /** Registry-owned semantic grammar shown read-only in the Creative Editor. */
+  anatomy: readonly TemplateAnatomyRegion[]
   assetSlots: Readonly<Record<AssetSlotId, AssetSlotDefinition>>
   contentImageSlots: Readonly<Record<'hero', ContentImageSlotDefinition>>
   layouts: readonly TemplateLayoutDefinition[]
@@ -380,6 +389,12 @@ export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   category: 'editorial',
   description: 'Colagem documental editorial: papéis rasgados, fitas, pins e botânicas sobre uma composição de memória.',
   renderer: { componentKey: 'editorial.documentary-card', templateRef: { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } },
+  anatomy: [
+    { id: 'editorial-content', label: 'Conteúdo editorial', description: 'Texto e informação principal da narrativa do carrossel.' },
+    { id: 'content-image', label: 'Imagem de conteúdo', description: 'Imagem principal quando o layout oferece uma área de conteúdo visual.' },
+    { id: 'collage-materials', label: 'Materiais de colagem', description: 'Papéis, fitas, pins e botânicas que compõem a linguagem visual editorial.' },
+    { id: 'source-credit', label: 'Fonte e crédito', description: 'Crédito editorial usado pelos layouts que exibem uma fonte.' },
+  ],
   assetSlots: ASSET_SLOTS,
   contentImageSlots: {
     hero: { id: 'hero', label: 'Imagem principal', defaultAsset: { key: 'documentary-card-hero-01', label: 'Imagem de exemplo do template', path: 'documentary-card-hero-01.webp' } },

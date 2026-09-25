@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Crosshair, Loader2, Maximize, Minus, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Crosshair, Download, Loader2, Maximize, Minus, MoreHorizontal, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
@@ -19,7 +19,7 @@ import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } f
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { LAYOUT_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
-import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy, TemplateFamilyAnatomy } from '@/components/creative/authoring/inspector-panels'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
@@ -45,6 +45,7 @@ import type { Project, Production, EditorialContent, ChannelPiece } from '@/lib/
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
 import { CENTERED, applyViewportAction, calculatePreviewFitScale, canvasOrigin, clampPan, type ViewportAction, type ViewportPan } from '@/lib/creative/authoring/viewport'
 import { removeSlideFromCollection } from '@/lib/creative/authoring/slide-collection'
+import { visibleSlideIndexes } from '@/lib/creative/authoring/pagination'
 import {
   activeExecutionIds, applyExecutionUpdate, attachExecution, failEnqueue, hydrateRenderJobs, isActiveRenderPhase, isRenderStale,
   patchJobByExecution, renderPhaseLabel, startRenderJob, type StaticRenderJob, type StaticRenderJobs,
@@ -125,6 +126,8 @@ export default function StaticAuthoringProductPage() {
   const [assetPickerSlot, setAssetPickerSlot] = useState<AuthoringAssetSlotId | null>(null)
   const [activeTab, setActiveTab] = useState<InspectorSection>('template')
   const [error, setError] = useState<string | null>(null)
+  const [zipBusy, setZipBusy] = useState(false)
+  const [zipError, setZipError] = useState<string | null>(null)
   // Static Render Worker V1: async "Gerar PNG" jobs, keyed by the slide that
   // started them (see lib/creative/authoring/static-render-jobs.ts).
   const [renderJobs, setRenderJobs] = useState<StaticRenderJobs>({})
@@ -262,6 +265,32 @@ export default function StaticAuthoringProductPage() {
       setSaveStatus('saved')
     } catch {
       setSaveStatus('error')
+    }
+  }
+
+  async function downloadCarouselZip() {
+    if (!context || !isCarousel || zipBusy) return
+    setZipBusy(true)
+    setZipError(null)
+    try {
+      const response = await fetch(`/api/creative/static-authoring/export?channelPieceId=${encodeURIComponent(context.channelPiece.id)}`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(payload?.error || 'Não foi possível preparar o ZIP.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'carousel.zip'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+    } catch (cause: unknown) {
+      setZipError(cause instanceof Error ? cause.message : 'Não foi possível preparar o ZIP.')
+    } finally {
+      setZipBusy(false)
     }
   }
 
@@ -611,6 +640,7 @@ export default function StaticAuthoringProductPage() {
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>{template.layouts.map((option) => <Button key={option.id} size="sm" variant={state.variant === option.id ? 'default' : 'outline'} onClick={() => { if (state.variant !== option.id) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }}>{option.label}</Button>)}</div>
         <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>{(layout?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={state.appearance === appearance ? 'default' : 'outline'} onClick={() => { if (isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}</div>
         <p className="text-xs text-muted-foreground">{template.description}</p>
+        <TemplateFamilyAnatomy template={template} />
         {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
@@ -698,27 +728,32 @@ export default function StaticAuthoringProductPage() {
           <div style={{ width: canvasW, height: canvasH, transform: `scale(${effectiveScale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
-        {isCarousel && <div className="flex max-w-full flex-wrap items-center justify-center gap-1" role="group" aria-label="Slides" data-testid="slide-nav">
+      <div className="flex shrink-0 flex-nowrap items-center justify-between gap-2 overflow-x-auto border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
+        {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Slides" data-testid="slide-nav">
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
-          {slides.map((slide, index) => <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button>)}
+          {visibleSlideIndexes(slideTotal, currentSlideIndex, previewSize.width > 0 && previewSize.width < 600 ? 3 : 5).map((index) => { const slide = slides[index]; return <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button> })}
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={slideTotal <= 1} aria-label={`Remover slide ${currentSlideIndex + 1}`} title={slideTotal <= 1 ? 'O carrossel precisa de pelo menos um slide' : 'Remover slide'} data-testid="remove-slide"><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>}
-        <div className="flex items-center gap-1" role="group" aria-label="Zoom">
+        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Zoom">
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(-1)} aria-label="Diminuir zoom"><Minus className="h-3.5 w-3.5" /></Button>
           <select aria-label="Zoom da prévia" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={zoom === 'fit' ? 'fit' : String(zoom)} onChange={(event) => setZoom(event.target.value === 'fit' ? 'fit' : Number(event.target.value))}><option value="fit">Fit · {Math.round(fitScale * 100)}%</option>{ZOOM_LEVELS.map((level) => <option key={level} value={level}>{Math.round(level * 100)}%</option>)}</select>
           <Button size="icon-sm" variant="outline" onClick={() => stepZoom(1)} aria-label="Aumentar zoom"><Plus className="h-3.5 w-3.5" /></Button>
-          <Button size="icon-sm" variant="ghost" onClick={() => viewportAction('fit')} aria-label="Ajustar" title="Ajustar: caber o Canvas inteiro e centralizar" data-testid="viewport-fit"><Maximize className="h-3.5 w-3.5" /></Button>
-          <Button size="icon-sm" variant="ghost" onClick={() => viewportAction('center')} aria-label="Centralizar" title="Centralizar (mantém o zoom)" data-testid="viewport-center"><Crosshair className="h-3.5 w-3.5" /></Button>
-          <Button size="sm" variant="ghost" className="h-8 px-1.5 text-xs" onClick={() => viewportAction('actual')} aria-label="Zoom 100%" title="100% e centralizar" data-testid="viewport-100">100%</Button>
-          {floating && !inspectorOpen ? <Button size="sm" variant="outline" className="ml-1 h-8 gap-1 px-2 text-xs" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" />Inspector</Button> : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label="Ações de viewport" title="Ações de viewport" data-testid="viewport-actions"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => viewportAction('fit')} data-testid="viewport-fit"><Maximize className="mr-2 h-3.5 w-3.5" />Ajustar à tela</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => viewportAction('center')} data-testid="viewport-center"><Crosshair className="mr-2 h-3.5 w-3.5" />Centralizar</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => viewportAction('actual')} data-testid="viewport-100">100% centralizado</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
         </div>
-        {isCarousel && <div className="flex items-center gap-1" role="group" aria-label="Estado do slide">
-          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
-          <Button size="sm" variant="ghost" className="gap-1 px-2 text-xs" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button>
-          <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
+        {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado do slide">
+          <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
+          <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button>
+          <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
         </div>}
       </div>
     </div>
@@ -763,6 +798,10 @@ export default function StaticAuthoringProductPage() {
         {currentRenderStale && <span className="text-xs text-amber-600 dark:text-amber-400" data-testid="render-stale" title="O PNG atual não inclui as alterações feitas depois dele. Gere um novo PNG para incluí-las.">Alterações ainda não renderizadas</span>}
         {isCarousel && <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>}
         {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()} title="Salvar o estado de autoria (não gera PNG nem anexa mídia).">{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
+        {isCarousel && <div className="flex shrink-0 items-center gap-1">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={zipBusy} onClick={() => void downloadCarouselZip()} title="Baixar os PNGs duráveis do carrossel em um ZIP" data-testid="download-carousel-zip">{zipBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Baixar ZIP</Button>
+          {zipError ? <span className="max-w-40 truncate text-[11px] text-destructive" role="alert" title={zipError}>{zipError}</span> : null}
+        </div>}
         <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5" title="Gerar um PNG do estado atual deste slide (não salva a autoria).">{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
       </div>
     </header>

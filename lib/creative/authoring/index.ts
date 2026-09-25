@@ -23,3 +23,4 @@ export {
   nextSlideOrder,
 } from './carousel-state'
 export type { PersistedAuthoredSlide, StaticAuthoringStateContract, TemplateSlideOptions } from './carousel-state'
+export { visibleSlideIndexes } from './pagination'

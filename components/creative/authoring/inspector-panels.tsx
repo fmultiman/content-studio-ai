@@ -48,6 +48,26 @@ export function TemplateAnatomy({ template, layout }: { template: TemplateDefini
   )
 }
 
+/** Template family grammar. This stays separate from the selected layout's concrete elements and slots. */
+export function TemplateFamilyAnatomy({ template }: { template: TemplateDefinition }) {
+  return (
+    <section className="space-y-2 rounded-md border border-border/60 p-2" aria-label="Estrutura do Template" data-testid="template-family-anatomy">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura do Template</h3>
+        <span className="text-[10px] text-muted-foreground">somente leitura</span>
+      </div>
+      <ul className="space-y-1 text-[11px] text-muted-foreground" data-testid="template-anatomy-regions">
+        {template.anatomy.map((region) => (
+          <li key={region.id}>
+            <span className="font-medium text-foreground/80">{region.label}</span>
+            <span className="block">{region.description}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 /**
  * Assets tab — one consistent card per slot the active layout uses: what the
  * slot is, which resource currently fills it, where that resource comes from,

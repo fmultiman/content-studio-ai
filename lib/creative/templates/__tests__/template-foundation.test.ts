@@ -46,6 +46,12 @@ describe('Template registry', () => {
     expect(getTemplateLayout(template, 'timeline')).toBeNull()
   })
 
+  it('exposes Template family anatomy from registry metadata separately from layout anatomy', () => {
+    expect(template.anatomy.map((region) => region.id)).toEqual(['editorial-content', 'content-image', 'collage-materials', 'source-credit'])
+    expect(template.anatomy.every((region) => region.label && region.description)).toBe(true)
+    expect(template.anatomy.map((region) => region.label)).not.toEqual(cover.elements.map((element) => element.label))
+  })
+
   it('treats appearance as an axis of a layout, not a template', () => {
     expect(isAppearanceSupported(template, 'cover', 'dark')).toBe(true)
     expect(isAppearanceSupported(template, 'cover', 'light')).toBe(true)
