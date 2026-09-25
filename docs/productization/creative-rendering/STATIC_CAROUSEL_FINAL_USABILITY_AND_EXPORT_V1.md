@@ -57,11 +57,22 @@ The archive is generated on demand with `fflate` and returned as `application/zi
 
 ## 13. Production smoke
 
-Pending the deployment for this release. The smoke checklist is: 1440, 1366, 1280, 1200, 1100, and 1024 desktop widths with Inspector open and closed; pagination at first, middle, and last slide; safe temporary Add/Remove; viewport menu Fit, Center, and 100%; registry-driven Template anatomy; one ZIP with ordered files and unchanged media/database state.
+Run against the real Portal ChannelPiece (`1247e54b-8f55-492e-825d-ed9b927f2e63`, 10 slides) once `f8c0263` was READY in production.
+
+- **Toolbar/pagination** — 1440, 1366, 1280, 1200, 1100, 1024: single row confirmed with Inspector open and with Inspector closed at every width (button tops all on one DOM row; at 1024 the row stays single but the toolbar's own `overflow-x-auto` picks up a ~12px horizontal scroll, which is expected fallback behavior, not a wrap). Pagination window verified at slide 1 (`1 2 3 4 5`), slide 5 (`3 4 5 6 7`, current centered), and slide 10 via 5× "Próximo slide" clicks (`6 7 8 9 10`, Next disabled at the end). Visible labels are bare numbers; `aria-label` carries "Slide n de 10".
+- **Viewport menu** — "Ações de viewport" opens exactly `Ajustar à tela` / `Centralizar` / `100% centralizado`. All three were clicked in sequence; `Salvar` stayed disabled (no dirty state) throughout, and after `100% centralizado` the zoom selector's underlying `<select>` reported `value="1"` / selected option `"100%"`.
+- **Inspector launcher** — closing the Inspector produced the icon-only `aria-label="Abrir Inspector"` launcher with the toolbar still one row; clicking it reopened the Inspector (close button and tab content returned, launcher removed).
+- **Template anatomy** — Template tab shows `ESTRUTURA DO TEMPLATE` (Conteúdo editorial, Imagem de conteúdo, Materiais de colagem, Fonte e crédito — registry-driven, Project-neutral) directly above `ESTRUTURA DO LAYOUT` (the selected layout's 10 concrete elements and 8 asset slots). The two lists are distinct with no duplication.
+- **ZIP export** — `GET /api/creative/static-authoring/export?channelPieceId=...` returned `200`, `content-type: application/zip`, `content-disposition: attachment; filename="carousel.zip"`, `cache-control: no-store`, 18,423,447 bytes. Unzipped in-page (JSZip) to exactly 10 entries: `01-slide-1.png` … `10-slide-10.png`. First (`01-slide-1.png`), middle (`06-slide-6.png`), and last (`10-slide-10.png`) all start with a valid PNG signature (`89 50 4e 47 0d 0a 1a 0a`).
+- **Database/output integrity** — `channel_piece_media` count (10), `render_executions` count (22), `library_files` count (23), and `channel_piece_static_authoring_states.updated_at` were read before and after the ZIP request: all four were byte-for-byte identical, and the ordered `(position, library_file_id)` pairs were unchanged. Confirms the export created no render execution, LibraryFile, ChannelPieceMedia, or authoring save.
+- **Responsive** — 768×1024 and 390×844 showed no horizontal page overflow; Add Slide, Baixar ZIP, and slide navigation stayed reachable, with the pagination window narrowing to 3 buttons at 390px per the "narrow supported desktop" allowance.
+
+No production data was mutated by this smoke: the browser session only read state and issued the ZIP GET request; no Save, Add Slide, or Remove Slide action was performed.
 
 ## 14. Delivery
 
-- Final SHA: to be filled after the intentional release commit.
-- Remote `main`: to be confirmed after push.
-- Vercel deployment: exact GitHub commit SHA must be READY before the authenticated smoke.
+- Final SHA: `f8c0263efdc6b4e8c3d51f8873a56c4a434cf0dd` (unchanged since implementation — this closure session made no code changes).
+- Remote `main` / `origin/main`: `f8c0263efdc6b4e8c3d51f8873a56c4a434cf0dd` (confirmed identical to local HEAD).
+- Vercel: the first build for `f8c0263` (`dpl_DMsrwd1yjP942KkAQZNTHNA8nX53`) failed before application compilation inside `next/font/google` / Turbopack (`@vercel/turbopack-next/internal/font/google/font`), with no reference to files touched by this mission. A same-commit rebuild (`dpl_BaXuRe2xbQiNr4QpJ4YkyLYQBnEw`) succeeded and reached `READY` on the exact same `githubCommitSha`, confirming the first failure was transient Vercel/Turbopack infrastructure rather than an application defect. That deployment is aliased to `content.multihuman.com.br` and is the one the production smoke above ran against.
+- Worker: unchanged in this closure session; no VPS action was taken or required.
 
