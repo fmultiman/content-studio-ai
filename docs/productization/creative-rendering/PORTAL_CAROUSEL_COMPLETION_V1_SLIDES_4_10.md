@@ -1,6 +1,6 @@
 # Portal Carousel Completion V1 — Slides 4–10
 
-Status: implemented, validated locally and authored in production (10 slides saved). Pending: the operator's VPS worker update, then one final production smoke (§12).
+Status: delivered. The 10-slide carousel is authored, rendered on the VPS and attached in order in production; one smoke finding was fixed in `23837dd` (§12). Editorial media still pending for Slides 3, 5 and 9 (§7).
 
 ## 1. Starting SHA
 
@@ -111,11 +111,33 @@ Exported worker (`node server.mjs` on the exported runtime) via the real chain: 
 
 ## 12. Production smoke
 
-Pending the operator's VPS update. Recorded after the smoke.
+Setup: operator updated the VPS worker to `content-studio-carousel-completion-v1` (reported healthy; proven by the renders below). Web builds `379e8ee` (`dpl_7kCVifgBx8cxRMJHM9s2RE27dDwe`), `c271560` (docs) and the smoke fix `23837dd` (`dpl_2shR2WroK3A7ygf9CmxWyzhr6hhs`), all READY.
+
+**Authoring (before the VPS gate, production UI):**
+- Media: the three files uploaded through **Arquivos** (Portal project) → LibraryFiles `295d0550…`, `4cd37593…`, `0daa8aaa…` (`origin=upload`).
+- Growth 3 → 10 with **Adicionar slide** (dialog said 4/4 … 10/10 each time; each new slide selected with the chosen layout).
+- Slides 4 and 5 authored in the Conteúdo tab (descriptor form: items, icons via the closed-set select, caption cleared, callout on Slide 5); content images bound with **Assets → Imagem principal → Trocar** on 4, 5, 9.
+- **Salvar** → reload → `1/10 … 10/10`, "Salvo". DB: 10 slides, ids `slide-1…slide-10`, orders 0–9, layouts `cover, info, list, list, list, grid, map, network, quote, closing`, appearances `dark, light, light, light, dark, light, light, dark, light, dark`, hero overrides only on 4/5/9, no stack overrides; Slides 1–3 byte-for-byte untouched.
+
+**Collection (final smoke):** reload → 10 slides; stepping 1 → 10 the header, nav and on-canvas badge read n/10 and each slide dispatches its intended layout.
+
+**Representative authoring (then discarded):** a Lista edit (Slide 4 item text) and a Grade edit (Slide 6 tile label) appeared live on the Canvas; the Grade form showed Título / Introdução / Temas (6/6) / Título das ideias / Ideias (6/6); Mapa's Assets tab listed only its own slots (no content image); **Camadas** on Rede reordered *Cartões da rede* above *Caixa de destaque* (z 14) and **Ordem padrão** restored it; **Trocar** on Grade's *Recorte de papel* painted the Project file. **Voltar ao salvo** discarded everything; DB `updated_at` unchanged, no test text, no stray override.
+
+**VPS renders (all 10, one per slide, via Gerar PNG):** executions `83051772` (1) · `e96332d4` (2) · `788e1046` (3) · `88b59585` (4) · `e346dd0e` (5) · `4901b6a5` (6) · `33b6ffe8` (7) · `f2d6e84a` (8) · `c95662d7` (9) · `832c2806` (10) — all `completed`, 5–30 s each. Snapshots froze slide id, `{index n, total 10}`, template, layout, appearance, content, element stack, and the content images as `library_file` refs (`295d0550` / `4cd37593` / `0daa8aaa`) on 4/5/9; **no signed URL** in any snapshot. Evidence: `evidence/portal-carousel-completion-v1/vps-production-slides-1-10.jpg` (Source Sans 3 on the VPS). Slides 1–3: unchanged apart from reading 1/10, 2/10, 3/10.
+
+**Outputs, media hygiene, Gallery:**
+- **Salvar nesta peça** on all 10 → LibraryFiles `slide-1-de-10-83051772.png` … `slide-10-de-10-832c2806.png` (`studio_render`).
+- At smoke start the piece held 3 superseded attachments (the duplicate Slide 2 association `8a2a7f38…` had already been removed outside this session; its LibraryFile still exists). Detached through the product's `DELETE /api/channel-piece-media/[id]` (association only; positions compacted; no file deleted): `a75b022f` (slide-1-de-2), `f607dd29` (slide-2-de-2), `8ab62fe9` (slide-3-de-3).
+- Final ChannelPieceMedia: positions 0–9 = `slide-1-de-10` … `slide-10-de-10` in order, Slide 1 `primary`, the rest `carousel_item`.
+- Galeria lists "Creative Editor · Slide 1/10" … "10/10" (older 1/2, 2/2, 3/3 renders remain in the Library as history). The unattached `60e6bfe3…` is untouched.
+
+**Viewports:**
+- **Finding, fixed:** at 390×844 the 10-button navigation did not wrap and ran off the right edge (later slides and "+" unreachable). Fix `23837dd`: the Slides group wraps (test added).
+- Re-smoked on `23837dd`: 1366×768 and 1440×900 (floating workbench) and 768×1024 (stacked) — nav on one row, "+" visible, no horizontal overflow; 390×844 — nav wraps to 3 rows, every unit and "+" in view, tapping 10/10 works, no horizontal overflow; Inspector tabs present everywhere.
 
 ## 13. Final SHA
 
-Recorded after delivery.
+Code: `23837dd5b5d41364adac9aa1dc6d45a7a8a1929d` (on `379e8ee`); the commit recording this smoke is docs/evidence only. Worker runtime: `content-studio-carousel-completion-v1` (sha256 `2f0c2957…5b67`), unchanged by the web-only smoke fix.
 
 ## 14. Before publication / export
 
