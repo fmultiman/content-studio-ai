@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, HelpCircle, Magnet, Maximize2, Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { VideoScene } from '@/lib/types'
+import type { FreeSceneElement, VideoScene } from '@/lib/types'
 import { useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
 import {
   DEFAULT_PIXELS_PER_FRAME, TIMELINE_FPS, deriveSceneRanges, durationFromRightEdge, fitTimelineZoom, formatSeconds,
@@ -79,6 +79,8 @@ type SceneTimelineProps = {
   /** Hierarchical Scene timing: the selected Scene element (owning Scene + element id). */
   selectedElement?: { sceneId: string; elementId: string } | null
   onSelectElement?: (sceneId: string, elementId: string) => void
+  /** Free Scene child-row label (VIDEO_FREE_ELEMENT_TIMING_V1): the page resolves image names from the Library. */
+  freeElementLabel?: (element: FreeSceneElement) => string
 }
 
 type BlockGesture =
@@ -92,7 +94,7 @@ type BlockGesture =
 export function SceneTimeline({
   scenes, cursor, playing, selectedSceneId, thumbnails, onSeek, onSelectScene, onReorder, onDurationChange,
   items = [], selectedItemId = null, itemLabel = (item) => item.kind, onSelectItem, onMoveItem, onResizeItem, onAddItem,
-  selectedElement = null, onSelectElement,
+  selectedElement = null, onSelectElement, freeElementLabel,
 }: SceneTimelineProps) {
   const [pixelsPerFrame, setPixelsPerFrame] = useState(DEFAULT_PIXELS_PER_FRAME)
   // Which Scene shows its element rows: VIEW state (never authored, never saved, never dirty).
@@ -119,12 +121,12 @@ export function SceneTimeline({
     ...TEMPORAL_LANES.filter((lane) => lane.kind !== 'audio').map((lane) => ({ ...lane, key: lane.kind as string, row: 0 })),
     ...Array.from({ length: audioRows.rowCount }, (_, row) => ({ kind: 'audio' as TemporalItemKind, label: `Áudio ${row + 1}`, key: `audio-${row}`, row })),
   ], [audioRows.rowCount])
-  // Expanded Scene: its temporal elements (Template element order), mapped onto the global ruler.
+  // Expanded Scene: its temporal elements (Template element order; free Scene: authored order), mapped onto the global ruler.
   const expandedIndex = expandedSceneId ? previewScenes.findIndex((scene) => scene.id === expandedSceneId) : -1
   const expandedRange = expandedIndex >= 0 ? ranges[expandedIndex] : null
   const childRows = useMemo(
-    () => (expandedIndex >= 0 && expandedRange && sceneHasTemporalElements(previewScenes[expandedIndex]) ? sceneTimingRows(previewScenes[expandedIndex], expandedRange.startFrame, expandedRange.durationFrames) : []),
-    [previewScenes, expandedIndex, expandedRange],
+    () => (expandedIndex >= 0 && expandedRange && sceneHasTemporalElements(previewScenes[expandedIndex]) ? sceneTimingRows(previewScenes[expandedIndex], expandedRange.startFrame, expandedRange.durationFrames, freeElementLabel) : []),
+    [previewScenes, expandedIndex, expandedRange, freeElementLabel],
   )
   const childTop = LANES_TOP
   const rootLanesTop = childRows.length > 0 ? childTop + childRows.length * (CHILD_H + CHILD_GAP) + 6 : LANES_TOP

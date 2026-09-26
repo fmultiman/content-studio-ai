@@ -86,7 +86,7 @@ import { resetSceneElementTiming, sceneTimingRows, setSceneElementTiming, type E
 import { RENDERABLE_AUDIO_MIME, RENDERABLE_VIDEO_MIME } from '@/lib/creative/integration/library-file-adapter'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
-import type { FreeElementBox, LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
+import type { FreeElementBox, FreeSceneElement, LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
 import type { LivePlayerController } from '@/remotion/player/LiveTimelinePlayer'
 
 // The Remotion Player adapter is browser-only; it never runs on the server.
@@ -328,6 +328,8 @@ export default function VideoCreativeEditorPage() {
     return [scene.id, file ? (file.thumbnail_url || file.public_url) : scene.library_file_id ? undefined : TEMPLATE_HERO_URL]
   })), [scenes, libraryFiles])
   const libraryFileNames = useMemo(() => new Map([...libraryFiles.values()].map((file) => [file.id, file.name])), [libraryFiles])
+  // Free Scene child rows / timing section label (VIDEO_FREE_ELEMENT_TIMING_V1): same names as the Elementos list.
+  const freeTimingLabel = useCallback((element: FreeSceneElement) => `${element.kind === 'text' ? 'Texto' : 'Imagem'} · ${freeElementLabel(element, element.kind === 'image' ? libraryFileNames.get(element.library_file_id) : undefined)}`, [libraryFileNames])
   const sceneCaptions = useMemo(() => Object.fromEntries(scenes.map((scene) => {
     if (isFreeScene(scene)) {
       const text = freeElements(scene).find((element) => element.kind === 'text')
@@ -380,7 +382,7 @@ export default function VideoCreativeEditorPage() {
     setSelectedElementId(elementId)
     setActiveTab('element')
     setOpenElementId(elementId)
-    const row = sceneTimingRows(scenes[index], ranges[index].startFrame, ranges[index].durationFrames).find((candidate) => candidate.elementId === elementId)
+    const row = sceneTimingRows(scenes[index], ranges[index].startFrame, ranges[index].durationFrames, freeTimingLabel).find((candidate) => candidate.elementId === elementId)
     if (row && !row.range.outside) seek(row.globalStartFrame)
   }
 
@@ -393,8 +395,8 @@ export default function VideoCreativeEditorPage() {
   }
   const selectedElementRow = useMemo(() => {
     if (selectedItemId || !selectedElementId || !selectedScene || !selectedRange) return null
-    return sceneTimingRows(selectedScene, selectedRange.startFrame, selectedRange.durationFrames).find((row) => row.elementId === selectedElementId) ?? null
-  }, [selectedItemId, selectedElementId, selectedScene, selectedRange])
+    return sceneTimingRows(selectedScene, selectedRange.startFrame, selectedRange.durationFrames, freeTimingLabel).find((row) => row.elementId === selectedElementId) ?? null
+  }, [selectedItemId, selectedElementId, selectedScene, selectedRange, freeTimingLabel])
   function editSelectedElementTiming(patch: ElementTimingPatch) {
     if (!selectedElementId || !selectedRange) return
     const elementId = selectedElementId
@@ -481,7 +483,8 @@ export default function VideoCreativeEditorPage() {
     if (index < 0) return
     if (index !== safeSelectedIndex) setSelectedIndex(index) // the playhead is already inside it: no seek
     setSelectedItemId(null)
-    setSelectedElementId(null)
+    // The same element selection as the Timeline child row (VIDEO_FREE_ELEMENT_TIMING_V1): its timing section follows.
+    setSelectedElementId(elementId)
     setOpenElementId(elementId)
     if (elementId) setActiveTab('element')
   }
@@ -736,6 +739,7 @@ export default function VideoCreativeEditorPage() {
       onAddItem={onAddItem}
       selectedElement={selectedScene && selectedElementId && !selectedItemId ? { sceneId: selectedScene.id, elementId: selectedElementId } : null}
       onSelectElement={selectSceneElement}
+      freeElementLabel={freeTimingLabel}
     />
   )
 
@@ -874,7 +878,7 @@ export default function VideoCreativeEditorPage() {
                 onClick={() => { if (!checked) editSelectedElementTiming({ duration_frames: mode === 'scene' ? null : selectedElementRow.range.endFrame - selectedElementRow.range.startFrame }) }}>{label}</Button>
             })}
           </div>
-          {selectedElementRow.hidden ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-hidden">Oculto em Camadas: não aparece, qualquer que seja o tempo.</p> : null}
+          {selectedElementRow.hidden ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-hidden">Oculto em {selectedIsFree ? 'Elementos' : 'Camadas'}: não aparece, qualquer que seja o tempo.</p> : null}
           {selectedElementRow.range.outside ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-warning">Começa em {formatSeconds((selectedElementRow.authored?.start_frame ?? 0) / TIMELINE_FPS)}, depois do fim da cena ({formatSeconds(selectedRange.durationFrames / TIMELINE_FPS)}): não aparece. O tempo salvo é mantido; aumente a cena ou ajuste o início.</p>
             : selectedElementRow.range.clipped ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-warning">A cena ficou mais curta: o elemento é cortado no fim da cena ({formatSeconds(selectedRange.durationFrames / TIMELINE_FPS)}). O tempo salvo ({formatSeconds((selectedElementRow.authored?.duration_frames ?? 0) / TIMELINE_FPS)}) é mantido e volta se a cena crescer.</p> : null}
           <p className="text-[11px] text-muted-foreground">O tempo é da cena: ao reordenar, o elemento anda junto com ela. Motion continua sendo o movimento da cena inteira.</p>
@@ -1020,6 +1024,7 @@ export default function VideoCreativeEditorPage() {
               onAddText={() => { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeTextElement(scene, id)); setOpenElementId(id) }}
               onAddImage={() => setFreeImagePicker({ mode: 'add' })}
               onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
+              onTiming={(elementId) => selectSceneElement(selectedScene.id, elementId)}
             />
           ) : (
           /* Same Camadas as Static: this Scene's stack order + visibility (authored, previewed and rendered). */

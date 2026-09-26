@@ -269,6 +269,9 @@ export const FreeImageElementPayloadSchema = z
 export const FreeSegmentPayloadSchema = z
   .object({
     elements: z.array(z.discriminatedUnion('kind', [FreeTextElementPayloadSchema, FreeImageElementPayloadSchema])).max(24),
+    // VIDEO_FREE_ELEMENT_TIMING_V1: the SAME segment-local timing entries as
+    // Template segments (additive, optional). Unlisted elements = whole segment.
+    element_timing: z.array(TemplateSegmentElementTimingSchema).max(24).optional(),
   })
   .strict()
 

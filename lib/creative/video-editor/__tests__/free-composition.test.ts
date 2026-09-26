@@ -310,9 +310,9 @@ describe('Sequence, timing and root regressions', () => {
     }
   })
 
-  it('a free Scene gets no Template child timing rows; the Citação timing is unchanged', () => {
-    expect(sceneHasTemporalElements(MIXED[1])).toBe(false)
-    expect(sceneTimingRows(MIXED[1], 90, 60)).toEqual([])
+  it('a free Scene gets its own child timing rows; the Citação timing is unchanged', () => {
+    expect(sceneHasTemporalElements(MIXED[1])).toBe(true)
+    expect(sceneTimingRows(MIXED[1], 90, 60).map((row) => row.elementId)).toEqual([T1, I1])
     expect(setSceneElementTiming(MIXED[1], 'quote', { start_frame: 10 }, 60)).toBe(MIXED[1])
     expect(sceneHasTemporalElements(MIXED[2])).toBe(true)
     const quote = snapshot(MIXED).segments.find((segment) => segment.id === 'scene:s3')
@@ -328,9 +328,9 @@ describe('Sequence, timing and root regressions', () => {
     expect(manifest.segments.find((segment) => segment.id === 'item:bed')).toMatchObject({ start_frame: 0, duration_frames: 270 })
   })
 
-  it('the API refuses element timing on a free Scene and validates free images as Project images', () => {
+  it('the API checks free timing ids and validates free images as Project images', () => {
     const api = read('app/api/video-drafts/route.ts')
-    expect(api).toContain('composição livre não tem timing de elementos nesta versão')
+    expect(api).toContain('orphanFreeTimingIds(')
     expect(api.match(/validateFreeImageBindings\(supabase/g)?.length).toBe(2)
     expect(read('app/api/video-drafts/[id]/render/route.ts')).toContain('freeImageLibraryFileIds(scenes)')
   })

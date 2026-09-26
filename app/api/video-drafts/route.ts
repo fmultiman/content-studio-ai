@@ -7,7 +7,7 @@ import {
 } from '@/lib/video-scene-library-bindings'
 import { validateSceneCompositionShape } from '@/lib/creative/video-editor/scene-composition'
 import { freeImageLibraryFileIds, isFreeComposition } from '@/lib/creative/video-editor/free-composition'
-import { validateSceneElementTimingShape } from '@/lib/creative/video-editor/element-timing'
+import { orphanFreeTimingIds, validateSceneElementTimingShape } from '@/lib/creative/video-editor/element-timing'
 import {
   persistedVideoTimeline, readVideoTimeline, timelineLibraryFileRefs, validateVideoTimeline, type VideoTimeline,
 } from '@/lib/creative/video-editor/temporal-items'
@@ -137,12 +137,13 @@ function sceneCompositionErrorResponse(scenes: unknown[]) {
     if (!check.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${check.message}`, code: 'SCENE_COMPOSITION_INVALID' }, { status: 400 })
     // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: Scene-local element timing (structure only; ids resolve per layout).
     const elementTiming = typeof scene === 'object' && scene !== null ? (scene as { element_timing?: unknown }).element_timing : undefined
-    // VIDEO_FREE_SCENE_COMPOSITION_V1: free-element timing is not authored in V1.
-    if (isFreeComposition(composition) && elementTiming !== undefined) {
-      return NextResponse.json({ error: `Cena ${index + 1}: composição livre não tem timing de elementos nesta versão.`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
-    }
     const timingCheck = validateSceneElementTimingShape(elementTiming)
     if (!timingCheck.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${timingCheck.message}`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
+    // VIDEO_FREE_ELEMENT_TIMING_V1: same map and shape; a free Scene's timing ids must name its own elements
+    // (removal drops the entry atomically, so an orphan is a malformed write). Template stays tolerant.
+    if (isFreeComposition(composition) && orphanFreeTimingIds({ composition, element_timing: elementTiming as VideoScene['element_timing'] }).length > 0) {
+      return NextResponse.json({ error: `Cena ${index + 1}: timing para um elemento que não existe nesta cena.`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
+    }
   }
   return null
 }

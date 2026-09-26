@@ -7,7 +7,7 @@
  * Geometry is shown in % of the stage and stored as fractions; styles are
  * Project Identity roles only.
  */
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Eye, EyeOff, ImagePlus, Trash2, Type } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock, Eye, EyeOff, ImagePlus, Trash2, Type } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -52,10 +52,12 @@ type ElementsProps = {
   onAddText: () => void
   onAddImage: () => void
   onReplaceImage: (elementId: string) => void
+  /** VIDEO_FREE_ELEMENT_TIMING_V1: opens the element's Scene-local timing (same section as Template elements). */
+  onTiming?: (elementId: string) => void
 }
 
 /** Elementos tab of a free Scene: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage }: ElementsProps) {
+export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming }: ElementsProps) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
@@ -89,6 +91,7 @@ export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, on
                 </div>
                 {open ? (
                   <div className="space-y-3 border-t border-border/40 p-2">
+                    {onTiming ? <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => onTiming(element.id)} data-testid="free-element-timing"><Clock className="h-3.5 w-3.5" />Timing na cena</Button> : null}
                     {element.kind === 'text' ? (
                       <TextFields sceneId={scene.id} element={element} onPatch={(patch) => onEdit((current) => updateFreeElement(current, element.id, patch))} />
                     ) : (

@@ -11,11 +11,14 @@
  * page applies with the existing free-composition helpers.
  *
  * Only the free Scene under the playhead is editable, so chrome never spills
- * into a neighbouring Scene interval. Hidden elements have no hit target.
+ * into a neighbouring Scene interval. Hidden elements, and elements outside
+ * their Scene-local timing at this frame (VIDEO_FREE_ELEMENT_TIMING_V1), have
+ * no hit target: the Inspector still addresses them.
  */
 import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FreeElementBox, FreeSceneElement, VideoScene } from '@/lib/types'
-import { freeElements, isFreeScene } from '@/lib/creative/video-editor/free-composition'
+import { isFreeScene } from '@/lib/creative/video-editor/free-composition'
+import { freeElementsActiveAt } from '@/lib/creative/video-editor/element-timing'
 import { RESIZE_HANDLES, moveFreeBox, pointerToStage, resizeFreeBox, sameFreeBox, type ResizeHandle, type StagePoint } from '@/lib/creative/video-editor/free-manipulation'
 import { sceneIndexAtFrame, type SceneRange } from '@/lib/creative/video-editor/scene-timeline'
 import { useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
@@ -51,7 +54,8 @@ export function FreeSceneOverlay({ scenes, ranges, cursor, left, top, width, hei
   const index = sceneIndexAtFrame(ranges, frame)
   const scene = index >= 0 ? scenes[index] : undefined
   const free = scene && isFreeScene(scene) ? scene : null
-  const elements = free ? freeElements(free).filter((element) => !element.hidden) : []
+  const range = index >= 0 ? ranges[index] : undefined
+  const elements = free && range ? freeElementsActiveAt(free, frame - range.startFrame, range.durationFrames) : []
 
   function stagePoint(event: ReactPointerEvent) {
     const rect = rootRef.current?.getBoundingClientRect()

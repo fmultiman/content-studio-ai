@@ -16,10 +16,10 @@
  * Pure: no React, no Remotion. The adapter derives the neutral per-segment ranges from here;
  * the renderer only evaluates them against the Scene-local frame.
  */
-import type { VideoScene, VideoSceneElementTiming, VideoSceneElementTimingMap } from '@/lib/types'
+import type { FreeSceneElement, VideoScene, VideoSceneElementTiming, VideoSceneElementTimingMap } from '@/lib/types'
 import type { TemplateElementDefinition, TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 import { resolveSceneComposition } from './scene-composition'
-import { isFreeScene } from './free-composition'
+import { freeElements, isFreeScene } from './free-composition'
 
 export const MIN_ELEMENT_FRAMES = 1
 /** Upper bound for an authored local frame (a Scene is at most 60 s; generous headroom, still bounded). */
@@ -66,6 +66,30 @@ export function readSceneElementTiming(scene: Pick<VideoScene, 'element_timing'>
     if (entry) result[element.id] = entry
   }
   return result
+}
+
+/**
+ * VIDEO_FREE_ELEMENT_TIMING_V1 — the SAME `element_timing` map, keyed by free
+ * element ids. Every free element is independently addressable (stable id), so
+ * no Template capability applies; only entries for elements that exist count.
+ */
+export function readFreeElementTiming(scene: Pick<VideoScene, 'element_timing' | 'composition'>): VideoSceneElementTimingMap {
+  const raw = scene.element_timing
+  if (!isPlainObject(raw)) return {}
+  const result: VideoSceneElementTimingMap = {}
+  for (const element of freeElements(scene)) {
+    const entry = readEntry(raw[element.id])
+    if (entry) result[element.id] = entry
+  }
+  return result
+}
+
+/** Free timing ids that do not name an element of the Scene (the write boundary rejects them). */
+export function orphanFreeTimingIds(scene: Pick<VideoScene, 'element_timing' | 'composition'>): string[] {
+  const raw = scene.element_timing
+  if (!isPlainObject(raw)) return []
+  const ids = new Set(freeElements(scene).map((element) => element.id))
+  return Object.keys(raw).filter((id) => !ids.has(id))
 }
 
 // ── Effective (derived) range ─────────────────────────────────────────────────
@@ -122,6 +146,34 @@ export function deriveSegmentElementTiming(scene: Pick<VideoScene, 'element_timi
   return result.length > 0 ? result : undefined
 }
 
+/**
+ * Neutral timing for a free segment: the same entry shape as Template segments,
+ * only for elements actually DRAWN (hidden or empty ones are not in the payload,
+ * so their timing is not either). Undefined when nothing is timed.
+ */
+export function deriveFreeSegmentElementTiming(scene: Pick<VideoScene, 'element_timing' | 'composition'>, drawnElementIds: readonly string[], sceneDurationFrames: number): SegmentElementTiming[] | undefined {
+  const authored = readFreeElementTiming(scene)
+  const result: SegmentElementTiming[] = []
+  for (const id of drawnElementIds) {
+    const timing = authored[id]
+    if (!timing) continue
+    const range = effectiveElementRange(timing, sceneDurationFrames)
+    result.push({ element_id: id, start_frame: range.startFrame, duration_frames: range.endFrame - range.startFrame })
+  }
+  return result.length > 0 ? result : undefined
+}
+
+/**
+ * The free elements that PARTICIPATE at a Scene-local frame: visible (not
+ * hidden) and inside their effective range. Same rule the renderer applies
+ * (`inactiveElementIds` over the derived payload), so editor targets never
+ * point at something the Player is not drawing.
+ */
+export function freeElementsActiveAt(scene: Pick<VideoScene, 'element_timing' | 'composition'>, localFrame: number, sceneDurationFrames: number): FreeSceneElement[] {
+  const authored = readFreeElementTiming(scene)
+  return freeElements(scene).filter((element) => !element.hidden && isElementActiveAt(effectiveElementRange(authored[element.id], sceneDurationFrames), localFrame))
+}
+
 // ── Timeline projection (child rows; UI only, never persisted) ───────────────
 
 export type SceneTimingRow = {
@@ -136,13 +188,35 @@ export type SceneTimingRow = {
   globalEndFrame: number
 }
 
+/** Deterministic free row label from authored data only (text preview; images get their Library name from the caller). */
+export function defaultFreeElementLabel(element: FreeSceneElement): string {
+  if (element.kind === 'image') return 'Imagem'
+  const first = element.text.split('\n')[0].trim()
+  return first ? `Texto · ${first.slice(0, 24)}` : 'Texto'
+}
+
 /**
  * Child rows of an expanded Scene: its temporal elements in the Template's
- * element order (not paint order), each mapped onto the global ruler.
+ * element order (not paint order), each mapped onto the global ruler. A free
+ * Scene's rows are its elements in authored order.
  */
-export function sceneTimingRows(scene: VideoScene, sceneStartFrame: number, sceneDurationFrames: number): SceneTimingRow[] {
-  // A free Scene has no Template-declared temporal elements (free-element timing is not authored in V1).
-  if (isFreeScene(scene)) return []
+export function sceneTimingRows(scene: VideoScene, sceneStartFrame: number, sceneDurationFrames: number, freeLabel: (element: FreeSceneElement) => string = defaultFreeElementLabel): SceneTimingRow[] {
+  // VIDEO_FREE_ELEMENT_TIMING_V1: a free Scene's rows are its elements, in authored order (derived, never stored).
+  if (isFreeScene(scene)) {
+    const authored = readFreeElementTiming(scene)
+    return freeElements(scene).map((element) => {
+      const range = effectiveElementRange(authored[element.id], sceneDurationFrames)
+      return {
+        elementId: element.id,
+        label: freeLabel(element),
+        hidden: element.hidden === true,
+        authored: authored[element.id] ?? null,
+        range,
+        globalStartFrame: sceneStartFrame + range.startFrame,
+        globalEndFrame: sceneStartFrame + range.endFrame,
+      }
+    })
+  }
   const composition = resolveSceneComposition(scene)
   const authored = readSceneElementTiming(scene, composition.layout)
   return temporalElements(composition.layout).map((element) => {
@@ -160,7 +234,7 @@ export function sceneTimingRows(scene: VideoScene, sceneStartFrame: number, scen
 }
 
 export function sceneHasTemporalElements(scene: VideoScene): boolean {
-  if (isFreeScene(scene)) return false
+  if (isFreeScene(scene)) return freeElements(scene).length > 0
   return temporalElements(resolveSceneComposition(scene).layout).length > 0
 }
 
@@ -184,10 +258,16 @@ export type ElementTimingPatch = {
  * The default (start 0, until the Scene ends) is stored as no entry at all.
  */
 export function setSceneElementTiming(scene: VideoScene, elementId: string, patch: ElementTimingPatch, sceneDurationFrames: number): VideoScene {
-  if (isFreeScene(scene)) return scene
-  const { layout } = resolveSceneComposition(scene)
-  if (!isTemporalElement(layout, elementId) || sceneDurationFrames < 1) return scene
-  const current = readSceneElementTiming(scene, layout)
+  let current: VideoSceneElementTimingMap
+  if (isFreeScene(scene)) {
+    // Free: any existing element may be timed (stable id); same bounds and default-as-no-entry rule.
+    if (!freeElements(scene).some((element) => element.id === elementId) || sceneDurationFrames < 1) return scene
+    current = readFreeElementTiming(scene)
+  } else {
+    const { layout } = resolveSceneComposition(scene)
+    if (!isTemporalElement(layout, elementId) || sceneDurationFrames < 1) return scene
+    current = readSceneElementTiming(scene, layout)
+  }
   const previous = current[elementId] ?? { start_frame: 0 }
   const lastStart = Math.max(0, sceneDurationFrames - MIN_ELEMENT_FRAMES)
   const requestedStart = patch.start_frame !== undefined && Number.isFinite(patch.start_frame) ? Math.round(patch.start_frame) : previous.start_frame

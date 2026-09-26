@@ -201,10 +201,18 @@ export function setFreeElementHidden(scene: VideoScene, elementId: string, hidde
   }))
 }
 
+/** Removes the element AND its Scene-local timing entry in the same edit (never an orphan timing id). */
 export function removeFreeElement(scene: VideoScene, elementId: string): VideoScene {
   const elements = freeElements(scene)
   if (!elements.some((element) => element.id === elementId)) return scene
-  return withElements(scene, elements.filter((element) => element.id !== elementId))
+  const next = withElements(scene, elements.filter((element) => element.id !== elementId))
+  const timing = next.element_timing
+  if (!timing || typeof timing !== 'object' || !(elementId in timing)) return next
+  const { [elementId]: _removed, ...remaining } = timing
+  void _removed
+  const { element_timing: _previous, ...rest } = next
+  void _previous
+  return Object.keys(remaining).length > 0 ? { ...rest, element_timing: remaining } : rest
 }
 
 /** One step in paint order: 'forward' = drawn later (in front). */

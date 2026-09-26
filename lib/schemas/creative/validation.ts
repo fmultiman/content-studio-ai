@@ -120,6 +120,19 @@ export function validateTimelineSemantics(manifest: TimelineManifest): Validatio
           issues.push({ code: 'free_asset_not_found', path, message: `Segment "${segment.id}": image "${element.element_id}" references unknown asset "${element.asset_ref}"`, severity: 'error' })
         }
       }
+      // VIDEO_FREE_ELEMENT_TIMING_V1: same rule as Template timing, plus every id names a drawn element.
+      const timed = new Set<string>()
+      for (const entry of segment.payload.element_timing ?? []) {
+        if (timed.has(entry.element_id) || !seen.has(entry.element_id) || entry.start_frame + entry.duration_frames > segment.duration_frames) {
+          issues.push({
+            code: 'invalid_element_timing',
+            path: `segments[id=${segment.id}].payload.element_timing[element_id=${entry.element_id}]`,
+            message: `Segment "${segment.id}": free element "${entry.element_id}" timing is duplicated, unknown or reaches past the segment`,
+            severity: 'error',
+          })
+        }
+        timed.add(entry.element_id)
+      }
     }
 
     if (segment.kind === 'media') {

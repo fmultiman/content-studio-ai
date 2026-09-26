@@ -22,7 +22,7 @@ import type { FreeSceneComposition, VideoDraft, VideoScene } from '@/lib/types'
 import { deriveFreeSegment, isFreeComposition } from '@/lib/creative/video-editor/free-composition'
 import { resolveSceneComposition } from '@/lib/creative/video-editor/scene-composition'
 import { deriveTemporalSegments, readVideoTimeline } from '@/lib/creative/video-editor/temporal-items'
-import { deriveSegmentElementTiming, effectiveElementRange, readSceneElementTiming } from '@/lib/creative/video-editor/element-timing'
+import { deriveFreeSegmentElementTiming, deriveSegmentElementTiming, effectiveElementRange, readFreeElementTiming, readSceneElementTiming } from '@/lib/creative/video-editor/element-timing'
 import type { TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 
 type TemplateSegment = typeof TemplateSegmentSchema['_output']
@@ -116,9 +116,11 @@ export function movementToMotion(movement: string | null): { motion: MotionSpec;
 }
 
 /** An authored element range the current Scene duration cuts short: reported, never rewritten. */
-function readSceneElementTimingDiagnostics(scene: VideoScene, layout: TemplateLayoutDefinition, durationFrames: number): AdapterDiagnostic[] {
+function readSceneElementTimingDiagnostics(scene: VideoScene, layout: TemplateLayoutDefinition | null, durationFrames: number): AdapterDiagnostic[] {
   const diagnostics: AdapterDiagnostic[] = []
-  for (const [elementId, timing] of Object.entries(readSceneElementTiming(scene, layout))) {
+  // layout null = free Scene (VIDEO_FREE_ELEMENT_TIMING_V1): ids resolve against its own elements.
+  const authored = layout ? readSceneElementTiming(scene, layout) : readFreeElementTiming(scene)
+  for (const [elementId, timing] of Object.entries(authored)) {
     const range = effectiveElementRange(timing, durationFrames)
     if (!range.clipped && !range.outside) continue
     diagnostics.push({
@@ -250,8 +252,12 @@ export function freeSceneToSegment(
     })
   }
   const { payload, assets } = deriveFreeSegment(scene.composition)
+  const durationFrames = secondsToFrames(scene.duration, fps)
+  // VIDEO_FREE_ELEMENT_TIMING_V1: the same Scene-local ranges as Template segments, clipped, drawn elements only.
+  const elementTiming = deriveFreeSegmentElementTiming(scene, payload.elements.map((element) => element.element_id), durationFrames)
+  for (const row of readSceneElementTimingDiagnostics(scene, null, durationFrames)) diagnostics.push(row)
   return {
-    segment: { id: `scene:${scene.id}`, track_id: trackId, start_frame: startFrame, duration_frames: secondsToFrames(scene.duration, fps), kind: 'free', payload },
+    segment: { id: `scene:${scene.id}`, track_id: trackId, start_frame: startFrame, duration_frames: durationFrames, kind: 'free', payload: elementTiming ? { ...payload, element_timing: elementTiming } : payload },
     assets,
     diagnostics,
   }
