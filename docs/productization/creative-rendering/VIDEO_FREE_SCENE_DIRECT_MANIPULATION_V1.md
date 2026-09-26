@@ -142,7 +142,7 @@ The Inspector % fields remain the fallback on narrow screens; there is no separa
 ## 12. Final checkpoint
 
 - Feature `c897b3494d11eee28ae160a32b49d54c734ed505` → Vercel `6683541906` success.
-- Final SHA: the docs commit recording this validation (recorded by the next mission's housekeeping).
+- Final SHA: `ea805c8913225adb402c85551ed2728a1b431b7c` (the docs commit recording this validation; printed by VIDEO_FREE_ELEMENT_TIMING_V1's housekeeping).
 - Housekeeping done here: `VIDEO_FREE_SCENE_COMPOSITION_V1.md` now prints its closure SHA `b9e083060d88540f05774bc03374c3828c520654`.
 - Production test data left: draft `da9b61ce…` (manipulated state saved) and execution `0e1d5a5a…`.
 - Not committed: `.env.local`, `.next/`, `tsbuildinfo`, `infra/render-worker-runtime/dist/`, `.tmp/`, scratch files and downloaded MP4s.
