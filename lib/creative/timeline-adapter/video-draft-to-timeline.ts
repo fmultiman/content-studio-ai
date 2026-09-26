@@ -21,6 +21,8 @@ import type { TemplateSegmentLayering, TemplateSegmentSchema, TimelineManifest, 
 import type { VideoDraft, VideoScene } from '@/lib/types'
 import { resolveSceneComposition } from '@/lib/creative/video-editor/scene-composition'
 import { deriveTemporalSegments, readVideoTimeline } from '@/lib/creative/video-editor/temporal-items'
+import { deriveSegmentElementTiming, effectiveElementRange, readSceneElementTiming } from '@/lib/creative/video-editor/element-timing'
+import type { TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 
 type TemplateSegment = typeof TemplateSegmentSchema['_output']
 
@@ -109,6 +111,24 @@ export function movementToMotion(movement: string | null): { motion: MotionSpec;
   }
 }
 
+/** An authored element range the current Scene duration cuts short: reported, never rewritten. */
+function readSceneElementTimingDiagnostics(scene: VideoScene, layout: TemplateLayoutDefinition, durationFrames: number): AdapterDiagnostic[] {
+  const diagnostics: AdapterDiagnostic[] = []
+  for (const [elementId, timing] of Object.entries(readSceneElementTiming(scene, layout))) {
+    const range = effectiveElementRange(timing, durationFrames)
+    if (!range.clipped && !range.outside) continue
+    diagnostics.push({
+      kind: 'content_defaulted',
+      code: range.outside ? 'element_timing_outside_scene' : 'element_timing_clipped',
+      message: range.outside
+        ? `Scene "${scene.id}": element "${elementId}" starts after the Scene ends; it does not appear.`
+        : `Scene "${scene.id}": element "${elementId}" is cut at the Scene end.`,
+      path: `segment.payload.element_timing[element_id=${elementId}]`,
+    })
+  }
+  return diagnostics
+}
+
 function secondsToFrames(seconds: number, fps: number): number {
   return Math.max(1, Math.round(seconds * fps))
 }
@@ -177,6 +197,11 @@ export function sceneToSegment(
     ...(composition.hiddenElements.length > 0 ? { hidden_elements: composition.hiddenElements } : {}),
   }
 
+  // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: the Scene's own element timing, Scene-local and clipped
+  // to this segment. Absent when nothing is timed, so untouched Scenes yield the previous payload.
+  const elementTiming = deriveSegmentElementTiming(scene, composition.layout, durationFrames)
+  for (const row of readSceneElementTimingDiagnostics(scene, composition.layout, durationFrames)) diagnostics.push(row)
+
   const segment: TemplateSegment = {
     id: `scene:${scene.id}`,
     track_id: trackId,
@@ -192,6 +217,7 @@ export function sceneToSegment(
       sequence: { index: scene.order, total: totalScenes },
       motion,
       ...(Object.keys(layering).length > 0 ? { layering } : {}),
+      ...(elementTiming ? { element_timing: elementTiming } : {}),
     },
   }
 

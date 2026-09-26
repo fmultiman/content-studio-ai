@@ -91,6 +91,22 @@ export function validateTimelineSemantics(manifest: TimelineManifest): Validatio
       })
     }
 
+    // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: element timing is segment-local and inside the segment.
+    if (segment.kind === 'template' && segment.payload.element_timing) {
+      const seen = new Set<string>()
+      for (const entry of segment.payload.element_timing) {
+        if (seen.has(entry.element_id) || entry.start_frame + entry.duration_frames > segment.duration_frames) {
+          issues.push({
+            code: 'invalid_element_timing',
+            path: `segments[id=${segment.id}].payload.element_timing[element_id=${entry.element_id}]`,
+            message: `Segment "${segment.id}": element "${entry.element_id}" timing is duplicated or reaches past the segment`,
+            severity: 'error',
+          })
+        }
+        seen.add(entry.element_id)
+      }
+    }
+
     if (segment.kind === 'media') {
       const { source_in_frame, source_out_frame } = segment.payload
       if (

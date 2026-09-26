@@ -211,7 +211,7 @@ The Timeline never widens the page; long content scrolls inside its scroller. Th
 ## 13. Final checkpoint
 
 - **Feature:** `f2fe38ca5dbb54310f85ec4f81ee8e09c09a2ba5` (Vercel Production success).
-- **Final SHA:** the docs commit recording this validation, verified on local, `origin/main` and remote `main`, with its Vercel Production deployment.
+- **Final SHA:** `98b79c4facf4773f9b57bee20d1fb6f45f80b457` (docs commit), verified on local, `origin/main` and remote `main`; Vercel Production deployment `6675476207` success.
 - **Migration:** none. **Timeline version:** still `1`.
 - **Worker:** updated by the operator to sha256 `483ccd32…ad79` before the push.
 - **Test data left in place:**

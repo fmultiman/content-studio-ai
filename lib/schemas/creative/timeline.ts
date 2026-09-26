@@ -133,6 +133,22 @@ export const TemplateSegmentLayeringSchema = z
 
 export type TemplateSegmentLayering = z.infer<typeof TemplateSegmentLayeringSchema>
 
+// VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: WHEN some of the segment's own
+// template elements participate, in SEGMENT-LOCAL frames (0 = segment start),
+// already clipped to the segment. An element that is not listed participates
+// for the whole segment (every manifest produced before it existed). Timing is
+// temporal, so it sits beside `motion`, not inside the spatial `layering`.
+export const TemplateSegmentElementTimingSchema = z
+  .object({
+    element_id: z.string().trim().min(1).max(64),
+    start_frame: FrameSchema,
+    // 0 = the element does not participate in this segment (authored start at/after its end).
+    duration_frames: FrameSchema,
+  })
+  .strict()
+
+export type TemplateSegmentElementTiming = z.infer<typeof TemplateSegmentElementTimingSchema>
+
 // The main integration point with StaticRenderManifest: same TemplateRef,
 // content, and assets shape can drive both a still and a timeline segment.
 export const TemplateSegmentPayloadSchema = z
@@ -149,6 +165,8 @@ export const TemplateSegmentPayloadSchema = z
     motion: MotionSpecSchema.optional(),
 
     layering: TemplateSegmentLayeringSchema.optional(),
+
+    element_timing: z.array(TemplateSegmentElementTimingSchema).max(64).optional(),
   })
   .strict()
 

@@ -118,7 +118,17 @@ export type TemplateElementDefinition = {
   control: TemplateElementControl
   /** Authorable typography (Entrelinha). Absent = not exposed. */
   typography?: TemplateElementTypography
+  /**
+   * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1 — the element may take Scene-local
+   * timing in Video (when it participates inside its Scene). Absent = it stays
+   * full-Scene spatial composition. `companions` are elements drawn as part of
+   * this one (its strip, its tape) that enter and leave with it. Static never
+   * reads this.
+   */
+  timing?: TemplateElementTiming
 }
+
+export type TemplateElementTiming = { companions?: readonly string[] }
 
 export type TemplateLayoutDefinition = {
   id: string
@@ -355,12 +365,14 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
+    // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: the four content-bearing units of this layout take
+    // Scene-local timing. The title's strip and the quote's tape are drawn WITH them (companions).
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 }, timing: { companions: ['paperStrip'] } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
-    { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper') },
+    { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper'), timing: { companions: ['tape1'] } },
     { id: 'tape1', label: 'Fita da citação', kind: 'material', assetSlot: 'tape', control: t('tape1') },
-    { id: 'hero', label: 'Imagem', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
-    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
+    { id: 'hero', label: 'Imagem', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' }, timing: {} },
+    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark'), timing: {} },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
   ],
   defaultStackOrder: ['botanicalLeaf', 'hero', 'callout', 'quote', 'tape1', 'paperStrip', 'title'],

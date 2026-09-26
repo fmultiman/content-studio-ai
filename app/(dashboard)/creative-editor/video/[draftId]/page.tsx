@@ -76,6 +76,7 @@ import {
   moveTemporalItem, readVideoTimeline, removeTemporalItem, resizeTemporalItem, setAudioEndsWithSequence, setAudioTiming, updateTemporalItem,
   type TemporalItem, type TemporalItemKind, type VideoTimeline,
 } from '@/lib/creative/video-editor/temporal-items'
+import { resetSceneElementTiming, sceneTimingRows, setSceneElementTiming, type ElementTimingPatch } from '@/lib/creative/video-editor/element-timing'
 import { RENDERABLE_AUDIO_MIME, RENDERABLE_VIDEO_MIME } from '@/lib/creative/integration/library-file-adapter'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
@@ -157,6 +158,8 @@ export default function VideoCreativeEditorPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   // Selection context: a primary Scene (selectedIndex) OR an independent item — never both (UI only).
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  // Third context (hierarchical Scene timing): one timed element INSIDE the selected Scene (UI only).
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [timelinePicker, setTimelinePicker] = useState<null | { mode: 'add' | 'replace'; kind: 'visual' | 'audio' }>(null)
   // The single temporal cursor (currentFrame): editor state outside React render — see frame-cursor.ts.
   const [cursor] = useState(() => createFrameCursor())
@@ -329,20 +332,48 @@ export default function VideoCreativeEditorPage() {
     if (index < 0 || index >= scenes.length) return
     setSelectedIndex(index)
     setSelectedItemId(null)
+    setSelectedElementId(null)
     if (seekToStart && ranges[index]) seek(ranges[index].startFrame)
   }
   function selectSceneById(sceneId: string) {
     const index = scenes.findIndex((scene) => scene.id === sceneId)
-    if (index >= 0) { setSelectedIndex(index); setSelectedItemId(null) }
+    if (index >= 0) { setSelectedIndex(index); setSelectedItemId(null); setSelectedElementId(null) }
+  }
+  /** A Scene element keeps its owning Scene selected; its Camadas entry opens and the playhead goes to its entry. */
+  function selectSceneElement(sceneId: string, elementId: string) {
+    const index = scenes.findIndex((scene) => scene.id === sceneId)
+    if (index < 0) return
+    setSelectedIndex(index)
+    setSelectedItemId(null)
+    setSelectedElementId(elementId)
+    setActiveTab('element')
+    setOpenElementId(elementId)
+    const row = sceneTimingRows(scenes[index], ranges[index].startFrame, ranges[index].durationFrames).find((candidate) => candidate.elementId === elementId)
+    if (row && !row.range.outside) seek(row.globalStartFrame)
   }
 
   // --- Independent temporal items (Gate B): absolute frames, never follow Scenes ---
   const selectedItem = selectedItemId ? timeline.items.find((item) => item.id === selectedItemId) ?? null : null
+  /** Selecting an independent item leaves the Scene-element context (never both). */
+  function selectItem(itemId: string | null) {
+    setSelectedItemId(itemId)
+    setSelectedElementId(null)
+  }
+  const selectedElementRow = useMemo(() => {
+    if (selectedItemId || !selectedElementId || !selectedScene || !selectedRange) return null
+    return sceneTimingRows(selectedScene, selectedRange.startFrame, selectedRange.durationFrames).find((row) => row.elementId === selectedElementId) ?? null
+  }, [selectedItemId, selectedElementId, selectedScene, selectedRange])
+  function editSelectedElementTiming(patch: ElementTimingPatch) {
+    if (!selectedElementId || !selectedRange) return
+    const elementId = selectedElementId
+    const frames = selectedRange.durationFrames
+    editSelectedScene((scene) => setSceneElementTiming(scene, elementId, patch, frames))
+  }
   function addTextItem() {
     const result = addTemporalItem(timeline, { kind: 'text', text: 'Nome · função' }, cursor.get(), 3 * TIMELINE_FPS, crypto.randomUUID())
     if (!result) return
     setTimeline(result.timeline)
-    setSelectedItemId(result.item.id)
+    selectItem(result.item.id)
   }
   function addMediaItem(kind: 'visual' | 'audio', file: LibraryFile) {
     // The FIRST audio is a bed: from 0, explicitly ending with the video (follows Scene retiming).
@@ -353,7 +384,7 @@ export default function VideoCreativeEditorPage() {
     const result = addTemporalItem(timeline, kind === 'audio' ? { kind: 'audio', library_file_id: file.id, endsWithSequence: isBed } : { kind: 'visual', library_file_id: file.id }, at, frames, crypto.randomUUID())
     if (!result) return
     setTimeline(result.timeline)
-    setSelectedItemId(result.item.id)
+    selectItem(result.item.id)
   }
   function onAddItem(kind: TemporalItemKind) {
     if (kind === 'text') addTextItem()
@@ -615,10 +646,12 @@ export default function VideoCreativeEditorPage() {
       items={timeline.items}
       selectedItemId={selectedItemId}
       itemLabel={temporalItemLabel}
-      onSelectItem={setSelectedItemId}
+      onSelectItem={selectItem}
       onMoveItem={(id, frame) => setTimeline((current) => moveTemporalItem(current, id, frame))}
       onResizeItem={(id, frames) => setTimeline((current) => resizeTemporalItem(current, id, frames))}
       onAddItem={onAddItem}
+      selectedElement={selectedScene && selectedElementId && !selectedItemId ? { sceneId: selectedScene.id, elementId: selectedElementId } : null}
+      onSelectElement={selectSceneElement}
     />
   )
 
@@ -700,6 +733,53 @@ export default function VideoCreativeEditorPage() {
               <Button size="icon-sm" variant="outline" onClick={() => moveScene(safeSelectedIndex, safeSelectedIndex + 1)} disabled={safeSelectedIndex >= scenes.length - 1} aria-label="Mover cena para depois" title="Mover para depois"><ArrowRight className="h-3.5 w-3.5" /></Button>
               <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={scenes.length <= 1} aria-label={`Remover cena ${safeSelectedIndex + 1}`} title={scenes.length <= 1 ? 'O vídeo precisa de pelo menos uma cena' : 'Remover cena'}><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
+          </div>
+        </section>
+      ) : null}
+      {selectedElementRow && selectedScene && selectedRange ? (
+        // Hierarchical Scene timing: WHEN this element participates inside its Scene (Scene-local; moves with the Scene).
+        <section className="space-y-2 rounded-md border border-violet-500/40 bg-violet-500/5 p-2" aria-label={`Elemento ${selectedElementRow.label} da cena ${safeSelectedIndex + 1}`} data-testid="element-timing" data-element-id={selectedElementRow.elementId}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold">{selectedElementRow.label} <span className="font-normal text-muted-foreground">· elemento da cena {safeSelectedIndex + 1}</span></p>
+            <p className="text-[11px] tabular-nums text-muted-foreground" data-testid="element-timing-global">{selectedElementRow.range.outside ? 'fora da cena' : `${formatTimecode(selectedElementRow.globalStartFrame)} → ${formatTimecode(selectedElementRow.globalEndFrame)}`}</p>
+          </div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Timing na cena</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="element-start" className="text-[11px]">Início na cena (s)</Label>
+              <Input key={`${selectedScene.id}:${selectedElementRow.elementId}:s:${selectedElementRow.authored?.start_frame ?? 0}`} id="element-start" type="number" min={0} step={0.1} defaultValue={Number(((selectedElementRow.authored?.start_frame ?? 0) / TIMELINE_FPS).toFixed(2))} className="h-8"
+                onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) editSelectedElementTiming({ start_frame: Math.round(value * TIMELINE_FPS) }) }}
+                onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="element-start-input" />
+            </div>
+            {selectedElementRow.range.followsScene ? (
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium">Duração</span>
+                <p className="flex h-8 items-center text-xs text-muted-foreground" data-testid="element-duration-follow">Até o fim da cena · {formatSeconds((selectedElementRow.range.endFrame - selectedElementRow.range.startFrame) / TIMELINE_FPS)}</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label htmlFor="element-duration" className="text-[11px]">Duração (s)</Label>
+                <Input key={`${selectedScene.id}:${selectedElementRow.elementId}:d:${selectedElementRow.authored?.duration_frames ?? 0}`} id="element-duration" type="number" min={0.1} step={0.1} defaultValue={Number(((selectedElementRow.authored?.duration_frames ?? 0) / TIMELINE_FPS).toFixed(2))} className="h-8"
+                  onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) editSelectedElementTiming({ duration_frames: Math.round(value * TIMELINE_FPS) }) }}
+                  onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="element-duration-input" />
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Fim do elemento">
+            <span className="text-[11px] text-muted-foreground">Fim</span>
+            {([['scene', 'Até o fim da cena'], ['fixed', 'Duração fixa']] as const).map(([mode, label]) => {
+              const checked = (mode === 'scene') === selectedElementRow.range.followsScene
+              return <Button key={mode} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} className="h-7 px-2 text-xs" data-testid="element-end-mode" data-value={mode}
+                onClick={() => { if (!checked) editSelectedElementTiming({ duration_frames: mode === 'scene' ? null : selectedElementRow.range.endFrame - selectedElementRow.range.startFrame }) }}>{label}</Button>
+            })}
+          </div>
+          {selectedElementRow.hidden ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-hidden">Oculto em Camadas: não aparece, qualquer que seja o tempo.</p> : null}
+          {selectedElementRow.range.outside ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-warning">Começa em {formatSeconds((selectedElementRow.authored?.start_frame ?? 0) / TIMELINE_FPS)}, depois do fim da cena ({formatSeconds(selectedRange.durationFrames / TIMELINE_FPS)}): não aparece. O tempo salvo é mantido; aumente a cena ou ajuste o início.</p>
+            : selectedElementRow.range.clipped ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert" data-testid="element-timing-warning">A cena ficou mais curta: o elemento é cortado no fim da cena ({formatSeconds(selectedRange.durationFrames / TIMELINE_FPS)}). O tempo salvo ({formatSeconds((selectedElementRow.authored?.duration_frames ?? 0) / TIMELINE_FPS)}) é mantido e volta se a cena crescer.</p> : null}
+          <p className="text-[11px] text-muted-foreground">O tempo é da cena: ao reordenar, o elemento anda junto com ela. Motion continua sendo o movimento da cena inteira.</p>
+          <div className="flex flex-wrap justify-between gap-2 border-t border-border/40 pt-2">
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedElementId(null)}>Voltar à cena {safeSelectedIndex + 1}</Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedElementRow.authored} onClick={() => { const elementId = selectedElementRow.elementId; editSelectedScene((scene) => resetSceneElementTiming(scene, elementId)) }} data-testid="element-timing-reset">Cena inteira</Button>
           </div>
         </section>
       ) : null}

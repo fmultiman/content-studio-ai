@@ -14,9 +14,15 @@
  * not persisted Tracks. Items keep their own absolute frames: move = new
  * start_frame, right edge = new duration_frames, both snapped like a Scene
  * edge. Lane row order is layout only; render stacking is decided elsewhere.
+ *
+ * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: a Scene whose layout has temporal
+ * elements can be EXPANDED (chevron, or double-click) to show one child row per
+ * such element, on the SAME ruler and playhead: x = sceneStart + local start.
+ * Expansion is view state here (never saved); the rows are a projection of the
+ * Scene's own `element_timing`, clipped to the Scene; root lanes stay visible.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { HelpCircle, Magnet, Maximize2, Minus, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, HelpCircle, Magnet, Maximize2, Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { VideoScene } from '@/lib/types'
@@ -30,6 +36,7 @@ import {
 import {
   MIN_ITEM_FRAMES, TEMPORAL_LANES, effectiveDurationFrames, followsSequenceEnd, itemEndFrame, packAudioRows, type TemporalItem, type TemporalItemKind,
 } from '@/lib/creative/video-editor/temporal-items'
+import { sceneHasTemporalElements, sceneTimingRows } from '@/lib/creative/video-editor/element-timing'
 
 const CONTENT_PAD_LEFT = 12
 const CONTENT_PAD_RIGHT = 160
@@ -40,6 +47,8 @@ const PRIMARY_H = 44
 const LANE_H = 22
 const LANE_GAP = 4
 const LANES_TOP = PRIMARY_TOP + PRIMARY_H + 6
+const CHILD_H = 20
+const CHILD_GAP = 3
 const GUTTER_W = 52
 
 const LANE_STYLE: Record<TemporalItemKind, string> = {
@@ -67,6 +76,9 @@ type SceneTimelineProps = {
   onMoveItem?: (itemId: string, startFrame: number) => void
   onResizeItem?: (itemId: string, durationFrames: number) => void
   onAddItem?: (kind: TemporalItemKind) => void
+  /** Hierarchical Scene timing: the selected Scene element (owning Scene + element id). */
+  selectedElement?: { sceneId: string; elementId: string } | null
+  onSelectElement?: (sceneId: string, elementId: string) => void
 }
 
 type BlockGesture =
@@ -80,8 +92,11 @@ type BlockGesture =
 export function SceneTimeline({
   scenes, cursor, playing, selectedSceneId, thumbnails, onSeek, onSelectScene, onReorder, onDurationChange,
   items = [], selectedItemId = null, itemLabel = (item) => item.kind, onSelectItem, onMoveItem, onResizeItem, onAddItem,
+  selectedElement = null, onSelectElement,
 }: SceneTimelineProps) {
   const [pixelsPerFrame, setPixelsPerFrame] = useState(DEFAULT_PIXELS_PER_FRAME)
+  // Which Scene shows its element rows: VIEW state (never authored, never saved, never dirty).
+  const [expandedSceneId, setExpandedSceneId] = useState<string | null>(null)
   const [snapEnabled, setSnapEnabled] = useState(true)
   const [gesture, setGesture] = useState<BlockGesture | null>(null)
   const [scrubbing, setScrubbing] = useState(false)
@@ -104,7 +119,16 @@ export function SceneTimeline({
     ...TEMPORAL_LANES.filter((lane) => lane.kind !== 'audio').map((lane) => ({ ...lane, key: lane.kind as string, row: 0 })),
     ...Array.from({ length: audioRows.rowCount }, (_, row) => ({ kind: 'audio' as TemporalItemKind, label: `Áudio ${row + 1}`, key: `audio-${row}`, row })),
   ], [audioRows.rowCount])
-  const contentHeight = LANES_TOP + lanes.length * (LANE_H + LANE_GAP) + 4
+  // Expanded Scene: its temporal elements (Template element order), mapped onto the global ruler.
+  const expandedIndex = expandedSceneId ? previewScenes.findIndex((scene) => scene.id === expandedSceneId) : -1
+  const expandedRange = expandedIndex >= 0 ? ranges[expandedIndex] : null
+  const childRows = useMemo(
+    () => (expandedIndex >= 0 && expandedRange && sceneHasTemporalElements(previewScenes[expandedIndex]) ? sceneTimingRows(previewScenes[expandedIndex], expandedRange.startFrame, expandedRange.durationFrames) : []),
+    [previewScenes, expandedIndex, expandedRange],
+  )
+  const childTop = LANES_TOP
+  const rootLanesTop = childRows.length > 0 ? childTop + childRows.length * (CHILD_H + CHILD_GAP) + 6 : LANES_TOP
+  const contentHeight = rootLanesTop + lanes.length * (LANE_H + LANE_GAP) + 4
   const contentFrames = Math.max(totalFrames, itemsEnd)
   const contentWidth = CONTENT_PAD_LEFT + frameToX(contentFrames, pixelsPerFrame) + CONTENT_PAD_RIGHT
   const ticks = useMemo(() => rulerTicks(contentFrames, pixelsPerFrame), [contentFrames, pixelsPerFrame])
@@ -284,7 +308,7 @@ export function SceneTimeline({
     <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="scene-timeline" data-pixels-per-frame={pixelsPerFrame}>
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">Cenas principais</span>
-        <span className="inline-flex cursor-help items-center" title="As cenas principais são contíguas: arraste uma cena para reordenar e a borda direita para mudar a duração. B-roll, Texto e Áudio têm tempo próprio: arraste para mover e a borda direita para mudar a duração; eles NÃO acompanham as cenas ao reordenar. Snap em segundos, playhead e bordas (Alt desativa). Ctrl/⌘ + roda = zoom temporal." aria-label="Ajuda da Timeline"><HelpCircle className="h-3.5 w-3.5" aria-hidden="true" /></span>
+        <span className="inline-flex cursor-help items-center" title="As cenas principais são contíguas: arraste uma cena para reordenar e a borda direita para mudar a duração. B-roll, Texto e Áudio têm tempo próprio: arraste para mover e a borda direita para mudar a duração; eles NÃO acompanham as cenas ao reordenar. Uma cena com ▸ abre as linhas dos seus elementos: o tempo deles é da cena e anda junto com ela. Snap em segundos, playhead e bordas (Alt desativa). Ctrl/⌘ + roda = zoom temporal." aria-label="Ajuda da Timeline"><HelpCircle className="h-3.5 w-3.5" aria-hidden="true" /></span>
         {onAddItem ? (
           <div className="flex items-center gap-1" role="group" aria-label="Adicionar item independente">
             {TEMPORAL_LANES.map((lane) => (
@@ -303,7 +327,10 @@ export function SceneTimeline({
         {/* Lane labels (layout only — never render stacking). */}
         <div className="relative shrink-0 border-r border-border/40 bg-muted/20 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" style={{ width: GUTTER_W, height: contentHeight }} aria-hidden="true">
           <span className="absolute left-1.5" style={{ top: PRIMARY_TOP + PRIMARY_H / 2 - 6 }}>Cenas</span>
-          {lanes.map((lane, i) => <span key={lane.key} className="absolute left-1.5" style={{ top: LANES_TOP + i * (LANE_H + LANE_GAP) + 5 }}>{lane.label}</span>)}
+          {childRows.map((row, i) => (
+            <span key={row.elementId} className="absolute left-1.5 right-0.5 truncate normal-case tracking-normal text-foreground/80" style={{ top: childTop + i * (CHILD_H + CHILD_GAP) + 4 }} title={`${row.label} · Cena ${expandedIndex + 1}`} data-testid="timeline-element-label">↳ {row.label}</span>
+          ))}
+          {lanes.map((lane, i) => <span key={lane.key} className="absolute left-1.5" style={{ top: rootLanesTop + i * (LANE_H + LANE_GAP) + 5 }}>{lane.label}</span>)}
         </div>
         <div ref={scrollerRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" data-testid="timeline-scroller">
           <div className="relative select-none" style={{ width: contentWidth, height: contentHeight }}>
@@ -333,6 +360,8 @@ export function SceneTimeline({
                 const trimming = gesture?.kind === 'trim' && gesture.index === range.index
                 const selected = scene.id === selectedSceneId
                 const thumb = thumbnails[scene.id]
+                const expandable = sceneHasTemporalElements(scene)
+                const expanded = expandable && expandedSceneId === scene.id
                 return (
                   <div
                     key={scene.id}
@@ -357,11 +386,27 @@ export function SceneTimeline({
                     onPointerUp={onBlockUp}
                     onPointerCancel={() => setGesture(null)}
                     onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectScene(scene.id) } }}
+                    onDoubleClick={expandable ? () => setExpandedSceneId(expanded ? null : scene.id) : undefined}
                     data-testid="timeline-scene-block"
                     data-scene-id={scene.id}
                     data-start-frame={range.startFrame}
                     data-duration-frames={range.durationFrames}
+                    data-expanded={expanded ? 'true' : undefined}
                   >
+                    {expandable ? (
+                      <button
+                        type="button"
+                        className="flex w-5 shrink-0 items-center justify-center border-r border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => { event.stopPropagation(); setExpandedSceneId(expanded ? null : scene.id) }}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? 'Recolher' : 'Expandir'} elementos da cena ${range.index + 1}`}
+                        title={expanded ? 'Recolher elementos da cena' : 'Mostrar o tempo dos elementos desta cena'}
+                        data-testid="timeline-scene-expand"
+                      >
+                        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      </button>
+                    ) : null}
                     {thumb ? (
                       // eslint-disable-next-line @next/next/no-img-element -- short-lived signed display URL
                       <img src={thumb} alt="" className="h-full w-9 shrink-0 object-cover opacity-80" draggable={false} />
@@ -383,12 +428,84 @@ export function SceneTimeline({
                 )
               })}
             </div>
+            {/* Expanded Scene: its element rows. The tinted band is the owning Scene's interval; bars never leave it. */}
+            {expandedRange && childRows.length > 0 ? (
+              <div
+                className="pointer-events-none absolute rounded-sm border-x border-primary/40 bg-primary/[0.04]"
+                style={{ top: childTop - 3, height: childRows.length * (CHILD_H + CHILD_GAP) + 3, left: CONTENT_PAD_LEFT + frameToX(expandedRange.startFrame, pixelsPerFrame), width: frameToX(expandedRange.durationFrames, pixelsPerFrame) }}
+                data-testid="timeline-scene-children"
+                data-scene-id={expandedSceneId ?? undefined}
+              />
+            ) : null}
+            {childRows.map((row, rowIndex) => {
+              const sceneId = expandedSceneId as string
+              const selected = selectedElement?.sceneId === sceneId && selectedElement.elementId === row.elementId
+              const width = frameToX(row.globalEndFrame - row.globalStartFrame, pixelsPerFrame)
+              const state = row.hidden ? 'oculto na cena (Camadas)' : row.range.outside ? 'começa depois do fim da cena: não aparece' : row.range.clipped ? 'cortado no fim da cena' : null
+              return (
+                <div
+                  key={row.elementId}
+                  className="absolute inset-x-0"
+                  style={{ top: childTop + rowIndex * (CHILD_H + CHILD_GAP), height: CHILD_H }}
+                  onPointerDown={onScrubDown}
+                  onPointerMove={onScrubMove}
+                  onPointerUp={onScrubEnd}
+                  onPointerCancel={onScrubEnd}
+                  data-testid="timeline-element-row"
+                  data-element-id={row.elementId}
+                >
+                  {row.range.outside ? (
+                    <button
+                      type="button"
+                      className="absolute top-0 flex h-full items-center rounded border border-dashed border-amber-500/80 px-1 text-[10px] text-amber-700 dark:text-amber-300"
+                      style={{ left: CONTENT_PAD_LEFT + frameToX(row.globalEndFrame, pixelsPerFrame) - 22 }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={() => onSelectElement?.(sceneId, row.elementId)}
+                      title={`${row.label}: ${state}`}
+                      aria-label={`${row.label}: ${state}`}
+                      data-testid="timeline-element"
+                      data-scene-id={sceneId}
+                      data-element-id={row.elementId}
+                      data-outside="true"
+                    >!</button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={`${row.label} (cena ${expandedIndex + 1}): ${formatTimecode(row.globalStartFrame)} → ${formatTimecode(row.globalEndFrame)}${state ? ` · ${state}` : ''}`}
+                      title={state ? `${row.label}: ${state}` : `${row.label}: +${formatSeconds(row.range.startFrame / TIMELINE_FPS)} na cena`}
+                      className={cn(
+                        'absolute top-0 flex h-full items-center overflow-hidden rounded border px-1.5 text-left text-[10px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        row.hidden ? 'border-dashed border-border bg-muted/40 text-muted-foreground' : 'border-violet-500/70 bg-violet-500/20',
+                        row.range.clipped ? 'border-r-2 border-r-amber-500' : '',
+                        selected ? 'z-20 ring-1 ring-primary' : 'z-10',
+                      )}
+                      style={{ left: CONTENT_PAD_LEFT + frameToX(row.globalStartFrame, pixelsPerFrame), width: Math.max(6, width - 1) }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={() => onSelectElement?.(sceneId, row.elementId)}
+                      data-testid="timeline-element"
+                      data-scene-id={sceneId}
+                      data-element-id={row.elementId}
+                      data-local-start={row.range.startFrame}
+                      data-local-end={row.range.endFrame}
+                      data-global-start={row.globalStartFrame}
+                      data-global-end={row.globalEndFrame}
+                      data-authored={row.authored ? 'true' : undefined}
+                      data-hidden={row.hidden ? 'true' : undefined}
+                      data-clipped={row.range.clipped ? 'true' : undefined}
+                    >
+                      <span className="truncate">{row.label}{row.hidden ? ' · oculto' : ''}</span>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
             {/* Independent lanes (Gate B): one per visual/text kind; audio rows derived by interval packing (AUDIO V1). */}
             {lanes.map((lane, laneIndex) => (
               <div
                 key={lane.key}
                 className="absolute inset-x-0 border-y border-dashed border-border/30"
-                style={{ top: LANES_TOP + laneIndex * (LANE_H + LANE_GAP), height: LANE_H }}
+                style={{ top: rootLanesTop + laneIndex * (LANE_H + LANE_GAP), height: LANE_H }}
                 onPointerDown={onScrubDown}
                 onPointerMove={onScrubMove}
                 onPointerUp={onScrubEnd}
@@ -451,7 +568,7 @@ export function SceneTimeline({
               </div>
             ))}
             {/* End of the primary sequence: independent items are clipped here in the render. */}
-            {itemsEnd > totalFrames ? <div className="pointer-events-none absolute bottom-0 z-30 w-px bg-destructive/60" style={{ top: LANES_TOP, left: CONTENT_PAD_LEFT + frameToX(totalFrames, pixelsPerFrame) }} data-testid="timeline-sequence-end" /> : null}
+            {itemsEnd > totalFrames ? <div className="pointer-events-none absolute bottom-0 z-30 w-px bg-destructive/60" style={{ top: rootLanesTop, left: CONTENT_PAD_LEFT + frameToX(totalFrames, pixelsPerFrame) }} data-testid="timeline-sequence-end" /> : null}
             {reorderIndicatorX !== null ? <div className="pointer-events-none absolute bottom-1 z-30 w-0.5 bg-primary" style={{ top: PRIMARY_TOP - 2, left: reorderIndicatorX - 1 }} data-testid="timeline-reorder-indicator" /> : null}
             {guide ? (
               <div className="pointer-events-none absolute bottom-0 top-6 z-30 w-px bg-amber-500" style={{ left: guide.x }} data-testid="timeline-snap-guide" data-snapped-to={guide.snappedTo ?? ''}>

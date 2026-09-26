@@ -164,8 +164,8 @@ function currentComposition(scene: VideoScene): VideoSceneComposition {
 }
 
 /**
- * Structure switch. The element set changes, so authored order/visibility of
- * the old layout no longer apply; the title is carried over; appearance is
+ * Structure switch. The element set changes, so authored order/visibility and
+ * element timing of the old layout no longer apply; the title is carried over; appearance is
  * kept when the new layout supports it, otherwise it falls back to the new
  * layout's default (Static SET_VARIANT semantics).
  */
@@ -180,7 +180,10 @@ export function setSceneLayout(scene: VideoScene, layoutId: AuthoringVariant): V
   const title = typeof resolved.content.title === 'string' ? resolved.content.title : legacySceneTitle(scene.order)
   const current = currentComposition(scene)
   const keepAppearance = current.appearance !== undefined && (nextLayout.supportedAppearances as readonly string[]).includes(current.appearance)
-  return withComposition(scene, {
+  // Element timing belongs to the old layout's element set too (VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1).
+  const { element_timing: _timing, ...sceneWithoutTiming } = scene
+  void _timing
+  return withComposition(sceneWithoutTiming, {
     layout: layoutId,
     appearance: keepAppearance ? current.appearance : undefined,
     content: defaultSceneContent(layoutId, title),

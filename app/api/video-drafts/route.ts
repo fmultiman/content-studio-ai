@@ -6,6 +6,7 @@ import {
   validateSceneLibraryFileBindings,
 } from '@/lib/video-scene-library-bindings'
 import { validateSceneCompositionShape } from '@/lib/creative/video-editor/scene-composition'
+import { validateSceneElementTimingShape } from '@/lib/creative/video-editor/element-timing'
 import {
   persistedVideoTimeline, readVideoTimeline, timelineLibraryFileRefs, validateVideoTimeline, type VideoTimeline,
 } from '@/lib/creative/video-editor/temporal-items'
@@ -87,6 +88,10 @@ function sceneCompositionErrorResponse(scenes: unknown[]) {
     const composition = typeof scene === 'object' && scene !== null ? (scene as { composition?: unknown }).composition : undefined
     const check = validateSceneCompositionShape(composition)
     if (!check.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${check.message}`, code: 'SCENE_COMPOSITION_INVALID' }, { status: 400 })
+    // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: Scene-local element timing (structure only; ids resolve per layout).
+    const elementTiming = typeof scene === 'object' && scene !== null ? (scene as { element_timing?: unknown }).element_timing : undefined
+    const timingCheck = validateSceneElementTimingShape(elementTiming)
+    if (!timingCheck.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${timingCheck.message}`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
   }
   return null
 }

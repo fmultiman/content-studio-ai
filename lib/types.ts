@@ -226,7 +226,23 @@ export interface VideoScene {
    * the Scene always rendered with: Cover · Dark · "Cena N" · default stack.
    */
   composition?: VideoSceneComposition
+  /**
+   * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1 — WHEN selected Template elements
+   * participate inside this Scene, in Scene-local frames (temporal Scene state,
+   * beside duration and movement; not spatial composition). Keyed by element id;
+   * only elements the layout declares temporal. Absent entry = the whole Scene.
+   * Never global frames: the Scene's position in the sequence is derived.
+   */
+  element_timing?: VideoSceneElementTimingMap
 }
+
+/** One element's Scene-local participation. No `duration_frames` = until the Scene ends. */
+export interface VideoSceneElementTiming {
+  start_frame: number
+  duration_frames?: number
+}
+
+export type VideoSceneElementTimingMap = Record<string, VideoSceneElementTiming>
 
 /** Authored Scene composition. Every field optional: absent = Template default for that axis. */
 export interface VideoSceneComposition {

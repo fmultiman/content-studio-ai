@@ -2,7 +2,7 @@ import React from 'react'
 import type { ResolvedTimelineInput, ResolvedTimelineTemplateSegment } from '@/lib/creative/resolution/resolve-timeline'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { remotionTemplateProps } from '../DocumentaryCardComposition'
-import { segmentFrameState } from './frame-model'
+import { inactiveElementIds, segmentFrameState } from './frame-model'
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
 
 type TemplateSegmentProps = {
@@ -32,11 +32,18 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
   // VIDEO_SCENE_COMPOSITION_PARITY_V1: the Scene's appearance and element
   // stack reach the shared visual tree exactly like a Static slide's. Absent
   // (older manifests) = the template's previous defaults, unchanged.
+  // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: an element outside its Scene-local
+  // range is simply not drawn at this frame — the same "hidden" the tree already
+  // honours, so Static (which never has timing) is untouched. Authored hidden
+  // elements stay hidden whatever their timing.
+  const inactive = inactiveElementIds(segment.payload.element_timing, state.localFrame)
+  const authoredHidden = segment.payload.layering?.hidden_elements
+  const hiddenElements = inactive.length > 0 ? [...new Set([...(authoredHidden ?? []), ...inactive])] : authoredHidden
   const props = binding.createProps({
     variant: resolvedTemplate.ref.variant,
     appearance: resolvedTemplate.ref.appearance,
     elementOrder: segment.payload.layering?.element_order,
-    hiddenElements: segment.payload.layering?.hidden_elements,
+    hiddenElements,
     content: segment.payload.content,
     assets: resolvedAssets,
     tokens: resolvedInput.tokens,
