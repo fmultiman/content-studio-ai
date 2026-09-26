@@ -17,29 +17,34 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   VIDEO_CANVAS_LIMITS, VIDEO_CANVAS_PRESETS, matchVideoCanvasPreset, validateVideoCanvas, videoCanvasRatio, videoTemplateCanvasSupport,
-  type VideoCanvas,
+  type VideoCanvas, type VideoTemplateCanvasSupport,
 } from '@/lib/creative/video-editor/video-canvas'
 
 export function videoCanvasLabel(canvas: VideoCanvas): string {
   return `${videoCanvasRatio(canvas)} · ${canvas.width}×${canvas.height}`
 }
 
-export function VideoCanvasControl({ canvas, authored, onChange }: {
+export function VideoCanvasControl({ canvas, authored, onChange, supportFor = videoTemplateCanvasSupport }: {
   /** The stage in effect (authored or the legacy default). */
   canvas: VideoCanvas
   /** False = the draft never set a stage (legacy 1080×1920 in effect). */
   authored: boolean
   onChange: (canvas: VideoCanvas) => void
+  /**
+   * VIDEO_FREE_SCENE_COMPOSITION_V1: the draft-level rule (every Template-backed Scene must be able to draw
+   * the stage; a free-only draft is limited only by platform bounds). Defaults to the Template family rule.
+   */
+  supportFor?: (canvas: VideoCanvas) => VideoTemplateCanvasSupport
 }) {
   const [customOpen, setCustomOpen] = useState(false)
   const [width, setWidth] = useState(String(canvas.width))
   const [height, setHeight] = useState(String(canvas.height))
   const preset = matchVideoCanvasPreset(canvas)
-  const support = videoTemplateCanvasSupport(canvas)
+  const support = supportFor(canvas)
   const supportedList = support.supportedSizes.map((size) => `${size.width}×${size.height}`).join(' e ')
 
   const parsed = validateVideoCanvas({ width: Number(width), height: Number(height) })
-  const customSupport = parsed.ok ? videoTemplateCanvasSupport(parsed.canvas) : null
+  const customSupport = parsed.ok ? supportFor(parsed.canvas) : null
   const customMessage = !parsed.ok
     ? parsed.message
     : !customSupport?.supported ? `O template ${customSupport?.templateLabel} desenha apenas ${supportedList}.` : null
@@ -65,7 +70,7 @@ export function VideoCanvasControl({ canvas, authored, onChange }: {
           <p className="px-2 pb-1.5 text-[11px] text-muted-foreground">Tamanho de saída de todas as cenas e itens da timeline. Imagens e vídeos se ajustam dentro dele.</p>
           <DropdownMenuSeparator />
           {VIDEO_CANVAS_PRESETS.map((option) => {
-            const presetSupport = videoTemplateCanvasSupport(option)
+            const presetSupport = supportFor(option)
             const selected = option.width === canvas.width && option.height === canvas.height
             return (
               <DropdownMenuItem

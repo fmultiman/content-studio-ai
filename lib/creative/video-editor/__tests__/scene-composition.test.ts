@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { VideoScene } from '@/lib/types'
+import type { VideoScene, VideoSceneComposition } from '@/lib/types'
 import { buildRenderExecutionSnapshot } from '@/lib/render-execution/build-snapshot'
 import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
 import { TemplateSegment } from '@/remotion/timeline'
@@ -119,12 +119,12 @@ describe('Scene composition edits are Scene-scoped and touch only `composition`'
     const layout = resolveSceneComposition(base[0]).layout
     const front = [...layout.defaultStackOrder.filter((id) => id !== 'ornament'), 'ornament']
     const reordered = setSceneElementOrder(base[0], front)
-    expect(reordered.composition?.element_order).toEqual(front)
+    expect((reordered.composition as VideoSceneComposition | undefined)?.element_order).toEqual(front)
     expect(resetSceneElementOrder(reordered).composition).toBeUndefined()
     expect(setSceneElementOrder(base[0], layout.defaultStackOrder).composition).toBeUndefined()
     const hidden = toggleSceneElementVisibility(toggleSceneElementVisibility(base[0], 'title'), 'tape1')
-    expect(hidden.composition?.hidden_elements).toEqual(['tape1', 'title'])
-    expect(toggleSceneElementVisibility(hidden, 'title').composition?.hidden_elements).toEqual(['tape1'])
+    expect((hidden.composition as VideoSceneComposition | undefined)?.hidden_elements).toEqual(['tape1', 'title'])
+    expect((toggleSceneElementVisibility(hidden, 'title').composition as VideoSceneComposition | undefined)?.hidden_elements).toEqual(['tape1'])
     expect(toggleSceneElementVisibility(base[0], 'not-an-element')).toBe(base[0])
   })
 

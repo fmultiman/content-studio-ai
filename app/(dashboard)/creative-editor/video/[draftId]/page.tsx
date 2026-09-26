@@ -51,7 +51,9 @@ import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/p
 import { resolveSlotResource } from '@/lib/creative/authoring/asset-slots'
 import { cn } from '@/lib/utils'
 import { DEFAULT_HERO_ASSET_REF } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
-import { effectiveVideoCanvas, readVideoCanvas, videoTemplateCanvasSupport, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
+import { effectiveVideoCanvas, readVideoCanvas, videoDraftCanvasSupport, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
+import { addFreeImageElement, addFreeTextElement, createFreeScene, freeElements, isFreeScene, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
+import { FreeSceneElements, FreeSceneTemplateState, freeElementLabel } from '@/components/creative/video/free-scene-panels'
 import { VideoCanvasControl } from '@/components/creative/video/video-canvas-control'
 import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
 import {
@@ -59,7 +61,7 @@ import {
   sceneIndexAtFrame, setSceneDuration, MIN_SCENE_DURATION_SECONDS, MAX_SCENE_DURATION_SECONDS,
 } from '@/lib/creative/video-editor/scene-timeline'
 import {
-  MAX_VIDEO_SCENES, addVideoScene, buildVideoDraftSaveBody, motionOptions, normalizeLoadedScenes,
+  MAX_VIDEO_SCENES, NEW_SCENE_DURATION_SECONDS, addVideoScene, buildVideoDraftSaveBody, insertVideoScene, motionOptions, normalizeLoadedScenes,
   persistedVideoSnapshot, removeVideoScene, updateVideoScene,
 } from '@/lib/creative/video-editor/video-authoring'
 import { buildLivePreviewInput, type PreviewLibraryFile } from '@/lib/creative/video-editor/live-preview-input'
@@ -181,6 +183,9 @@ export default function VideoCreativeEditorPage() {
   const [panelHeight, setPanelHeight] = useState(0)
   const [playerError, setPlayerError] = useState<string | null>(null)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  // VIDEO_FREE_SCENE_COMPOSITION_V1 (UI only): the explicit "Nova cena" choice and the free-image picker.
+  const [newSceneOpen, setNewSceneOpen] = useState(false)
+  const [freeImagePicker, setFreeImagePicker] = useState<null | { mode: 'add' } | { mode: 'replace'; elementId: string }>(null)
   // Camadas disclosure (UI only, never persisted).
   const [openElementId, setOpenElementId] = useState<string | null>(null)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
@@ -299,17 +304,31 @@ export default function VideoCreativeEditorPage() {
 
   // The selected Scene's composition (VIDEO_SCENE_COMPOSITION_PARITY_V1): the Inspector hydrates from it on every
   // selection change — derived from the Scene itself, so no per-Scene UI state can bleed between Scenes.
-  const sceneView = useMemo(() => videoSceneComposition(selectedScene ?? undefined), [selectedScene])
-  const canvasSupport = useMemo(() => videoTemplateCanvasSupport({ width: stage.width, height: stage.height }), [stage.width, stage.height])
+  // A free Scene has no Template composition: sceneView then describes the draft's Template family only.
+  const selectedIsFree = selectedScene ? isFreeScene(selectedScene) : false
+  const sceneView = useMemo(() => videoSceneComposition(selectedScene && !isFreeScene(selectedScene) ? selectedScene : undefined), [selectedScene])
+  // Draft-level rule: every Template-backed Scene must draw the stage; free Scenes only need platform bounds.
+  const canvasSupport = useMemo(() => videoDraftCanvasSupport(scenes, { width: stage.width, height: stage.height }), [scenes, stage.width, stage.height])
+  const canvasSupportFor = useCallback((candidate: VideoCanvas) => videoDraftCanvasSupport(scenes, candidate), [scenes])
   const sceneMotionOptions = useMemo(() => motionOptions(sceneView.resolved.layoutId), [sceneView])
 
   const thumbnails = useMemo(() => Object.fromEntries(scenes.map((scene) => {
+    if (isFreeScene(scene)) {
+      const image = freeElements(scene).find((element) => element.kind === 'image' && !element.hidden)
+      const file = image?.kind === 'image' ? libraryFiles.get(image.library_file_id) : undefined
+      return [scene.id, file ? (file.thumbnail_url || file.public_url) : undefined]
+    }
     // A layout without a content image does not draw the Scene's hero, so the card does not show it either.
     if (!resolveSceneComposition(scene).usesHero) return [scene.id, undefined]
     const file = scene.library_file_id ? libraryFiles.get(scene.library_file_id) : undefined
     return [scene.id, file ? (file.thumbnail_url || file.public_url) : scene.library_file_id ? undefined : TEMPLATE_HERO_URL]
   })), [scenes, libraryFiles])
+  const libraryFileNames = useMemo(() => new Map([...libraryFiles.values()].map((file) => [file.id, file.name])), [libraryFiles])
   const sceneCaptions = useMemo(() => Object.fromEntries(scenes.map((scene) => {
+    if (isFreeScene(scene)) {
+      const text = freeElements(scene).find((element) => element.kind === 'text')
+      return [scene.id, text ? `Livre · ${freeElementLabel(text)}` : 'Livre · em branco']
+    }
     const composition = resolveSceneComposition(scene)
     const title = typeof composition.content.title === 'string' ? composition.content.title.replace(/\s+/g, ' ').trim() : ''
     return [scene.id, title ? `${composition.layout.label} · ${title}` : composition.layout.label]
@@ -413,9 +432,22 @@ export default function VideoCreativeEditorPage() {
     const sceneId = selectedScene.id
     setScenes((current) => current.map((scene) => (scene.id === sceneId ? edit(scene) : scene)))
   }
+  /** "Nova cena" always asks: Em branco (free composition) or the Template. Cancelling changes nothing. */
   function addScene() {
     if (scenes.length >= MAX_VIDEO_SCENES) return
-    const result = addVideoScene(scenes, safeSelectedIndex >= 0 ? safeSelectedIndex : undefined)
+    setNewSceneOpen(true)
+  }
+  function createScene(kind: 'free' | 'template') {
+    setNewSceneOpen(false)
+    if (scenes.length >= MAX_VIDEO_SCENES) return
+    const afterIndex = safeSelectedIndex >= 0 ? safeSelectedIndex : undefined
+    const result = kind === 'free'
+      ? insertVideoScene(scenes, createFreeScene(scenes.length + 1, crypto.randomUUID(), NEW_SCENE_DURATION_SECONDS), afterIndex)
+      : addVideoScene(scenes, afterIndex)
+    setSelectedItemId(null)
+    setSelectedElementId(null)
+    setOpenElementId(null)
+    if (kind === 'free') setActiveTab('element')
     setScenes(result.scenes)
     setSelectedIndex(result.index)
     const start = deriveSceneRanges(result.scenes)[result.index]?.startFrame ?? 0
@@ -607,7 +639,9 @@ export default function VideoCreativeEditorPage() {
   const playerWidth = viewport.scaledWidth
   const playerHeight = viewport.scaledHeight
   // A stored stage the Template does not declare (only reachable through the API) is named plainly, not as a resolver error.
-  const stageBlocker = canvasSupport.supported ? null : `O template ${canvasSupport.templateLabel} não desenha ${canvasW}×${canvasH}. Escolha um formato compatível em Formato.`
+  const stageBlocker = canvasSupport.supported ? null : canvasSupport.templateBackedScenes > 0
+    ? `O template ${canvasSupport.templateLabel} não desenha ${canvasW}×${canvasH} (${canvasSupport.templateBackedScenes} cena${canvasSupport.templateBackedScenes > 1 ? 's' : ''} com template). Escolha um formato compatível em Formato.`
+    : `${canvasW}×${canvasH} está fora dos limites de formato do vídeo.`
   const previewBlocker = context.identityError
     ?? stageBlocker
     ?? (!livePreview ? null : !livePreview.ok ? livePreview.message : null)
@@ -818,6 +852,7 @@ export default function VideoCreativeEditorPage() {
             <Label htmlFor="video-name" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nome do vídeo</Label>
             <Input id="video-name" value={name} onChange={(event) => setName(event.target.value)} className="h-8" />
           </div>
+          {selectedIsFree ? <FreeSceneTemplateState /> : <>
           <div className="space-y-1.5" data-testid="video-template">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
             <p className="text-sm">{sceneView.template.name}</p>
@@ -850,17 +885,23 @@ export default function VideoCreativeEditorPage() {
               {sceneView.resolved.fallbacks.length > 0 ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Esta cena tem {sceneView.resolved.fallbacks.includes('layout') ? 'uma estrutura' : 'uma aparência'} salva que o vídeo não suporta; o padrão do Template está sendo usado.</p> : null}
             </div>
           ) : null}
+          </>}
           <ContextMetadata dense items={[
             { label: 'Formato', value: `${canvasW}×${canvasH} · ${TIMELINE_FPS} fps` },
             { label: 'Cenas', value: String(scenes.length) },
             { label: 'Duração', value: formatSeconds(totalFrames / TIMELINE_FPS) },
           ]} />
-          <TemplateFamilyAnatomy template={sceneView.template} />
-          <TemplateAnatomy template={sceneView.template} layout={sceneView.layout} />
+          {selectedIsFree ? null : <>
+            <TemplateFamilyAnatomy template={sceneView.template} />
+            <TemplateAnatomy template={sceneView.template} layout={sceneView.layout} />
+          </>}
         </TabsContent>
         <TabsContent value="content" className="space-y-3 pt-3">
           {selectedScene ? <>
-            {/* What this Scene DRAWS: its layout's bounded content (same form + descriptors as Static). */}
+            {selectedIsFree ? (
+              <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-content">Composição livre: os textos desta cena são elementos, editados em Elementos (sem estrutura de template).</p>
+            ) : (
+            /* What this Scene DRAWS: its layout's bounded content (same form + descriptors as Static). */
             <section className="space-y-2" aria-label="Conteúdo desenhado na cena" data-testid="scene-content" data-layout={sceneView.resolved.layoutId}>
               <p className="text-[11px] text-muted-foreground">Conteúdo da estrutura <span className="font-medium text-foreground">{sceneView.layout.label}</span> desta cena — exatamente o que a prévia e o render final desenham.</p>
               <LayoutContentForm
@@ -870,6 +911,7 @@ export default function VideoCreativeEditorPage() {
                 dispatch={(action) => { if (isContentAction(action)) editSelectedScene((scene) => applySceneContentAction(scene, action)) }}
               />
             </section>
+            )}
             <div className="space-y-1.5 border-t border-border/40 pt-3">
               <Label htmlFor="scene-description">Roteiro da cena</Label>
               <Textarea id="scene-description" value={selectedScene.description} onChange={(event) => patchSelectedScene({ description: event.target.value })} rows={3} placeholder="O que acontece nesta cena…" data-testid="scene-description" />
@@ -888,8 +930,18 @@ export default function VideoCreativeEditorPage() {
         </TabsContent>
         <TabsContent value="assets" className="space-y-2 pt-3">
           {selectedScene ? <>
-            {/* Same slot card + resolver as Static: VideoScene.library_file_id is this Scene's `hero` override. */}
-            {sceneView.usesHero ? <>
+            {selectedIsFree ? (
+              <div className="space-y-1.5" data-testid="free-scene-assets">
+                <p className="text-[11px] text-muted-foreground">Imagens da Biblioteca usadas pelos elementos desta cena livre (sem slots de template). Troque ou ajuste cada uma em Elementos.</p>
+                {freeElements(selectedScene).map((element) => element.kind === 'image' ? (
+                  <div key={element.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-1.5" data-testid="free-scene-asset" data-element-id={element.id}>
+                    <span className="min-w-0 truncate text-xs">{libraryFiles.get(element.library_file_id)?.name ?? 'Arquivo da Biblioteca'}{element.hidden ? ' · oculto' : ''}</span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setFreeImagePicker({ mode: 'replace', elementId: element.id })}>Trocar</Button>
+                  </div>
+                ) : null)}
+              </div>
+            ) : /* Same slot card + resolver as Static: VideoScene.library_file_id is this Scene's hero override. */
+            sceneView.usesHero ? <>
               <p className="text-[11px] text-muted-foreground">Recurso que preenche a imagem desta cena. Os materiais de colagem (papéis, fitas…) seguem o padrão do Template.</p>
               <div data-testid="scene-asset">
                 <AssetSlotCard
@@ -912,7 +964,19 @@ export default function VideoCreativeEditorPage() {
           <StyleSourcePanel tokens={context.identitySnapshot ?? undefined} unitLabel="cena" />
         </TabsContent>
         <TabsContent value="element" className="pt-3">
-          {/* Same Camadas as Static: this Scene's stack order + visibility (authored, previewed and rendered). */}
+          {selectedIsFree && selectedScene ? (
+            <FreeSceneElements
+              scene={selectedScene}
+              fileNames={libraryFileNames}
+              openId={openElementId}
+              onOpen={setOpenElementId}
+              onEdit={editSelectedScene}
+              onAddText={() => { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeTextElement(scene, id)); setOpenElementId(id) }}
+              onAddImage={() => setFreeImagePicker({ mode: 'add' })}
+              onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
+            />
+          ) : (
+          /* Same Camadas as Static: this Scene's stack order + visibility (authored, previewed and rendered). */
           <ElementLayers
             order={sceneView.stackOrder}
             labels={sceneView.elementLabels}
@@ -926,9 +990,12 @@ export default function VideoCreativeEditorPage() {
             onToggleVisibility={(id) => editSelectedScene((scene) => toggleSceneElementVisibility(scene, id))}
             note={<p className="text-[11px] leading-snug text-muted-foreground" data-testid="video-elements-note">Camadas da cena {safeSelectedIndex + 1} ({sceneView.layout.label}), na ordem em que a prévia e o render final as desenham.</p>}
           />
+          )}
         </TabsContent>
         <TabsContent value="motion" className="space-y-2 pt-3">
-          {selectedScene ? <>
+          {selectedScene && selectedIsFree ? (
+            <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-motion">Composição livre: o Motion desta versão é desenhado pelo Template, então esta cena fica estática. Movimento por elemento não existe.</p>
+          ) : selectedScene ? <>
             <p className="text-[11px] text-muted-foreground">Movimento semântico da cena inteira, desenhado pelo Template (sem keyframes, sem movimento por elemento). O efeito depende da estrutura da cena ({sceneView.layout.label}).</p>
             <div className="grid gap-1" role="radiogroup" aria-label="Movimento da cena">
               {sceneMotionOptions.map((option) => {
@@ -1046,6 +1113,8 @@ export default function VideoCreativeEditorPage() {
     </section>
   ) : null
 
+  const freeImagePickerTarget = freeImagePicker?.mode === 'replace' && selectedScene ? freeElements(selectedScene).find((element) => element.id === freeImagePicker.elementId) : undefined
+  const freeImagePickerSelectedId = freeImagePickerTarget?.kind === 'image' ? freeImagePickerTarget.library_file_id : null
   const saveStatusLabel =saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Falha ao salvar' : dirty ? 'Alterações não salvas' : 'Salvo'
   const contextItems = [
     { label: 'Project', value: context.project?.name ?? 'Sem Project' },
@@ -1061,7 +1130,7 @@ export default function VideoCreativeEditorPage() {
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span className="shrink-0">Video</span>
           <span aria-hidden="true">·</span>
-          <VideoCanvasControl canvas={stage} authored={videoCanvas !== null} onChange={changeVideoCanvas} />
+          <VideoCanvasControl canvas={stage} authored={videoCanvas !== null} onChange={changeVideoCanvas} supportFor={canvasSupportFor} />
           {selectedScene ? <><span aria-hidden="true">·</span><span className="shrink-0 font-medium text-foreground" data-testid="header-scene-indicator">Cena {safeSelectedIndex + 1}</span></> : null}
         </p>
         <DropdownMenu>
@@ -1084,6 +1153,41 @@ export default function VideoCreativeEditorPage() {
   )
 
   const dialogs = <>
+    {/* VIDEO_FREE_SCENE_COMPOSITION_V1: a new Scene is always an explicit choice (never a silent Template). */}
+    <Dialog open={newSceneOpen} onOpenChange={setNewSceneOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Nova cena</DialogTitle>
+          <DialogDescription>Começar com uma cena em branco ou com uma estrutura do template. As outras cenas não mudam.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2" data-testid="new-scene-options">
+          <button type="button" className="rounded-md border border-border/70 p-3 text-left hover:border-primary" onClick={() => createScene('free')} data-testid="new-scene-free">
+            <span className="block text-sm font-medium">Em branco</span>
+            <span className="block text-xs text-muted-foreground">Composição livre: você posiciona textos e imagens. Sem template.</span>
+          </button>
+          <button type="button" className="rounded-md border border-border/70 p-3 text-left hover:border-primary" onClick={() => createScene('template')} data-testid="new-scene-template">
+            <span className="block text-sm font-medium">{sceneView.template.name}</span>
+            <span className="block text-xs text-muted-foreground">Template do vídeo: começa com a estrutura Cover e seus exemplos.</span>
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    <ProjectLibraryAssetPicker
+      open={freeImagePicker !== null}
+      onOpenChange={(open) => { if (!open) setFreeImagePicker(null) }}
+      projectId={draft.project_id}
+      selectedId={freeImagePickerSelectedId}
+      allowedKinds={['image']}
+      title="Imagem da composição livre"
+      description="Escolha uma imagem do Projeto. Ela é referenciada (não copiada) e posicionada dentro do formato do vídeo."
+      onSelect={(file) => {
+        setLibraryFiles((current) => new Map(current).set(file.id, file))
+        const picker = freeImagePicker
+        if (picker?.mode === 'replace') editSelectedScene((scene) => updateFreeElement(scene, picker.elementId, { library_file_id: file.id }))
+        else { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeImageElement(scene, id, file.id)); setOpenElementId(id) }
+        setFreeImagePicker(null)
+      }}
+    />
     <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>

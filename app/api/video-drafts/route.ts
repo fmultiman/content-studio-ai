@@ -6,6 +6,7 @@ import {
   validateSceneLibraryFileBindings,
 } from '@/lib/video-scene-library-bindings'
 import { validateSceneCompositionShape } from '@/lib/creative/video-editor/scene-composition'
+import { freeImageLibraryFileIds, isFreeComposition } from '@/lib/creative/video-editor/free-composition'
 import { validateSceneElementTimingShape } from '@/lib/creative/video-editor/element-timing'
 import {
   persistedVideoTimeline, readVideoTimeline, timelineLibraryFileRefs, validateVideoTimeline, type VideoTimeline,
@@ -91,6 +92,39 @@ async function validateSceneBindings(
   return validateSceneLibraryFileBindings(scenes, projectId, data || [])
 }
 
+/**
+ * VIDEO_FREE_SCENE_COMPOSITION_V1 — free image elements bind LibraryFiles directly:
+ * each must be a live, renderable image of this draft's Project (same rule as the
+ * Scene hero and root B-roll; identity only, never a URL).
+ */
+async function validateFreeImageBindings(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string | null | undefined,
+  scenes: VideoScene[],
+): Promise<NextResponse | null> {
+  const ids = freeImageLibraryFileIds(scenes)
+  if (ids.length === 0) return null
+  if (!projectId) return NextResponse.json({ error: 'Imagens da composição livre precisam de um Projeto.', code: 'DRAFT_PROJECT_REQUIRED' }, { status: 400 })
+  const { data, error } = await supabase
+    .from('library_files')
+    .select('id, project_id, kind, mime_type, deleted_at')
+    .eq('user_id', userId)
+    .in('id', ids)
+  if (error) return NextResponse.json({ error: 'Não foi possível validar as imagens da composição livre.', code: 'FREE_IMAGE_UNVERIFIED' }, { status: 500 })
+  const byId = new Map((data ?? []).map((file) => [file.id as string, file]))
+  for (const id of ids) {
+    const file = byId.get(id)
+    if (!file || file.deleted_at || file.project_id !== projectId) {
+      return NextResponse.json({ error: 'Imagem da composição livre não encontrada neste Projeto.', code: 'FREE_IMAGE_NOT_FOUND' }, { status: 400 })
+    }
+    if (file.kind !== 'image' || !isRenderableLibraryFile(file as { kind: LibraryFileKind; mime_type: string | null })) {
+      return NextResponse.json({ error: 'A composição livre só aceita imagens da Biblioteca.', code: 'FREE_IMAGE_KIND' }, { status: 400 })
+    }
+  }
+  return null
+}
+
 function sceneBindingErrorResponse(error: { code: string; message: string }) {
   return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
 }
@@ -103,6 +137,10 @@ function sceneCompositionErrorResponse(scenes: unknown[]) {
     if (!check.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${check.message}`, code: 'SCENE_COMPOSITION_INVALID' }, { status: 400 })
     // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: Scene-local element timing (structure only; ids resolve per layout).
     const elementTiming = typeof scene === 'object' && scene !== null ? (scene as { element_timing?: unknown }).element_timing : undefined
+    // VIDEO_FREE_SCENE_COMPOSITION_V1: free-element timing is not authored in V1.
+    if (isFreeComposition(composition) && elementTiming !== undefined) {
+      return NextResponse.json({ error: `Cena ${index + 1}: composição livre não tem timing de elementos nesta versão.`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
+    }
     const timingCheck = validateSceneElementTimingShape(elementTiming)
     if (!timingCheck.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${timingCheck.message}`, code: 'SCENE_ELEMENT_TIMING_INVALID' }, { status: 400 })
   }
@@ -285,6 +323,8 @@ export async function POST(request: Request) {
       scenes as VideoScene[],
     )
     if (!bindingValidation.valid) return sceneBindingErrorResponse(bindingValidation.error)
+    const freeImageError = await validateFreeImageBindings(supabase, user.id, production.project_id, scenes as VideoScene[])
+    if (freeImageError) return freeImageError
 
     const insertPayload: Record<string, unknown> = {
       user_id: user.id,
@@ -487,6 +527,8 @@ export async function PATCH(request: Request) {
       scenes as VideoScene[],
     )
     if (!bindingValidation.valid) return sceneBindingErrorResponse(bindingValidation.error)
+    const freeImageError = await validateFreeImageBindings(supabase, user.id, authoritativeProjectId, scenes as VideoScene[])
+    if (freeImageError) return freeImageError
 
     const updatePayload: Record<string, unknown> = {
       name,

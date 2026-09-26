@@ -8,6 +8,7 @@ import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timel
 import { readVideoTimeline, timelineLibraryFileRefs } from '@/lib/creative/video-editor/temporal-items'
 import { isRenderableLibraryFile } from '@/lib/creative/integration/library-file-adapter'
 import { collectLibraryFileIds, validateSceneLibraryFileBindings } from '@/lib/video-scene-library-bindings'
+import { freeImageLibraryFileIds } from '@/lib/creative/video-editor/free-composition'
 import type { LibraryFileKind, VideoScene } from '@/lib/types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -202,6 +203,28 @@ export async function POST(request: Request, context: RouteContext) {
       })
       if (broken) {
         return NextResponse.json({ error: 'Um arquivo da timeline nao esta disponivel neste Projeto.', code: 'TIMELINE_FILE_UNAVAILABLE' }, { status: 409 })
+      }
+    }
+
+    // 3c. VIDEO_FREE_SCENE_COMPOSITION_V1: free-Scene images must be live image files of this Project
+    // (claim-time preparation would otherwise only warn and draw the Scene without them).
+    const freeImageIds = freeImageLibraryFileIds(scenes)
+    if (freeImageIds.length > 0) {
+      const { data: freeFiles, error: freeFilesError } = await supabase
+        .from('library_files')
+        .select('id, project_id, kind, mime_type, deleted_at')
+        .eq('user_id', user.id)
+        .in('id', freeImageIds)
+      if (freeFilesError) {
+        return NextResponse.json({ error: 'Nao foi possivel validar as imagens da composicao livre.', code: 'LIBRARY_FILE_VALIDATION_FAILED' }, { status: 500 })
+      }
+      const freeById = new Map((freeFiles ?? []).map((file) => [file.id as string, file]))
+      const missing = freeImageIds.find((fileId) => {
+        const file = freeById.get(fileId)
+        return !file || file.deleted_at || file.project_id !== draft.project_id || file.kind !== 'image' || !isRenderableLibraryFile(file as { kind: LibraryFileKind; mime_type: string | null })
+      })
+      if (missing) {
+        return NextResponse.json({ error: 'Uma imagem da composicao livre nao esta disponivel neste Projeto.', code: 'FREE_IMAGE_UNAVAILABLE' }, { status: 409 })
       }
     }
 

@@ -225,7 +225,7 @@ export interface VideoScene {
    * they were. Absent (every Scene authored before it) = the Template default
    * the Scene always rendered with: Cover · Dark · "Cena N" · default stack.
    */
-  composition?: VideoSceneComposition
+  composition?: VideoSceneComposition | FreeSceneComposition
   /**
    * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1 — WHEN selected Template elements
    * participate inside this Scene, in Scene-local frames (temporal Scene state,
@@ -256,6 +256,56 @@ export interface VideoSceneComposition {
   /** Hidden template element ids. Absent/empty = every element visible. */
   hidden_elements?: string[]
 }
+
+/**
+ * VIDEO_FREE_SCENE_COMPOSITION_V1 — a Scene composed WITHOUT a Template. Explicit
+ * (`kind: 'free'`); an absent composition is still the legacy Template Cover.
+ * `elements` order is paint order, back -> front. See lib/creative/video-editor/free-composition.ts.
+ */
+export interface FreeSceneComposition {
+  kind: 'free'
+  elements: FreeSceneElement[]
+}
+
+/** Stage-relative box: fractions of the VideoDraft canvas, origin top-left, kept on stage. */
+export interface FreeElementBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface FreeElementBase {
+  /** Stable, Scene-local id (uuid), generated once on creation. */
+  id: string
+  box: FreeElementBox
+  /** Authored visibility (not deletion, not opacity). */
+  hidden?: boolean
+}
+
+export type FreeTextRole = 'display' | 'body'
+export type FreeTextColor = 'foreground' | 'background' | 'accent' | 'muted'
+export type FreeTextAlign = 'left' | 'center' | 'right'
+export type FreeTextSize = 'small' | 'medium' | 'large' | 'title'
+
+export interface FreeTextElement extends FreeElementBase {
+  kind: 'text'
+  text: string
+  /** Project Identity typography role. */
+  typography: FreeTextRole
+  /** Project Identity color role. */
+  color: FreeTextColor
+  align: FreeTextAlign
+  size: FreeTextSize
+}
+
+export interface FreeImageElement extends FreeElementBase {
+  kind: 'image'
+  library_file_id: string
+  fit: 'cover' | 'contain'
+}
+
+export type FreeSceneElement = FreeTextElement | FreeImageElement
 
 // Form types
 export interface CreateProjectForm {

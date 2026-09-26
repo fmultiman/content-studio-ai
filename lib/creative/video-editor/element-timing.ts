@@ -19,6 +19,7 @@
 import type { VideoScene, VideoSceneElementTiming, VideoSceneElementTimingMap } from '@/lib/types'
 import type { TemplateElementDefinition, TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 import { resolveSceneComposition } from './scene-composition'
+import { isFreeScene } from './free-composition'
 
 export const MIN_ELEMENT_FRAMES = 1
 /** Upper bound for an authored local frame (a Scene is at most 60 s; generous headroom, still bounded). */
@@ -140,6 +141,8 @@ export type SceneTimingRow = {
  * element order (not paint order), each mapped onto the global ruler.
  */
 export function sceneTimingRows(scene: VideoScene, sceneStartFrame: number, sceneDurationFrames: number): SceneTimingRow[] {
+  // A free Scene has no Template-declared temporal elements (free-element timing is not authored in V1).
+  if (isFreeScene(scene)) return []
   const composition = resolveSceneComposition(scene)
   const authored = readSceneElementTiming(scene, composition.layout)
   return temporalElements(composition.layout).map((element) => {
@@ -157,6 +160,7 @@ export function sceneTimingRows(scene: VideoScene, sceneStartFrame: number, scen
 }
 
 export function sceneHasTemporalElements(scene: VideoScene): boolean {
+  if (isFreeScene(scene)) return false
   return temporalElements(resolveSceneComposition(scene).layout).length > 0
 }
 
@@ -180,6 +184,7 @@ export type ElementTimingPatch = {
  * The default (start 0, until the Scene ends) is stored as no entry at all.
  */
 export function setSceneElementTiming(scene: VideoScene, elementId: string, patch: ElementTimingPatch, sceneDurationFrames: number): VideoScene {
+  if (isFreeScene(scene)) return scene
   const { layout } = resolveSceneComposition(scene)
   if (!isTemporalElement(layout, elementId) || sceneDurationFrames < 1) return scene
   const current = readSceneElementTiming(scene, layout)

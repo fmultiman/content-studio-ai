@@ -61,6 +61,8 @@ const REQUIRED_WORKER_SOURCE = [
   'remotion/timeline/TemplateSegment.tsx',
   // VIDEO_TIMELINE_GATE_B: independent media/text/audio segments (imported by TimelineComposition).
   'remotion/timeline/IndependentSegments.tsx',
+  // VIDEO_FREE_SCENE_COMPOSITION_V1: template-free Scene segments (imported by TimelineComposition).
+  'remotion/timeline/FreeSegment.tsx',
   'remotion/timeline/frame-model.ts',
   'remotion/DocumentaryCardComposition.tsx',
   'remotion/TypographyReadyBoundary.tsx',

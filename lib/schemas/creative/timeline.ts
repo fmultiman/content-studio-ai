@@ -225,12 +225,67 @@ export const CaptionSegmentSchema = TimelineSegmentBaseSchema.extend({
   payload: CaptionSegmentPayloadSchema,
 })
 
+// VIDEO_FREE_SCENE_COMPOSITION_V1: a Scene drawn WITHOUT a Template. There is
+// no TemplateRef, layout or component key here: the segment kind itself is the
+// contract. Boxes are fractions of the manifest `specification` stage (origin
+// top-left, on stage); `elements` order is paint order (back -> front). Styles
+// are Identity token ROLES, resolved against the manifest identity at render.
+// Images reference the manifest-level `assets` map (LibraryFile identity only).
+const UnitSchema = z.number().min(0).max(1)
+
+export const FreeElementBoxSchema = z
+  .object({
+    x: UnitSchema,
+    y: UnitSchema,
+    width: z.number().gt(0).max(1),
+    height: z.number().gt(0).max(1),
+  })
+  .strict()
+  .refine((box) => box.x + box.width <= 1 + 1e-9 && box.y + box.height <= 1 + 1e-9, { message: 'box must stay on stage' })
+
+export const FreeTextElementPayloadSchema = z
+  .object({
+    element_id: z.string().trim().min(1).max(64),
+    kind: z.literal('text'),
+    box: FreeElementBoxSchema,
+    text: z.string().min(1).max(500),
+    typography: z.enum(['display', 'body']),
+    color: z.enum(['foreground', 'background', 'accent', 'muted']),
+    align: z.enum(['left', 'center', 'right']),
+    size: z.enum(['small', 'medium', 'large', 'title']),
+  })
+  .strict()
+
+export const FreeImageElementPayloadSchema = z
+  .object({
+    element_id: z.string().trim().min(1).max(64),
+    kind: z.literal('image'),
+    box: FreeElementBoxSchema,
+    asset_ref: RefSchema,
+    fit: z.enum(['cover', 'contain']),
+  })
+  .strict()
+
+export const FreeSegmentPayloadSchema = z
+  .object({
+    elements: z.array(z.discriminatedUnion('kind', [FreeTextElementPayloadSchema, FreeImageElementPayloadSchema])).max(24),
+  })
+  .strict()
+
+export type FreeSegmentPayload = z.infer<typeof FreeSegmentPayloadSchema>
+
+export const FreeSegmentSchema = TimelineSegmentBaseSchema.extend({
+  kind: z.literal('free'),
+  payload: FreeSegmentPayloadSchema,
+})
+
 export const TimelineSegmentSchema = z.discriminatedUnion('kind', [
   MediaSegmentSchema,
   TemplateSegmentSchema,
   AudioSegmentSchema,
   TextSegmentSchema,
   CaptionSegmentSchema,
+  FreeSegmentSchema,
 ])
 
 export type TimelineSegment = z.infer<typeof TimelineSegmentSchema>

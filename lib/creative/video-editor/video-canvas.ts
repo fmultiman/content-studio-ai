@@ -15,7 +15,9 @@
  *   the Template's own declared `canvas_support`, the same rule the resolver enforces
  *   before any preview or render).
  */
+import type { VideoScene } from '@/lib/types'
 import { resolveTemplate, validateTemplateCanvas } from '@/lib/creative/templates/registry'
+import { isFreeComposition } from './free-composition'
 import { DEFAULT_TIMELINE_CANVAS, VIDEO_TEMPLATE_FAMILY } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 
 export type VideoCanvas = { width: number; height: number }
@@ -104,6 +106,26 @@ export type VideoTemplateCanvasSupport = {
  * Template's `canvas_support` — the same declaration the resolver enforces for
  * the Live Player and the render enqueue — not a second rule.
  */
+export type VideoDraftCanvasSupport = VideoTemplateCanvasSupport & {
+  /** How many Scenes are Template-backed (the only ones the Template rule applies to). */
+  templateBackedScenes: number
+}
+
+/**
+ * VIDEO_FREE_SCENE_COMPOSITION_V1 — the draft-level rule. A free Scene has no
+ * Template, so it imposes only the platform bounds; the stage is drawable only
+ * if EVERY Template-backed Scene's family declares it. One free Scene does not
+ * unlock 16:9 for its Template neighbours; a free-only draft is not gated by a
+ * Template at all.
+ */
+export function videoDraftCanvasSupport(scenes: readonly Pick<VideoScene, 'composition'>[], canvas: VideoCanvas): VideoDraftCanvasSupport {
+  const templateBackedScenes = scenes.filter((scene) => !isFreeComposition(scene.composition)).length
+  const template = videoTemplateCanvasSupport(canvas)
+  return templateBackedScenes > 0
+    ? { ...template, templateBackedScenes }
+    : { ...template, supported: validateVideoCanvas(canvas).ok, templateBackedScenes }
+}
+
 export function videoTemplateCanvasSupport(canvas: VideoCanvas): VideoTemplateCanvasSupport {
   const template = resolveTemplate({ ...VIDEO_TEMPLATE_FAMILY, variant: 'cover' })
   if (!template.valid) return { supported: false, templateLabel: VIDEO_TEMPLATE_FAMILY.id, supportedSizes: [] }

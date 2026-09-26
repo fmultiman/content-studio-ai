@@ -3,6 +3,7 @@ import { useCurrentFrame } from 'remotion'
 import type { ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import { TemplateSegment } from './TemplateSegment'
 import { AudioSegmentLayer, MediaSegmentLayer, TextSegmentLayer } from './IndependentSegments'
+import { FreeSegmentLayer } from './FreeSegment'
 import { TypographyReadyBoundary } from '../TypographyReadyBoundary'
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
 
@@ -50,6 +51,8 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({ resolv
               />
             ) : null
           }
+          // VIDEO_FREE_SCENE_COMPOSITION_V1: a Scene without a Template, chosen by kind (never by a Template lookup).
+          if (segment.kind === 'free') return <FreeSegmentLayer key={segment.id} segment={segment} resolvedInput={resolvedInput} />
           if (segment.kind === 'media') return <MediaSegmentLayer key={segment.id} segment={segment} resolvedInput={resolvedInput} />
           if (segment.kind === 'text') return <TextSegmentLayer key={segment.id} segment={segment} resolvedInput={resolvedInput} />
           return null

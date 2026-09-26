@@ -18,7 +18,8 @@
  */
 import type { AssetRef, IdentitySnapshotRef, MotionSpec } from '@/lib/schemas/creative/primitives'
 import type { TemplateSegmentLayering, TemplateSegmentSchema, TimelineManifest, TimelineSegment, TimelineSpecification } from '@/lib/schemas/creative/timeline'
-import type { VideoDraft, VideoScene } from '@/lib/types'
+import type { FreeSceneComposition, VideoDraft, VideoScene } from '@/lib/types'
+import { deriveFreeSegment, isFreeComposition } from '@/lib/creative/video-editor/free-composition'
 import { resolveSceneComposition } from '@/lib/creative/video-editor/scene-composition'
 import { deriveTemporalSegments, readVideoTimeline } from '@/lib/creative/video-editor/temporal-items'
 import { deriveSegmentElementTiming, effectiveElementRange, readSceneElementTiming } from '@/lib/creative/video-editor/element-timing'
@@ -227,6 +228,35 @@ export function sceneToSegment(
   return { segment, diagnostics }
 }
 
+/**
+ * VIDEO_FREE_SCENE_COMPOSITION_V1 — a free Scene becomes a neutral `free`
+ * segment: no TemplateRef, layout, content schema or Template motion. It stays
+ * a primary-sequence Scene (same track, contiguous), never a root item. Its
+ * images join the manifest-level asset map (LibraryFile identity only).
+ */
+export function freeSceneToSegment(
+  scene: VideoScene & { composition: FreeSceneComposition },
+  startFrame: number,
+  fps: number,
+  trackId: string,
+): { segment: TimelineSegment; assets: Record<string, AssetRef>; diagnostics: AdapterDiagnostic[] } {
+  const diagnostics: AdapterDiagnostic[] = []
+  if (scene.movement && scene.movement !== 'static') {
+    diagnostics.push({
+      kind: 'motion_unsupported',
+      code: 'free_scene_motion_not_drawn',
+      message: `Scene "${scene.id}" is a free composition; Template Motion ("${scene.movement}") is not drawn, the Scene is static.`,
+      path: 'segment.payload',
+    })
+  }
+  const { payload, assets } = deriveFreeSegment(scene.composition)
+  return {
+    segment: { id: `scene:${scene.id}`, track_id: trackId, start_frame: startFrame, duration_frames: secondsToFrames(scene.duration, fps), kind: 'free', payload },
+    assets,
+    diagnostics,
+  }
+}
+
 export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): AdaptVideoDraftResult {
   const { draft, identity } = input
   if (!draft.project_id || !draft.production_id) {
@@ -244,8 +274,17 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
 
   const diagnostics: AdapterDiagnostic[] = []
   const segments: TimelineSegment[] = []
+  const freeAssets: Record<string, AssetRef> = {}
   let cursor = 0
   for (const scene of draft.scenes) {
+    if (isFreeComposition(scene.composition)) {
+      const free = freeSceneToSegment(scene as VideoScene & { composition: FreeSceneComposition }, cursor, fps, trackId)
+      segments.push(free.segment)
+      diagnostics.push(...free.diagnostics)
+      Object.assign(freeAssets, free.assets)
+      cursor += free.segment.duration_frames
+      continue
+    }
     const heroAssetRef = input.sceneAssets?.[scene.id] ?? defaultHeroAssetRef
     const { segment, diagnostics: sceneDiagnostics } = sceneToSegment(scene, cursor, fps, trackId, draft.scenes.length, heroAssetRef)
     segments.push(segment)
@@ -275,7 +314,8 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
     identity,
     tracks: [{ id: trackId, kind: 'video', order: 0 }, ...independent.tracks],
     segments,
-    assets: independent.assets,
+    // Free-Scene images first, root items last (a shared LibraryFile keeps the root entry; drafts without free Scenes are unchanged).
+    assets: { ...freeAssets, ...independent.assets },
     render_intent: independent.tracks.some((track) => track.kind === 'audio') ? { ...DEFAULT_RENDER_INTENT, audio: true } : DEFAULT_RENDER_INTENT,
   }
 

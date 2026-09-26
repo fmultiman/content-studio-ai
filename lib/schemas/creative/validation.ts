@@ -107,6 +107,21 @@ export function validateTimelineSemantics(manifest: TimelineManifest): Validatio
       }
     }
 
+    // VIDEO_FREE_SCENE_COMPOSITION_V1: element ids are unique in the segment; images point at a manifest asset.
+    if (segment.kind === 'free') {
+      const seen = new Set<string>()
+      for (const element of segment.payload.elements) {
+        const path = `segments[id=${segment.id}].payload.elements[element_id=${element.element_id}]`
+        if (seen.has(element.element_id)) {
+          issues.push({ code: 'duplicate_free_element_id', path, message: `Segment "${segment.id}": free element "${element.element_id}" is duplicated`, severity: 'error' })
+        }
+        seen.add(element.element_id)
+        if (element.kind === 'image' && !Object.hasOwn(manifest.assets, element.asset_ref)) {
+          issues.push({ code: 'free_asset_not_found', path, message: `Segment "${segment.id}": image "${element.element_id}" references unknown asset "${element.asset_ref}"`, severity: 'error' })
+        }
+      }
+    }
+
     if (segment.kind === 'media') {
       const { source_in_frame, source_out_frame } = segment.payload
       if (

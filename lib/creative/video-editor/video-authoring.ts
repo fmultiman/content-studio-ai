@@ -35,7 +35,11 @@ export function createVideoScene(scenes: readonly VideoScene[], id: string = cry
 
 /** Inserts a new Scene right after `afterIndex` (end of sequence when omitted). */
 export function addVideoScene(scenes: readonly VideoScene[], afterIndex?: number, id?: string): { scenes: VideoScene[]; index: number } {
-  const scene = createVideoScene(scenes, id)
+  return insertVideoScene(scenes, createVideoScene(scenes, id), afterIndex)
+}
+
+/** Inserts an already-built Scene (Template-backed or free) after `afterIndex`; `order` is renumbered. */
+export function insertVideoScene(scenes: readonly VideoScene[], scene: VideoScene, afterIndex?: number): { scenes: VideoScene[]; index: number } {
   const index = afterIndex === undefined ? scenes.length : Math.min(scenes.length, Math.max(0, afterIndex + 1))
   const next = [...scenes]
   next.splice(index, 0, scene)

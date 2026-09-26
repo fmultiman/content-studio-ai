@@ -17,6 +17,7 @@
  * Nothing is rewritten on read; untouched Scenes stay byte-identical.
  */
 import type { VideoScene, VideoSceneComposition } from '@/lib/types'
+import { isFreeComposition, validateFreeCompositionShape } from './free-composition'
 import {
   DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage,
   type TemplateAppearance, type TemplateDefinition, type TemplateLayoutDefinition,
@@ -96,9 +97,14 @@ export function defaultSceneContent(layoutId: AuthoringVariant, title: string): 
   return title.trim() ? { ...example, title } : example
 }
 
+/**
+ * Template-backed Scenes only. A free Scene (VIDEO_FREE_SCENE_COMPOSITION_V1) has no Template
+ * composition: callers branch on isFreeScene first; here it can never masquerade as Cover.
+ */
 export function resolveSceneComposition(scene: Pick<VideoScene, 'order' | 'composition'>): ResolvedSceneComposition {
+  if (isFreeComposition(scene.composition)) throw new Error('A free Scene has no Template composition.')
   const template = videoTemplate()
-  const raw: VideoSceneComposition = isPlainObject(scene.composition) ? scene.composition : {}
+  const raw: VideoSceneComposition = isPlainObject(scene.composition) ? scene.composition as VideoSceneComposition : {}
   const fallbacks: SceneCompositionFallback[] = []
 
   const layoutAuthored = raw.layout !== undefined
@@ -148,6 +154,7 @@ export function resolveSceneComposition(scene: Pick<VideoScene, 'order' | 'compo
 
 /** Drops empty axes so an untouched Scene never carries an empty composition. */
 function withComposition(scene: VideoScene, next: VideoSceneComposition): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
   const cleaned: VideoSceneComposition = {}
   if (next.layout !== undefined) cleaned.layout = next.layout
   if (next.appearance !== undefined) cleaned.appearance = next.appearance
@@ -160,7 +167,7 @@ function withComposition(scene: VideoScene, next: VideoSceneComposition): VideoS
 }
 
 function currentComposition(scene: VideoScene): VideoSceneComposition {
-  return isPlainObject(scene.composition) ? scene.composition : {}
+  return isPlainObject(scene.composition) && !isFreeComposition(scene.composition) ? scene.composition as VideoSceneComposition : {}
 }
 
 /**
@@ -170,7 +177,8 @@ function currentComposition(scene: VideoScene): VideoSceneComposition {
  * layout's default (Static SET_VARIANT semantics).
  */
 export function setSceneLayout(scene: VideoScene, layoutId: AuthoringVariant): VideoScene {
-  if (!isVideoSceneLayout(layoutId)) return scene
+  // No Template mapping of a free composition (conversion is out of scope).
+  if (!isVideoSceneLayout(layoutId) || isFreeComposition(scene.composition)) return scene
   const resolved = resolveSceneComposition(scene)
   // Re-selecting the current structure is a no-op (a legacy Scene stays untouched).
   if (resolved.layoutId === layoutId && resolved.fallbacks.length === 0) return scene
@@ -191,6 +199,7 @@ export function setSceneLayout(scene: VideoScene, layoutId: AuthoringVariant): V
 }
 
 export function setSceneAppearance(scene: VideoScene, appearance: TemplateAppearance): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
   const resolved = resolveSceneComposition(scene)
   if (!(resolved.layout.supportedAppearances as readonly string[]).includes(appearance)) return scene
   return withComposition(scene, { ...currentComposition(scene), appearance })
@@ -198,6 +207,7 @@ export function setSceneAppearance(scene: VideoScene, appearance: TemplateAppear
 
 /** One bounded structured-content edit (LayoutContentForm), applied to the Scene's effective content. */
 export function applySceneContentAction(scene: VideoScene, action: ContentAction): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
   const resolved = resolveSceneComposition(scene)
   const next = applyContentAction(resolved.content, action)
   if (next === resolved.content) return scene
@@ -206,6 +216,7 @@ export function applySceneContentAction(scene: VideoScene, action: ContentAction
 
 /** Camadas reorder. The layout's default stack is stored as "no override". */
 export function setSceneElementOrder(scene: VideoScene, order: readonly string[]): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
   const { layout } = resolveSceneComposition(scene)
   const normalized = normalizeElementOrder(layout, order)
   return withComposition(scene, { ...currentComposition(scene), element_order: isDefaultElementOrder(layout, normalized) ? undefined : normalized })
@@ -217,6 +228,7 @@ export function resetSceneElementOrder(scene: VideoScene): VideoScene {
 
 /** Camadas eye: show/hide ONE element of this Scene. */
 export function toggleSceneElementVisibility(scene: VideoScene, elementId: string): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
   const { layout, hiddenElements } = resolveSceneComposition(scene)
   if (!layout.elements.some((element) => element.id === elementId)) return scene
   const next = hiddenElements.includes(elementId) ? hiddenElements.filter((id) => id !== elementId) : [...hiddenElements, elementId]
@@ -251,6 +263,8 @@ function isElementIdList(value: unknown): value is string[] {
 export function validateSceneCompositionShape(raw: unknown): { ok: true } | { ok: false; message: string } {
   if (raw === undefined || raw === null) return { ok: true }
   if (!isPlainObject(raw)) return { ok: false, message: 'Composição da cena inválida.' }
+  // VIDEO_FREE_SCENE_COMPOSITION_V1: the explicit discriminant; any other kind is rejected below as an unknown key.
+  if (raw.kind === 'free') return validateFreeCompositionShape(raw)
   for (const key of Object.keys(raw)) {
     if (!COMPOSITION_KEYS.has(key)) return { ok: false, message: `Campo de composição desconhecido: ${key}.` }
   }
