@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { VideoScene } from '@/lib/types'
 import { buildRenderExecutionSnapshot } from '@/lib/render-execution/build-snapshot'
@@ -181,4 +183,12 @@ describe('neutral payload and renderer contract', () => {
     expect(withTiming.specification).toEqual(bare.specification)
   })
   it('49. derived entries include only drawn ids', () => expect(deriveFreeSegmentElementTiming(timed, [PHOTO], 90)).toEqual([{ element_id: PHOTO, start_frame: 30, duration_frames: 60 }]))
+})
+
+describe('UI wording', () => {
+  it('50. a hidden free child row names Elementos, not the Template Camadas panel', () => {
+    const source = readFileSync(path.join(process.cwd(), 'components/creative/video/scene-timeline.tsx'), 'utf8')
+    expect(source).toContain("isFreeScene(previewScenes[expandedIndex]) ? 'Elementos' : 'Camadas'")
+    expect(source).not.toContain("'oculto na cena (Camadas)'")
+  })
 })

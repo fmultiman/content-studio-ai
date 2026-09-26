@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { FreeSceneElement, VideoScene } from '@/lib/types'
 import { useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
+import { isFreeScene } from '@/lib/creative/video-editor/free-composition'
 import {
   DEFAULT_PIXELS_PER_FRAME, TIMELINE_FPS, deriveSceneRanges, durationFromRightEdge, fitTimelineZoom, formatSeconds,
   formatTimecode, frameToX, framesToSeconds, reorderTargetIndex, rulerTicks, scrollForAnchoredZoom, secondsToFrames, snapEdgeFrame, snapItemStart,
@@ -443,7 +444,7 @@ export function SceneTimeline({
               const sceneId = expandedSceneId as string
               const selected = selectedElement?.sceneId === sceneId && selectedElement.elementId === row.elementId
               const width = frameToX(row.globalEndFrame - row.globalStartFrame, pixelsPerFrame)
-              const state = row.hidden ? 'oculto na cena (Camadas)' : row.range.outside ? 'começa depois do fim da cena: não aparece' : row.range.clipped ? 'cortado no fim da cena' : null
+              const state = row.hidden ? `oculto na cena (${isFreeScene(previewScenes[expandedIndex]) ? 'Elementos' : 'Camadas'})` : row.range.outside ? 'começa depois do fim da cena: não aparece' : row.range.clipped ? 'cortado no fim da cena' : null
               return (
                 <div
                   key={row.elementId}
