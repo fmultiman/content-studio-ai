@@ -22,12 +22,14 @@ type SceneStripProps = {
   selectedIndex: number
   thumbnails: Readonly<Record<string, string | undefined>>
   motionLabel: (movement: string | null) => string
+  /** VIDEO_SCENE_COMPOSITION_PARITY_V1: the Scene's authored composition at a glance (structure · title). Absent = the briefing description. */
+  captions?: Readonly<Record<string, string>>
   canAdd: boolean
   onSelect: (index: number) => void
   onAdd: () => void
 }
 
-export function SceneStrip({ scenes, ranges, cursor, selectedIndex, thumbnails, motionLabel, canAdd, onSelect, onAdd }: SceneStripProps) {
+export function SceneStrip({ scenes, ranges, cursor, selectedIndex, thumbnails, motionLabel, captions, canAdd, onSelect, onAdd }: SceneStripProps) {
   return (
     <div className="flex h-full min-w-0 items-start gap-2 overflow-y-auto px-3 py-2" data-testid="scene-strip">
       <div className="flex shrink-0 flex-col justify-center gap-1">
@@ -66,7 +68,7 @@ export function SceneStrip({ scenes, ranges, cursor, selectedIndex, thumbnails, 
                 </div>
                 <div className="space-y-0.5 px-1.5 py-1">
                   <p className="truncate text-muted-foreground">{motionLabel(scene.movement)}</p>
-                  <p className="line-clamp-1 text-foreground/80">{scene.description?.trim() || 'Sem descrição'}</p>
+                  <p className="line-clamp-1 text-foreground/80" data-testid="scene-strip-caption">{captions?.[scene.id] ?? (scene.description?.trim() || 'Sem descrição')}</p>
                 </div>
               </button>
             </li>

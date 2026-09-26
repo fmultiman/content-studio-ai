@@ -230,7 +230,10 @@ describe('adaptVideoDraftToTimelineManifest — template', () => {
     const segment = manifest.segments[0]
     expect(segment.kind).toBe('template')
     if (segment.kind === 'template') {
-      expect(segment.payload.template).toEqual({ id: 'editorial.documentary-card', version: '0.1.0', variant: 'cover', scope: 'system' })
+      // A Scene without authored composition keeps its legacy composition; the appearance is now explicit
+      // (VIDEO_SCENE_COMPOSITION_PARITY_V1) and equals what the cover always rendered by fallback (dark).
+      expect(segment.payload.template).toEqual({ id: 'editorial.documentary-card', version: '0.1.0', variant: 'cover', appearance: 'dark', scope: 'system' })
+      expect(segment.payload).not.toHaveProperty('layering')
     }
     expect(JSON.stringify(manifest)).not.toMatch(/DocumentaryCard|Remotion|Composition/)
   })

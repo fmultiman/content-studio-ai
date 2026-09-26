@@ -83,6 +83,31 @@ export const LAYOUT_CONTENT_FIELDS: Readonly<Partial<Record<AuthoringVariant, re
   ],
 }
 
+/**
+ * VIDEO_SCENE_COMPOSITION_PARITY_V1 — Cover and Info expressed in the same
+ * closed descriptor language (bounds from DocumentaryCardCover/InfoContentSchema),
+ * so the Video Scene Content tab edits every layout through LayoutContentForm.
+ * The Static editor keeps its own inline Cover/Info fields; these are not wired
+ * into LAYOUT_CONTENT_FIELDS on purpose.
+ */
+export const COVER_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
+  { kind: 'text', key: 'eyebrow', label: 'Chamada', rows: 1, optional: true },
+  { kind: 'text', key: 'title', label: 'Título', rows: 2 },
+  { kind: 'text', key: 'subtitle', label: 'Texto', rows: 3, optional: true },
+  { kind: 'text', key: 'source_line', label: 'Linha de fonte', rows: 1, optional: true },
+  { kind: 'text', key: 'detail_note', label: 'Nota da edição', rows: 2, optional: true, hint: 'Use "Rótulo: texto" para destacar o rótulo.' },
+  { kind: 'text', key: 'brand_label', label: 'Nome da marca', rows: 1, optional: true },
+]
+
+export const INFO_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
+  { kind: 'text', key: 'title', label: 'Título', rows: 2 },
+  { kind: 'text', key: 'intro', label: 'Introdução', rows: 2, optional: true },
+  { kind: 'strings', key: 'body_blocks', label: 'Corpo', itemLabel: 'Parágrafo', min: 1, max: 2, newItem: 'Novo parágrafo.' },
+  { kind: 'items', key: 'fact_cards', label: 'Cartões', itemLabel: 'Cartão', min: 1, max: 2, fields: [{ kind: 'text', key: 'primary', label: 'Destaque' }, { kind: 'text', key: 'secondary', label: 'Complemento', optional: true }, { kind: 'text', key: 'tertiary', label: 'Detalhe', optional: true }], newItem: { primary: 'Novo' } },
+  { kind: 'text', key: 'source_line', label: 'Fonte', rows: 1, optional: true },
+  { kind: 'text', key: 'annotation', label: 'Anotação', rows: 1, optional: true },
+]
+
 /** Product labels for the closed icon set (never the raw id). */
 export const ICON_LABELS: Readonly<Record<DocumentaryCardIcon, string>> = {
   microphone: 'Microfone', pencil: 'Lápis', book: 'Livro', dot: 'Marcador', nuclear: 'Nuclear', globe: 'Globo', factory: 'Fábrica',

@@ -57,12 +57,20 @@ import {
   sceneIndexAtFrame, setSceneDuration, MIN_SCENE_DURATION_SECONDS, MAX_SCENE_DURATION_SECONDS,
 } from '@/lib/creative/video-editor/scene-timeline'
 import {
-  MAX_VIDEO_SCENES, PRESET_LABELS, addVideoScene, buildVideoDraftSaveBody, motionOptions, normalizeLoadedScenes,
+  MAX_VIDEO_SCENES, addVideoScene, buildVideoDraftSaveBody, motionOptions, normalizeLoadedScenes,
   persistedVideoSnapshot, removeVideoScene, updateVideoScene,
 } from '@/lib/creative/video-editor/video-authoring'
 import { buildLivePreviewInput, type PreviewLibraryFile } from '@/lib/creative/video-editor/live-preview-input'
 import { createFrameCursor, useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
 import { VIDEO_INSPECTOR_SECTIONS, sceneHeroSlotState, videoSceneComposition, type VideoInspectorSection } from '@/lib/creative/video-editor/video-workspace'
+import {
+  VIDEO_SCENE_LAYOUT_IDS, applySceneContentAction, resetSceneElementOrder, resolveSceneComposition, sceneContentFields,
+  setSceneAppearance, setSceneElementOrder, setSceneLayout, toggleSceneElementVisibility,
+} from '@/lib/creative/video-editor/scene-composition'
+import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
+import { isContentAction } from '@/lib/creative/authoring/reducer'
+import type { MotionEffect } from '@/lib/creative/video-editor/video-authoring'
+import { layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
@@ -77,9 +85,20 @@ const LiveTimelinePlayer = dynamic(() => import('@/remotion/player/LiveTimelineP
 const AUTOSAVE_PREF_KEY = 'creative-editor-video:autosave-enabled'
 const RENDER_POLL_INTERVAL_MS = 3000
 const TEMPLATE_HERO_URL = (() => { const resolved = resolveAsset(DEFAULT_HERO_ASSET_REF); return resolved.valid ? resolved.value.url : undefined })()
+/** Movement vocabulary + labels (layout-independent; per-Scene effects come from motionOptions(layout)). */
 const MOTION_OPTIONS = motionOptions()
-/** What every Scene renders with today (default Template, `cover`, default stack) — read-only in Template / Elementos. */
-const SCENE_COMPOSITION = videoSceneComposition()
+/** Video layouts that draw the Scene's content image (read from the registry). */
+const HERO_LAYOUT_LABELS = (() => {
+  const template = videoSceneComposition().template
+  const labels = template.layouts.filter((layout) => (VIDEO_SCENE_LAYOUT_IDS as readonly string[]).includes(layout.id) && layoutUsesContentImage(layout)).map((layout) => layout.label)
+  return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} ou ${labels[labels.length - 1]}` : labels.join('')
+})()
+const MOTION_EFFECT_LABELS: Record<MotionEffect, string> = {
+  none: 'sem movimento',
+  'primary-media': 'aproximação lenta · imagem principal',
+  scene: 'fade · cena inteira',
+  'not-drawn': 'sem efeito visível nesta estrutura',
+}
 
 function readAutosavePreference(): boolean {
   if (typeof window === 'undefined') return false
@@ -142,6 +161,8 @@ export default function VideoCreativeEditorPage() {
   const [panelHeight, setPanelHeight] = useState(0)
   const [playerError, setPlayerError] = useState<string | null>(null)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  // Camadas disclosure (UI only, never persisted).
+  const [openElementId, setOpenElementId] = useState<string | null>(null)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [promptBusy, setPromptBusy] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
@@ -250,10 +271,22 @@ export default function VideoCreativeEditorPage() {
     return buildLivePreviewInput({ draft: { id: draftId, project_id: projectId, production_id: draftProductionId }, scenes, identitySnapshot, libraryFiles })
   }, [draftId, projectId, draftProductionId, identitySnapshot, scenes, libraryFiles])
 
+  // The selected Scene's composition (VIDEO_SCENE_COMPOSITION_PARITY_V1): the Inspector hydrates from it on every
+  // selection change — derived from the Scene itself, so no per-Scene UI state can bleed between Scenes.
+  const sceneView = useMemo(() => videoSceneComposition(selectedScene ?? undefined), [selectedScene])
+  const sceneMotionOptions = useMemo(() => motionOptions(sceneView.resolved.layoutId), [sceneView])
+
   const thumbnails = useMemo(() => Object.fromEntries(scenes.map((scene) => {
+    // A layout without a content image does not draw the Scene's hero, so the card does not show it either.
+    if (!resolveSceneComposition(scene).usesHero) return [scene.id, undefined]
     const file = scene.library_file_id ? libraryFiles.get(scene.library_file_id) : undefined
     return [scene.id, file ? (file.thumbnail_url || file.public_url) : scene.library_file_id ? undefined : TEMPLATE_HERO_URL]
   })), [scenes, libraryFiles])
+  const sceneCaptions = useMemo(() => Object.fromEntries(scenes.map((scene) => {
+    const composition = resolveSceneComposition(scene)
+    const title = typeof composition.content.title === 'string' ? composition.content.title.replace(/\s+/g, ' ').trim() : ''
+    return [scene.id, title ? `${composition.layout.label} · ${title}` : composition.layout.label]
+  })), [scenes])
 
   // --- currentFrame: ONE editor cursor. The Player is the clock; every seek goes through it. ---
   const seek = useCallback((target: number) => {
@@ -289,6 +322,12 @@ export default function VideoCreativeEditorPage() {
   function patchSelectedScene(patch: Partial<Omit<VideoScene, 'id' | 'order'>>) {
     if (!selectedScene) return
     setScenes((current) => updateVideoScene(current, selectedScene.id, patch))
+  }
+  /** Scene composition edit (scene-composition.ts): touches ONLY that Scene's `composition`. */
+  function editSelectedScene(edit: (scene: VideoScene) => VideoScene) {
+    if (!selectedScene) return
+    const sceneId = selectedScene.id
+    setScenes((current) => current.map((scene) => (scene.id === sceneId ? edit(scene) : scene)))
   }
   function addScene() {
     if (scenes.length >= MAX_VIDEO_SCENES) return
@@ -475,7 +514,8 @@ export default function VideoCreativeEditorPage() {
   const previewBlocker = context.identityError
     ?? (!livePreview ? null : !livePreview.ok ? livePreview.message : null)
   const renderActive = renderSubmitting || executionStatus === 'queued' || executionStatus === 'claimed'
-  const canRender = Boolean(draft.project_id && draft.production_id && scenes.length > 0 && !context.identityError)
+  // A composition the Template rejects (e.g. a required field left empty) is shown in the Player and blocks render.
+  const canRender = Boolean(draft.project_id && draft.production_id && scenes.length > 0 && !context.identityError && livePreview?.ok !== false)
 
   const transport = (
     <div className={cn('flex shrink-0 items-center justify-between gap-2 border-t border-border/40 px-3 py-1.5', floating ? 'flex-nowrap overflow-x-auto' : 'flex-wrap')} data-testid="player-transport">
@@ -510,6 +550,7 @@ export default function VideoCreativeEditorPage() {
       selectedIndex={safeSelectedIndex}
       thumbnails={thumbnails}
       motionLabel={motionLabel}
+      captions={sceneCaptions}
       canAdd={scenes.length < MAX_VIDEO_SCENES}
       onSelect={(index) => selectScene(index)}
       onAdd={addScene}
@@ -625,25 +666,60 @@ export default function VideoCreativeEditorPage() {
           </div>
           <div className="space-y-1.5" data-testid="video-template">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
-            <p className="text-sm">{SCENE_COMPOSITION.template.name}</p>
-            <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span><Button size="sm" variant="default" disabled>{SCENE_COMPOSITION.layout.label}</Button></div>
-            <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span><Button size="sm" variant="default" disabled>Dark</Button></div>
-            <p className="text-[11px] text-muted-foreground">Todas as cenas usam esta estrutura no vídeo e no render final. Escolher Template, estrutura ou aparência por cena ainda não existe em vídeo.</p>
+            <p className="text-sm">{sceneView.template.name}</p>
+            <p className="text-[11px] text-muted-foreground">Família visual do vídeo inteiro. Estrutura e aparência são escolhidas por cena.</p>
           </div>
+          {selectedScene ? (
+            <div className="space-y-2 rounded-md border border-border/60 p-2" data-testid="scene-structure">
+              <p className="text-xs font-semibold">Cena {safeSelectedIndex + 1}</p>
+              <div className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Estrutura da cena">
+                  {VIDEO_SCENE_LAYOUT_IDS.map((layoutId) => {
+                    const option = sceneView.template.layouts.find((layout) => layout.id === layoutId)
+                    if (!option) return null
+                    const checked = sceneView.resolved.layoutId === layoutId
+                    return <Button key={layoutId} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} className="h-7 px-2 text-xs" onClick={() => editSelectedScene((scene) => setSceneLayout(scene, layoutId))} data-testid="scene-layout-option" data-value={layoutId}>{option.label}</Button>
+                  })}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Aparência da cena">
+                  {sceneView.layout.supportedAppearances.map((appearance) => {
+                    const checked = sceneView.appearance === appearance
+                    return <Button key={appearance} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} className="h-7 px-2 text-xs" onClick={() => editSelectedScene((scene) => setSceneAppearance(scene, appearance))} data-testid="scene-appearance-option" data-value={appearance}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>
+                  })}
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Trocar a estrutura recomeça o conteúdo com o exemplo do Template (o título é mantido) e restaura as camadas padrão. Duração e Motion não mudam.</p>
+              {sceneView.resolved.fallbacks.length > 0 ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Esta cena tem {sceneView.resolved.fallbacks.includes('layout') ? 'uma estrutura' : 'uma aparência'} salva que o vídeo não suporta; o padrão do Template está sendo usado.</p> : null}
+            </div>
+          ) : null}
           <ContextMetadata dense items={[
             { label: 'Formato', value: `${canvasW}×${canvasH} · ${TIMELINE_FPS} fps` },
             { label: 'Cenas', value: String(scenes.length) },
             { label: 'Duração', value: formatSeconds(totalFrames / TIMELINE_FPS) },
           ]} />
-          <TemplateFamilyAnatomy template={SCENE_COMPOSITION.template} />
-          <TemplateAnatomy template={SCENE_COMPOSITION.template} layout={SCENE_COMPOSITION.layout} />
+          <TemplateFamilyAnatomy template={sceneView.template} />
+          <TemplateAnatomy template={sceneView.template} layout={sceneView.layout} />
         </TabsContent>
         <TabsContent value="content" className="space-y-3 pt-3">
           {selectedScene ? <>
-            <div className="space-y-1.5">
-              <Label htmlFor="scene-description">Descrição da cena</Label>
-              <Textarea id="scene-description" value={selectedScene.description} onChange={(event) => patchSelectedScene({ description: event.target.value })} rows={4} placeholder="O que acontece nesta cena…" data-testid="scene-description" />
-              <p className="text-[11px] text-muted-foreground">Roteiro/briefing da cena. Nesta versão não é desenhado no vídeo (o Template mostra “Cena N”).</p>
+            {/* What this Scene DRAWS: its layout's bounded content (same form + descriptors as Static). */}
+            <section className="space-y-2" aria-label="Conteúdo desenhado na cena" data-testid="scene-content" data-layout={sceneView.resolved.layoutId}>
+              <p className="text-[11px] text-muted-foreground">Conteúdo da estrutura <span className="font-medium text-foreground">{sceneView.layout.label}</span> desta cena — exatamente o que a prévia e o render final desenham.</p>
+              <LayoutContentForm
+                key={`${selectedScene.id}:${sceneView.resolved.layoutId}`}
+                fields={sceneContentFields(sceneView.resolved.layoutId)}
+                content={sceneView.resolved.content}
+                dispatch={(action) => { if (isContentAction(action)) editSelectedScene((scene) => applySceneContentAction(scene, action)) }}
+              />
+            </section>
+            <div className="space-y-1.5 border-t border-border/40 pt-3">
+              <Label htmlFor="scene-description">Roteiro da cena</Label>
+              <Textarea id="scene-description" value={selectedScene.description} onChange={(event) => patchSelectedScene({ description: event.target.value })} rows={3} placeholder="O que acontece nesta cena…" data-testid="scene-description" />
+              <p className="text-[11px] text-muted-foreground">Briefing de apoio. Não é desenhado no vídeo — o que aparece é o conteúdo acima.</p>
             </div>
             <div className="space-y-1.5 rounded-md border border-dashed border-border/60 p-2">
               <div className="flex items-center justify-between gap-2">
@@ -659,16 +735,22 @@ export default function VideoCreativeEditorPage() {
         <TabsContent value="assets" className="space-y-2 pt-3">
           {selectedScene ? <>
             {/* Same slot card + resolver as Static: VideoScene.library_file_id is this Scene's `hero` override. */}
-            <p className="text-[11px] text-muted-foreground">Recurso que preenche a imagem principal desta cena. Os demais papéis visuais seguem o padrão do Template.</p>
-            <div data-testid="scene-asset">
-              <AssetSlotCard
-                slot={SCENE_COMPOSITION.heroSlot}
-                resource={resolveSlotResource(SCENE_COMPOSITION.heroSlot, sceneHeroSlotState(selectedScene), libraryFiles, [])}
-                usedBy={SCENE_COMPOSITION.heroUsedBy}
-                onReplace={() => setAssetPickerOpen(true)}
-                onUseDefault={() => patchSelectedScene({ library_file_id: null })}
-              />
-            </div>
+            {sceneView.usesHero ? <>
+              <p className="text-[11px] text-muted-foreground">Recurso que preenche a imagem desta cena. Os materiais de colagem (papéis, fitas…) seguem o padrão do Template.</p>
+              <div data-testid="scene-asset">
+                <AssetSlotCard
+                  slot={sceneView.heroSlot}
+                  resource={resolveSlotResource(sceneView.heroSlot, sceneHeroSlotState(selectedScene), libraryFiles, [])}
+                  usedBy={sceneView.heroUsedBy}
+                  onReplace={() => setAssetPickerOpen(true)}
+                  onUseDefault={() => patchSelectedScene({ library_file_id: null })}
+                />
+              </div>
+            </> : (
+              <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="scene-asset-unused">
+                A estrutura {sceneView.layout.label} não desenha imagem de conteúdo.{selectedScene.library_file_id ? ` A imagem escolhida para esta cena continua guardada e volta a aparecer se a cena usar ${HERO_LAYOUT_LABELS}.` : ''} Os materiais de colagem seguem o padrão do Template.
+              </p>
+            )}
             {selectedScene.image_url ? <p className="text-[11px] text-amber-600 dark:text-amber-400">Esta cena tem uma imagem legada enviada no editor antigo; ela não é usada na prévia nem no render. Use Trocar para escolher um asset da Biblioteca.</p> : null}
           </> : null}
         </TabsContent>
@@ -676,31 +758,33 @@ export default function VideoCreativeEditorPage() {
           <StyleSourcePanel tokens={context.identitySnapshot ?? undefined} unitLabel="cena" />
         </TabsContent>
         <TabsContent value="element" className="pt-3">
+          {/* Same Camadas as Static: this Scene's stack order + visibility (authored, previewed and rendered). */}
           <ElementLayers
-            readOnly
-            order={SCENE_COMPOSITION.stackOrder}
-            labels={SCENE_COMPOSITION.elementLabels}
-            openId={null}
-            isDefault
-            onToggle={() => {}}
-            onReorder={() => {}}
-            onRestoreDefault={() => {}}
-            renderPanel={() => null}
-            note={<p className="text-[11px] leading-snug text-muted-foreground" data-testid="video-elements-gap">Camadas da cena, na ordem em que o vídeo e o render final as desenham. Ajustar, reordenar ou ocultar elementos por cena ainda não existe em vídeo.</p>}
+            order={sceneView.stackOrder}
+            labels={sceneView.elementLabels}
+            openId={openElementId}
+            isDefault={sceneView.stackIsDefault}
+            onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
+            onReorder={(order) => editSelectedScene((scene) => setSceneElementOrder(scene, order))}
+            onRestoreDefault={() => editSelectedScene(resetSceneElementOrder)}
+            renderPanel={() => <p className="text-[11px] leading-snug text-muted-foreground">Posição, escala e rotação por elemento ainda não existem em vídeo; a ordem e a visibilidade desta camada sim.</p>}
+            hidden={new Set(sceneView.hiddenElements)}
+            onToggleVisibility={(id) => editSelectedScene((scene) => toggleSceneElementVisibility(scene, id))}
+            note={<p className="text-[11px] leading-snug text-muted-foreground" data-testid="video-elements-note">Camadas da cena {safeSelectedIndex + 1} ({sceneView.layout.label}), na ordem em que a prévia e o render final as desenham.</p>}
           />
         </TabsContent>
         <TabsContent value="motion" className="space-y-2 pt-3">
           {selectedScene ? <>
-            <p className="text-[11px] text-muted-foreground">Movimento semântico da cena, resolvido pelo Template (sem keyframes).</p>
+            <p className="text-[11px] text-muted-foreground">Movimento semântico da cena inteira, desenhado pelo Template (sem keyframes, sem movimento por elemento). O efeito depende da estrutura da cena ({sceneView.layout.label}).</p>
             <div className="grid gap-1" role="radiogroup" aria-label="Movimento da cena">
-              {MOTION_OPTIONS.map((option) => {
+              {sceneMotionOptions.map((option) => {
                 const checked = (selectedScene.movement || 'static') === option.value
                 return (
                   <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => patchSelectedScene({ movement: option.value })}
                     className={cn('flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs', checked ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-border')}
                     data-testid="motion-option" data-value={option.value}>
                     <span>{option.label}</span>
-                    <span className={cn('shrink-0 text-[10px]', option.supported ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')}>{option.supported ? PRESET_LABELS[option.preset] ?? option.preset : 'sem preset · estático'}</span>
+                    <span className={cn('shrink-0 text-[10px]', option.supported && option.effect !== 'not-drawn' ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')} data-testid="motion-effect" data-effect={option.effect}>{option.supported ? MOTION_EFFECT_LABELS[option.effect] : 'sem preset · estático'}</span>
                   </button>
                 )
               })}

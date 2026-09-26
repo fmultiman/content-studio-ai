@@ -117,6 +117,22 @@ export const MediaSegmentSchema = TimelineSegmentBaseSchema.extend({
   payload: MediaSegmentPayloadSchema,
 })
 
+// VIDEO_SCENE_COMPOSITION_PARITY_V1: the segment's spatial element stack,
+// in the template's own element ids (like `template.variant`, they only mean
+// something inside that template). Absent = the layout's default stack with
+// every element visible — i.e. every manifest produced before it existed.
+const ElementIdListSchema = z.array(z.string().trim().min(1).max(64)).max(64)
+
+export const TemplateSegmentLayeringSchema = z
+  .object({
+    // Paint order, back -> front.
+    element_order: ElementIdListSchema.optional(),
+    hidden_elements: ElementIdListSchema.optional(),
+  })
+  .strict()
+
+export type TemplateSegmentLayering = z.infer<typeof TemplateSegmentLayeringSchema>
+
 // The main integration point with StaticRenderManifest: same TemplateRef,
 // content, and assets shape can drive both a still and a timeline segment.
 export const TemplateSegmentPayloadSchema = z
@@ -131,6 +147,8 @@ export const TemplateSegmentPayloadSchema = z
     sequence: SequenceContextSchema.optional(),
 
     motion: MotionSpecSchema.optional(),
+
+    layering: TemplateSegmentLayeringSchema.optional(),
   })
   .strict()
 

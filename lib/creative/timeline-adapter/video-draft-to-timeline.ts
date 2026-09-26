@@ -10,10 +10,16 @@
  * image_url. VideoScene.description/prompt/image_url are never conflated
  * into manifest content -- they have no legitimate template-content
  * equivalent today, so they are left out rather than forced in.
+ *
+ * VIDEO_SCENE_COMPOSITION_PARITY_V1: layout, appearance, content and the
+ * element stack come from the Scene's authored `composition`, resolved by
+ * `resolveSceneComposition` (absent = Cover · Dark · "Cena N" · default stack,
+ * the composition every Scene rendered with before).
  */
 import type { AssetRef, IdentitySnapshotRef, MotionSpec } from '@/lib/schemas/creative/primitives'
-import type { TemplateSegmentSchema, TimelineManifest, TimelineSpecification } from '@/lib/schemas/creative/timeline'
+import type { TemplateSegmentLayering, TemplateSegmentSchema, TimelineManifest, TimelineSpecification } from '@/lib/schemas/creative/timeline'
 import type { VideoDraft, VideoScene } from '@/lib/types'
+import { resolveSceneComposition } from '@/lib/creative/video-editor/scene-composition'
 
 type TemplateSegment = typeof TemplateSegmentSchema['_output']
 
@@ -30,7 +36,8 @@ export const DEFAULT_HERO_ASSET_REF: AssetRef = {
   fit: 'cover',
 }
 
-const DOCUMENTARY_CARD_COVER_TEMPLATE = { id: 'editorial.documentary-card', version: '0.1.0', variant: 'cover', scope: 'system' } as const
+/** The renderer identity of the VideoDraft's Template family (variant/appearance come from each Scene). */
+const DOCUMENTARY_CARD_TEMPLATE = { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } as const
 
 const DEFAULT_RENDER_INTENT = { purpose: 'preview', container: 'mp4', audio: false, captions: 'none' } as const
 
@@ -142,12 +149,31 @@ export function sceneToSegment(
       })
     }
   }
-  diagnostics.push({
-    kind: 'content_defaulted',
-    code: 'content_title_placeholder',
-    message: `Scene "${scene.id}" has no domain field that legitimately maps to an editorial title; a positional placeholder was used instead.`,
-    path: 'segment.payload.content.title',
-  })
+  // VIDEO_SCENE_COMPOSITION_PARITY_V1: the Scene's authored composition (or
+  // the Template default it always rendered with) — the SAME resolution the
+  // Live Authoring Player uses, since both go through this adapter.
+  const composition = resolveSceneComposition(scene)
+  if (!composition.authored.content) {
+    diagnostics.push({
+      kind: 'content_defaulted',
+      code: 'content_title_placeholder',
+      message: `Scene "${scene.id}" has no authored content; the positional placeholder title was used.`,
+      path: 'segment.payload.content.title',
+    })
+  }
+  for (const axis of composition.fallbacks) {
+    diagnostics.push({
+      kind: 'content_defaulted',
+      code: `scene_${axis}_unsupported`,
+      message: `Scene "${scene.id}" has an authored ${axis} that is not supported in video; the Template default was used.`,
+      path: axis === 'layout' ? 'segment.payload.template.variant' : 'segment.payload.template.appearance',
+    })
+  }
+
+  const layering: TemplateSegmentLayering = {
+    ...(composition.elementOrderIsDefault ? {} : { element_order: composition.elementOrder }),
+    ...(composition.hiddenElements.length > 0 ? { hidden_elements: composition.hiddenElements } : {}),
+  }
 
   const segment: TemplateSegment = {
     id: `scene:${scene.id}`,
@@ -156,11 +182,14 @@ export function sceneToSegment(
     duration_frames: durationFrames,
     kind: 'template',
     payload: {
-      template: DOCUMENTARY_CARD_COVER_TEMPLATE,
-      content: { title: `Cena ${scene.order}` },
-      assets: { hero: heroAssetRef },
+      template: { ...DOCUMENTARY_CARD_TEMPLATE, variant: composition.layoutId, appearance: composition.appearance },
+      content: composition.content,
+      // Only layouts that draw the content image take the Scene's hero; the
+      // others' asset contracts do not accept one (the binding is kept on the Scene).
+      assets: composition.usesHero ? { hero: heroAssetRef } : {},
       sequence: { index: scene.order, total: totalScenes },
       motion,
+      ...(Object.keys(layering).length > 0 ? { layering } : {}),
     },
   }
 

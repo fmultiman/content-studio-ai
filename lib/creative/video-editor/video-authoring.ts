@@ -77,7 +77,23 @@ export function buildVideoDraftSaveBody(
   return { id: draft.id, name, projectId: draft.project_id, productionId: draft.production_id, scenes: [...scenes] }
 }
 
-export type MotionOption = { value: string; label: string; preset: string; supported: boolean }
+/**
+ * What a preset visibly does in a given layout TODAY (VIDEO_SCENE_COMPOSITION_PARITY_V1
+ * renderer audit): DocumentaryCard draws `slow_push` only as the Cover hero's
+ * slow zoom, and `fade` on the whole Scene; `slow_pan` is declared by the
+ * Template but no layout draws it. Motion applies to the Scene composition
+ * as one unit — never per element, never keyframed.
+ */
+export type MotionEffect = 'none' | 'primary-media' | 'scene' | 'not-drawn'
+
+export function motionEffect(preset: string, layoutId: string): MotionEffect {
+  if (preset === 'fade') return 'scene'
+  if (preset === 'slow_push') return layoutId === 'cover' ? 'primary-media' : 'not-drawn'
+  if (preset === 'slow_pan') return 'not-drawn'
+  return 'none'
+}
+
+export type MotionOption = { value: string; label: string; preset: string; supported: boolean; effect: MotionEffect }
 
 const MOVEMENT_LABELS: [string, string][] = [
   ['static', 'Estático'],
@@ -95,10 +111,10 @@ const MOVEMENT_LABELS: [string, string][] = [
  * semantic preset the adapter actually renders. Movements without a Template
  * preset stay selectable for legacy compatibility but are labelled honestly.
  */
-export function motionOptions(): MotionOption[] {
+export function motionOptions(layoutId: string = 'cover'): MotionOption[] {
   return MOVEMENT_LABELS.map(([value, label]) => {
     const { motion, diagnostic } = movementToMotion(value)
-    return { value, label, preset: motion.preset, supported: diagnostic === null }
+    return { value, label, preset: motion.preset, supported: diagnostic === null, effect: motionEffect(motion.preset, layoutId) }
   })
 }
 

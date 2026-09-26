@@ -74,6 +74,38 @@ export type AuthoringAction =
   /** Assets "Usar padrão": drop the slot's Project resource (override AND catalog primitive) -> Template default. */
   | { type: 'USE_TEMPLATE_DEFAULT_ASSET'; slot: AuthoringAssetSlotId }
 
+/** The bounded structured-content actions (the ones LayoutContentForm dispatches). */
+export type ContentAction = Extract<AuthoringAction, { type: 'SET_CONTENT_VALUE' | 'ADD_CONTENT_ITEM' | 'REMOVE_CONTENT_ITEM' }>
+
+export function isContentAction(action: { type: string }): action is ContentAction {
+  return action.type === 'SET_CONTENT_VALUE' || action.type === 'ADD_CONTENT_ITEM' || action.type === 'REMOVE_CONTENT_ITEM'
+}
+
+/**
+ * Pure structured-content edit, shared by the Static slide reducer and the
+ * Video Scene composition (VIDEO_SCENE_COMPOSITION_PARITY_V1). Returns the
+ * SAME reference when a bounded list edit is refused (min/max).
+ */
+export function applyContentAction(content: unknown, action: ContentAction): unknown {
+  switch (action.type) {
+    case 'SET_CONTENT_VALUE': {
+      const cleared = action.value === undefined || action.value === ''
+      return action.optional && cleared ? deleteIn(content, action.path) : setIn(content, action.path, action.value)
+    }
+    case 'ADD_CONTENT_ITEM': {
+      const list = getContentAt(content, action.path)
+      const items = Array.isArray(list) ? list : []
+      if (items.length >= action.max) return content
+      return setIn(content, action.path, [...items, action.item])
+    }
+    case 'REMOVE_CONTENT_ITEM': {
+      const list = getContentAt(content, action.path)
+      if (!Array.isArray(list) || list.length <= action.min) return content
+      return setIn(content, action.path, list.filter((_, index) => index !== action.index))
+    }
+  }
+}
+
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
     // A layout switch changes the element set, so an authored stack for the old layout no longer applies.
@@ -87,21 +119,11 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
     case 'SET_COVER_FIELD': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringCoverContent), [action.field]: action.value } }
     case 'SET_INFO_FIELD': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringInfoContent), [action.field]: action.value } }
     case 'SET_INFO_BODY': return { ...state, contentOverride: { ...(state.contentOverride as AuthoringInfoContent), body_blocks: action.value.split('\n').filter(Boolean) } }
-    case 'SET_CONTENT_VALUE': {
-      const cleared = action.value === undefined || action.value === ''
-      const contentOverride = action.optional && cleared ? deleteIn(state.contentOverride, action.path) : setIn(state.contentOverride, action.path, action.value)
-      return { ...state, contentOverride: contentOverride as AuthoringContent }
-    }
-    case 'ADD_CONTENT_ITEM': {
-      const list = getContentAt(state.contentOverride, action.path)
-      const items = Array.isArray(list) ? list : []
-      if (items.length >= action.max) return state
-      return { ...state, contentOverride: setIn(state.contentOverride, action.path, [...items, action.item]) as AuthoringContent }
-    }
+    case 'SET_CONTENT_VALUE':
+    case 'ADD_CONTENT_ITEM':
     case 'REMOVE_CONTENT_ITEM': {
-      const list = getContentAt(state.contentOverride, action.path)
-      if (!Array.isArray(list) || list.length <= action.min) return state
-      return { ...state, contentOverride: setIn(state.contentOverride, action.path, list.filter((_, index) => index !== action.index)) as AuthoringContent }
+      const contentOverride = applyContentAction(state.contentOverride, action)
+      return contentOverride === state.contentOverride ? state : { ...state, contentOverride: contentOverride as AuthoringContent }
     }
     case 'SET_TUNING': return { ...state, tuning: action.tuning }
     case 'RESET_TUNING': return { ...state, tuning: DEFAULT_TUNING }

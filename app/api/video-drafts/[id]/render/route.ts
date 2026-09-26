@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import { buildRenderExecutionSnapshot, assertSnapshotHasNoSignedUrl } from '@/lib/render-execution/build-snapshot'
+import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
 import { collectLibraryFileIds, validateSceneLibraryFileBindings } from '@/lib/video-scene-library-bindings'
 import type { VideoScene } from '@/lib/types'
 
@@ -192,6 +193,17 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json(
         { error: 'Nao foi possivel construir o snapshot de renderizacao.', code: 'SNAPSHOT_CONSTRUCTION_FAILED', details: error instanceof Error ? error.message : undefined },
         { status: 500 },
+      )
+    }
+
+    // 4b. VIDEO_SCENE_COMPOSITION_PARITY_V1: Scenes carry authored content, so
+    // validate the frozen manifest against the Template NOW (the same check the
+    // worker's claim runs) instead of enqueueing work that can only fail later.
+    const manifestCheck = resolveTimelineManifest(snapshotResult.snapshot.manifest, { identitySnapshot })
+    if (!manifestCheck.valid) {
+      return NextResponse.json(
+        { error: `Composição inválida para renderizar: ${manifestCheck.errors.map((issue) => issue.message).join('; ')}`.slice(0, 500), code: 'SCENE_COMPOSITION_INVALID' },
+        { status: 422 },
       )
     }
 

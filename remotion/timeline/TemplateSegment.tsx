@@ -29,8 +29,14 @@ export const TemplateSegment: React.FC<TemplateSegmentProps> = ({ globalFrame, r
   if (!binding) {
     throw new Error(`No visual component is registered for ${resolvedTemplate.descriptor.component_key}`)
   }
+  // VIDEO_SCENE_COMPOSITION_PARITY_V1: the Scene's appearance and element
+  // stack reach the shared visual tree exactly like a Static slide's. Absent
+  // (older manifests) = the template's previous defaults, unchanged.
   const props = binding.createProps({
     variant: resolvedTemplate.ref.variant,
+    appearance: resolvedTemplate.ref.appearance,
+    elementOrder: segment.payload.layering?.element_order,
+    hiddenElements: segment.payload.layering?.hidden_elements,
     content: segment.payload.content,
     assets: resolvedAssets,
     tokens: resolvedInput.tokens,

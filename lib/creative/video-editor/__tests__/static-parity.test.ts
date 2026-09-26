@@ -97,16 +97,18 @@ describe('Inspector information architecture', () => {
     expect(videoPage).toContain('data-inspector-tabs={VIDEO_INSPECTOR_SECTIONS.length}')
   })
 
-  it('Template/Elementos show the composition the video render actually paints (read-only)', () => {
+  it('Template/Elementos show the selected Scene composition the video render actually paints', () => {
     const composition = videoSceneComposition()
     expect(composition.template.id).toBe(DEFAULT_TEMPLATE_ID)
     expect(composition.layout.id).toBe('cover')
-    // DocumentaryCard in video mode receives no templateId/elementOrder -> default stack of `cover`.
+    // A Scene without authored composition (VIDEO_SCENE_COMPOSITION_PARITY_V1) = default stack of `cover`.
     expect(composition.stackOrder).toEqual(resolveElementStack(undefined, 'cover', undefined).order)
     expect(composition.stackOrder).toEqual(composition.layout.defaultStackOrder)
     expect(composition.heroUsedBy).toEqual(['Imagem principal'])
-    expect(videoPage).toContain('<TemplateFamilyAnatomy template={SCENE_COMPOSITION.template} />')
-    expect(videoPage).toMatch(/<ElementLayers\s+readOnly/)
+    expect(videoPage).toContain('<TemplateFamilyAnatomy template={sceneView.template} />')
+    // Camadas are authored per Scene now: order + visibility, same component as Static.
+    expect(videoPage).not.toMatch(/<ElementLayers\s+readOnly/)
+    expect(videoPage).toContain('onToggleVisibility={(id) => editSelectedScene((scene) => toggleSceneElementVisibility(scene, id))}')
   })
 })
 

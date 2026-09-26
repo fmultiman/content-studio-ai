@@ -218,6 +218,27 @@ export interface VideoScene {
   library_file_id?: string | null
   duration: number // in seconds
   movement: string | null
+  /**
+   * VIDEO_SCENE_COMPOSITION_PARITY_V1 — the Scene's authored SPATIAL
+   * composition inside the VideoDraft's Template family. Temporal state
+   * (duration, movement) and the hero binding (library_file_id) stay where
+   * they were. Absent (every Scene authored before it) = the Template default
+   * the Scene always rendered with: Cover · Dark · "Cena N" · default stack.
+   */
+  composition?: VideoSceneComposition
+}
+
+/** Authored Scene composition. Every field optional: absent = Template default for that axis. */
+export interface VideoSceneComposition {
+  /** Template layout id (a Video-supported layout of the draft's Template family). */
+  layout?: string
+  appearance?: 'light' | 'dark'
+  /** The layout's content (DocumentaryCard content schema of `layout`). */
+  content?: Record<string, unknown>
+  /** Paint order, back -> front (template element ids). Absent = the layout's default stack. */
+  element_order?: string[]
+  /** Hidden template element ids. Absent/empty = every element visible. */
+  hidden_elements?: string[]
 }
 
 // Form types

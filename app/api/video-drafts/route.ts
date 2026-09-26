@@ -5,6 +5,7 @@ import {
   collectLibraryFileIds,
   validateSceneLibraryFileBindings,
 } from '@/lib/video-scene-library-bindings'
+import { validateSceneCompositionShape } from '@/lib/creative/video-editor/scene-composition'
 
 async function validateProductionOwnership(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -73,6 +74,16 @@ async function validateSceneBindings(
 
 function sceneBindingErrorResponse(error: { code: string; message: string }) {
   return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
+}
+
+/** VIDEO_SCENE_COMPOSITION_PARITY_V1 — structural check of each Scene's authored composition. */
+function sceneCompositionErrorResponse(scenes: unknown[]) {
+  for (const [index, scene] of scenes.entries()) {
+    const composition = typeof scene === 'object' && scene !== null ? (scene as { composition?: unknown }).composition : undefined
+    const check = validateSceneCompositionShape(composition)
+    if (!check.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${check.message}`, code: 'SCENE_COMPOSITION_INVALID' }, { status: 400 })
+  }
+  return null
 }
 
 function getDraftName(name: unknown, scenes: VideoScene[]) {
@@ -181,6 +192,8 @@ export async function POST(request: Request) {
     const body = await request.json()
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
+    const compositionError = sceneCompositionErrorResponse(scenes)
+    if (compositionError) return compositionError
 
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!body.productionId || typeof body.productionId !== 'string') {
@@ -390,6 +403,8 @@ export async function PATCH(request: Request) {
 
     const scenes = Array.isArray(body.scenes) ? body.scenes : []
     const name = getDraftName(body.name, scenes)
+    const compositionError = sceneCompositionErrorResponse(scenes)
+    if (compositionError) return compositionError
 
     const bindingValidation = await validateSceneBindings(
       supabase,

@@ -11,10 +11,10 @@
 import type { VideoScene } from '@/lib/types'
 import type { AuthoringState } from '@/lib/creative/authoring/types'
 import {
-  DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutAssetSlots, slotView,
-  type AuthoringSlotView, type TemplateDefinition, type TemplateLayoutDefinition,
+  layoutAssetSlots, slotView,
+  type AuthoringSlotView, type TemplateAppearance, type TemplateDefinition, type TemplateLayoutDefinition,
 } from '@/lib/creative/templates/template-definitions'
-import { resolveElementStack } from '@/lib/creative/templates/element-stack'
+import { LEGACY_SCENE_LAYOUT_ID, resolveSceneComposition, type ResolvedSceneComposition } from './scene-composition'
 
 export type VideoInspectorSection = 'template' | 'content' | 'assets' | 'style' | 'element' | 'motion'
 
@@ -28,38 +28,46 @@ export const VIDEO_INSPECTOR_SECTIONS: readonly { value: VideoInspectorSection; 
 ]
 
 /**
- * The composition every Scene renders with TODAY: the VideoDraft adapter
- * (video-draft-to-timeline.ts) emits `editorial.documentary-card` / `cover`
- * with no templateId, element order, hidden set or tuning, so DocumentaryCard
- * resolves the DEFAULT Template's `cover` layout with its default stack and the
- * cover's default (dark) appearance. Read from the registry — never a copy.
+ * VIDEO_SCENE_COMPOSITION_PARITY_V1 — the Inspector's view of ONE Scene's
+ * composition, derived from `resolveSceneComposition` (the same resolution the
+ * adapter hands the Live Player and the final render). Read from the
+ * registry — never a copy. Without a Scene it is the legacy default every
+ * Scene rendered with before (Cover · Dark · default stack).
  */
-export const VIDEO_SCENE_LAYOUT_ID = 'cover'
+export const VIDEO_SCENE_LAYOUT_ID = LEGACY_SCENE_LAYOUT_ID
 
-export type VideoSceneComposition = {
+export type VideoSceneCompositionView = {
   template: TemplateDefinition
   layout: TemplateLayoutDefinition
-  /** Paint order, back -> front (as ElementLayers expects). */
+  /** Normalized paint order, back -> front (as ElementLayers expects). */
   stackOrder: readonly string[]
+  stackIsDefault: boolean
+  hiddenElements: readonly string[]
   elementLabels: Readonly<Record<string, string>>
+  /** The Scene's content-image slot, when its layout draws one. */
   heroSlot: AuthoringSlotView
   heroUsedBy: readonly string[]
-  appearance: 'dark'
+  usesHero: boolean
+  appearance: TemplateAppearance
+  resolved: ResolvedSceneComposition
 }
 
-export function videoSceneComposition(): VideoSceneComposition {
-  const template = getTemplateDefinition(DEFAULT_TEMPLATE_ID)
-  const layout = template ? getTemplateLayout(template, VIDEO_SCENE_LAYOUT_ID) : null
-  if (!template || !layout) throw new Error('Video Scene composition requires the default Template cover layout.')
+export function videoSceneComposition(scene?: Pick<VideoScene, 'order' | 'composition'>): VideoSceneCompositionView {
+  const resolved = resolveSceneComposition(scene ?? { order: 1 })
+  const { template, layout } = resolved
   const hero = layoutAssetSlots(template, layout).find(({ slot }) => slot.id === 'hero')
   return {
     template,
     layout,
-    stackOrder: resolveElementStack(undefined, VIDEO_SCENE_LAYOUT_ID, undefined).order,
+    stackOrder: resolved.elementOrder,
+    stackIsDefault: resolved.elementOrderIsDefault,
+    hiddenElements: resolved.hiddenElements,
     elementLabels: Object.fromEntries(layout.elements.map((element) => [element.id, element.label])),
     heroSlot: hero?.slot ?? slotView(template, 'hero'),
     heroUsedBy: (hero?.elements ?? []).map((element) => element.label),
-    appearance: 'dark',
+    usesHero: resolved.usesHero,
+    appearance: resolved.appearance,
+    resolved,
   }
 }
 
