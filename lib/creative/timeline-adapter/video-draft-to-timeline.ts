@@ -40,7 +40,7 @@ export const DEFAULT_HERO_ASSET_REF: AssetRef = {
 }
 
 /** The renderer identity of the VideoDraft's Template family (variant/appearance come from each Scene). */
-const DOCUMENTARY_CARD_TEMPLATE = { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } as const
+export const VIDEO_TEMPLATE_FAMILY = { id: 'editorial.documentary-card', version: '0.1.0', scope: 'system' } as const
 
 const DEFAULT_RENDER_INTENT = { purpose: 'preview', container: 'mp4', audio: false, captions: 'none' } as const
 
@@ -58,7 +58,10 @@ export type AdaptVideoDraftInput = {
   draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'> & { timeline?: unknown }
   /** Caller-supplied identity (real Project Identity snapshot or a fixture ref) -- never fetched here. */
   identity: IdentitySnapshotRef
-  /** Explicit, deterministic canvas/fps. Defaults to the proven 1080x1920 @ 30fps used by every existing timeline fixture. */
+  /**
+   * Explicit, deterministic canvas/fps. VIDEO_CANVAS_OUTPUT_FORMAT_V1: callers pass the
+   * VideoDraft's authored stage; absent = the legacy 1080x1920 @ 30fps every draft had before.
+   */
   canvas?: { width: number; height: number; fps?: number }
   /** Fixture/real hero asset used for any scene without an explicit binding in sceneAssets. */
   heroAssetRef?: AssetRef
@@ -209,7 +212,7 @@ export function sceneToSegment(
     duration_frames: durationFrames,
     kind: 'template',
     payload: {
-      template: { ...DOCUMENTARY_CARD_TEMPLATE, variant: composition.layoutId, appearance: composition.appearance },
+      template: { ...VIDEO_TEMPLATE_FAMILY, variant: composition.layoutId, appearance: composition.appearance },
       content: composition.content,
       // Only layouts that draw the content image take the Scene's hero; the
       // others' asset contracts do not accept one (the binding is kept on the Scene).

@@ -311,6 +311,12 @@ export interface VideoDraft {
    * NULL/absent = none. See lib/creative/video-editor/temporal-items.ts.
    */
   timeline?: import('@/lib/creative/video-editor/temporal-items').VideoTimeline | null
+  /**
+   * VIDEO_CANVAS_OUTPUT_FORMAT_V1 — authored output stage {width, height} in px,
+   * shared by every Scene and root item. NULL/absent = legacy 1080×1920 (never
+   * backfilled). See lib/creative/video-editor/video-canvas.ts.
+   */
+  canvas?: import('@/lib/creative/video-editor/video-canvas').VideoCanvas | null
   created_at: string
   updated_at: string
 }

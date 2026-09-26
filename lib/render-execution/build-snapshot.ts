@@ -22,6 +22,7 @@ import type { VideoDraft } from '@/lib/types'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { TimelineManifest } from '@/lib/schemas/creative/timeline'
 import { deriveVideoSceneAssetBindings } from '@/lib/video-scene-assets'
+import { effectiveVideoCanvas } from '@/lib/creative/video-editor/video-canvas'
 import {
   adaptVideoDraftToTimelineManifest,
   type AdapterDiagnostic,
@@ -56,8 +57,11 @@ export type RenderExecutionInputSnapshot = {
 }
 
 export type BuildRenderExecutionSnapshotInput = {
-  /** `timeline` (Gate B): the authored independent temporal layer, frozen with the Scenes. */
-  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'> & { timeline?: unknown }
+  /**
+   * `timeline` (Gate B): the authored independent temporal layer, frozen with the Scenes.
+   * `canvas` (VIDEO_CANVAS_OUTPUT_FORMAT_V1): the authored output stage; absent/null = legacy 1080×1920.
+   */
+  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'> & { timeline?: unknown; canvas?: unknown }
   /** Caller-supplied (real Project identity, adapted server-side) -- never fetched here. */
   identitySnapshot: VisualTokensSnapshot
 }
@@ -80,6 +84,7 @@ export function buildRenderExecutionSnapshot(
     draft: input.draft,
     identity,
     sceneAssets,
+    canvas: effectiveVideoCanvas(input.draft.canvas),
   })
 
   return {

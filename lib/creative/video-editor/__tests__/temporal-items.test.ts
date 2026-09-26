@@ -186,8 +186,9 @@ describe('persistence: one authoring truth, no manifest and no viewport persiste
     expect(api.match(/validateTimelineBody\(supabase, user\.id,/g)).toHaveLength(2)
     expect(api).toContain("if (Object.hasOwn(body, 'timeline'))")
     const render = readFileSync(join(process.cwd(), 'app/api/video-drafts/[id]/render/route.ts'), 'utf8')
-    expect(render).toContain("select('id, user_id, project_id, production_id, scenes, timeline')")
-    expect(render).toContain('draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes, timeline }')
+    // VIDEO_CANVAS_OUTPUT_FORMAT_V1 adds the authored stage beside the timeline; the timeline is still frozen as before.
+    expect(render).toContain("select('id, user_id, project_id, production_id, scenes, timeline, canvas')")
+    expect(render).toContain('draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes, timeline, canvas: draft.canvas }')
   })
 })
 

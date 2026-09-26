@@ -11,7 +11,20 @@ import {
   persistedVideoTimeline, readVideoTimeline, timelineLibraryFileRefs, validateVideoTimeline, type VideoTimeline,
 } from '@/lib/creative/video-editor/temporal-items'
 import { isRenderableLibraryFile } from '@/lib/creative/integration/library-file-adapter'
+import { validateVideoCanvas, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
 import type { LibraryFileKind } from '@/lib/types'
+
+/**
+ * VIDEO_CANVAS_OUTPUT_FORMAT_V1: platform bounds only. Whether the active Template
+ * can draw the stage is the resolver's rule at preview/render time, not a save rule.
+ * null = back to the legacy 1080×1920 stage.
+ */
+function canvasBody(raw: unknown): { ok: true; value: VideoCanvas | null } | { ok: false; response: NextResponse } {
+  if (raw === null) return { ok: true, value: null }
+  const result = validateVideoCanvas(raw)
+  if (!result.ok) return { ok: false, response: NextResponse.json({ error: result.message, code: 'INVALID_VIDEO_CANVAS' }, { status: 400 }) }
+  return { ok: true, value: result.canvas }
+}
 
 async function validateProductionOwnership(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -286,6 +299,11 @@ export async function POST(request: Request) {
       if (!timeline.ok) return timeline.response
       insertPayload.timeline = timeline.value
     }
+    if (Object.hasOwn(body, 'canvas')) {
+      const canvas = canvasBody(body.canvas)
+      if (!canvas.ok) return canvas.response
+      insertPayload.canvas = canvas.value
+    }
 
     const { data, error } = await supabase
       .from('video_drafts')
@@ -483,6 +501,12 @@ export async function PATCH(request: Request) {
       const timeline = await validateTimelineBody(supabase, user.id, authoritativeProjectId, body.timeline)
       if (!timeline.ok) return timeline.response
       updatePayload.timeline = timeline.value
+    }
+    // VIDEO_CANVAS_OUTPUT_FORMAT_V1: absent = keep the stored stage (legacy drafts are never rewritten).
+    if (Object.hasOwn(body, 'canvas')) {
+      const canvas = canvasBody(body.canvas)
+      if (!canvas.ok) return canvas.response
+      updatePayload.canvas = canvas.value
     }
 
     const { data, error } = await supabase

@@ -24,6 +24,7 @@ import type { SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { resolveTimelineManifest, type ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-timeline'
 import { patchManifestAssets, patchResolvedTimelineAssets } from '@/lib/creative/timeline-adapter/prepare-scene-assets'
 import type { VideoTimeline } from './temporal-items'
+import type { VideoCanvas } from './video-canvas'
 import type { AdapterDiagnostic } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { buildRenderExecutionSnapshot } from '@/lib/render-execution/build-snapshot'
 
@@ -35,6 +36,8 @@ export type LivePreviewInputArgs = {
   scenes: readonly VideoScene[]
   /** Gate B: the CURRENT (saved or not) independent temporal layer. */
   timeline?: VideoTimeline | null
+  /** VIDEO_CANVAS_OUTPUT_FORMAT_V1: the CURRENT (saved or not) output stage; null = legacy 1080×1920. */
+  canvas?: VideoCanvas | null
   identitySnapshot: VisualTokensSnapshot
   libraryFiles: ReadonlyMap<string, PreviewLibraryFile>
 }
@@ -64,7 +67,7 @@ export function buildLivePreviewInput(args: LivePreviewInputArgs): LivePreviewIn
   }
 
   const { snapshot, diagnostics } = buildRenderExecutionSnapshot({
-    draft: { id: args.draft.id, project_id: args.draft.project_id, production_id: args.draft.production_id, scenes: [...args.scenes], timeline: args.timeline ?? null },
+    draft: { id: args.draft.id, project_id: args.draft.project_id, production_id: args.draft.production_id, scenes: [...args.scenes], timeline: args.timeline ?? null, canvas: args.canvas ?? null },
     identitySnapshot: args.identitySnapshot,
   })
 

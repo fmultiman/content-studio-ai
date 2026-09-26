@@ -14,6 +14,7 @@ import type { VideoDraft, VideoScene } from '@/lib/types'
 import { movementToMotion } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { renumberScenes } from './scene-timeline'
 import { persistedVideoTimeline, type VideoTimeline } from './temporal-items'
+import type { VideoCanvas } from './video-canvas'
 
 /** Same defaults as the legacy /videos addScene. */
 export const NEW_SCENE_DURATION_SECONDS = 3
@@ -61,11 +62,12 @@ export function normalizeLoadedScenes(scenes: readonly VideoScene[] | null | und
 /**
  * The exact authored snapshot used for dirty tracking and "Voltar ao salvo".
  * Gate B: the independent temporal layer is part of it only when it has items,
- * so a draft without one keeps the exact pre-Gate-B snapshot.
+ * so a draft without one keeps the exact pre-Gate-B snapshot. The output stage
+ * (VIDEO_CANVAS_OUTPUT_FORMAT_V1) likewise only when authored.
  */
-export function persistedVideoSnapshot(name: string, scenes: readonly VideoScene[], timeline?: VideoTimeline | null): string {
+export function persistedVideoSnapshot(name: string, scenes: readonly VideoScene[], timeline?: VideoTimeline | null, canvas?: VideoCanvas | null): string {
   const persisted = timeline ? persistedVideoTimeline(timeline) : null
-  return JSON.stringify(persisted ? { name, scenes, timeline: persisted } : { name, scenes })
+  return JSON.stringify({ name, scenes, ...(persisted ? { timeline: persisted } : {}), ...(canvas ? { canvas } : {}) })
 }
 
 export type VideoDraftSaveBody = {
@@ -76,6 +78,8 @@ export type VideoDraftSaveBody = {
   scenes: VideoScene[]
   /** Gate B: authored independent temporal layer (null = none). Sent only by editors that own it. */
   timeline?: VideoTimeline | null
+  /** Authored output stage. Absent = keep the stored value (legacy drafts are never rewritten). */
+  canvas?: VideoCanvas
 }
 
 /** PATCH /api/video-drafts body — identical contract to the legacy workspace save. */
@@ -84,10 +88,12 @@ export function buildVideoDraftSaveBody(
   name: string,
   scenes: readonly VideoScene[],
   timeline?: VideoTimeline,
+  canvas?: VideoCanvas | null,
 ): VideoDraftSaveBody {
   return {
     id: draft.id, name, projectId: draft.project_id, productionId: draft.production_id, scenes: [...scenes],
     ...(timeline ? { timeline: persistedVideoTimeline(timeline) } : {}),
+    ...(canvas ? { canvas: { width: canvas.width, height: canvas.height } } : {}),
   }
 }
 

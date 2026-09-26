@@ -50,7 +50,9 @@ import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import { resolveSlotResource } from '@/lib/creative/authoring/asset-slots'
 import { cn } from '@/lib/utils'
-import { DEFAULT_HERO_ASSET_REF, DEFAULT_TIMELINE_CANVAS } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
+import { DEFAULT_HERO_ASSET_REF } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
+import { effectiveVideoCanvas, readVideoCanvas, videoTemplateCanvasSupport, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
+import { VideoCanvasControl } from '@/components/creative/video/video-canvas-control'
 import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
 import {
   TIMELINE_FPS, clampFrame, clampSceneDurationSeconds, deriveSceneRanges, formatSeconds, formatTimecode, reorderScenes,
@@ -148,6 +150,8 @@ export default function VideoCreativeEditorPage() {
   const [scenes, setScenes] = useState<VideoScene[]>([])
   // Gate B: the independent temporal layer (own absolute frames), saved with the Scenes by the same PATCH.
   const [timeline, setTimeline] = useState<VideoTimeline>(EMPTY_TIMELINE)
+  // Output stage (VIDEO_CANVAS_OUTPUT_FORMAT_V1): document-level; null = legacy 1080×1920, never backfilled.
+  const [videoCanvas, setVideoCanvas] = useState<VideoCanvas | null>(null)
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -168,7 +172,9 @@ export default function VideoCreativeEditorPage() {
   const [activeTab, setActiveTab] = useState<VideoInspectorSection>('content')
   const [inspectorOpen, setInspectorOpen] = useState(true)
   // VIEWPORT state (shared with Static): Player camera only — never authoring, never dirty, never render.
-  const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: DEFAULT_TIMELINE_CANVAS.width, surfaceHeight: DEFAULT_TIMELINE_CANVAS.height, floating, fallbackFitScale: 0.25 })
+  // The surface it frames IS the authored stage; zoom/pan stay UI state.
+  const stage = effectiveVideoCanvas(videoCanvas)
+  const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: stage.width, surfaceHeight: stage.height, floating, fallbackFitScale: 0.25 })
   // DOCK state (UI only): CENAS/TIMELINE panel mode + height, derived from the measured preview panel.
   const [dock, setDock] = useState<DockState>(INITIAL_DOCK_STATE)
   const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null)
@@ -190,7 +196,7 @@ export default function VideoCreativeEditorPage() {
   const [outputOpen, setOutputOpen] = useState(false)
 
   const draft = context?.draft ?? null
-  const dirty = lastSavedSnapshot !== null && persistedVideoSnapshot(name, scenes, timeline) !== lastSavedSnapshot
+  const dirty = lastSavedSnapshot !== null && persistedVideoSnapshot(name, scenes, timeline, videoCanvas) !== lastSavedSnapshot
 
   // --- Load: VideoDraft (authority), Project identity, Project images, latest execution ---
   useEffect(() => {
@@ -228,10 +234,12 @@ export default function VideoCreativeEditorPage() {
       skipNextAutosaveRef.current = true
       setContext({ draft: loaded, project, productionTitle, identitySnapshot, identityError })
       const loadedTimeline = readVideoTimeline(loaded.timeline)
+      const loadedCanvas = readVideoCanvas(loaded.canvas)
       setName(loaded.name)
       setScenes(normalized)
       setTimeline(loadedTimeline)
-      setLastSavedSnapshot(persistedVideoSnapshot(loaded.name, normalized, loadedTimeline))
+      setVideoCanvas(loadedCanvas)
+      setLastSavedSnapshot(persistedVideoSnapshot(loaded.name, normalized, loadedTimeline, loadedCanvas))
 
       const execResponse = await fetch(`/api/render-executions?videoDraftId=${loaded.id}`).catch(() => null)
       if (execResponse?.ok && !cancelled) {
@@ -286,12 +294,13 @@ export default function VideoCreativeEditorPage() {
   const draftProductionId = draft?.production_id ?? null
   const livePreview = useMemo(() => {
     if (!draftId || !identitySnapshot) return null
-    return buildLivePreviewInput({ draft: { id: draftId, project_id: projectId, production_id: draftProductionId }, scenes, timeline, identitySnapshot, libraryFiles })
-  }, [draftId, projectId, draftProductionId, identitySnapshot, scenes, timeline, libraryFiles])
+    return buildLivePreviewInput({ draft: { id: draftId, project_id: projectId, production_id: draftProductionId }, scenes, timeline, canvas: videoCanvas, identitySnapshot, libraryFiles })
+  }, [draftId, projectId, draftProductionId, identitySnapshot, scenes, timeline, videoCanvas, libraryFiles])
 
   // The selected Scene's composition (VIDEO_SCENE_COMPOSITION_PARITY_V1): the Inspector hydrates from it on every
   // selection change — derived from the Scene itself, so no per-Scene UI state can bleed between Scenes.
   const sceneView = useMemo(() => videoSceneComposition(selectedScene ?? undefined), [selectedScene])
+  const canvasSupport = useMemo(() => videoTemplateCanvasSupport({ width: stage.width, height: stage.height }), [stage.width, stage.height])
   const sceneMotionOptions = useMemo(() => motionOptions(sceneView.resolved.layoutId), [sceneView])
 
   const thumbnails = useMemo(() => Object.fromEntries(scenes.map((scene) => {
@@ -435,12 +444,12 @@ export default function VideoCreativeEditorPage() {
     if (!draft) return false
     setSaveStatus('saving')
     setSaveError(null)
-    const snapshot = persistedVideoSnapshot(name, scenes, timeline)
+    const snapshot = persistedVideoSnapshot(name, scenes, timeline, videoCanvas)
     try {
       const response = await fetch('/api/video-drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildVideoDraftSaveBody(draft, name, scenes, timeline)),
+        body: JSON.stringify(buildVideoDraftSaveBody(draft, name, scenes, timeline, videoCanvas)),
       })
       const payload = await response.json().catch(() => null) as { draft?: VideoDraft; error?: string } | null
       if (!response.ok || !payload?.draft) throw new Error(payload?.error || 'Não foi possível salvar.')
@@ -453,7 +462,7 @@ export default function VideoCreativeEditorPage() {
       setSaveError(cause instanceof Error ? cause.message : 'Não foi possível salvar.')
       return false
     }
-  }, [draft, name, scenes, timeline])
+  }, [draft, name, scenes, timeline, videoCanvas])
 
   useEffect(() => {
     if (!draft) return
@@ -461,11 +470,20 @@ export default function VideoCreativeEditorPage() {
     if (!autosaveEnabled || !dirty) return
     const timeout = window.setTimeout(() => { void saveNow() }, 800)
     return () => window.clearTimeout(timeout)
-  }, [draft, name, scenes, timeline, autosaveEnabled, dirty, saveNow])
+  }, [draft, name, scenes, timeline, videoCanvas, autosaveEnabled, dirty, saveNow])
+
+  /** Authored stage change: dirty like any edit. The camera re-fits (UI state, never dirty). */
+  function changeVideoCanvas(next: VideoCanvas) {
+    setVideoCanvas(next)
+    viewport.action('fit')
+  }
 
   function revert() {
     if (!lastSavedSnapshot) return
-    const saved = JSON.parse(lastSavedSnapshot) as { name: string; scenes: VideoScene[]; timeline?: VideoTimeline }
+    const saved = JSON.parse(lastSavedSnapshot) as { name: string; scenes: VideoScene[]; timeline?: VideoTimeline; canvas?: VideoCanvas }
+    const savedCanvas = readVideoCanvas(saved.canvas)
+    if (effectiveVideoCanvas(savedCanvas).width !== stage.width || effectiveVideoCanvas(savedCanvas).height !== stage.height) viewport.action('fit')
+    setVideoCanvas(savedCanvas)
     setName(saved.name)
     setScenes(saved.scenes)
     setTimeline(readVideoTimeline(saved.timeline))
@@ -584,11 +602,14 @@ export default function VideoCreativeEditorPage() {
   }
 
   // --- Preview Surface: Live Authoring Player ---
-  const canvasW = livePreview?.ok ? livePreview.resolvedInput.manifest.specification.width : DEFAULT_TIMELINE_CANVAS.width
-  const canvasH = livePreview?.ok ? livePreview.resolvedInput.manifest.specification.height : DEFAULT_TIMELINE_CANVAS.height
+  const canvasW = stage.width
+  const canvasH = stage.height
   const playerWidth = viewport.scaledWidth
   const playerHeight = viewport.scaledHeight
+  // A stored stage the Template does not declare (only reachable through the API) is named plainly, not as a resolver error.
+  const stageBlocker = canvasSupport.supported ? null : `O template ${canvasSupport.templateLabel} não desenha ${canvasW}×${canvasH}. Escolha um formato compatível em Formato.`
   const previewBlocker = context.identityError
+    ?? stageBlocker
     ?? (!livePreview ? null : !livePreview.ok ? livePreview.message : null)
   const renderActive = renderSubmitting || executionStatus === 'queued' || executionStatus === 'claimed'
   // A composition the Template rejects (e.g. a required field left empty) is shown in the Player and blocks render.
@@ -1038,7 +1059,9 @@ export default function VideoCreativeEditorPage() {
         <Button variant="ghost" size="icon-sm" className="-ml-2 shrink-0" onClick={() => router.push('/videos')} aria-label="Voltar para Vídeos" title="Voltar para Vídeos"><ArrowLeft className="h-4 w-4" /></Button>
         <h1 className="shrink-0 text-base font-semibold">Creative Editor</h1>
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="truncate">Video · Reel 9:16</span>
+          <span className="shrink-0">Video</span>
+          <span aria-hidden="true">·</span>
+          <VideoCanvasControl canvas={stage} authored={videoCanvas !== null} onChange={changeVideoCanvas} />
           {selectedScene ? <><span aria-hidden="true">·</span><span className="shrink-0 font-medium text-foreground" data-testid="header-scene-indicator">Cena {safeSelectedIndex + 1}</span></> : null}
         </p>
         <DropdownMenu>
@@ -1107,7 +1130,8 @@ export default function VideoCreativeEditorPage() {
           <DialogTitle>Vídeo renderizado</DialogTitle>
           <DialogDescription>MP4 final do último render concluído no servidor. Não reflete alterações feitas depois dele.</DialogDescription>
         </DialogHeader>
-        <div className="relative mx-auto aspect-[9/16] max-h-[65vh] w-full overflow-hidden rounded-md bg-black">
+        {/* Sized from the MP4 this execution produced (Render != Save: the draft's stage may have changed since). */}
+        <div className="relative mx-auto max-h-[65vh] w-full overflow-hidden rounded-md bg-black" style={{ aspectRatio: renderExecution?.output_width && renderExecution.output_height ? `${renderExecution.output_width} / ${renderExecution.output_height}` : '9 / 16' }} data-testid="output-player-frame">
           {outputUrl
             ? <video src={outputUrl} controls playsInline crossOrigin="anonymous" className="h-full w-full object-contain" data-testid="output-player" />
             : outputUrlError

@@ -116,7 +116,7 @@ export async function POST(request: Request, context: RouteContext) {
     // authority accepted anywhere in this route is this route param.
     const { data: draft, error: draftError } = await supabase
       .from('video_drafts')
-      .select('id, user_id, project_id, production_id, scenes, timeline')
+      .select('id, user_id, project_id, production_id, scenes, timeline, canvas')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -210,7 +210,8 @@ export async function POST(request: Request, context: RouteContext) {
     let snapshotResult: ReturnType<typeof buildRenderExecutionSnapshot>
     try {
       snapshotResult = buildRenderExecutionSnapshot({
-        draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes, timeline },
+        // VIDEO_CANVAS_OUTPUT_FORMAT_V1: the saved output stage is frozen into the snapshot (absent = legacy 1080×1920).
+        draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes, timeline, canvas: draft.canvas },
         identitySnapshot,
       })
       assertSnapshotHasNoSignedUrl(snapshotResult.snapshot)
@@ -226,8 +227,11 @@ export async function POST(request: Request, context: RouteContext) {
     // worker's claim runs) instead of enqueueing work that can only fail later.
     const manifestCheck = resolveTimelineManifest(snapshotResult.snapshot.manifest, { identitySnapshot })
     if (!manifestCheck.valid) {
+      const canvasRejected = manifestCheck.errors.some((issue) => issue.code === 'canvas_not_supported')
       return NextResponse.json(
-        { error: `Composição inválida para renderizar: ${manifestCheck.errors.map((issue) => issue.message).join('; ')}`.slice(0, 500), code: 'SCENE_COMPOSITION_INVALID' },
+        canvasRejected
+          ? { error: 'O template atual não suporta o formato deste vídeo. Escolha um formato compatível antes de renderizar.', code: 'VIDEO_CANVAS_UNSUPPORTED_BY_TEMPLATE' }
+          : { error: `Composição inválida para renderizar: ${manifestCheck.errors.map((issue) => issue.message).join('; ')}`.slice(0, 500), code: 'SCENE_COMPOSITION_INVALID' },
         { status: 422 },
       )
     }
