@@ -31,7 +31,8 @@ export const FreeSegmentLayer: React.FC<{ segment: FreeSegment; resolvedInput: R
   const shortSide = Math.min(width, height)
   return (
     <Sequence from={segment.start_frame} durationInFrames={segment.duration_frames} layout="none" name={segment.id}>
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: colors.background }} data-segment={segment.id} data-kind="free">
+      {/* isolation: the elements' z-index stays INSIDE this Scene, so later tracks (root B-roll, lower thirds) still paint above it. */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', isolation: 'isolate', background: colors.background }} data-segment={segment.id} data-kind="free">
         {segment.payload.elements.map((element, index) => {
           if (element.kind === 'image') {
             const asset = resolvedInput.resolvedAssets[element.asset_ref]

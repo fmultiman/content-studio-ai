@@ -339,6 +339,9 @@ describe('Renderer and Static boundaries', () => {
     const imports = renderer.split(/\r?\n/).filter((line) => line.startsWith('import ')).join('\n')
     expect(imports).not.toMatch(/documentary-card|quote-card|component-resolver|template-definitions|templates\/registry/)
     expect(renderer).not.toMatch(/resolveTemplateBinding|createProps|getTemplateDefinition/)
+    // Element z-index must stay inside the Scene: root overlays (lower third, B-roll) paint above it.
+    expect(renderer).toMatch(/data-kind="free"/)
+    expect(renderer).toMatch(/isolation: 'isolate'/)
     expect(read('remotion/timeline/TimelineComposition.tsx')).toContain("if (segment.kind === 'free') return <FreeSegmentLayer")
     expect(read('infra/render-worker-runtime/export.mjs')).toContain("'remotion/timeline/FreeSegment.tsx'")
   })
