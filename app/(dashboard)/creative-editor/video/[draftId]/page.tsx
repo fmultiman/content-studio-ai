@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, Loader2, Pause, PanelRight,
+  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, Hand, Loader2, MousePointer2, Pause, PanelRight,
   Play, SkipBack, SkipForward, Sparkles, StepBack, StepForward, Trash2, Undo2,
 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
@@ -52,8 +52,10 @@ import { resolveSlotResource } from '@/lib/creative/authoring/asset-slots'
 import { cn } from '@/lib/utils'
 import { DEFAULT_HERO_ASSET_REF } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { effectiveVideoCanvas, readVideoCanvas, videoDraftCanvasSupport, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
-import { addFreeImageElement, addFreeTextElement, createFreeScene, freeElements, isFreeScene, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
+import { addFreeImageElement, addFreeTextElement, createFreeScene, freeElements, isFreeScene, setFreeElementBox, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
 import { FreeSceneElements, FreeSceneTemplateState, freeElementLabel } from '@/components/creative/video/free-scene-panels'
+import { FreeSceneOverlay } from '@/components/creative/video/free-scene-overlay'
+import { DEFAULT_PREVIEW_INTERACTION_MODE, type PreviewInteractionMode } from '@/lib/creative/video-editor/free-manipulation'
 import { VideoCanvasControl } from '@/components/creative/video/video-canvas-control'
 import { resolveAsset } from '@/lib/creative/assets/resolve-asset'
 import {
@@ -84,7 +86,7 @@ import { resetSceneElementTiming, sceneTimingRows, setSceneElementTiming, type E
 import { RENDERABLE_AUDIO_MIME, RENDERABLE_VIDEO_MIME } from '@/lib/creative/integration/library-file-adapter'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
-import type { LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
+import type { FreeElementBox, LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
 import type { LivePlayerController } from '@/remotion/player/LiveTimelinePlayer'
 
 // The Remotion Player adapter is browser-only; it never runs on the server.
@@ -188,6 +190,8 @@ export default function VideoCreativeEditorPage() {
   const [freeImagePicker, setFreeImagePicker] = useState<null | { mode: 'add' } | { mode: 'replace'; elementId: string }>(null)
   // Camadas disclosure (UI only, never persisted).
   const [openElementId, setOpenElementId] = useState<string | null>(null)
+  // VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1 — Preview tool (UI only: never saved, never dirty). Hand/Pan is the default.
+  const [interactionMode, setInteractionMode] = useState<PreviewInteractionMode>(DEFAULT_PREVIEW_INTERACTION_MODE)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [promptBusy, setPromptBusy] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
@@ -471,6 +475,25 @@ export default function VideoCreativeEditorPage() {
     setScenes((current) => setSceneDuration(current, sceneId, seconds))
   }
 
+  // --- Direct manipulation (Select tool): ONE free-element selection shared with the Inspector (openElementId) ---
+  function selectFreeElementFromPreview(sceneId: string, elementId: string | null) {
+    const index = scenes.findIndex((scene) => scene.id === sceneId)
+    if (index < 0) return
+    if (index !== safeSelectedIndex) setSelectedIndex(index) // the playhead is already inside it: no seek
+    setSelectedItemId(null)
+    setSelectedElementId(null)
+    setOpenElementId(elementId)
+    if (elementId) setActiveTab('element')
+  }
+  /** Authored edit: the same pure helper the Inspector geometry fields use. */
+  function changeFreeBoxFromPreview(sceneId: string, elementId: string, box: FreeElementBox) {
+    setScenes((current) => current.map((scene) => (scene.id === sceneId ? setFreeElementBox(scene, elementId, box) : scene)))
+  }
+  /** Manipulation freezes the frame being edited (the Player is the only clock). */
+  function pauseForManipulation() {
+    if (playerRef.current?.isPlaying()) playerRef.current.pause()
+  }
+
   // --- Save (explicit authority) + optional autosave, same PATCH as /videos ---
   const saveNow = useCallback(async (): Promise<boolean> => {
     if (!draft) return false
@@ -665,7 +688,13 @@ export default function VideoCreativeEditorPage() {
         onZoomChange={viewport.setZoom}
         onStep={viewport.step}
         onAction={viewport.action}
-        trailing={floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
+        trailing={<>
+          <div className="ml-1 flex shrink-0 items-center rounded-md border border-border/60 p-0.5" role="radiogroup" aria-label="Ferramenta da prévia" data-testid="preview-tool">
+            <Button size="icon-sm" variant={interactionMode === 'select' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'select'} onClick={() => setInteractionMode('select')} aria-label="Selecionar e editar" title="Selecionar e editar (mover e redimensionar elementos de cenas livres)" data-testid="preview-tool-select"><MousePointer2 className="h-3.5 w-3.5" /></Button>
+            <Button size="icon-sm" variant={interactionMode === 'pan' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'pan'} onClick={() => setInteractionMode('pan')} aria-label="Mão (mover a visualização)" title="Mão: arrastar move a visualização" data-testid="preview-tool-pan"><Hand className="h-3.5 w-3.5" /></Button>
+          </div>
+          {floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
+        </>}
       />
       <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado do vídeo">
         <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
@@ -715,8 +744,9 @@ export default function VideoCreativeEditorPage() {
       <div
         ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
-        style={{ cursor: viewport.panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
-        {...viewport.panHandlers}
+        style={{ cursor: interactionMode === 'select' ? 'default' : viewport.panning ? 'grabbing' : 'grab', touchAction: floating || interactionMode === 'select' ? 'none' : 'pan-y' }}
+        {...(interactionMode === 'pan' ? viewport.panHandlers : {})}
+        data-interaction-mode={interactionMode}
         aria-label="Prévia ao vivo (arraste para mover a visualização)"
         data-testid="live-player-viewport"
         data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
@@ -738,6 +768,22 @@ export default function VideoCreativeEditorPage() {
             />
           </div>
         ) : <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+        {/* Editor-only chrome over the Player (never rendered by the Player/worker): Select tool on the free Scene under the playhead. */}
+        {interactionMode === 'select' && !previewBlocker && livePreview?.ok ? (
+          <FreeSceneOverlay
+            scenes={scenes}
+            ranges={ranges}
+            cursor={cursor}
+            left={viewport.origin.left}
+            top={viewport.origin.top}
+            width={playerWidth}
+            height={playerHeight}
+            selectedElementId={openElementId}
+            onSelect={selectFreeElementFromPreview}
+            onBoxChange={changeFreeBoxFromPreview}
+            onInteractionStart={pauseForManipulation}
+          />
+        ) : null}
         {playerError ? <p className="absolute bottom-2 left-2 right-2 rounded bg-destructive/90 px-2 py-1 text-xs text-destructive-foreground" role="alert">Prévia: {playerError}</p> : null}
         {livePreview?.ok && livePreview.missingAssets.length > 0 ? <p className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white">Carregando {livePreview.missingAssets.length} asset(s) da Biblioteca…</p> : null}
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-white/80">Prévia ao vivo</span>

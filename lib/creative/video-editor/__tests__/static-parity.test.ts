@@ -76,9 +76,12 @@ describe('shared Preview Surface viewport (Static authority)', () => {
     for (const page of [staticPage, videoPage]) {
       expect(page).toContain("from '@/components/creative/editor/use-preview-viewport'")
       expect(page).toContain('<ViewportZoomControls')
-      expect(page).toContain('{...viewport.panHandlers}')
       expect(page).not.toMatch(/const ZOOM_LEVELS|PREVIEW_ZOOM_LEVELS/)
     }
+    // The same shared pan handlers (no second pan implementation); Video applies them in its Hand tool
+    // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1), Static always.
+    expect(staticPage).toContain('{...viewport.panHandlers}')
+    expect(videoPage).toContain("{...(interactionMode === 'pan' ? viewport.panHandlers : {})}")
     expect(staticPage).toContain('data-testid="canvas-viewport"')
     expect(videoPage).toContain('data-testid="live-player-viewport"')
   })
