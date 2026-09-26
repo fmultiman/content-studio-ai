@@ -145,7 +145,7 @@ Feature `358a05195d91a68e17098738eddabf5fc1502d5c` pushed (local = `origin/main`
 ## 16. Final checkpoint
 
 - Feature: `358a05195d91a68e17098738eddabf5fc1502d5c`, Vercel Production `6676974193` success.
-- Final SHA: the docs commit recording this validation (it cannot print its own hash; the next mission's housekeeping records it, as was done for Audio V1).
+- Final SHA: `03904acd8d41b4ec09c8f3551fc6e5773361c98f` (the docs commit recording this validation; recorded by the VIDEO_FREE_SCENE_COMPOSITION_V1 housekeeping, since a commit cannot print its own hash).
 - Migration: `037_add_video_draft_canvas.sql` (additive, applied). Worker: unchanged.
 - Not committed: `.env.local`, `.next/`, `tsbuildinfo`, `infra/render-worker-runtime/dist/`, `.tmp/` (audit renders), scratch files, downloaded MP4s.
 
