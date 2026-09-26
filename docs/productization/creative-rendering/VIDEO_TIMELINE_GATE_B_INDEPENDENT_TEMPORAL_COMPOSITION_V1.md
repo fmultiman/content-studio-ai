@@ -390,3 +390,13 @@ B-roll and overlay productization can follow on the same envelope.
   - `.env.local`, `.next/`, `tsbuildinfo`, the incidental `next-env.d.ts` change;
   - `infra/render-worker-runtime/dist/` (gitignored, including the tarball);
   - `.tmp/` renders, browser data, scratch scripts, and the generated test media sources (removed from `public/` after upload).
+
+## Follow-up: AUDIO V1 resolved
+
+[VIDEO_AUDIO_AUTHORING_V1](VIDEO_AUDIO_AUTHORING_V1.md) (`f2fe38c`) closed the §31 gap without the item-level `lane` proposed there.
+
+- **Concurrent audio:** audio mixes, so audio items may overlap freely. The ÁUDIO 1..n rows are a derived, deterministic projection, and the manifest carries one derived `audio-main` track. Nothing row-related is persisted.
+- **Per-item fields:** `source_in_frame`, `fade_in_frames` and `fade_out_frames`.
+- **End intent:** an explicit `end_anchor: 'sequence_end'` answers deferred question 7. It is opt-in; Gate B items stay fixed.
+
+Timeline `version` stays `1`, and there was no migration. Deferred question 2 remains open for visual/text only.
