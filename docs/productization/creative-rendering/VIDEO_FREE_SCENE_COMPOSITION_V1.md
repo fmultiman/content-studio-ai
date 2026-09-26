@@ -214,7 +214,7 @@ segment = { id: 'scene:<id>', track_id: 'video-main', start_frame, duration_fram
 - Feature `f21724e12080c68de0aa9110b4af85acec68d1cb` → Vercel `6682293126` success.
 - Stacking fix `73c943bfeaf92b9691bdb72c1cdc9f8151e0f2b9` → Vercel `6682831648` success.
 - Preset fix `7c23054965ea6799f2aad527c309c7dbc5e95bd2` → Vercel `6682878959` success.
-- Final SHA: the docs commit recording this validation (recorded by the next mission's housekeeping).
+- Final SHA: `b9e083060d88540f05774bc03374c3828c520654` (the docs commit recording this validation; recorded by the VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1 housekeeping, since a commit cannot print its own hash).
 - Housekeeping done here: `VIDEO_CANVAS_OUTPUT_FORMAT_V1.md` now prints its docs SHA `03904acd8d41b4ec09c8f3551fc6e5773361c98f`.
 - **Production test data left intentionally:**
   - drafts `da9b61ce…` (mixed, 4:5) and `db0d9189…` (free-only, 16:9);
