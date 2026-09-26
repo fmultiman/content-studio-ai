@@ -129,8 +129,9 @@ describe('authoring edits: one lane per kind, never overlapping within a kind', 
     expect(added.item).toMatchObject({ kind: 'visual', start_frame: 120, duration_frames: 60 })
     const text = addTemporalItem(PROOF, { kind: 'text', text: 'x' }, 10, 30, 't2')!
     expect(text.item.start_frame).toBe(10)
-    const audioFull = addTemporalItem(PROOF, { kind: 'audio', library_file_id: AUDIO }, 0, 30, 'a2')!
-    expect(audioFull.item.start_frame).toBe(275)
+    // VIDEO_AUDIO_AUTHORING_V1: audio mixes, so a second audio is placed exactly where asked (overlap allowed).
+    const audioOverlap = addTemporalItem(PROOF, { kind: 'audio', library_file_id: AUDIO }, 0, 30, 'a2')!
+    expect(audioOverlap.item.start_frame).toBe(0)
   })
 
   it('move keeps duration and stops at a same-kind neighbour; resize is bounded by the next one', () => {

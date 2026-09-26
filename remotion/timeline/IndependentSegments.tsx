@@ -69,13 +69,31 @@ export const TextSegmentLayer: React.FC<{ segment: TextSegment; resolvedInput: R
   </Sequence>
 )
 
-/** Audio: plays from its absolute start for its placement duration, at the authored gain. */
+/**
+ * Linear fade envelope (0..1) at a placement-local frame — pure, engine-free
+ * math over the neutral fade fields (VIDEO_AUDIO_AUTHORING_V1).
+ */
+export function audioEnvelope(localFrame: number, durationFrames: number, fadeInFrames = 0, fadeOutFrames = 0): number {
+  const fadeIn = fadeInFrames > 0 ? Math.min(1, Math.max(0, localFrame / fadeInFrames)) : 1
+  const fadeOut = fadeOutFrames > 0 ? Math.min(1, Math.max(0, (durationFrames - localFrame) / fadeOutFrames)) : 1
+  return Math.min(fadeIn, fadeOut)
+}
+
+/**
+ * Audio: plays from its absolute start for its placement duration, starting
+ * `source_in_frame` frames into the source, at the authored gain shaped by the
+ * fade envelope. Several audio segments (overlapping or not) are simply
+ * mounted together — the engine mixes them. `startFrom` is the source-offset
+ * prop every Remotion 4.x understands (newer names alias it).
+ */
 export const AudioSegmentLayer: React.FC<{ segment: AudioSegment; resolvedInput: ResolvedTimelineInput }> = ({ segment, resolvedInput }) => {
   const asset = resolvedInput.resolvedAssets[segment.payload.asset_ref]
   if (!asset?.url) return null
+  const { gain = 1, source_in_frame: sourceIn = 0, fade_in_frames: fadeIn = 0, fade_out_frames: fadeOut = 0 } = segment.payload
+  const volume = fadeIn > 0 || fadeOut > 0 ? (localFrame: number) => gain * audioEnvelope(localFrame, segment.duration_frames, fadeIn, fadeOut) : gain
   return (
     <Sequence from={segment.start_frame} durationInFrames={segment.duration_frames} layout="none" name={segment.id}>
-      <Audio src={asset.url} volume={segment.payload.gain} />
+      <Audio src={asset.url} startFrom={sourceIn} volume={volume} />
     </Sequence>
   )
 }

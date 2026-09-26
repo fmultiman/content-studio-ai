@@ -72,8 +72,9 @@ import { isContentAction } from '@/lib/creative/authoring/reducer'
 import type { MotionEffect } from '@/lib/creative/video-editor/video-authoring'
 import { layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
 import {
-  DEFAULT_ITEM_FRAMES, EMPTY_TIMELINE, MAX_TEXT_LENGTH, addTemporalItem, itemEndFrame, moveTemporalItem, readVideoTimeline, removeTemporalItem,
-  resizeTemporalItem, updateTemporalItem, type TemporalItem, type TemporalItemKind, type VideoTimeline,
+  DEFAULT_AUDIO_FRAMES, DEFAULT_ITEM_FRAMES, EMPTY_TIMELINE, MAX_TEXT_LENGTH, addTemporalItem, effectiveDurationFrames, followsSequenceEnd, itemEndFrame,
+  moveTemporalItem, readVideoTimeline, removeTemporalItem, resizeTemporalItem, setAudioEndsWithSequence, setAudioTiming, updateTemporalItem,
+  type TemporalItem, type TemporalItemKind, type VideoTimeline,
 } from '@/lib/creative/video-editor/temporal-items'
 import { RENDERABLE_AUDIO_MIME, RENDERABLE_VIDEO_MIME } from '@/lib/creative/integration/library-file-adapter'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
@@ -344,10 +345,12 @@ export default function VideoCreativeEditorPage() {
     setSelectedItemId(result.item.id)
   }
   function addMediaItem(kind: 'visual' | 'audio', file: LibraryFile) {
-    // Audio defaults to the whole primary sequence (continuous bed); B-roll to 2 s at the playhead.
-    const at = kind === 'audio' ? 0 : cursor.get()
-    const frames = kind === 'audio' ? Math.max(DEFAULT_ITEM_FRAMES, totalFrames) : DEFAULT_ITEM_FRAMES
-    const result = addTemporalItem(timeline, kind === 'audio' ? { kind: 'audio', library_file_id: file.id } : { kind: 'visual', library_file_id: file.id }, at, frames, crypto.randomUUID())
+    // The FIRST audio is a bed: from 0, explicitly ending with the video (follows Scene retiming).
+    // Later audio (voice-over, etc.) starts at the playhead with a fixed 5 s. B-roll: 2 s at the playhead.
+    const isBed = kind === 'audio' && !timeline.items.some((item) => item.kind === 'audio')
+    const at = isBed ? 0 : cursor.get()
+    const frames = kind === 'audio' ? DEFAULT_AUDIO_FRAMES : DEFAULT_ITEM_FRAMES
+    const result = addTemporalItem(timeline, kind === 'audio' ? { kind: 'audio', library_file_id: file.id, endsWithSequence: isBed } : { kind: 'visual', library_file_id: file.id }, at, frames, crypto.randomUUID())
     if (!result) return
     setTimeline(result.timeline)
     setSelectedItemId(result.item.id)
@@ -852,10 +855,12 @@ export default function VideoCreativeEditorPage() {
       <div className="space-y-1 rounded-md border border-border/60 bg-muted/30 p-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-semibold">{itemLane} <span className="font-normal text-muted-foreground">· item independente</span></p>
-          <p className="text-[11px] tabular-nums text-muted-foreground">{formatTimecode(selectedItem.start_frame)} → {formatTimecode(itemEndFrame(selectedItem))}</p>
+          <p className="text-[11px] tabular-nums text-muted-foreground">{formatTimecode(selectedItem.start_frame)} → {formatTimecode(itemEndFrame(selectedItem, totalFrames))}</p>
         </div>
-        <p className="text-[11px] text-muted-foreground">Tempo próprio na timeline do vídeo: não acompanha as cenas ao reordenar nem ao mudar a duração delas.</p>
-        {itemEndFrame(selectedItem) > totalFrames ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Passa do fim do vídeo ({formatSeconds(totalFrames / TIMELINE_FPS)}); a parte excedente não entra na prévia nem no render.</p> : null}
+        <p className="text-[11px] text-muted-foreground">{followsSequenceEnd(selectedItem)
+          ? 'Início próprio na timeline do vídeo (não acompanha a reordenação de cenas); termina junto com o fim da sequência de cenas.'
+          : 'Tempo próprio na timeline do vídeo: não acompanha as cenas ao reordenar nem ao mudar a duração delas.'}</p>
+        {!followsSequenceEnd(selectedItem) && itemEndFrame(selectedItem, totalFrames) > totalFrames ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Passa do fim do vídeo ({formatSeconds(totalFrames / TIMELINE_FPS)}); a parte excedente não entra na prévia nem no render.</p> : null}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
@@ -864,12 +869,19 @@ export default function VideoCreativeEditorPage() {
             onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => moveTemporalItem(current, selectedItem.id, Math.round(value * TIMELINE_FPS))) }}
             onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="item-start-input" />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="item-duration" className="text-[11px]">Duração (s)</Label>
-          <Input key={`${selectedItem.id}:d:${selectedItem.duration_frames}`} id="item-duration" type="number" min={0.5} step={0.1} defaultValue={Number((selectedItem.duration_frames / TIMELINE_FPS).toFixed(2))} className="h-8"
-            onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => resizeTemporalItem(current, selectedItem.id, Math.round(value * TIMELINE_FPS))) }}
-            onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="item-duration-input" />
-        </div>
+        {followsSequenceEnd(selectedItem) ? (
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium">Duração</span>
+            <p className="flex h-8 items-center text-xs text-muted-foreground" data-testid="item-duration-follow">Até o fim do vídeo · {formatSeconds(effectiveDurationFrames(selectedItem, totalFrames) / TIMELINE_FPS)}</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <Label htmlFor="item-duration" className="text-[11px]">Duração (s)</Label>
+            <Input key={`${selectedItem.id}:d:${selectedItem.duration_frames}`} id="item-duration" type="number" min={0.5} step={0.1} defaultValue={Number(((selectedItem.duration_frames ?? 0) / TIMELINE_FPS).toFixed(2))} className="h-8"
+              onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => resizeTemporalItem(current, selectedItem.id, Math.round(value * TIMELINE_FPS))) }}
+              onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="item-duration-input" />
+          </div>
+        )}
       </div>
       {selectedItem.kind === 'text' ? (
         <div className="space-y-1">
@@ -893,13 +905,37 @@ export default function VideoCreativeEditorPage() {
               })}
               <p className="w-full text-[11px] text-muted-foreground">Cobre a cena principal durante o intervalo. Vídeo começa do início do arquivo e fica sem som (o som vem da faixa de Áudio).</p>
             </div>
-          ) : (
-            <div className="space-y-1">
-              <Label htmlFor="item-volume" className="text-[11px]">Volume · {Math.round(selectedItem.volume * 100)}%</Label>
-              <input id="item-volume" type="range" min={0} max={100} step={5} value={Math.round(selectedItem.volume * 100)} className="w-full"
-                onChange={(event) => setTimeline((current) => updateTemporalItem<'audio'>(current, selectedItem.id, { volume: Number(event.target.value) / 100 }))} data-testid="item-volume" />
+          ) : selectedItem.kind === 'audio' ? (
+            <div className="space-y-3" data-testid="audio-controls">
+              <div className="space-y-1">
+                <Label htmlFor="item-volume" className="text-[11px]">Volume · {Math.round(selectedItem.volume * 100)}%</Label>
+                <input id="item-volume" type="range" min={0} max={100} step={5} value={Math.round(selectedItem.volume * 100)} className="w-full"
+                  onChange={(event) => setTimeline((current) => updateTemporalItem<'audio'>(current, selectedItem.id, { volume: Number(event.target.value) / 100 }))} data-testid="item-volume" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium">Fim</span>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Fim do áudio">
+                  {([['fixed', 'Duração fixa'], ['sequence', 'Até o fim do vídeo']] as const).map(([mode, label]) => {
+                    const checked = (mode === 'sequence') === followsSequenceEnd(selectedItem)
+                    return <Button key={mode} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} className="h-7 px-2 text-xs" onClick={() => setTimeline((current) => setAudioEndsWithSequence(current, selectedItem.id, mode === 'sequence', totalFrames))} data-testid="audio-end-mode" data-value={mode}>{label}</Button>
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground">{followsSequenceEnd(selectedItem) ? 'Acompanha o fim da sequência de cenas: se as cenas mudarem de duração, o áudio termina junto. Não repete o arquivo.' : 'Termina após a duração definida, mesmo que as cenas mudem.'}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {([['source_in_frame', 'Início no arquivo (s)', 'item-source-in'], ['fade_in_frames', 'Fade in (s)', 'item-fade-in'], ['fade_out_frames', 'Fade out (s)', 'item-fade-out']] as const).map(([field, label, id]) => (
+                  <div key={field} className="space-y-1">
+                    <Label htmlFor={id} className="text-[11px] leading-tight">{label}</Label>
+                    <Input key={`${selectedItem.id}:${field}:${selectedItem[field] ?? 0}`} id={id} type="number" min={0} step={0.1} defaultValue={Number(((selectedItem[field] ?? 0) / TIMELINE_FPS).toFixed(2))} className="h-8"
+                      onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => setAudioTiming(current, selectedItem.id, { [field]: Math.round(value * TIMELINE_FPS) })) }}
+                      onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid={`${id}-input`} />
+                  </div>
+                ))}
+              </div>
+              <AudioSourceHint url={libraryFiles.get(selectedItem.library_file_id)?.public_url ?? null} neededSeconds={((selectedItem.source_in_frame ?? 0) + effectiveDurationFrames(selectedItem, totalFrames)) / TIMELINE_FPS} />
+              <p className="text-[11px] text-muted-foreground">Vários áudios podem se sobrepor: eles são mixados. As linhas Áudio 1, 2… da Timeline só organizam a visualização.</p>
             </div>
-          )}
+          ) : null}
         </div>
       )}
       <div className="flex flex-wrap justify-between gap-2 border-t border-border/40 pt-2">
@@ -1036,4 +1072,31 @@ function TransportReadout({ cursor, totalFrames, ranges }: { cursor: FrameCursor
     <span className="ml-2 whitespace-nowrap text-xs tabular-nums text-foreground" data-testid="player-timecode" data-frame={frame}>{formatTimecode(frame)} <span className="text-muted-foreground">/ {formatTimecode(totalFrames)}</span></span>
     <span className="ml-2 hidden whitespace-nowrap text-[11px] tabular-nums text-muted-foreground sm:inline">f {frame} · Cena {sceneIndexAtFrame(ranges, frame) + 1}</span>
   </>
+}
+
+/**
+ * AUDIO V1: a truthful, NON-authoritative hint about the source file length,
+ * read from the browser's media metadata (never persisted). Warns when the
+ * placement (source start + effective duration) asks for more than the file
+ * has: the engine plays silence after the source ends — it never loops or stretches.
+ */
+function AudioSourceHint({ url, neededSeconds }: { url: string | null; neededSeconds: number }) {
+  const [fileSeconds, setFileSeconds] = useState<{ url: string; seconds: number } | null>(null)
+  useEffect(() => {
+    if (!url) return
+    const audio = new Audio()
+    audio.preload = 'metadata'
+    const onLoaded = () => { if (Number.isFinite(audio.duration)) setFileSeconds({ url, seconds: audio.duration }) }
+    audio.addEventListener('loadedmetadata', onLoaded)
+    audio.src = url
+    return () => { audio.removeEventListener('loadedmetadata', onLoaded); audio.src = '' }
+  }, [url])
+  const seconds = fileSeconds && fileSeconds.url === url ? fileSeconds.seconds : null
+  if (seconds === null) return null
+  const short = neededSeconds > seconds + 0.05
+  return (
+    <p className={cn('text-[11px]', short ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')} role={short ? 'alert' : undefined} data-testid="audio-source-hint">
+      Arquivo: {formatSeconds(seconds)}.{short ? ` A colocação pede ${formatSeconds(neededSeconds)} a partir do início escolhido: depois do fim do arquivo fica silêncio (não repete).` : ''}
+    </p>
+  )
 }

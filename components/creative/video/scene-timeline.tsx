@@ -27,7 +27,9 @@ import {
   stepTimelineZoom, xToFrame,
   type SceneRange,
 } from '@/lib/creative/video-editor/scene-timeline'
-import { MIN_ITEM_FRAMES, TEMPORAL_LANES, itemEndFrame, type TemporalItem, type TemporalItemKind } from '@/lib/creative/video-editor/temporal-items'
+import {
+  MIN_ITEM_FRAMES, TEMPORAL_LANES, effectiveDurationFrames, followsSequenceEnd, itemEndFrame, packAudioRows, type TemporalItem, type TemporalItemKind,
+} from '@/lib/creative/video-editor/temporal-items'
 
 const CONTENT_PAD_LEFT = 12
 const CONTENT_PAD_RIGHT = 160
@@ -38,7 +40,6 @@ const PRIMARY_H = 44
 const LANE_H = 22
 const LANE_GAP = 4
 const LANES_TOP = PRIMARY_TOP + PRIMARY_H + 6
-const CONTENT_H = LANES_TOP + TEMPORAL_LANES.length * (LANE_H + LANE_GAP) + 4
 const GUTTER_W = 52
 
 const LANE_STYLE: Record<TemporalItemKind, string> = {
@@ -96,7 +97,14 @@ export function SceneTimeline({
   const committedRanges = useMemo(() => deriveSceneRanges(scenes), [scenes])
   const totalFrames = ranges.length ? ranges[ranges.length - 1].endFrame : 0
   // Items may reach past the primary sequence (they are clipped in the render); show them whole.
-  const itemsEnd = items.reduce((max, item) => Math.max(max, itemEndFrame(item)), 0)
+  const itemsEnd = items.reduce((max, item) => Math.max(max, itemEndFrame(item, totalFrames)), 0)
+  // AUDIO V1: audio rows are a derived projection (interval packing), never authored; visual/text keep one lane.
+  const audioRows = useMemo(() => packAudioRows(items, totalFrames), [items, totalFrames])
+  const lanes = useMemo(() => [
+    ...TEMPORAL_LANES.filter((lane) => lane.kind !== 'audio').map((lane) => ({ ...lane, key: lane.kind as string, row: 0 })),
+    ...Array.from({ length: audioRows.rowCount }, (_, row) => ({ kind: 'audio' as TemporalItemKind, label: `Áudio ${row + 1}`, key: `audio-${row}`, row })),
+  ], [audioRows.rowCount])
+  const contentHeight = LANES_TOP + lanes.length * (LANE_H + LANE_GAP) + 4
   const contentFrames = Math.max(totalFrames, itemsEnd)
   const contentWidth = CONTENT_PAD_LEFT + frameToX(contentFrames, pixelsPerFrame) + CONTENT_PAD_RIGHT
   const ticks = useMemo(() => rulerTicks(contentFrames, pixelsPerFrame), [contentFrames, pixelsPerFrame])
@@ -210,7 +218,7 @@ export function SceneTimeline({
   function itemEdges(exceptId: string): number[] {
     const edges = new Set<number>()
     for (const range of committedRanges) { edges.add(range.startFrame); edges.add(range.endFrame) }
-    for (const item of items) if (item.id !== exceptId) { edges.add(item.start_frame); edges.add(itemEndFrame(item)) }
+    for (const item of items) if (item.id !== exceptId) { edges.add(item.start_frame); edges.add(itemEndFrame(item, totalFrames)) }
     return [...edges]
   }
   function onItemDown(event: React.PointerEvent<HTMLDivElement>, id: string) {
@@ -225,7 +233,8 @@ export function SceneTimeline({
     if (gesture.kind === 'item-press' && Math.abs(dx) < DRAG_SLOP_PX) return
     const item = items.find((candidate) => candidate.id === gesture.id)
     if (!item) return
-    const result = snapItemStart(item.start_frame + xToFrame(dx, pixelsPerFrame), item.duration_frames, {
+    // An item that ends with the sequence snaps by its start only (its end is the sequence end).
+    const result = snapItemStart(item.start_frame + xToFrame(dx, pixelsPerFrame), followsSequenceEnd(item) ? 0 : effectiveDurationFrames(item, totalFrames), {
       pixelsPerFrame, playheadFrame: cursor.get(), edges: itemEdges(item.id), disabled: !snapEnabled || event.altKey,
     })
     setGesture({ kind: 'item-move', pointerId: gesture.pointerId, id: gesture.id, startX: gesture.startX, frame: result.frame, snappedTo: result.snappedTo })
@@ -242,8 +251,8 @@ export function SceneTimeline({
     event.stopPropagation()
     capturePointer(event)
     const item = items.find((candidate) => candidate.id === id)
-    if (!item) return
-    setGesture({ kind: 'item-resize', pointerId: event.pointerId, id, frames: item.duration_frames, snappedTo: null })
+    if (!item || followsSequenceEnd(item)) return
+    setGesture({ kind: 'item-resize', pointerId: event.pointerId, id, frames: effectiveDurationFrames(item, totalFrames), snappedTo: null })
     onSelectItem?.(id)
   }
   function onItemResizeMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -258,7 +267,7 @@ export function SceneTimeline({
     if (gesture?.kind !== 'item-resize' || gesture.pointerId !== event.pointerId) return
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     const item = items.find((candidate) => candidate.id === gesture.id)
-    if (item && gesture.frames !== item.duration_frames) onResizeItem?.(gesture.id, gesture.frames)
+    if (item && gesture.frames !== effectiveDurationFrames(item, totalFrames)) onResizeItem?.(gesture.id, gesture.frames)
     setGesture(null)
   }
 
@@ -292,12 +301,12 @@ export function SceneTimeline({
       </div>
       <div className="flex min-h-0 flex-1 overflow-y-auto border-t border-border/40">
         {/* Lane labels (layout only — never render stacking). */}
-        <div className="relative shrink-0 border-r border-border/40 bg-muted/20 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" style={{ width: GUTTER_W, height: CONTENT_H }} aria-hidden="true">
+        <div className="relative shrink-0 border-r border-border/40 bg-muted/20 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" style={{ width: GUTTER_W, height: contentHeight }} aria-hidden="true">
           <span className="absolute left-1.5" style={{ top: PRIMARY_TOP + PRIMARY_H / 2 - 6 }}>Cenas</span>
-          {TEMPORAL_LANES.map((lane, i) => <span key={lane.kind} className="absolute left-1.5" style={{ top: LANES_TOP + i * (LANE_H + LANE_GAP) + 5 }}>{lane.label}</span>)}
+          {lanes.map((lane, i) => <span key={lane.key} className="absolute left-1.5" style={{ top: LANES_TOP + i * (LANE_H + LANE_GAP) + 5 }}>{lane.label}</span>)}
         </div>
         <div ref={scrollerRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" data-testid="timeline-scroller">
-          <div className="relative select-none" style={{ width: contentWidth, height: CONTENT_H }}>
+          <div className="relative select-none" style={{ width: contentWidth, height: contentHeight }}>
             {/* Ruler: click / drag = scrub */}
             <div
               className={cn('absolute inset-x-0 top-0 border-b border-border/50 bg-muted/40', scrubbing ? 'cursor-grabbing' : 'cursor-pointer')}
@@ -374,10 +383,10 @@ export function SceneTimeline({
                 )
               })}
             </div>
-            {/* Independent lanes (Gate B): one per item kind. */}
-            {TEMPORAL_LANES.map((lane, laneIndex) => (
+            {/* Independent lanes (Gate B): one per visual/text kind; audio rows derived by interval packing (AUDIO V1). */}
+            {lanes.map((lane, laneIndex) => (
               <div
-                key={lane.kind}
+                key={lane.key}
                 className="absolute inset-x-0 border-y border-dashed border-border/30"
                 style={{ top: LANES_TOP + laneIndex * (LANE_H + LANE_GAP), height: LANE_H }}
                 onPointerDown={onScrubDown}
@@ -386,12 +395,14 @@ export function SceneTimeline({
                 onPointerCancel={onScrubEnd}
                 data-testid="timeline-lane"
                 data-kind={lane.kind}
+                data-row={lane.row}
               >
-                {items.filter((item) => item.kind === lane.kind).map((item) => {
+                {items.filter((item) => item.kind === lane.kind && (item.kind !== 'audio' || audioRows.rowOf[item.id] === lane.row)).map((item) => {
                   const moving = gesture?.kind === 'item-move' && gesture.id === item.id ? gesture.frame : null
                   const resizing = gesture?.kind === 'item-resize' && gesture.id === item.id ? gesture.frames : null
                   const start = moving ?? item.start_frame
-                  const duration = resizing ?? item.duration_frames
+                  const follows = followsSequenceEnd(item)
+                  const duration = resizing ?? effectiveDurationFrames(item, totalFrames)
                   const selected = item.id === selectedItemId
                   const pastEnd = start + duration > totalFrames
                   const label = itemLabel(item)
@@ -402,7 +413,7 @@ export function SceneTimeline({
                       tabIndex={0}
                       aria-pressed={selected}
                       aria-label={`${lane.label}: ${label}, início ${formatTimecode(start)}, ${formatSeconds(duration / TIMELINE_FPS)}`}
-                      title={pastEnd ? 'Passa do fim do vídeo: a parte excedente não entra no render.' : undefined}
+                      title={follows ? 'Termina com o vídeo: acompanha o fim da sequência de cenas.' : pastEnd ? 'Passa do fim do vídeo: a parte excedente não entra no render.' : undefined}
                       className={cn(
                         'absolute top-0 flex h-full cursor-grab items-center overflow-hidden rounded border px-1.5 text-[10px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         LANE_STYLE[lane.kind],
@@ -420,10 +431,12 @@ export function SceneTimeline({
                       data-item-id={item.id}
                       data-kind={item.kind}
                       data-start-frame={item.start_frame}
-                      data-duration-frames={item.duration_frames}
+                      data-duration-frames={duration}
+                      data-follows-sequence={follows ? 'true' : undefined}
                     >
                       <span className="truncate">{label}</span>
-                      <div
+                      {/* An item that ends with the video has no free right edge (its end IS the sequence end). */}
+                      {follows ? <span className="absolute inset-y-0 right-0.5 flex items-center text-[10px] text-emerald-700 dark:text-emerald-300" aria-hidden="true">⇥</span> : <div
                         className="absolute inset-y-0 right-0 w-2 cursor-ew-resize hover:bg-primary/40"
                         onPointerDown={(event) => onItemResizeDown(event, item.id)}
                         onPointerMove={onItemResizeMove}
@@ -431,7 +444,7 @@ export function SceneTimeline({
                         onPointerCancel={() => setGesture(null)}
                         aria-label={`Ajustar duração de ${label}`}
                         data-testid="timeline-item-resize"
-                      />
+                      />}
                     </div>
                   )
                 })}
