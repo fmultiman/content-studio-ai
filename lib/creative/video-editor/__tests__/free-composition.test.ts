@@ -13,7 +13,7 @@ import { reorderScenes } from '../scene-timeline'
 import { resolveSceneComposition, setSceneLayout, validateSceneCompositionShape } from '../scene-composition'
 import { sceneHasTemporalElements, sceneTimingRows, setSceneElementTiming } from '../element-timing'
 import type { VideoTimeline } from '../temporal-items'
-import { videoDraftCanvasSupport } from '../video-canvas'
+import { VIDEO_CANVAS_PRESETS, videoDraftCanvasSupport } from '../video-canvas'
 import {
   MIN_FREE_BOX, addFreeImageElement, addFreeTextElement, clampFreeBox, createFreeScene, deriveFreeSegment, freeElements,
   freeImageLibraryFileIds, isFreeComposition, isFreeScene, moveFreeElement, removeFreeElement, setFreeElementBox,
@@ -234,6 +234,9 @@ describe('Canvas: platform capability != Template compatibility', () => {
     expect(videoDraftCanvasSupport(freeOnly, { width: 1920, height: 1080 })).toMatchObject({ supported: true, templateBackedScenes: 0 })
     expect(videoDraftCanvasSupport(freeOnly, { width: 1280, height: 720 }).supported).toBe(true)
     expect(videoDraftCanvasSupport(freeOnly, { width: 1081, height: 720 }).supported).toBe(false)
+    // The Formato menu passes preset objects (id/label/ratio + dimensions): only the dimensions count.
+    for (const preset of VIDEO_CANVAS_PRESETS) expect(videoDraftCanvasSupport(freeOnly, preset).supported).toBe(true)
+    expect(VIDEO_CANVAS_PRESETS.map((preset) => videoDraftCanvasSupport(MIXED, preset).supported)).toEqual([true, true, false, false])
     const manifest = snapshot(freeOnly, { width: 1920, height: 1080 })
     expect(manifest.specification).toMatchObject({ width: 1920, height: 1080 })
     expect(resolveTimelineManifest(manifest, { identitySnapshot: IDENTITY }).valid).toBe(true)

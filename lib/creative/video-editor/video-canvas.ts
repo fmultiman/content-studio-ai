@@ -123,7 +123,7 @@ export function videoDraftCanvasSupport(scenes: readonly Pick<VideoScene, 'compo
   const template = videoTemplateCanvasSupport(canvas)
   return templateBackedScenes > 0
     ? { ...template, templateBackedScenes }
-    : { ...template, supported: validateVideoCanvas(canvas).ok, templateBackedScenes }
+    : { ...template, supported: validateVideoCanvas({ width: canvas.width, height: canvas.height }).ok, templateBackedScenes }
 }
 
 export function videoTemplateCanvasSupport(canvas: VideoCanvas): VideoTemplateCanvasSupport {
