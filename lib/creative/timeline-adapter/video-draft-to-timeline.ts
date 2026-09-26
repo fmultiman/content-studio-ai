@@ -17,9 +17,10 @@
  * the composition every Scene rendered with before).
  */
 import type { AssetRef, IdentitySnapshotRef, MotionSpec } from '@/lib/schemas/creative/primitives'
-import type { TemplateSegmentLayering, TemplateSegmentSchema, TimelineManifest, TimelineSpecification } from '@/lib/schemas/creative/timeline'
+import type { TemplateSegmentLayering, TemplateSegmentSchema, TimelineManifest, TimelineSegment, TimelineSpecification } from '@/lib/schemas/creative/timeline'
 import type { VideoDraft, VideoScene } from '@/lib/types'
 import { resolveSceneComposition } from '@/lib/creative/video-editor/scene-composition'
+import { deriveTemporalSegments, readVideoTimeline } from '@/lib/creative/video-editor/temporal-items'
 
 type TemplateSegment = typeof TemplateSegmentSchema['_output']
 
@@ -51,7 +52,8 @@ export type AdapterDiagnostic = {
 }
 
 export type AdaptVideoDraftInput = {
-  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'>
+  /** `timeline` = the authored independent temporal layer (Gate B); absent/null = none. */
+  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'> & { timeline?: unknown }
   /** Caller-supplied identity (real Project Identity snapshot or a fixture ref) -- never fetched here. */
   identity: IdentitySnapshotRef
   /** Explicit, deterministic canvas/fps. Defaults to the proven 1080x1920 @ 30fps used by every existing timeline fixture. */
@@ -212,7 +214,7 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
   const trackId = 'video-main'
 
   const diagnostics: AdapterDiagnostic[] = []
-  const segments: TemplateSegment[] = []
+  const segments: TimelineSegment[] = []
   let cursor = 0
   for (const scene of draft.scenes) {
     const heroAssetRef = input.sceneAssets?.[scene.id] ?? defaultHeroAssetRef
@@ -221,6 +223,14 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
     diagnostics.push(...sceneDiagnostics)
     cursor += segment.duration_frames
   }
+
+  // VIDEO_TIMELINE_GATE_B: the independent layer lays over the primary sequence
+  // at its own absolute frames; tracks/segments/assets are derived, never stored.
+  const independent = deriveTemporalSegments(readVideoTimeline(draft.timeline), cursor)
+  for (const issue of independent.diagnostics) {
+    diagnostics.push({ kind: 'content_defaulted', code: issue.code, message: issue.message, path: `timeline.items[id=${issue.itemId}]` })
+  }
+  segments.push(...independent.segments)
 
   const specification: TimelineSpecification = { width, height, fps, duration_frames: cursor }
 
@@ -234,10 +244,10 @@ export function adaptVideoDraftToTimelineManifest(input: AdaptVideoDraftInput): 
     },
     specification,
     identity,
-    tracks: [{ id: trackId, kind: 'video', order: 0 }],
+    tracks: [{ id: trackId, kind: 'video', order: 0 }, ...independent.tracks],
     segments,
-    assets: {},
-    render_intent: DEFAULT_RENDER_INTENT,
+    assets: independent.assets,
+    render_intent: independent.tracks.some((track) => track.kind === 'audio') ? { ...DEFAULT_RENDER_INTENT, audio: true } : DEFAULT_RENDER_INTENT,
   }
 
   return { manifest, diagnostics }

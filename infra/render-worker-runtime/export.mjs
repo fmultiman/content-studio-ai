@@ -59,6 +59,8 @@ const distRoot = path.join(here, 'dist', 'content-studio')
 const REQUIRED_WORKER_SOURCE = [
   'remotion/timeline/TimelineComposition.tsx',
   'remotion/timeline/TemplateSegment.tsx',
+  // VIDEO_TIMELINE_GATE_B: independent media/text/audio segments (imported by TimelineComposition).
+  'remotion/timeline/IndependentSegments.tsx',
   'remotion/timeline/frame-model.ts',
   'remotion/DocumentaryCardComposition.tsx',
   'remotion/TypographyReadyBoundary.tsx',

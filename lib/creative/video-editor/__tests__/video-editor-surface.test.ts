@@ -65,7 +65,8 @@ describe('One temporal cursor, one authoring authority', () => {
 
   it('persists only through the existing VideoDraft PATCH', () => {
     expect(editor).toMatch(/fetch\('\/api\/video-drafts', \{\s+method: 'PATCH'/)
-    expect(editor).toContain('buildVideoDraftSaveBody(draft, name, scenes)')
+    // Gate B: the same PATCH also carries the authored independent layer (one save path, one truth).
+    expect(editor).toContain('buildVideoDraftSaveBody(draft, name, scenes, timeline)')
   })
 
   it('Timeline/CENAS views never fetch or persist; viewport state stays local', () => {

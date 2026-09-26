@@ -6,11 +6,14 @@
  * retired /videos workspace used: `{ id, name, projectId, productionId, scenes }`. Since
  * VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1 this editor is its only product writer.
  * Nothing temporal or visual beyond VideoScene's own fields enters that body —
- * no start frames, no TimelineManifest, no zoom/scroll/selection/playhead.
+ * no start frames, no TimelineManifest, no zoom/scroll/selection/playhead —
+ * except the authored independent layer (`timeline`, VIDEO_TIMELINE_GATE_B),
+ * whose items carry their own absolute frames by definition.
  */
 import type { VideoDraft, VideoScene } from '@/lib/types'
 import { movementToMotion } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { renumberScenes } from './scene-timeline'
+import { persistedVideoTimeline, type VideoTimeline } from './temporal-items'
 
 /** Same defaults as the legacy /videos addScene. */
 export const NEW_SCENE_DURATION_SECONDS = 3
@@ -55,9 +58,14 @@ export function normalizeLoadedScenes(scenes: readonly VideoScene[] | null | und
   return renumberScenes(Array.isArray(scenes) ? scenes : [])
 }
 
-/** The exact authored snapshot used for dirty tracking and "Voltar ao salvo". */
-export function persistedVideoSnapshot(name: string, scenes: readonly VideoScene[]): string {
-  return JSON.stringify({ name, scenes })
+/**
+ * The exact authored snapshot used for dirty tracking and "Voltar ao salvo".
+ * Gate B: the independent temporal layer is part of it only when it has items,
+ * so a draft without one keeps the exact pre-Gate-B snapshot.
+ */
+export function persistedVideoSnapshot(name: string, scenes: readonly VideoScene[], timeline?: VideoTimeline | null): string {
+  const persisted = timeline ? persistedVideoTimeline(timeline) : null
+  return JSON.stringify(persisted ? { name, scenes, timeline: persisted } : { name, scenes })
 }
 
 export type VideoDraftSaveBody = {
@@ -66,6 +74,8 @@ export type VideoDraftSaveBody = {
   projectId: string | null
   productionId: string | null
   scenes: VideoScene[]
+  /** Gate B: authored independent temporal layer (null = none). Sent only by editors that own it. */
+  timeline?: VideoTimeline | null
 }
 
 /** PATCH /api/video-drafts body — identical contract to the legacy workspace save. */
@@ -73,8 +83,12 @@ export function buildVideoDraftSaveBody(
   draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id'>,
   name: string,
   scenes: readonly VideoScene[],
+  timeline?: VideoTimeline,
 ): VideoDraftSaveBody {
-  return { id: draft.id, name, projectId: draft.project_id, productionId: draft.production_id, scenes: [...scenes] }
+  return {
+    id: draft.id, name, projectId: draft.project_id, productionId: draft.production_id, scenes: [...scenes],
+    ...(timeline ? { timeline: persistedVideoTimeline(timeline) } : {}),
+  }
 }
 
 /**

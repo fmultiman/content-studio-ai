@@ -6,6 +6,11 @@ import {
   validateSceneLibraryFileBindings,
 } from '@/lib/video-scene-library-bindings'
 import { validateSceneCompositionShape } from '@/lib/creative/video-editor/scene-composition'
+import {
+  persistedVideoTimeline, readVideoTimeline, timelineLibraryFileRefs, validateVideoTimeline, type VideoTimeline,
+} from '@/lib/creative/video-editor/temporal-items'
+import { isRenderableLibraryFile } from '@/lib/creative/integration/library-file-adapter'
+import type { LibraryFileKind } from '@/lib/types'
 
 async function validateProductionOwnership(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -84,6 +89,46 @@ function sceneCompositionErrorResponse(scenes: unknown[]) {
     if (!check.ok) return NextResponse.json({ error: `Cena ${index + 1}: ${check.message}`, code: 'SCENE_COMPOSITION_INVALID' }, { status: 400 })
   }
   return null
+}
+
+/**
+ * VIDEO_TIMELINE_GATE_B — the independent temporal layer: structure, then
+ * every referenced LibraryFile must belong to the draft's Project (owner-scoped,
+ * not trashed) and be a kind the item can render (B-roll: image/video; audio:
+ * audio). Returns the value to persist (null = no items) or an error response.
+ */
+async function validateTimelineBody(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string | null | undefined,
+  raw: unknown,
+): Promise<{ ok: true; value: VideoTimeline | null } | { ok: false; response: NextResponse }> {
+  const shape = validateVideoTimeline(raw)
+  if (!shape.ok) return { ok: false, response: NextResponse.json({ error: shape.message, code: 'TIMELINE_INVALID' }, { status: 400 }) }
+  const timeline = readVideoTimeline(raw)
+  const refs = timelineLibraryFileRefs(timeline)
+  if (refs.length > 0) {
+    if (!projectId) return { ok: false, response: NextResponse.json({ error: 'A timeline usa arquivos da Biblioteca e precisa de um Projeto.', code: 'TIMELINE_PROJECT_REQUIRED' }, { status: 400 }) }
+    const { data, error } = await supabase
+      .from('library_files')
+      .select('id, project_id, kind, mime_type, deleted_at')
+      .eq('user_id', userId)
+      .in('id', [...new Set(refs.map((ref) => ref.id))])
+    if (error) return { ok: false, response: NextResponse.json({ error: 'Não foi possível validar os arquivos da timeline.', code: 'TIMELINE_FILES_UNVERIFIED' }, { status: 500 }) }
+    const files = new Map((data ?? []).map((file) => [file.id as string, file]))
+    for (const ref of refs) {
+      const file = files.get(ref.id)
+      if (!file || file.deleted_at || file.project_id !== projectId) {
+        return { ok: false, response: NextResponse.json({ error: 'Arquivo da timeline não encontrado neste Projeto.', code: 'TIMELINE_FILE_NOT_FOUND' }, { status: 400 }) }
+      }
+      const renderable = isRenderableLibraryFile(file as { kind: LibraryFileKind; mime_type: string | null })
+      const kindOk = ref.kind === 'audio' ? file.kind === 'audio' : file.kind === 'image' || file.kind === 'video'
+      if (!renderable || !kindOk) {
+        return { ok: false, response: NextResponse.json({ error: `Arquivo da timeline não suportado para ${ref.kind === 'audio' ? 'áudio' : 'B-roll'}.`, code: 'TIMELINE_FILE_KIND' }, { status: 400 }) }
+      }
+    }
+  }
+  return { ok: true, value: persistedVideoTimeline(timeline) }
 }
 
 function getDraftName(name: unknown, scenes: VideoScene[]) {
@@ -229,6 +274,12 @@ export async function POST(request: Request) {
       project_id: production.project_id,
       production_id: production.id,
       scenes,
+    }
+    // Gate B: the independent temporal layer (only written when the client sends it).
+    if (Object.hasOwn(body, 'timeline')) {
+      const timeline = await validateTimelineBody(supabase, user.id, production.project_id, body.timeline)
+      if (!timeline.ok) return timeline.response
+      insertPayload.timeline = timeline.value
     }
 
     const { data, error } = await supabase
@@ -421,6 +472,12 @@ export async function PATCH(request: Request) {
     }
     if (Object.hasOwn(body, 'productionId')) {
       updatePayload.production_id = body.productionId || null
+    }
+    // Gate B: absent = keep the stored layer (older clients never wipe it).
+    if (Object.hasOwn(body, 'timeline')) {
+      const timeline = await validateTimelineBody(supabase, user.id, authoritativeProjectId, body.timeline)
+      if (!timeline.ok) return timeline.response
+      updatePayload.timeline = timeline.value
     }
 
     const { data, error } = await supabase

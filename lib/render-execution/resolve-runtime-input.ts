@@ -35,6 +35,7 @@ import type { ResolvedTimelineInput } from '@/lib/creative/resolution/resolve-ti
 import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
 import {
   prepareTimelineLibraryFileAssets,
+  patchManifestAssets,
   patchResolvedTimelineAssets,
   type LibraryFileLookup,
 } from '@/lib/creative/timeline-adapter/prepare-scene-assets'
@@ -158,7 +159,7 @@ export async function resolveRuntimeInput(
   )
 
   // 5. Patch the resolved input with live URLs.
-  const resolvedInput = patchResolvedTimelineAssets(resolved.value, prepared.resolvedAssets)
+  const resolvedInput = patchManifestAssets(patchResolvedTimelineAssets(resolved.value, prepared.resolvedAssets), prepared.resolvedManifestAssets)
 
   // The identity tokens were already set correctly by resolveTimelineManifest
   // via the identitySnapshot override — no additional override needed.

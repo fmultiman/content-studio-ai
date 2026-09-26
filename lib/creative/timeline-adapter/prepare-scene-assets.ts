@@ -26,6 +26,8 @@ export type LibraryFileLookup = (ref: string) => LibraryFile | undefined
 export type PrepareTimelineAssetsResult = {
   /** Keyed "<segmentId>:<slot>" -> real ResolvedAsset, ready to patch into a ResolvedTimelineInput's resolvedTemplateSegments. */
   resolvedAssets: Record<string, ResolvedAsset>
+  /** Gate B: manifest-level `assets` map (independent media/audio segments), keyed like the manifest. */
+  resolvedManifestAssets: Record<string, ResolvedAsset>
   diagnostics: AdapterDiagnostic[]
 }
 
@@ -65,7 +67,8 @@ export async function prepareTimelineLibraryFileAssets(
         continue
       }
 
-      const resolved = await adaptLibraryFileToResolvedAsset(file, context)
+      // Template slots (Scene hero) draw images only; video/audio belong to independent segments.
+      const resolved = file.kind === 'image' ? await adaptLibraryFileToResolvedAsset(file, context) : null
       if (!resolved) {
         diagnostics.push({
           kind: 'asset_unresolved',
@@ -85,7 +88,32 @@ export async function prepareTimelineLibraryFileAssets(
     }
   }
 
-  return { resolvedAssets, diagnostics }
+  // Gate B: media referenced by independent segments (B-roll, audio) live in
+  // the manifest-level map, resolved the same way (never a fixture fallback).
+  const resolvedManifestAssets: Record<string, ResolvedAsset> = {}
+  for (const [key, assetRef] of Object.entries(manifest.assets)) {
+    if (assetRef.type !== 'library_file') continue
+    const file = lookupLibraryFile(assetRef.ref)
+    const resolved = file ? await adaptLibraryFileToResolvedAsset(file, context) : null
+    if (!resolved) {
+      diagnostics.push({
+        kind: 'asset_unresolved',
+        code: file ? 'library_file_unresolvable' : 'library_file_not_found',
+        message: `AssetRef "${assetRef.ref}" (manifest asset "${key}") could not be resolved into a runtime asset.`,
+        path: `assets.${key}`,
+      })
+      continue
+    }
+    resolvedManifestAssets[key] = { ...resolved, fit: assetRef.fit ?? resolved.fit }
+  }
+
+  return { resolvedAssets, resolvedManifestAssets, diagnostics }
+}
+
+/** Gate B: merges runtime-prepared manifest-level assets into a ResolvedTimelineInput (pure data merge). */
+export function patchManifestAssets(resolved: ResolvedTimelineInput, patch: Record<string, ResolvedAsset>): ResolvedTimelineInput {
+  if (Object.keys(patch).length === 0) return resolved
+  return { ...resolved, resolvedAssets: { ...resolved.resolvedAssets, ...patch } }
 }
 
 /**

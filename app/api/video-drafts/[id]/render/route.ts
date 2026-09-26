@@ -5,8 +5,10 @@ import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/proje
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import { buildRenderExecutionSnapshot, assertSnapshotHasNoSignedUrl } from '@/lib/render-execution/build-snapshot'
 import { resolveTimelineManifest } from '@/lib/creative/resolution/resolve-timeline'
+import { readVideoTimeline, timelineLibraryFileRefs } from '@/lib/creative/video-editor/temporal-items'
+import { isRenderableLibraryFile } from '@/lib/creative/integration/library-file-adapter'
 import { collectLibraryFileIds, validateSceneLibraryFileBindings } from '@/lib/video-scene-library-bindings'
-import type { VideoScene } from '@/lib/types'
+import type { LibraryFileKind, VideoScene } from '@/lib/types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128
@@ -114,7 +116,7 @@ export async function POST(request: Request, context: RouteContext) {
     // authority accepted anywhere in this route is this route param.
     const { data: draft, error: draftError } = await supabase
       .from('video_drafts')
-      .select('id, user_id, project_id, production_id, scenes')
+      .select('id, user_id, project_id, production_id, scenes, timeline')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -180,12 +182,35 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: bindingValidation.error.message, code: bindingValidation.error.code }, { status: 400 })
     }
 
+    // 3b. VIDEO_TIMELINE_GATE_B: the independent layer's media must be renderable
+    // files of this Project (claim would otherwise only warn and drop the layer).
+    const timeline = readVideoTimeline(draft.timeline)
+    const timelineRefs = timelineLibraryFileRefs(timeline)
+    if (timelineRefs.length > 0) {
+      const { data: timelineFiles, error: timelineFilesError } = await supabase
+        .from('library_files')
+        .select('id, project_id, kind, mime_type, deleted_at')
+        .eq('user_id', user.id)
+        .in('id', [...new Set(timelineRefs.map((ref) => ref.id))])
+      if (timelineFilesError) {
+        return NextResponse.json({ error: 'Nao foi possivel validar os arquivos da timeline.', code: 'LIBRARY_FILE_VALIDATION_FAILED' }, { status: 500 })
+      }
+      const byId = new Map((timelineFiles ?? []).map((file) => [file.id as string, file]))
+      const broken = timelineRefs.find((ref) => {
+        const file = byId.get(ref.id)
+        return !file || file.deleted_at || file.project_id !== draft.project_id || !isRenderableLibraryFile(file as { kind: LibraryFileKind; mime_type: string | null })
+      })
+      if (broken) {
+        return NextResponse.json({ error: 'Um arquivo da timeline nao esta disponivel neste Projeto.', code: 'TIMELINE_FILE_UNAVAILABLE' }, { status: 409 })
+      }
+    }
+
     // 4. Build the authoritative, signed-URL-free snapshot (Task 5/7/8).
     const identitySnapshot = adaptProjectIdentityToVisualTokens(project.id, projectIdentity)
     let snapshotResult: ReturnType<typeof buildRenderExecutionSnapshot>
     try {
       snapshotResult = buildRenderExecutionSnapshot({
-        draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes },
+        draft: { id: draft.id, project_id: draft.project_id, production_id: draft.production_id, scenes, timeline },
         identitySnapshot,
       })
       assertSnapshotHasNoSignedUrl(snapshotResult.snapshot)

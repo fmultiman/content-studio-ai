@@ -56,7 +56,8 @@ export type RenderExecutionInputSnapshot = {
 }
 
 export type BuildRenderExecutionSnapshotInput = {
-  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'>
+  /** `timeline` (Gate B): the authored independent temporal layer, frozen with the Scenes. */
+  draft: Pick<VideoDraft, 'id' | 'project_id' | 'production_id' | 'scenes'> & { timeline?: unknown }
   /** Caller-supplied (real Project identity, adapted server-side) -- never fetched here. */
   identitySnapshot: VisualTokensSnapshot
 }

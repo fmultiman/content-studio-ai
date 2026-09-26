@@ -210,6 +210,24 @@ export function snapEdgeFrame(
 }
 
 /**
+ * VIDEO_TIMELINE_GATE_B — moving an independent item keeps its duration and
+ * snaps its START, or failing that its END, to the same candidates a Scene
+ * edge uses (whole seconds, playhead, Scene boundaries, other item edges).
+ */
+export function snapItemStart(
+  startFrame: number,
+  durationFrames: number,
+  snap: Omit<Parameters<typeof snapEdgeFrame>[1], 'fps'> & { fps?: number },
+): { frame: number; snappedTo: SnapResult['snappedTo'] } {
+  const fps = snap.fps ?? TIMELINE_FPS
+  const atStart = snapEdgeFrame(Math.max(0, startFrame), { ...snap, fps })
+  if (atStart.snappedTo) return { frame: Math.max(0, atStart.frame), snappedTo: atStart.snappedTo }
+  const atEnd = snapEdgeFrame(startFrame + durationFrames, { ...snap, fps })
+  if (atEnd.snappedTo) return { frame: Math.max(0, atEnd.frame - durationFrames), snappedTo: atEnd.snappedTo }
+  return { frame: Math.max(0, Math.round(startFrame)), snappedTo: null }
+}
+
+/**
  * Right-edge trim of a primary Scene = its new duration. `pointerFrame` is the
  * timeline frame under the pointer; the Scene's start stays where the
  * contiguous sequence puts it and downstream Scenes shift by re-derivation.

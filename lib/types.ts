@@ -289,6 +289,12 @@ export interface VideoDraft {
   production_id: string | null
   name: string
   scenes: VideoScene[]
+  /**
+   * VIDEO_TIMELINE_GATE_B — authored independent temporal layer (B-roll, lower
+   * thirds, audio) with absolute timing, next to the primary Scene sequence.
+   * NULL/absent = none. See lib/creative/video-editor/temporal-items.ts.
+   */
+  timeline?: import('@/lib/creative/video-editor/temporal-items').VideoTimeline | null
   created_at: string
   updated_at: string
 }

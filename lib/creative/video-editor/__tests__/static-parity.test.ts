@@ -58,7 +58,8 @@ describe('bottom authoring dock (UI state only)', () => {
   it('the dock lives INSIDE the workbench preview panel (Inspector keeps the full workbench height)', () => {
     expect(videoPage).toMatch(/const canvas = \([\s\S]*<AuthoringDock[\s\S]*<\/AuthoringDock>[\s\S]*\n  \)\n/)
     expect(videoPage).not.toContain('{lower}')
-    expect(videoPage).toContain('<StackedWorkbench canvas={canvas} inspector={inspector} />')
+    // Gate B: the Inspector is chosen by selection context (independent item vs Scene).
+    expect(videoPage).toContain('<StackedWorkbench canvas={canvas} inspector={itemInspector ?? inspector} />')
   })
 })
 

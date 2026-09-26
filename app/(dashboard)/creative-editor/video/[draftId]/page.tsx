@@ -71,6 +71,11 @@ import { LayoutContentForm } from '@/components/creative/authoring/layout-conten
 import { isContentAction } from '@/lib/creative/authoring/reducer'
 import type { MotionEffect } from '@/lib/creative/video-editor/video-authoring'
 import { layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
+import {
+  DEFAULT_ITEM_FRAMES, EMPTY_TIMELINE, MAX_TEXT_LENGTH, addTemporalItem, itemEndFrame, moveTemporalItem, readVideoTimeline, removeTemporalItem,
+  resizeTemporalItem, updateTemporalItem, type TemporalItem, type TemporalItemKind, type VideoTimeline,
+} from '@/lib/creative/video-editor/temporal-items'
+import { RENDERABLE_AUDIO_MIME, RENDERABLE_VIDEO_MIME } from '@/lib/creative/integration/library-file-adapter'
 import { INITIAL_DOCK_STATE, sequenceSummary, type DockState } from '@/lib/creative/video-editor/bottom-dock'
 import type { VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import type { LibraryFile, Project, RenderExecutionSummary, VideoDraft, VideoScene } from '@/lib/types'
@@ -139,6 +144,8 @@ export default function VideoCreativeEditorPage() {
   // AUTHORING state: exactly what VideoDraft persists.
   const [name, setName] = useState('')
   const [scenes, setScenes] = useState<VideoScene[]>([])
+  // Gate B: the independent temporal layer (own absolute frames), saved with the Scenes by the same PATCH.
+  const [timeline, setTimeline] = useState<VideoTimeline>(EMPTY_TIMELINE)
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -147,6 +154,9 @@ export default function VideoCreativeEditorPage() {
   // EDITOR / VIEW state: never persisted.
   const [libraryFiles, setLibraryFiles] = useState<ReadonlyMap<string, PreviewLibraryFile>>(new Map())
   const [selectedIndex, setSelectedIndex] = useState(0)
+  // Selection context: a primary Scene (selectedIndex) OR an independent item — never both (UI only).
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [timelinePicker, setTimelinePicker] = useState<null | { mode: 'add' | 'replace'; kind: 'visual' | 'audio' }>(null)
   // The single temporal cursor (currentFrame): editor state outside React render — see frame-cursor.ts.
   const [cursor] = useState(() => createFrameCursor())
   const [playing, setPlaying] = useState(false)
@@ -176,7 +186,7 @@ export default function VideoCreativeEditorPage() {
   const [outputOpen, setOutputOpen] = useState(false)
 
   const draft = context?.draft ?? null
-  const dirty = lastSavedSnapshot !== null && persistedVideoSnapshot(name, scenes) !== lastSavedSnapshot
+  const dirty = lastSavedSnapshot !== null && persistedVideoSnapshot(name, scenes, timeline) !== lastSavedSnapshot
 
   // --- Load: VideoDraft (authority), Project identity, Project images, latest execution ---
   useEffect(() => {
@@ -213,9 +223,11 @@ export default function VideoCreativeEditorPage() {
       const normalized = normalizeLoadedScenes(loaded.scenes)
       skipNextAutosaveRef.current = true
       setContext({ draft: loaded, project, productionTitle, identitySnapshot, identityError })
+      const loadedTimeline = readVideoTimeline(loaded.timeline)
       setName(loaded.name)
       setScenes(normalized)
-      setLastSavedSnapshot(persistedVideoSnapshot(loaded.name, normalized))
+      setTimeline(loadedTimeline)
+      setLastSavedSnapshot(persistedVideoSnapshot(loaded.name, normalized, loadedTimeline))
 
       const execResponse = await fetch(`/api/render-executions?videoDraftId=${loaded.id}`).catch(() => null)
       if (execResponse?.ok && !cancelled) {
@@ -233,10 +245,12 @@ export default function VideoCreativeEditorPage() {
     let cancelled = false
     void (async () => {
       try {
-        const response = await fetch(`/api/library-files?projectId=${encodeURIComponent(projectId)}&kind=image`)
+        // Images for Scene heroes + (Gate B) video/audio for the independent layer; signed display URLs.
+        const response = await fetch(`/api/library-files?projectId=${encodeURIComponent(projectId)}`)
         if (!response.ok) return
         const payload = await response.json() as { files?: LibraryFile[] }
-        if (!cancelled) setLibraryFiles(new Map((payload.files ?? []).map((file) => [file.id, file])))
+        const media = (payload.files ?? []).filter((file) => file.kind === 'image' || file.kind === 'video' || file.kind === 'audio')
+        if (!cancelled) setLibraryFiles(new Map(media.map((file) => [file.id, file])))
       } catch {
         // best-effort: the Player shows the Template's default image until assets load
       }
@@ -268,8 +282,8 @@ export default function VideoCreativeEditorPage() {
   const draftProductionId = draft?.production_id ?? null
   const livePreview = useMemo(() => {
     if (!draftId || !identitySnapshot) return null
-    return buildLivePreviewInput({ draft: { id: draftId, project_id: projectId, production_id: draftProductionId }, scenes, identitySnapshot, libraryFiles })
-  }, [draftId, projectId, draftProductionId, identitySnapshot, scenes, libraryFiles])
+    return buildLivePreviewInput({ draft: { id: draftId, project_id: projectId, production_id: draftProductionId }, scenes, timeline, identitySnapshot, libraryFiles })
+  }, [draftId, projectId, draftProductionId, identitySnapshot, scenes, timeline, libraryFiles])
 
   // The selected Scene's composition (VIDEO_SCENE_COMPOSITION_PARITY_V1): the Inspector hydrates from it on every
   // selection change — derived from the Scene itself, so no per-Scene UI state can bleed between Scenes.
@@ -313,11 +327,38 @@ export default function VideoCreativeEditorPage() {
   function selectScene(index: number, seekToStart = true) {
     if (index < 0 || index >= scenes.length) return
     setSelectedIndex(index)
+    setSelectedItemId(null)
     if (seekToStart && ranges[index]) seek(ranges[index].startFrame)
   }
   function selectSceneById(sceneId: string) {
     const index = scenes.findIndex((scene) => scene.id === sceneId)
-    if (index >= 0) setSelectedIndex(index)
+    if (index >= 0) { setSelectedIndex(index); setSelectedItemId(null) }
+  }
+
+  // --- Independent temporal items (Gate B): absolute frames, never follow Scenes ---
+  const selectedItem = selectedItemId ? timeline.items.find((item) => item.id === selectedItemId) ?? null : null
+  function addTextItem() {
+    const result = addTemporalItem(timeline, { kind: 'text', text: 'Nome · função' }, cursor.get(), 3 * TIMELINE_FPS, crypto.randomUUID())
+    if (!result) return
+    setTimeline(result.timeline)
+    setSelectedItemId(result.item.id)
+  }
+  function addMediaItem(kind: 'visual' | 'audio', file: LibraryFile) {
+    // Audio defaults to the whole primary sequence (continuous bed); B-roll to 2 s at the playhead.
+    const at = kind === 'audio' ? 0 : cursor.get()
+    const frames = kind === 'audio' ? Math.max(DEFAULT_ITEM_FRAMES, totalFrames) : DEFAULT_ITEM_FRAMES
+    const result = addTemporalItem(timeline, kind === 'audio' ? { kind: 'audio', library_file_id: file.id } : { kind: 'visual', library_file_id: file.id }, at, frames, crypto.randomUUID())
+    if (!result) return
+    setTimeline(result.timeline)
+    setSelectedItemId(result.item.id)
+  }
+  function onAddItem(kind: TemporalItemKind) {
+    if (kind === 'text') addTextItem()
+    else setTimelinePicker({ mode: 'add', kind })
+  }
+  function temporalItemLabel(item: TemporalItem): string {
+    if (item.kind === 'text') return item.text.split('\n')[0]
+    return libraryFiles.get(item.library_file_id)?.name ?? 'Arquivo da Biblioteca'
   }
   function patchSelectedScene(patch: Partial<Omit<VideoScene, 'id' | 'order'>>) {
     if (!selectedScene) return
@@ -360,12 +401,12 @@ export default function VideoCreativeEditorPage() {
     if (!draft) return false
     setSaveStatus('saving')
     setSaveError(null)
-    const snapshot = persistedVideoSnapshot(name, scenes)
+    const snapshot = persistedVideoSnapshot(name, scenes, timeline)
     try {
       const response = await fetch('/api/video-drafts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildVideoDraftSaveBody(draft, name, scenes)),
+        body: JSON.stringify(buildVideoDraftSaveBody(draft, name, scenes, timeline)),
       })
       const payload = await response.json().catch(() => null) as { draft?: VideoDraft; error?: string } | null
       if (!response.ok || !payload?.draft) throw new Error(payload?.error || 'Não foi possível salvar.')
@@ -378,7 +419,7 @@ export default function VideoCreativeEditorPage() {
       setSaveError(cause instanceof Error ? cause.message : 'Não foi possível salvar.')
       return false
     }
-  }, [draft, name, scenes])
+  }, [draft, name, scenes, timeline])
 
   useEffect(() => {
     if (!draft) return
@@ -386,13 +427,15 @@ export default function VideoCreativeEditorPage() {
     if (!autosaveEnabled || !dirty) return
     const timeout = window.setTimeout(() => { void saveNow() }, 800)
     return () => window.clearTimeout(timeout)
-  }, [draft, name, scenes, autosaveEnabled, dirty, saveNow])
+  }, [draft, name, scenes, timeline, autosaveEnabled, dirty, saveNow])
 
   function revert() {
     if (!lastSavedSnapshot) return
-    const saved = JSON.parse(lastSavedSnapshot) as { name: string; scenes: VideoScene[] }
+    const saved = JSON.parse(lastSavedSnapshot) as { name: string; scenes: VideoScene[]; timeline?: VideoTimeline }
     setName(saved.name)
     setScenes(saved.scenes)
+    setTimeline(readVideoTimeline(saved.timeline))
+    setSelectedItemId((id) => (id && saved.timeline?.items.some((item) => item.id === id) ? id : null))
     setSelectedIndex((index) => Math.min(index, Math.max(0, saved.scenes.length - 1)))
   }
 
@@ -566,6 +609,13 @@ export default function VideoCreativeEditorPage() {
       onSelectScene={selectSceneById}
       onReorder={moveScene}
       onDurationChange={changeDuration}
+      items={timeline.items}
+      selectedItemId={selectedItemId}
+      itemLabel={temporalItemLabel}
+      onSelectItem={setSelectedItemId}
+      onMoveItem={(id, frame) => setTimeline((current) => moveTemporalItem(current, id, frame))}
+      onResizeItem={(id, frames) => setTimeline((current) => resizeTemporalItem(current, id, frames))}
+      onAddItem={onAddItem}
     />
   )
 
@@ -795,7 +845,71 @@ export default function VideoCreativeEditorPage() {
     </div>
   )
 
-  const saveStatusLabel = saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Falha ao salvar' : dirty ? 'Alterações não salvas' : 'Salvo'
+  // Gate B: selecting an independent item switches the Inspector CONTEXT (no Scene tabs mixed in).
+  const itemLane = selectedItem ? { visual: 'B-roll', text: 'Texto', audio: 'Áudio' }[selectedItem.kind] : ''
+  const itemInspector = selectedItem ? (
+    <section className="space-y-3" aria-label={`Item independente: ${itemLane}`} data-testid="item-inspector" data-kind={selectedItem.kind}>
+      <div className="space-y-1 rounded-md border border-border/60 bg-muted/30 p-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold">{itemLane} <span className="font-normal text-muted-foreground">· item independente</span></p>
+          <p className="text-[11px] tabular-nums text-muted-foreground">{formatTimecode(selectedItem.start_frame)} → {formatTimecode(itemEndFrame(selectedItem))}</p>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Tempo próprio na timeline do vídeo: não acompanha as cenas ao reordenar nem ao mudar a duração delas.</p>
+        {itemEndFrame(selectedItem) > totalFrames ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Passa do fim do vídeo ({formatSeconds(totalFrames / TIMELINE_FPS)}); a parte excedente não entra na prévia nem no render.</p> : null}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label htmlFor="item-start" className="text-[11px]">Início (s)</Label>
+          <Input key={`${selectedItem.id}:s:${selectedItem.start_frame}`} id="item-start" type="number" min={0} step={0.1} defaultValue={Number((selectedItem.start_frame / TIMELINE_FPS).toFixed(2))} className="h-8"
+            onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => moveTemporalItem(current, selectedItem.id, Math.round(value * TIMELINE_FPS))) }}
+            onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="item-start-input" />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="item-duration" className="text-[11px]">Duração (s)</Label>
+          <Input key={`${selectedItem.id}:d:${selectedItem.duration_frames}`} id="item-duration" type="number" min={0.5} step={0.1} defaultValue={Number((selectedItem.duration_frames / TIMELINE_FPS).toFixed(2))} className="h-8"
+            onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setTimeline((current) => resizeTemporalItem(current, selectedItem.id, Math.round(value * TIMELINE_FPS))) }}
+            onKeyDown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} data-testid="item-duration-input" />
+        </div>
+      </div>
+      {selectedItem.kind === 'text' ? (
+        <div className="space-y-1">
+          <Label htmlFor="item-text" className="text-[11px]">Texto (Enter = linha de apoio)</Label>
+          <Textarea id="item-text" value={selectedItem.text} maxLength={MAX_TEXT_LENGTH} rows={3}
+            onChange={(event) => setTimeline((current) => updateTemporalItem<'text'>(current, selectedItem.id, { text: event.target.value }))} data-testid="item-text" />
+          <p className="text-[11px] text-muted-foreground">Apresentação única de lower third (faixa inferior sobre todas as camadas).</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-2">
+            <span className="min-w-0 truncate text-xs" title={temporalItemLabel(selectedItem)} data-testid="item-file">{temporalItemLabel(selectedItem)}</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setTimelinePicker({ mode: 'replace', kind: selectedItem.kind === 'audio' ? 'audio' : 'visual' })}>Trocar</Button>
+          </div>
+          {selectedItem.kind === 'visual' ? (
+            <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Enquadramento do B-roll">
+              <span className="text-[11px] text-muted-foreground">Enquadramento</span>
+              {(['cover', 'contain'] as const).map((fit) => {
+                const checked = (selectedItem.fit ?? 'cover') === fit
+                return <Button key={fit} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} className="h-7 px-2 text-xs" onClick={() => setTimeline((current) => updateTemporalItem<'visual'>(current, selectedItem.id, { fit }))}>{fit === 'cover' ? 'Preencher' : 'Conter'}</Button>
+              })}
+              <p className="w-full text-[11px] text-muted-foreground">Cobre a cena principal durante o intervalo. Vídeo começa do início do arquivo e fica sem som (o som vem da faixa de Áudio).</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label htmlFor="item-volume" className="text-[11px]">Volume · {Math.round(selectedItem.volume * 100)}%</Label>
+              <input id="item-volume" type="range" min={0} max={100} step={5} value={Math.round(selectedItem.volume * 100)} className="w-full"
+                onChange={(event) => setTimeline((current) => updateTemporalItem<'audio'>(current, selectedItem.id, { volume: Number(event.target.value) / 100 }))} data-testid="item-volume" />
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex flex-wrap justify-between gap-2 border-t border-border/40 pt-2">
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedItemId(null)}>Voltar à cena {safeSelectedIndex + 1}</Button>
+        <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={() => { setTimeline((current) => removeTemporalItem(current, selectedItem.id)); setSelectedItemId(null) }} data-testid="item-remove"><Trash2 className="h-3.5 w-3.5" />Remover do vídeo</Button>
+      </div>
+    </section>
+  ) : null
+
+  const saveStatusLabel =saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Falha ao salvar' : dirty ? 'Alterações não salvas' : 'Salvo'
   const contextItems = [
     { label: 'Project', value: context.project?.name ?? 'Sem Project' },
     { label: 'Production', value: context.productionTitle ?? 'Sem Production' },
@@ -853,6 +967,23 @@ export default function VideoCreativeEditorPage() {
         patchSelectedScene({ library_file_id: file.id })
       }}
     />
+    {/* Gate B: media for the independent layer (B-roll = image/video, Áudio = audio), referenced by LibraryFile id. */}
+    <ProjectLibraryAssetPicker
+      open={timelinePicker !== null}
+      onOpenChange={(open) => { if (!open) setTimelinePicker(null) }}
+      projectId={draft.project_id}
+      selectedId={timelinePicker?.mode === 'replace' && selectedItem && selectedItem.kind !== 'text' ? selectedItem.library_file_id : null}
+      allowedKinds={timelinePicker?.kind === 'audio' ? ['audio'] : ['image', 'video']}
+      allowedMimeTypes={timelinePicker?.kind === 'audio' ? RENDERABLE_AUDIO_MIME : ['image/png', 'image/jpeg', 'image/webp', 'image/gif', ...RENDERABLE_VIDEO_MIME]}
+      title={timelinePicker?.kind === 'audio' ? 'Áudio do vídeo' : 'B-roll'}
+      description={timelinePicker?.kind === 'audio' ? 'Escolha um arquivo de áudio do Projeto. Ele toca pela timeline, independente das cenas.' : 'Escolha uma imagem ou um vídeo do Projeto para cobrir a cena durante um intervalo próprio.'}
+      onSelect={(file) => {
+        setLibraryFiles((current) => new Map(current).set(file.id, file))
+        if (timelinePicker?.mode === 'replace' && selectedItem && selectedItem.kind !== 'text') setTimeline((current) => updateTemporalItem<'visual'>(current, selectedItem.id, { library_file_id: file.id }))
+        else if (timelinePicker) addMediaItem(timelinePicker.kind, file)
+        setTimelinePicker(null)
+      }}
+    />
     {/* OUTPUT PLAYER — the completed MP4 from render_executions. Distinct from the Live Authoring Player. */}
     <Dialog open={outputOpen} onOpenChange={setOutputOpen}>
       <DialogContent className="max-w-[min(92vw,520px)]">
@@ -880,7 +1011,7 @@ export default function VideoCreativeEditorPage() {
       <DashboardPage>
         <div className="min-w-0 space-y-3 px-4 py-3">
           {header}
-          <StackedWorkbench canvas={canvas} inspector={inspector} />
+          <StackedWorkbench canvas={canvas} inspector={itemInspector ?? inspector} />
           {dialogs}
         </div>
       </DashboardPage>
@@ -891,7 +1022,7 @@ export default function VideoCreativeEditorPage() {
     <DashboardPage>
       <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
-        <CreativeWorkbench className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
+        <CreativeWorkbench className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={itemInspector ?? inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
         {dialogs}
       </div>
     </DashboardPage>
