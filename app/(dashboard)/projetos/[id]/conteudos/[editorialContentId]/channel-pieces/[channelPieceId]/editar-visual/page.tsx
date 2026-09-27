@@ -12,14 +12,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { LAYOUT_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
-import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy, TemplateFamilyAnatomy } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard, StyleSourcePanel, TemplateReference } from '@/components/creative/authoring/inspector-panels'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
@@ -409,6 +408,9 @@ export default function StaticAuthoringProductPage() {
   function switchSlide(index: number) {
     // Render jobs are per-slide: switching never clears or rebinds them.
     setCurrentSlideIndex(index)
+    // Free element ids are slide-local: a selection never survives into another slide.
+    // (Template Camadas keep their disclosure: element ids are shared by slides of the same layout.)
+    if (mode === 'free') setOpenElementId(null)
   }
 
   const dispatch = (action: AuthoringAction) => setSlides((current) => current
@@ -788,6 +790,7 @@ export default function StaticAuthoringProductPage() {
           onAddText={() => { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeTextElement(slide, id)); setOpenElementId(id) }}
           onAddImage={() => setFreeImagePicker({ mode: 'add' })}
           onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
+          onRemoved={(elementId) => setOpenElementId((current) => (current === elementId ? null : current))}
           wording={freeWording}
         />
       </TabsContent>
@@ -806,19 +809,18 @@ export default function StaticAuthoringProductPage() {
       </TabsList>
       <TabsContent value="template" className="space-y-3 pt-3">
         <CompositionModePanel mode="template" templates={templateChoices} currentTemplateId={template.id} scope={compositionScope} freeHasContent={false} onChooseTemplate={enterTemplate} onChooseFree={enterFree}>
-        <div className="space-y-1.5">
-          <Label htmlFor="template-selector" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</Label>
-          <Select value={template.id} onValueChange={(value) => setTemplateId(value)}>
-            <SelectTrigger id="template-selector" className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>{listTemplateDefinitions().map((definition) => <SelectItem key={definition.id} value={definition.id}>{definition.name}</SelectItem>)}</SelectContent>
-          </Select>
-          {templateFallback ? <p className="text-xs text-destructive" role="alert">Template salvo não reconhecido; usando {template.name}.</p> : null}
+        {/* CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: the Template is named by the mode panel above and changed ONLY through it (confirmed replacement). */}
+        {templateFallback ? <p className="text-xs text-destructive" role="alert">Template salvo não reconhecido; usando {template.name}.</p> : null}
+        <div className="space-y-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-layout-label">Estrutura</span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-layout-label">{template.layouts.map((option) => { const checked = state.variant === option.id; return <Button key={option.id} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }} data-testid="static-layout-option" data-value={option.id}>{option.label}</Button> })}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>{template.layouts.map((option) => <Button key={option.id} size="sm" variant={state.variant === option.id ? 'default' : 'outline'} onClick={() => { if (state.variant !== option.id) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }}>{option.label}</Button>)}</div>
-        <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>{(layout?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={state.appearance === appearance ? 'default' : 'outline'} onClick={() => { if (isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}</div>
+        <div className="space-y-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-appearance-label">Aparência</span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-appearance-label">{(layout?.supportedAppearances ?? []).map((appearance) => { const checked = state.appearance === appearance; return <Button key={appearance} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked && isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }} data-testid="static-appearance-option" data-value={appearance}>{appearance === 'light' ? 'Light' : 'Dark'}</Button> })}</div>
+        </div>
         <p className="text-xs text-muted-foreground">{template.description}</p>
-        <TemplateFamilyAnatomy template={template} />
-        {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
+        <TemplateReference template={template} layout={layout} />
         </CompositionModePanel>
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
@@ -896,7 +898,7 @@ export default function StaticAuthoringProductPage() {
           </div>
         </div>
         {currentFreeSlide && freeUnitElements.length === 0 ? (
-          <p className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded bg-black/60 px-2 py-1 text-[11px] text-white" data-testid="free-static-empty-hint">Composição livre em branco · adicione um texto ou uma imagem em Elementos</p>
+          <p className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded bg-black/60 px-2 py-1 text-[11px] text-white" data-testid="free-static-empty-hint">Composição livre em branco · adicione texto ou imagem em Elementos, ou escolha um template na aba Template</p>
         ) : null}
         {freeSelecting && currentFreeSlide ? (
           <FreeElementsOverlay
@@ -938,7 +940,7 @@ export default function StaticAuthoringProductPage() {
         />
         {<div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado da autoria">
           <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
-          {mode === 'template' ? <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button> : null}
+          {mode === 'template' ? <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title={`Aplicar ${isCarousel ? 'ao slide atual' : 'à arte'} os valores padrão do Template (ainda é preciso Salvar).`}><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button> : null}
           <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
         </div>}
       </div>
@@ -973,7 +975,7 @@ export default function StaticAuthoringProductPage() {
         {currentRenderJob && currentRenderActive && <span className="flex items-center gap-1 text-xs text-muted-foreground" data-testid="render-status" data-phase={currentRenderJob.phase}><Loader2 className="h-3.5 w-3.5 animate-spin" />{renderPhaseLabel(currentRenderJob.phase)}</span>}
         {currentRenderJob?.phase === 'failed' && <span className="flex max-w-[18rem] items-center gap-1 text-xs text-destructive" title={currentRenderJob.errorMessage ?? undefined} role="alert" data-testid="render-status" data-phase="failed"><AlertCircle className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{renderPhaseLabel('failed')}{currentRenderJob.errorMessage ? ` · ${currentRenderJob.errorMessage}` : ''}</span></span>}
         {currentRenderJob?.phase === 'ready' && <span className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="render-status" data-phase="ready">
-          <button type="button" className="h-7 w-[22px] shrink-0 overflow-hidden rounded border border-border/60 bg-muted" onClick={() => setPreviewJobSlideId(currentRenderJob.slideId)} aria-label={`Ver PNG do slide ${currentRenderJob.slideIndex} de ${currentRenderJob.slideTotal}`} title="Ver PNG">
+          <button type="button" className="h-7 w-[22px] shrink-0 overflow-hidden rounded border border-border/60 bg-muted" onClick={() => setPreviewJobSlideId(currentRenderJob.slideId)} aria-label={isCarousel ? `Ver PNG do slide ${currentRenderJob.slideIndex} de ${currentRenderJob.slideTotal}` : 'Ver PNG da arte'} title="Ver PNG">
             {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
             {currentRenderJob.imageUrl ? <img src={currentRenderJob.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
           </button>
@@ -989,13 +991,13 @@ export default function StaticAuthoringProductPage() {
           <Button size="sm" variant="outline" className="gap-1.5" disabled={zipBusy} onClick={() => void downloadCarouselZip()} title="Baixar os PNGs duráveis do carrossel em um ZIP" data-testid="download-carousel-zip">{zipBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Baixar ZIP</Button>
           {zipError ? <span className="max-w-40 truncate text-[11px] text-destructive" role="alert" title={zipError}>{zipError}</span> : null}
         </div>}
-        <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5" title="Gerar um PNG do estado atual deste slide (não salva a autoria).">{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
+        <Button size="sm" onClick={() => void render()} disabled={currentRenderActive} className="gap-1.5" title={`Gerar um PNG do estado atual ${isCarousel ? 'deste slide' : 'desta arte'} (não salva a autoria).`}>{currentRenderActive ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}{currentRenderActive && currentRenderJob ? renderPhaseLabel(currentRenderJob.phase) : 'Gerar PNG'}</Button>
       </div>
     </header>
   )
 
   const removeDialog = <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}><AlertDialogContent data-testid="remove-slide-dialog"><AlertDialogHeader><AlertDialogTitle>Remover slide {currentSlideIndex + 1}?</AlertDialogTitle><AlertDialogDescription>Este slide será removido do estado de autoria (clique em Salvar para persistir). Arquivos e renders já salvos na peça não serão excluídos automaticamente.{currentHasSavedOutput ? ' Este slide tem um PNG salvo nesta peça: ele continua anexado à peça e na Galeria.' : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={removeCurrentSlide}>Remover slide</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-  const restoreDialog = <>{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados ao slide atual. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const restoreDialog = <>{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados {isCarousel ? 'ao slide atual' : 'à arte'}. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <ProjectLibraryAssetPicker
       open={Boolean(pickerSlot)}
       onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}
@@ -1040,14 +1042,14 @@ export default function StaticAuthoringProductPage() {
           <div className="flex items-baseline gap-2"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</span><span data-testid="add-slide-template">{template.name}</span></div>
           <div className="space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Estrutura do novo slide">
-              {template.layouts.map((option) => <Button key={option.id} size="sm" variant={addLayoutId === option.id ? 'default' : 'outline'} aria-pressed={addLayoutId === option.id} onClick={() => { setAddLayoutId(option.id); setAddAppearance(option.defaultAppearance) }}>{option.label}</Button>)}
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Estrutura do novo slide">
+              {template.layouts.map((option) => <Button key={option.id} size="sm" variant={addLayoutId === option.id ? 'default' : 'outline'} role="radio" aria-checked={addLayoutId === option.id} onClick={() => { setAddLayoutId(option.id); setAddAppearance(option.defaultAppearance) }}>{option.label}</Button>)}
             </div>
           </div>
           <div className="space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Aparência</span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Aparência do novo slide">
-              {(getTemplateLayout(template, addLayoutId)?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={addAppearance === appearance ? 'default' : 'outline'} aria-pressed={addAppearance === appearance} onClick={() => setAddAppearance(appearance)}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Aparência do novo slide">
+              {(getTemplateLayout(template, addLayoutId)?.supportedAppearances ?? []).map((appearance) => <Button key={appearance} size="sm" variant={addAppearance === appearance ? 'default' : 'outline'} role="radio" aria-checked={addAppearance === appearance} onClick={() => setAddAppearance(appearance)}>{appearance === 'light' ? 'Light' : 'Dark'}</Button>)}
             </div>
           </div>
           <p className="text-xs text-muted-foreground">Será o slide {slideTotal + 1}.</p>
@@ -1061,11 +1063,11 @@ export default function StaticAuthoringProductPage() {
     <Dialog open={Boolean(previewJob?.imageUrl)} onOpenChange={(open) => { if (!open) setPreviewJobSlideId(null) }}>
       <DialogContent className="max-w-[min(92vw,540px)]">
         <DialogHeader>
-          <DialogTitle>PNG · Slide {previewJob?.slideIndex}</DialogTitle>
+          <DialogTitle>{isCarousel ? `PNG · Slide ${previewJob?.slideIndex}` : 'PNG da arte'}</DialogTitle>
           <DialogDescription>Render gerado (rascunho). Use “Salvar nesta peça” para anexá-lo à peça.</DialogDescription>
         </DialogHeader>
         {/* eslint-disable-next-line @next/next/no-img-element -- short-lived presigned scratch URL, not an optimizable asset */}
-        {previewJob?.imageUrl ? <img src={previewJob.imageUrl} alt={`PNG do slide ${previewJob.slideIndex} de ${previewJob.slideTotal}`} className="max-h-[70vh] w-full rounded border border-border/60 object-contain" data-testid="render-preview-image" /> : null}
+        {previewJob?.imageUrl ? <img src={previewJob.imageUrl} alt={isCarousel ? `PNG do slide ${previewJob.slideIndex} de ${previewJob.slideTotal}` : 'PNG da arte'} className="max-h-[70vh] w-full rounded border border-border/60 object-contain" data-testid="render-preview-image" /> : null}
       </DialogContent>
     </Dialog></>
 

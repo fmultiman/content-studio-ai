@@ -28,13 +28,13 @@ export function TemplateAnatomy({ template, layout }: { template: TemplateDefini
         <span className="text-[10px] text-muted-foreground">somente leitura</span>
       </div>
       <div>
-        <p className="text-[11px] font-medium">Elementos <span className="font-normal text-muted-foreground">({elements.length}, da frente para trás)</span></p>
+        <p className="text-[11px] font-medium">Elementos do layout <span className="font-normal text-muted-foreground">({elements.length}, da frente para trás)</span></p>
         <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground" data-testid="anatomy-elements">
           {elements.map((element) => <li key={element.id} className="truncate">{element.label}</li>)}
         </ul>
       </div>
       <div>
-        <p className="text-[11px] font-medium">Assets / slots <span className="font-normal text-muted-foreground">({slots.length})</span></p>
+        <p className="text-[11px] font-medium">Slots de assets <span className="font-normal text-muted-foreground">({slots.length})</span></p>
         <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground" data-testid="anatomy-slots">
           {slots.map(({ slot, elements: users }) => (
             <li key={slot.id} className="min-w-0">
@@ -65,6 +65,29 @@ export function TemplateFamilyAnatomy({ template }: { template: TemplateDefiniti
         ))}
       </ul>
     </section>
+  )
+}
+
+/**
+ * CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1 — the Template tab's
+ * structural REFERENCE, collapsed by default: the Template family vocabulary
+ * and the active layout's concrete elements and slots. It is information about
+ * the grammar, never an editing surface (Elementos and Assets edit), and never
+ * a Template Builder. Native <details> keeps the disclosure keyboard/AT
+ * accessible without new state.
+ */
+export function TemplateReference({ template, layout }: { template: TemplateDefinition; layout?: TemplateLayoutDefinition | null }) {
+  return (
+    <details className="group rounded-md border border-border/60" data-testid="template-reference">
+      <summary className="cursor-pointer select-none px-2 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+        Estrutura do template e do layout <span className="font-normal">(referência, somente leitura)</span>
+      </summary>
+      <div className="space-y-2 border-t border-border/60 p-2">
+        <p className="text-[11px] text-muted-foreground">O que este template e este layout contêm. Para editar, use Elementos (ordem e visibilidade) e Assets (recursos).</p>
+        <TemplateFamilyAnatomy template={template} />
+        {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
+      </div>
+    </details>
   )
 }
 

@@ -31,6 +31,8 @@ describe('CompositionModePanel', () => {
     expect(screen.getAllByTestId('composition-mode-template').map((button) => button.getAttribute('data-template-id'))).toEqual(['editorial-documentary-collage-v1'])
     expect(screen.queryByText(/controles do template/)).toBeNull()
     expect(document.body.textContent).not.toMatch(/Em branco|Blank/)
+    // CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: each Template choice is named for assistive technology.
+    expect(screen.getByRole('button', { name: 'Usar o template Editorial Documentary Collage' })).toBeTruthy()
   })
 
   it('A. empty free → Template switches directly (nothing to lose)', () => {

@@ -67,7 +67,7 @@ export function CompositionModePanel({ mode, templates, currentTemplateId, scope
             <div key={template.id} className="space-y-1 rounded-md border border-border/60 p-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate text-sm">{template.name}</span>
-                <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => chooseTemplate(template)} data-testid="composition-mode-template" data-template-id={template.id}>Usar template</Button>
+                <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => chooseTemplate(template)} aria-label={`Usar o template ${template.name}`} data-testid="composition-mode-template" data-template-id={template.id}>Usar template</Button>
               </div>
               {template.description ? <p className="line-clamp-3 text-[11px] text-muted-foreground">{template.description}</p> : null}
             </div>

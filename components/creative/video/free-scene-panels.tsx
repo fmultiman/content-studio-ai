@@ -51,10 +51,12 @@ type ElementsProps<T extends FreeHost & { id: string }> = {
   onReplaceImage: (elementId: string) => void
   /** VIDEO_FREE_ELEMENT_TIMING_V1: opens the element's Scene-local timing (same section as Template elements). */
   onTiming?: (elementId: string) => void
+  /** CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: after a removal, so the host drops any stale selection of that id. */
+  onRemoved?: (elementId: string) => void
 }
 
 /** Elementos tab of a free composition: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, wording = VIDEO_WORDING }: ElementsProps<T>) {
+export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, wording = VIDEO_WORDING }: ElementsProps<T>) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
@@ -66,7 +68,7 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
         <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />Imagem da Biblioteca</Button>
       </div>
       {elements.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco. Adicione um texto ou uma imagem.</p>
+        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.</p>
       ) : (
         <ol className="space-y-1" aria-label={`Elementos ${wording.unit === 'slide' ? 'do slide' : `da ${wording.unit}`} (frente no topo)`}>
           {listed.map((element) => {
@@ -84,7 +86,7 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
                   <Button size="icon-sm" variant="ghost" aria-label={element.hidden ? 'Mostrar' : 'Ocultar'} title={element.hidden ? 'Mostrar' : 'Ocultar'} onClick={() => onEdit((current) => setFreeElementHidden(current, element.id, !element.hidden))} data-testid="free-element-visibility">{element.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</Button>
                   <Button size="icon-sm" variant="ghost" aria-label="Trazer para frente" title="Trazer para frente" disabled={index === elements.length - 1} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'forward'))} data-testid="free-element-forward"><ArrowUp className="h-3.5 w-3.5" /></Button>
                   <Button size="icon-sm" variant="ghost" aria-label="Enviar para trás" title="Enviar para trás" disabled={index === 0} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'backward'))} data-testid="free-element-backward"><ArrowDown className="h-3.5 w-3.5" /></Button>
-                  <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" aria-label="Remover elemento" title="Remover elemento (o arquivo da Biblioteca não é apagado)" onClick={() => { onEdit((current) => removeFreeElement(current, element.id)); if (open) onOpen(null) }} data-testid="free-element-remove"><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" aria-label="Remover elemento" title="Remover elemento (o arquivo da Biblioteca não é apagado)" onClick={() => { onEdit((current) => removeFreeElement(current, element.id)); if (open) onOpen(null); onRemoved?.(element.id) }} data-testid="free-element-remove"><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
                 {open ? (
                   <div className="space-y-3 border-t border-border/40 p-2">

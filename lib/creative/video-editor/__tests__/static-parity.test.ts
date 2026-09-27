@@ -111,7 +111,7 @@ describe('Inspector information architecture', () => {
     expect(composition.stackOrder).toEqual(resolveElementStack(undefined, 'cover', undefined).order)
     expect(composition.stackOrder).toEqual(composition.layout.defaultStackOrder)
     expect(composition.heroUsedBy).toEqual(['Imagem principal'])
-    expect(videoPage).toContain('<TemplateFamilyAnatomy template={sceneView.template} />')
+    expect(videoPage).toContain('<TemplateReference template={sceneView.template} layout={sceneView.layout} />')
     // Camadas are authored per Scene now: order + visibility, same component as Static.
     expect(videoPage).not.toMatch(/<ElementLayers\s+readOnly/)
     expect(videoPage).toContain('onToggleVisibility={(id) => editSelectedScene((scene) => toggleSceneElementVisibility(scene, id))}')

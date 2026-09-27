@@ -37,7 +37,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
-import { AssetSlotCard, StyleSourcePanel, TemplateAnatomy, TemplateFamilyAnatomy } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard, StyleSourcePanel, TemplateReference } from '@/components/creative/authoring/inspector-panels'
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
 import { usePreviewViewport } from '@/components/creative/editor/use-preview-viewport'
 import { ViewportZoomControls } from '@/components/creative/editor/viewport-zoom-controls'
@@ -368,11 +368,13 @@ export default function VideoCreativeEditorPage() {
     setSelectedIndex(index)
     setSelectedItemId(null)
     setSelectedElementId(null)
+    // Element ids belong to one Scene: no selection or open row survives a Scene change.
+    setOpenElementId(null)
     if (seekToStart && ranges[index]) seek(ranges[index].startFrame)
   }
   function selectSceneById(sceneId: string) {
     const index = scenes.findIndex((scene) => scene.id === sceneId)
-    if (index >= 0) { setSelectedIndex(index); setSelectedItemId(null); setSelectedElementId(null) }
+    if (index >= 0) { setSelectedIndex(index); setSelectedItemId(null); setSelectedElementId(null); setOpenElementId(null) }
   }
   /** A Scene element keeps its owning Scene selected; its Camadas entry opens and the playhead goes to its entry. */
   function selectSceneElement(sceneId: string, elementId: string) {
@@ -464,8 +466,26 @@ export default function VideoCreativeEditorPage() {
     cursor.set(start)
     requestAnimationFrame(() => playerRef.current?.seekTo(start))
   }
+  /**
+   * CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1 — in a FREE Scene, opening an element in
+   * Elementos IS selecting it: the Player chrome (openElementId) and the timing section
+   * (selectedElementId) follow the same element. No seek (the Timeline row still seeks).
+   * Template Camadas keep disclosure-only semantics.
+   */
+  function openFreeElement(elementId: string | null) {
+    setOpenElementId(elementId)
+    setSelectedItemId(null)
+    setSelectedElementId(elementId)
+  }
+  /** A removed element leaves no stale selection or open row behind. */
+  function forgetFreeElement(elementId: string) {
+    setOpenElementId((current) => (current === elementId ? null : current))
+    setSelectedElementId((current) => (current === elementId ? null : current))
+  }
   function removeSelectedScene() {
     if (!selectedScene || scenes.length <= 1) return
+    setSelectedElementId(null)
+    setOpenElementId(null)
     setScenes(removeVideoScene(scenes, selectedScene.id))
     setSelectedIndex(Math.max(0, safeSelectedIndex - 1))
     setRemoveDialogOpen(false)
@@ -915,11 +935,7 @@ export default function VideoCreativeEditorPage() {
             onChooseTemplate={() => setSelectedSceneMode('template')}
             onChooseFree={() => setSelectedSceneMode('free')}
           >
-          <div className="space-y-1.5" data-testid="video-template">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
-            <p className="text-sm">{sceneView.template.name}</p>
-            <p className="text-[11px] text-muted-foreground">Família visual do vídeo inteiro. Estrutura e aparência são escolhidas por cena.</p>
-          </div>
+          <p className="text-[11px] text-muted-foreground" data-testid="video-template">Estrutura e aparência são escolhidas por cena; cada cena pode usar o template ou ser livre.</p>
           {selectedScene ? (
             <div className="space-y-2 rounded-md border border-border/60 p-2" data-testid="scene-structure">
               <p className="text-xs font-semibold">Cena {safeSelectedIndex + 1}</p>
@@ -953,10 +969,7 @@ export default function VideoCreativeEditorPage() {
             { label: 'Cenas', value: String(scenes.length) },
             { label: 'Duração', value: formatSeconds(totalFrames / TIMELINE_FPS) },
           ]} />
-          {selectedIsFree ? null : <>
-            <TemplateFamilyAnatomy template={sceneView.template} />
-            <TemplateAnatomy template={sceneView.template} layout={sceneView.layout} />
-          </>}
+          {selectedIsFree ? null : <TemplateReference template={sceneView.template} layout={sceneView.layout} />}
         </TabsContent>
         <TabsContent value="content" className="space-y-3 pt-3">
           {selectedScene ? <>
@@ -994,7 +1007,7 @@ export default function VideoCreativeEditorPage() {
           {selectedScene ? <>
             {selectedIsFree ? (
               <div className="space-y-1.5" data-testid="free-scene-assets">
-                <p className="text-[11px] text-muted-foreground">Imagens da Biblioteca usadas pelos elementos desta cena livre (sem slots de template). Troque ou ajuste cada uma em Elementos.</p>
+                <p className="text-[11px] text-muted-foreground">Imagens da Biblioteca usadas pelos elementos desta cena livre (sem slots de template). Trocar aqui usa a mesma imagem do elemento; posição, encaixe e timing ficam em Elementos.</p>
                 {freeElements(selectedScene).map((element) => element.kind === 'image' ? (
                   <div key={element.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-1.5" data-testid="free-scene-asset" data-element-id={element.id}>
                     <span className="min-w-0 truncate text-xs">{libraryFiles.get(element.library_file_id)?.name ?? 'Arquivo da Biblioteca'}{element.hidden ? ' · oculto' : ''}</span>
@@ -1031,7 +1044,8 @@ export default function VideoCreativeEditorPage() {
               scene={selectedScene}
               fileNames={libraryFileNames}
               openId={openElementId}
-              onOpen={setOpenElementId}
+              onOpen={openFreeElement}
+              onRemoved={forgetFreeElement}
               onEdit={editSelectedScene}
               onAddText={() => { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeTextElement(scene, id)); setOpenElementId(id) }}
               onAddImage={() => setFreeImagePicker({ mode: 'add' })}
@@ -1048,7 +1062,7 @@ export default function VideoCreativeEditorPage() {
             onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
             onReorder={(order) => editSelectedScene((scene) => setSceneElementOrder(scene, order))}
             onRestoreDefault={() => editSelectedScene(resetSceneElementOrder)}
-            renderPanel={() => <p className="text-[11px] leading-snug text-muted-foreground">Posição, escala e rotação por elemento ainda não existem em vídeo; a ordem e a visibilidade desta camada sim.</p>}
+            renderPanel={() => <p className="text-[11px] leading-snug text-muted-foreground">Nas cenas com template, a posição, a escala e a rotação desta camada são definidas pelo layout. Aqui você controla a ordem e a visibilidade.</p>}
             hidden={new Set(sceneView.hiddenElements)}
             onToggleVisibility={(id) => editSelectedScene((scene) => toggleSceneElementVisibility(scene, id))}
             note={<p className="text-[11px] leading-snug text-muted-foreground" data-testid="video-elements-note">Camadas da cena {safeSelectedIndex + 1} ({sceneView.layout.label}), na ordem em que a prévia e o render final as desenham.</p>}
@@ -1057,7 +1071,7 @@ export default function VideoCreativeEditorPage() {
         </TabsContent>
         <TabsContent value="motion" className="space-y-2 pt-3">
           {selectedScene && selectedIsFree ? (
-            <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-motion">Composição livre: o Motion desta versão é desenhado pelo Template, então esta cena fica estática. Movimento por elemento não existe.</p>
+            <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-motion">Cenas livres são estáticas nesta versão: o movimento de cena só existe nas cenas com template. Para quando cada elemento aparece, use Timing na cena (Elementos).</p>
           ) : selectedScene ? <>
             <p className="text-[11px] text-muted-foreground">Movimento semântico da cena inteira, desenhado pelo Template (sem keyframes, sem movimento por elemento). O efeito depende da estrutura da cena ({sceneView.layout.label}).</p>
             <div className="grid gap-1" role="radiogroup" aria-label="Movimento da cena">

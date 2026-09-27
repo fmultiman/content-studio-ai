@@ -77,8 +77,11 @@ describe('Template anatomy (read-only, registry-derived)', () => {
   })
 
   it('the page renders the anatomy from the registry, with no second hardcoded structure', () => {
-    expect(PAGE).toMatch(/<TemplateAnatomy template=\{template\} layout=\{layout\} \/>/)
+    // CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: both anatomies render inside the collapsed reference disclosure.
+    expect(PAGE).toMatch(/<TemplateReference template=\{template\} layout=\{layout\} \/>/)
     const panels = read('components', 'creative', 'authoring', 'inspector-panels.tsx')
+    expect(panels).toMatch(/<TemplateFamilyAnatomy template=\{template\} \/>/)
+    expect(panels).toMatch(/<TemplateAnatomy template=\{template\} layout=\{layout\} \/>/)
     expect(panels).toMatch(/layoutElementsFrontFirst\(layout\)/)
     expect(panels).toMatch(/layoutAssetSlots\(template, layout\)/)
     expect(panels).not.toMatch(/Adicionar elemento|Excluir elemento|Renomear/)
@@ -270,7 +273,8 @@ describe('Save / restore / render semantics', () => {
 
   it('Restaurar padrão do Template is a draft mutation whose confirmation says Save is still required', () => {
     expect(PAGE).toMatch(/Restaurar padrão do Template/)
-    expect(PAGE).toMatch(/Os valores padrão do Template serão aplicados ao slide atual\. Clique em Salvar para persistir\./)
+    // CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: "ao slide atual" in a carousel, "à arte" in a single piece.
+    expect(PAGE).toMatch(/Os valores padrão do Template serão aplicados \{isCarousel \? 'ao slide atual' : 'à arte'\}\. Clique em Salvar para persistir\./)
     // restoreSlideDefault only replaces the draft slide; it never calls saveNow().
     const restore = PAGE.slice(PAGE.indexOf('function restoreSlideDefault'), PAGE.indexOf('const previewInput'))
     expect(restore).not.toMatch(/saveNow\(/)
