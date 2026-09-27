@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, Hand, Loader2, MousePointer2, Pause, PanelRight,
+  AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, Film, FolderInput, Hand, Loader2, MousePointer2, Pause, PanelRight,
   Play, SkipBack, SkipForward, Sparkles, StepBack, StepForward, Trash2, Undo2,
 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
@@ -190,6 +190,8 @@ export default function VideoCreativeEditorPage() {
   const [outputUrl, setOutputUrl] = useState<string | null>(null)
   const [outputUrlError, setOutputUrlError] = useState<string | null>(null)
   const [outputOpen, setOutputOpen] = useState(false)
+  const [saveOutputSubmitting, setSaveOutputSubmitting] = useState(false)
+  const [saveOutputError, setSaveOutputError] = useState<string | null>(null)
 
   const draft = context?.draft ?? null
   const dirty = lastSavedSnapshot !== null && persistedVideoSnapshot(name, scenes, timeline, videoCanvas) !== lastSavedSnapshot
@@ -591,6 +593,7 @@ export default function VideoCreativeEditorPage() {
       setRenderExecution({
         id: payload.executionId, video_draft_id: draft.id, status: payload.status, queued_at: payload.queuedAt ?? new Date().toISOString(), attempt: 1,
         claimed_at: null, completed_at: null, failed_at: null, output_mime_type: null, output_size_bytes: null, output_duration_ms: null, error_code: null, error_message: null,
+        saved_to_library: false, library_file_id: null,
       })
     } catch (cause: unknown) {
       setRenderError(cause instanceof Error ? cause.message : 'Não foi possível iniciar a renderização.')
@@ -643,6 +646,22 @@ export default function VideoCreativeEditorPage() {
     const response = await fetch(`/api/render-executions/${executionId}/output-url?disposition=attachment`).catch(() => null)
     const payload = await response?.json().catch(() => null) as { url?: string } | null
     if (payload?.url) window.location.href = payload.url
+  }
+
+  async function saveOutputToLibrary() {
+    if (!executionId || executionStatus !== 'completed' || saveOutputSubmitting || renderExecution?.saved_to_library) return
+    setSaveOutputSubmitting(true)
+    setSaveOutputError(null)
+    try {
+      const response = await fetch(`/api/render-executions/${executionId}/save-to-library`, { method: 'POST' })
+      const payload = await response.json().catch(() => null) as { result?: 'created' | 'already_saved'; libraryFile?: { id?: string }; error?: string } | null
+      if (!response.ok || !payload?.libraryFile?.id) throw new Error(payload?.error || 'Nao foi possivel salvar o video em Arquivos.')
+      setRenderExecution((current) => current ? { ...current, saved_to_library: true, library_file_id: payload.libraryFile!.id! } : current)
+    } catch (cause: unknown) {
+      setSaveOutputError(cause instanceof Error ? cause.message : 'Nao foi possivel salvar o video em Arquivos.')
+    } finally {
+      setSaveOutputSubmitting(false)
+    }
   }
 
   async function generatePrompt() {
@@ -1294,9 +1313,16 @@ export default function VideoCreativeEditorPage() {
               ? <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-white/80">{outputUrlError}</p>
               : <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-white/70" /></div>}
         </div>
+        {saveOutputError ? <p className="text-sm text-destructive" role="alert">{saveOutputError}</p> : null}
         <div className="flex flex-wrap justify-end gap-2">
+          {executionStatus === 'completed' ? (
+            renderExecution?.saved_to_library
+              ? <Button size="sm" variant="outline" className="gap-1.5" disabled data-testid="save-output-to-library"><Check className="h-3.5 w-3.5" />Salvo em Arquivos</Button>
+              : <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void saveOutputToLibrary()} disabled={saveOutputSubmitting} data-testid="save-output-to-library">{saveOutputSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderInput className="h-3.5 w-3.5" />}Salvar em Arquivos</Button>
+          ) : null}
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void downloadOutput()}><Download className="h-3.5 w-3.5" />Baixar</Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => router.push('/galeria')}><ExternalLink className="h-3.5 w-3.5" />Abrir na Galeria</Button>
+          {renderExecution?.saved_to_library ? <Button size="sm" variant="outline" className="gap-1.5" onClick={() => router.push('/arquivos')}><ExternalLink className="h-3.5 w-3.5" />Abrir Arquivos</Button> : null}
         </div>
       </DialogContent>
     </Dialog>

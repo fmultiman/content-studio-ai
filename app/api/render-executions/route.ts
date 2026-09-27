@@ -139,6 +139,21 @@ export async function GET(request: Request) {
     }
 
     const execution = data as unknown as RenderExecutionSummary | null
+    if (execution && (execution.kind ?? 'video') === 'video' && execution.status === 'completed') {
+      const { data: libraryFile } = await executionReader
+        .from('library_files')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('source_render_execution_id', execution.id)
+        .eq('origin', 'studio_render')
+        .eq('kind', 'video')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      execution.saved_to_library = Boolean(libraryFile)
+      execution.library_file_id = libraryFile?.id ?? null
+    }
     return NextResponse.json({ execution })
   } catch (error) {
     console.error('[Render Executions List GET] Error:', error)

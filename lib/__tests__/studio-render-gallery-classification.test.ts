@@ -93,8 +93,10 @@ describe('Discovery surfaces', () => {
     expect(route).toMatch(/origin !== 'upload' && origin !== 'studio_render' && origin !== 'all'/)
   })
 
-  it('Arquivos lists uploads only', () => {
-    expect(read('app', '(dashboard)', 'arquivos', 'page.tsx')).toMatch(/params\.set\('origin', 'upload'\)/)
+  it('Arquivos keeps static studio PNGs out while including explicitly saved studio videos', () => {
+    const arquivos = read('app', '(dashboard)', 'arquivos', 'page.tsx')
+    expect(arquivos).toMatch(/params\.set\('origin', 'all'\)/)
+    expect(arquivos).toMatch(/file\.origin !== 'studio_render' \|\| file\.kind === 'video'/)
   })
 
   it('Adicionar mídia: studio renders under "Imagens geradas", uploads under "Arquivos do projeto"', () => {

@@ -136,11 +136,16 @@ export default function ArquivosPage() {
     const params = new URLSearchParams()
     if (selectedProject !== 'all') params.set('projectId', selectedProject)
     if (selectedKind !== 'all') params.set('kind', selectedKind)
-    if (!showTrash && folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
+    // The Project root also shows video renders saved before its folder row
+    // existed (their LibraryFile folder is '/'). Other folders stay exact.
+    const selectedRoot = folders.find((item) => item.project_id === selectedProject && item.is_project_root)
+    const projectRootSelected = !showTrash && selectedRoot?.path === folder
+    if (!showTrash && !projectRootSelected && folder.trim() && folder.trim() !== '/') params.set('folder', folder.trim())
     if (showTrash) params.set('trash', 'true')
-    // Arquivos = uploaded/imported source files. Saved Creative Editor PNGs
-    // are studio outputs and live in Galeria (Template Foundation V1).
-    params.set('origin', 'upload')
+    // Arquivos contains user/imported media plus Video renders explicitly
+    // persisted through "Salvar em Arquivos". Static studio PNGs remain in
+    // Galeria because their durable product context is the ChannelPiece.
+    params.set('origin', 'all')
 
     const foldersUrl = `/api/library-folders${selectedProject !== 'all'
       ? `?projectId=${encodeURIComponent(selectedProject)}`
@@ -154,8 +159,12 @@ export default function ArquivosPage() {
     const filesPayload = await filesResponse.json()
     const foldersPayload = await foldersResponse.json()
 
-    if (filesResponse.ok) setFiles(filesPayload.files || [])
-    else {
+    if (filesResponse.ok) {
+      const visibleFiles = ((filesPayload.files || []) as LibraryFile[])
+        .filter((file) => file.origin !== 'studio_render' || file.kind === 'video')
+        .filter((file) => !projectRootSelected || file.folder === folder || (file.origin === 'studio_render' && file.kind === 'video' && file.folder === '/'))
+      setFiles(visibleFiles)
+    } else {
       console.error('[v0] Library files load error:', filesPayload)
       setLoadError('Não foi possível carregar os arquivos da biblioteca.')
     }
@@ -581,7 +590,7 @@ export default function ArquivosPage() {
           <PageHeader
             context="Biblioteca"
             title="Arquivos"
-            description="Guarde uploads, referências e documentos por Project e pasta. Outputs visuais gerados ficam na Galeria."
+            description="Guarde uploads, referências, documentos e vídeos renderizados salvos por Project e pasta."
             actions={(
               <>
                 <input

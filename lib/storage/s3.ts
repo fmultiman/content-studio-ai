@@ -1,4 +1,4 @@
-import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
@@ -338,6 +338,54 @@ export type UploadedLibraryFile = {
   publicUrl: string
   fileSize: number
   mimeType: string
+}
+
+/**
+ * Copies an already-stored object into the durable Library namespace without
+ * deleting or rewriting the source object. Used when a server-authoritative
+ * render output crosses the explicit scratch -> Library durability boundary.
+ *
+ * A HEAD is performed first so a missing/unreadable source can never produce
+ * a LibraryFile row that only *claims* durable bytes exist. CopyObject keeps
+ * the payload byte-for-byte identical while giving the durable copy its own
+ * Library lifecycle and key.
+ */
+export async function copyS3ObjectToLibrary(input: {
+  userId: string
+  sourcePath: string
+  filename: string
+  mimeType: string
+}): Promise<UploadedLibraryFile | null> {
+  const config = getS3Config()
+  if (!config) return null
+
+  const client = createS3Client(config)
+  const source = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: input.sourcePath }))
+  const fileSize = source.ContentLength ?? 0
+  if (fileSize <= 0) throw new Error('Source object is empty or has no readable size.')
+
+  const ext = input.filename.includes('.')
+    ? (input.filename.split('.').pop() ?? extensionForMimeType(input.mimeType))
+    : extensionForMimeType(input.mimeType)
+  const id = randomUUID()
+  const baseName = safePathSegment(input.filename.replace(/\.[^/.]+$/, ''), 'file')
+  const path = `users/${input.userId}/library/${id}/${baseName}.${ext}`
+  const copySource = `${config.bucket}/${input.sourcePath.split('/').map(encodeURIComponent).join('/')}`
+
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+      CopySource: copySource,
+    }),
+  )
+
+  return {
+    storagePath: path,
+    publicUrl: publicUrl(config.publicBaseUrl, path),
+    fileSize,
+    mimeType: source.ContentType || input.mimeType,
+  }
 }
 
 // Uploads a binary buffer directly to S3 under the library folder.

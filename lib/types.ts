@@ -182,10 +182,10 @@ export interface LibraryFile {
   public_url: string
   thumbnail_url: string | null
   /**
-   * Creative Editor Template Foundation V1 (migration 035) — UI discovery
-   * class, not a separate entity: 'studio_render' = a Creative Editor PNG the
-   * user explicitly saved to a piece (Galeria); 'upload' = everything else
-   * (Arquivos). Optional because older rows/selects may omit it.
+   * Creative Editor render provenance (migration 035): `studio_render` means
+   * an explicitly persisted render output (Static PNG or Video MP4), while
+   * `upload` means user/imported media. Optional because older selects may
+   * omit it.
    */
   origin?: LibraryFileOrigin
   source_render_execution_id?: string | null
@@ -403,6 +403,10 @@ export interface RenderExecutionSummary {
   slide?: { id: string; index: number; total: number } | null
   /** Static only (Authoring Usability Completion V1): this render's durable PNG is attached to the piece. */
   attached_to_piece?: boolean
+  /** Video only: a live durable LibraryFile exists for this exact execution. */
+  saved_to_library?: boolean
+  /** Video only: the durable LibraryFile id when saved_to_library is true. */
+  library_file_id?: string | null
   error_code: string | null
   error_message: string | null
 }
