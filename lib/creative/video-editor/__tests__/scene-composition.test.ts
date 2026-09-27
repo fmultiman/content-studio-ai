@@ -11,6 +11,7 @@ import { authoringReducer, createInitialAuthoringState } from '@/lib/creative/au
 import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
 import { buildLivePreviewInput } from '../live-preview-input'
 import { buildVideoDraftSaveBody, motionOptions, normalizeLoadedScenes, persistedVideoSnapshot } from '../video-authoring'
+import { movementToMotion } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { reorderScenes, setSceneDuration } from '../scene-timeline'
 import {
   VIDEO_SCENE_LAYOUT_IDS, applySceneContentAction, resetSceneElementOrder, resolveSceneComposition, sceneContentFields,
@@ -253,11 +254,24 @@ describe('Inspector hydration and bounded forms', () => {
     }
   })
 
-  it('Motion states truthfully what each movement draws in the Scene layout', () => {
-    const cover = Object.fromEntries(motionOptions('cover').map((option) => [option.value, option.effect]))
-    const list = Object.fromEntries(motionOptions('list').map((option) => [option.value, option.effect]))
-    expect(cover).toMatchObject({ static: 'none', zoom_in: 'primary-media', pan_left: 'not-drawn', tilt_up: 'not-drawn' })
-    expect(list.zoom_in).toBe('not-drawn')
+  // VIDEO_MOTION_CAPABILITY_TRUTH_V1: motionOptions is now the truthful, layout-derived,
+  // ONLY-selectable set (no "sem efeito visível" entries offered as a false choice).
+  it('Motion offers only what each Layout genuinely draws: Cover gets zoom_in, others do not', () => {
+    const cover = motionOptions('cover').map((option) => option.value)
+    const list = motionOptions('list').map((option) => option.value)
+    expect(cover).toEqual(['static', 'fade', 'zoom_in'])
+    expect(list).toEqual(['static', 'fade'])
+    expect(list).not.toContain('zoom_in')
+    expect(cover).not.toContain('pan_left')
+    expect(cover).not.toContain('tilt_up')
+  })
+
+  it('every offered value maps to a real preset (never a legacy/unmapped one, even a mistakenly declared one)', () => {
+    for (const layoutId of VIDEO_SCENE_LAYOUT_IDS) {
+      for (const option of motionOptions(layoutId)) {
+        expect(movementToMotion(option.value).diagnostic, `${layoutId}:${option.value}`).toBeNull()
+      }
+    }
   })
 })
 

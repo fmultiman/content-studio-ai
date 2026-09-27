@@ -131,13 +131,15 @@ describe('Scene authoring over VideoScene[]', () => {
     expect(persistedVideoSnapshot('a', SCENES)).not.toBe(persistedVideoSnapshot('a', setSceneDuration(SCENES, 's1', 4)))
   })
 
-  it('Motion keeps the existing movement vocabulary and labels presets truthfully', () => {
-    const options = Object.fromEntries(motionOptions().map((o) => [o.value, o]))
-    expect(options.static).toMatchObject({ preset: 'none', supported: true })
-    expect(options.zoom_in).toMatchObject({ preset: 'slow_push', supported: true })
-    expect(options.pan_right).toMatchObject({ preset: 'slow_pan', supported: true })
-    expect(options.zoom_out).toMatchObject({ supported: false })
-    expect(options.dolly).toMatchObject({ supported: false })
+  // VIDEO_MOTION_CAPABILITY_TRUTH_V1: Motion now offers ONLY values with a proven
+  // renderer effect on the given Layout — no pan/tilt/zoom_out/dolly (never drawn),
+  // and 'fade' is now authorable (the renderer already drew it, unreachable before).
+  it('Motion (default Cover) offers exactly static, fade, zoom_in — no unsupported legacy values', () => {
+    const options = Object.fromEntries(motionOptions().map((o) => [o.value, o.label]))
+    expect(Object.keys(options)).toEqual(['static', 'fade', 'zoom_in'])
+    expect(options.zoom_out).toBeUndefined()
+    expect(options.dolly).toBeUndefined()
+    expect(options.pan_right).toBeUndefined()
   })
 })
 

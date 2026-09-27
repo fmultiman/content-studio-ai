@@ -87,6 +87,15 @@ export type AdaptVideoDraftResult = {
  * (editorial.documentary-card capabilities.motion_presets =
  * ['none', 'fade', 'slow_push', 'slow_pan']) are mapped. Everything else
  * falls back to 'none' with an explicit diagnostic -- no invented presets.
+ *
+ * VIDEO_MOTION_CAPABILITY_TRUTH_V1 — added ONLY the 'fade' case below. The
+ * renderer already draws 'fade' (DocumentaryCard.tsx, every layout,
+ * unconditionally) and the descriptor already declares it; no movement value
+ * reached that preset before. pan_left/pan_right/tilt_up/tilt_down/zoom_out/
+ * dolly are UNCHANGED on purpose: they are no longer offered for new Scenes
+ * (lib/creative/video-editor/video-authoring.ts `motionOptions`), but their
+ * mapping here stays exactly as-is so an already-authored legacy Scene keeps
+ * producing the exact same frozen manifest/diagnostic it always has.
  */
 export function movementToMotion(movement: string | null): { motion: MotionSpec; diagnostic: AdapterDiagnostic | null } {
   switch (movement) {
@@ -94,6 +103,8 @@ export function movementToMotion(movement: string | null): { motion: MotionSpec;
       return { motion: { preset: 'none' }, diagnostic: null }
     case 'zoom_in':
       return { motion: { preset: 'slow_push' }, diagnostic: null }
+    case 'fade':
+      return { motion: { preset: 'fade' }, diagnostic: null }
     case 'pan_left':
       return { motion: { preset: 'slow_pan', direction: 'left' }, diagnostic: null }
     case 'pan_right':

@@ -118,11 +118,16 @@ describe('4. Constraints are stated as constraints; nothing claims what the code
     expect(`${PANELS}${MODE}`).not.toMatch(/erro|obrigatório|Selecione um template/i)
   })
 
-  it('Motion capability work did not leak into this cleanup (M3 owns it)', () => {
+  // Superseded by VIDEO_MOTION_CAPABILITY_TRUTH_V1 (M3), which now DOES own this: the
+  // hardcoded `layoutId === 'cover'` check became narrow, code-backed Layout capability
+  // metadata, and unsupported values were removed from the offered choices. Legacy
+  // labels (movementLabel) still cover every historical value, including zoom_out/dolly.
+  it('Motion capability truth landed in M3: no hardcoded per-preset effect check remains', () => {
     const authoring = read('lib/creative/video-editor/video-authoring.ts')
     expect(authoring).toContain("['zoom_out', 'Zoom Out']")
     expect(authoring).toContain("['dolly', 'Dolly Forward']")
-    expect(authoring).toContain("if (preset === 'slow_push') return layoutId === 'cover' ? 'primary-media' : 'not-drawn'")
+    expect(authoring).not.toContain("if (preset === 'slow_push') return layoutId === 'cover' ? 'primary-media' : 'not-drawn'")
+    expect(authoring).toContain('LAYOUT_SCENE_MOTION')
   })
 })
 

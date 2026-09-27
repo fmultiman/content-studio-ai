@@ -102,26 +102,16 @@ export function buildVideoDraftSaveBody(
 }
 
 /**
- * What a preset visibly does in a given layout TODAY (VIDEO_SCENE_COMPOSITION_PARITY_V1
- * renderer audit): DocumentaryCard draws `slow_push` only as the Cover hero's
- * slow zoom, and `fade` on the whole Scene; `slow_pan` is declared by the
- * Template but no layout draws it. Motion applies to the Scene composition
- * as one unit — never per element, never keyframed.
+ * VIDEO_MOTION_CAPABILITY_TRUTH_V1 — every movement value this product has
+ * ever authored or displayed, for TRUTHFUL LEGACY DISPLAY only (see
+ * `movementLabel`): e.g. a Scene Strip card summarizing an already-authored
+ * Scene's movement, including a value no longer offered to new Scenes. This
+ * is NOT the list of choices offered for authoring — see `motionOptions`.
  */
-export type MotionEffect = 'none' | 'primary-media' | 'scene' | 'not-drawn'
-
-export function motionEffect(preset: string, layoutId: string): MotionEffect {
-  if (preset === 'fade') return 'scene'
-  if (preset === 'slow_push') return layoutId === 'cover' ? 'primary-media' : 'not-drawn'
-  if (preset === 'slow_pan') return 'not-drawn'
-  return 'none'
-}
-
-export type MotionOption = { value: string; label: string; preset: string; supported: boolean; effect: MotionEffect }
-
 const MOVEMENT_LABELS: [string, string][] = [
   ['static', 'Estático'],
   ['zoom_in', 'Zoom In (aproximação lenta)'],
+  ['fade', 'Fade (entrada suave)'],
   ['pan_left', 'Pan Esquerda'],
   ['pan_right', 'Pan Direita'],
   ['tilt_up', 'Tilt Cima'],
@@ -130,21 +120,49 @@ const MOVEMENT_LABELS: [string, string][] = [
   ['dolly', 'Dolly Forward'],
 ]
 
-/**
- * Motion = the existing VideoScene.movement vocabulary, annotated with the
- * semantic preset the adapter actually renders. Movements without a Template
- * preset stay selectable for legacy compatibility but are labelled honestly.
- */
-export function motionOptions(layoutId: string = 'cover'): MotionOption[] {
-  return MOVEMENT_LABELS.map(([value, label]) => {
-    const { motion, diagnostic } = movementToMotion(value)
-    return { value, label, preset: motion.preset, supported: diagnostic === null, effect: motionEffect(motion.preset, layoutId) }
-  })
+/** Human label for ANY movement value ever authored, including a legacy one no longer offered. */
+export function movementLabel(movement: string | null): string {
+  const value = movement || 'static'
+  return MOVEMENT_LABELS.find(([candidate]) => candidate === value)?.[1] ?? value
 }
 
-export const PRESET_LABELS: Record<string, string> = {
-  none: 'sem movimento',
-  slow_push: 'aproximação lenta',
-  slow_pan: 'panorâmica lenta',
-  fade: 'fade',
+export type MotionOption = { value: string; label: string }
+
+/**
+ * Scene Motion values EVERY Layout draws with a visible effect, identically:
+ * DocumentaryCard.tsx fades the whole card in (root opacity) plus each
+ * variant's own text/content elements (fixedText opacity + translateY) for
+ * `motion.preset === 'fade'`, unconditionally — never gated by `variant`. No
+ * declaration needed per Layout for these two.
+ */
+const UNIVERSAL_SCENE_MOTION: readonly string[] = ['static', 'fade']
+
+/**
+ * Scene Motion values a SPECIFIC Layout draws with an ADDITIONAL visible
+ * effect, beyond the two universal ones. Code-backed, narrow, Layout-scoped:
+ * only Cover's hero slow-zoom (`zoom_in` → `slow_push`, `CoverVariant.tsx`
+ * `heroScale`) exists today. This is SCENE Motion — the whole composition's
+ * behavior — never per-Element (a separate, future, Element-scoped concept:
+ * VIDEO_ELEMENT_MOTION_PRESETS_V1). Keep this table narrow; do not turn it
+ * into a generic capability engine.
+ */
+const LAYOUT_SCENE_MOTION: Readonly<Record<string, readonly string[]>> = {
+  cover: ['zoom_in'],
+}
+
+/**
+ * The ONLY Scene Motion values offered for authoring on `layoutId`: the
+ * Layout's declared capability (universal + `LAYOUT_SCENE_MOTION`),
+ * cross-checked against `movementToMotion` so this list can never silently
+ * drift from what the renderer actually draws — a value with no real preset
+ * mapping is never returned here, even if mistakenly declared above. A value
+ * NOT in this list is a legacy state: still safe to load, still displayed
+ * truthfully via `movementLabel`, never silently rewritten, just not offered
+ * again (see the Motion tab's legacy notice in the Video editor page).
+ */
+export function motionOptions(layoutId: string = 'cover'): MotionOption[] {
+  const values = [...UNIVERSAL_SCENE_MOTION, ...(LAYOUT_SCENE_MOTION[layoutId] ?? [])]
+  return values
+    .filter((value) => movementToMotion(value).diagnostic === null)
+    .map((value) => ({ value, label: movementLabel(value) }))
 }

@@ -65,7 +65,7 @@ import {
   sceneIndexAtFrame, setSceneDuration, MIN_SCENE_DURATION_SECONDS, MAX_SCENE_DURATION_SECONDS,
 } from '@/lib/creative/video-editor/scene-timeline'
 import {
-  MAX_VIDEO_SCENES, NEW_SCENE_DURATION_SECONDS, buildVideoDraftSaveBody, insertVideoScene, motionOptions, normalizeLoadedScenes,
+  MAX_VIDEO_SCENES, NEW_SCENE_DURATION_SECONDS, buildVideoDraftSaveBody, insertVideoScene, motionOptions, movementLabel, normalizeLoadedScenes,
   persistedVideoSnapshot, removeVideoScene, updateVideoScene,
 } from '@/lib/creative/video-editor/video-authoring'
 import { buildLivePreviewInput, type PreviewLibraryFile } from '@/lib/creative/video-editor/live-preview-input'
@@ -77,7 +77,6 @@ import {
 } from '@/lib/creative/video-editor/scene-composition'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { isContentAction } from '@/lib/creative/authoring/reducer'
-import type { MotionEffect } from '@/lib/creative/video-editor/video-authoring'
 import { layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
 import {
   DEFAULT_AUDIO_FRAMES, DEFAULT_ITEM_FRAMES, EMPTY_TIMELINE, MAX_TEXT_LENGTH, addTemporalItem, effectiveDurationFrames, followsSequenceEnd, itemEndFrame,
@@ -100,20 +99,12 @@ const LiveTimelinePlayer = dynamic(() => import('@/remotion/player/LiveTimelineP
 const AUTOSAVE_PREF_KEY = 'creative-editor-video:autosave-enabled'
 const RENDER_POLL_INTERVAL_MS = 3000
 const TEMPLATE_HERO_URL = (() => { const resolved = resolveAsset(DEFAULT_HERO_ASSET_REF); return resolved.valid ? resolved.value.url : undefined })()
-/** Movement vocabulary + labels (layout-independent; per-Scene effects come from motionOptions(layout)). */
-const MOTION_OPTIONS = motionOptions()
 /** Video layouts that draw the Scene's content image (read from the registry). */
 const HERO_LAYOUT_LABELS = (() => {
   const template = videoSceneComposition().template
   const labels = template.layouts.filter((layout) => (VIDEO_SCENE_LAYOUT_IDS as readonly string[]).includes(layout.id) && layoutUsesContentImage(layout)).map((layout) => layout.label)
   return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} ou ${labels[labels.length - 1]}` : labels.join('')
 })()
-const MOTION_EFFECT_LABELS: Record<MotionEffect, string> = {
-  none: 'sem movimento',
-  'primary-media': 'aproximação lenta · imagem principal',
-  scene: 'fade · cena inteira',
-  'not-drawn': 'sem efeito visível nesta estrutura',
-}
 
 function readAutosavePreference(): boolean {
   if (typeof window === 'undefined') return false
@@ -121,11 +112,6 @@ function readAutosavePreference(): boolean {
 }
 function writeAutosavePreference(value: boolean) {
   try { window.localStorage.setItem(AUTOSAVE_PREF_KEY, value ? 'true' : 'false') } catch { /* best-effort only */ }
-}
-
-function motionLabel(movement: string | null): string {
-  const option = MOTION_OPTIONS.find((candidate) => candidate.value === (movement || 'static'))
-  return option ? option.label : movement || 'Estático'
 }
 
 /** Text entry keeps its own keys; buttons keep Space/Enter (their own activation). */
@@ -316,6 +302,10 @@ export default function VideoCreativeEditorPage() {
   const canvasSupport = useMemo(() => videoDraftCanvasSupport(scenes, { width: stage.width, height: stage.height }), [scenes, stage.width, stage.height])
   const canvasSupportFor = useCallback((candidate: VideoCanvas) => videoDraftCanvasSupport(scenes, candidate), [scenes])
   const sceneMotionOptions = useMemo(() => motionOptions(sceneView.resolved.layoutId), [sceneView])
+  // The authored value may be a legacy one no longer offered (e.g. a pan/tilt on any Layout,
+  // or zoom_in on a Layout other than Cover): safe to load, truthfully labelled, never rewritten.
+  const currentMovement = selectedScene ? (selectedScene.movement || 'static') : 'static'
+  const motionSupported = sceneMotionOptions.some((option) => option.value === currentMovement)
 
   const thumbnails = useMemo(() => Object.fromEntries(scenes.map((scene) => {
     if (isFreeScene(scene)) {
@@ -737,7 +727,7 @@ export default function VideoCreativeEditorPage() {
       cursor={cursor}
       selectedIndex={safeSelectedIndex}
       thumbnails={thumbnails}
-      motionLabel={motionLabel}
+      motionLabel={movementLabel}
       captions={sceneCaptions}
       canAdd={scenes.length < MAX_VIDEO_SCENES}
       onSelect={(index) => selectScene(index)}
@@ -1073,16 +1063,20 @@ export default function VideoCreativeEditorPage() {
           {selectedScene && selectedIsFree ? (
             <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-motion">Cenas livres são estáticas nesta versão: o movimento de cena só existe nas cenas com template. Para quando cada elemento aparece, use Timing na cena (Elementos).</p>
           ) : selectedScene ? <>
-            <p className="text-[11px] text-muted-foreground">Movimento semântico da cena inteira, desenhado pelo Template (sem keyframes, sem movimento por elemento). O efeito depende da estrutura da cena ({sceneView.layout.label}).</p>
+            <p className="text-[11px] text-muted-foreground">Movimento da cena inteira, desenhado pelo template (sem keyframes, sem movimento por elemento). As opções abaixo são as que {sceneView.layout.label} realmente desenha.</p>
+            {!motionSupported ? (
+              <p className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 p-2 text-[11px] text-amber-700 dark:text-amber-400" role="status" data-testid="motion-legacy-notice">
+                Esta cena tem <strong>{movementLabel(selectedScene.movement)}</strong> autorado, mas essa opção não tem efeito visível em {sceneView.layout.label} e não é mais oferecida para novas cenas. Escolha uma das opções abaixo para substituí-la.
+              </p>
+            ) : null}
             <div className="grid gap-1" role="radiogroup" aria-label="Movimento da cena">
               {sceneMotionOptions.map((option) => {
-                const checked = (selectedScene.movement || 'static') === option.value
+                const checked = currentMovement === option.value
                 return (
                   <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => patchSelectedScene({ movement: option.value })}
-                    className={cn('flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs', checked ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-border')}
+                    className={cn('rounded-md border px-2 py-1.5 text-left text-xs', checked ? 'border-primary bg-primary/10' : 'border-border/60 hover:border-border')}
                     data-testid="motion-option" data-value={option.value}>
-                    <span>{option.label}</span>
-                    <span className={cn('shrink-0 text-[10px]', option.supported && option.effect !== 'not-drawn' ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400')} data-testid="motion-effect" data-effect={option.effect}>{option.supported ? MOTION_EFFECT_LABELS[option.effect] : 'sem preset · estático'}</span>
+                    {option.label}
                   </button>
                 )
               })}

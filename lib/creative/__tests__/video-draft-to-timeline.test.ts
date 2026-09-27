@@ -137,6 +137,12 @@ describe('movementToMotion', () => {
     expect(movementToMotion('zoom_in')).toEqual({ motion: { preset: 'slow_push' }, diagnostic: null })
   })
 
+  // VIDEO_MOTION_CAPABILITY_TRUTH_V1: the renderer already drew 'fade' (DocumentaryCard.tsx,
+  // every layout, unconditionally) — no movement value ever reached it before this mapping.
+  it('maps "fade" to the "fade" preset (the renderer already drew it; now authorable)', () => {
+    expect(movementToMotion('fade')).toEqual({ motion: { preset: 'fade' }, diagnostic: null })
+  })
+
   it('maps pan/tilt movements to "slow_pan" with the matching direction (template-declared capability)', () => {
     expect(movementToMotion('pan_left').motion).toEqual({ preset: 'slow_pan', direction: 'left' })
     expect(movementToMotion('pan_right').motion).toEqual({ preset: 'slow_pan', direction: 'right' })
@@ -266,7 +272,7 @@ describe('adaptVideoDraftToTimelineManifest — resolution', () => {
   })
 
   it('is accepted by resolveTimelineManifest for every mapped movement value', () => {
-    const movements: Array<VideoScene['movement']> = ['static', 'zoom_in', 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'zoom_out', 'dolly', null]
+    const movements: Array<VideoScene['movement']> = ['static', 'zoom_in', 'fade', 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'zoom_out', 'dolly', null]
     for (const movement of movements) {
       const draft = makeDraft([makeScene({ movement })])
       const { manifest } = adaptVideoDraftToTimelineManifest({ draft, identity: FIXTURE_IDENTITY })
