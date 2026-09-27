@@ -79,8 +79,10 @@ describe('shared Preview Surface viewport (Static authority)', () => {
       expect(page).not.toMatch(/const ZOOM_LEVELS|PREVIEW_ZOOM_LEVELS/)
     }
     // The same shared pan handlers (no second pan implementation); Video applies them in its Hand tool
-    // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1), Static always.
-    expect(staticPage).toContain('{...viewport.panHandlers}')
+    // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1); Static too, except while its FREE canvas is in Selecionar
+    // (CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1) — a Template canvas always pans.
+    expect(staticPage).toContain('{...(freeSelecting ? {} : viewport.panHandlers)}')
+    expect(staticPage).toContain("const freeSelecting = mode === 'free' && interactionMode === 'select'")
     expect(videoPage).toContain("{...(interactionMode === 'pan' ? viewport.panHandlers : {})}")
     expect(staticPage).toContain('data-testid="canvas-viewport"')
     expect(videoPage).toContain('data-testid="live-player-viewport"')

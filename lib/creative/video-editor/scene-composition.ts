@@ -166,6 +166,37 @@ function withComposition(scene: VideoScene, next: VideoSceneComposition): VideoS
   return Object.keys(cleaned).length > 0 ? { ...rest, composition: cleaned } : rest
 }
 
+// ── Composition mode (CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1) ──────
+//
+// Two modes only: free or Template-backed. Switching is an explicit, whole-
+// composition REPLACEMENT (no semantic mapping). It touches `composition` and
+// drops `element_timing` (its ids belong to the replaced element set); duration,
+// Motion, briefing and the Scene's hero binding are Scene state and are kept.
+
+function withoutElementTiming(scene: VideoScene): VideoScene {
+  const { element_timing: _timing, ...rest } = scene
+  void _timing
+  return rest
+}
+
+/**
+ * Enters the Template: an EXPLICIT Template composition (Cover, its default
+ * appearance, the positional title) — never an absent composition, which stays
+ * reserved for legacy Scenes that always rendered as Cover.
+ */
+export function applySceneTemplate(scene: VideoScene): VideoScene {
+  if (!isFreeComposition(scene.composition)) return scene
+  const { composition: _free, ...rest } = withoutElementTiming(scene)
+  void _free
+  return { ...rest, composition: { layout: LEGACY_SCENE_LAYOUT_ID, content: defaultSceneContent(LEGACY_SCENE_LAYOUT_ID, legacySceneTitle(scene.order)) } }
+}
+
+/** Replaces a Template composition with an EMPTY free composition (no Template → free conversion). */
+export function applySceneFreeComposition(scene: VideoScene): VideoScene {
+  if (isFreeComposition(scene.composition)) return scene
+  return { ...withoutElementTiming(scene), composition: { kind: 'free', elements: [] } }
+}
+
 function currentComposition(scene: VideoScene): VideoSceneComposition {
   return isPlainObject(scene.composition) && !isFreeComposition(scene.composition) ? scene.composition as VideoSceneComposition : {}
 }

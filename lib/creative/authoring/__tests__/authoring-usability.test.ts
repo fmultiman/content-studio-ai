@@ -278,7 +278,10 @@ describe('Save / restore / render semantics', () => {
 
   it('Salvar is enabled only when the draft differs from the saved state', () => {
     expect(PAGE).toMatch(/disabled=\{!dirty && saveStatus !== 'error'\} onClick=\{\(\) => void saveNow\(\)\}/)
-    expect(PAGE).toMatch(/const dirty = isCarousel && slides \? persistedSnapshot\(slides, templateId\) !== lastSavedSnapshot : false/)
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: every static format, either mode; before any
+    // save the bootstrap (a blank free canvas) is the clean baseline, never an unsaved edit.
+    expect(PAGE).toMatch(/const currentSnapshot = units \? persistedSnapshot\(mode, slides, freeSlides, templateId\) : null/)
+    expect(PAGE).toMatch(/const dirty = currentSnapshot !== null && currentSnapshot !== \(lastSavedSnapshot \?\? baselineSnapshot\)/)
   })
 
   it('Gerar PNG never saves authoring state', () => {
@@ -290,7 +293,7 @@ describe('Save / restore / render semantics', () => {
     expect(PAGE).toMatch(/window\.localStorage\.getItem\(AUTOSAVE_PREF_KEY\) === 'true'/)
     // The load-time skip is consumed BEFORE the autosave/dirty gate, so it can only ever
     // swallow the hydration run — never the author's first edit after enabling autosave.
-    const effect = PAGE.slice(PAGE.indexOf('if (!isCarousel || !slides) return'), PAGE.indexOf('setTimeout(() => { void saveNow() }, 600)'))
+    const effect = PAGE.slice(PAGE.indexOf('if (!units) return'), PAGE.indexOf('setTimeout(() => { void saveNow() }, 600)'))
     expect(effect.indexOf('skipNextAutosaveRef.current = false')).toBeGreaterThan(-1)
     expect(effect.indexOf('skipNextAutosaveRef.current = false')).toBeLessThan(effect.indexOf('if (!autosaveEnabled || !dirty) return'))
     expect(PAGE).toMatch(/setTimeout\(\(\) => \{ void saveNow\(\) \}, 600\)/)

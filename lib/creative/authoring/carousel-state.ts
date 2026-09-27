@@ -53,6 +53,8 @@ import {
   type AuthoringAssetSlotId,
 } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
+import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
+import type { FreeSceneComposition } from '@/lib/types'
 
 export const STATIC_AUTHORING_STATE_SCHEMA_VERSION = 'static-authoring-state.v1' as const
 
@@ -174,6 +176,28 @@ export const PersistedAuthoredSlideSchema = z
 
 export type PersistedAuthoredSlide = z.infer<typeof PersistedAuthoredSlideSchema>
 
+/**
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — a FREE slide: no Template,
+ * no layout, no slots. Its `composition` is exactly the free composition a Video
+ * Scene carries (`{ kind: 'free', elements }`), validated by the same strict
+ * write-boundary check. Explicit by construction: a Template slide can never
+ * have a `composition` key (its schema is strict), so the two never overlap.
+ */
+export const PersistedFreeSlideSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    order: z.number().int().nonnegative(),
+    composition: z.custom<FreeSceneComposition>((value) => validateFreeCompositionShape(value).ok, { message: 'invalid free composition' }),
+  })
+  .strict()
+
+export type PersistedFreeSlide = z.infer<typeof PersistedFreeSlideSchema>
+export type PersistedStaticSlide = PersistedAuthoredSlide | PersistedFreeSlide
+
+export function isPersistedFreeSlide(slide: PersistedStaticSlide): slide is PersistedFreeSlide {
+  return 'composition' in slide
+}
+
 export const StaticAuthoringStateSchema = z
   .object({
     schemaVersion: z.literal(STATIC_AUTHORING_STATE_SCHEMA_VERSION),
@@ -182,9 +206,19 @@ export const StaticAuthoringStateSchema = z
     // authored with (carousel root, not per slide). Optional on write for
     // older clients (persisted as the default); an unknown id is rejected.
     templateId: z.string().trim().min(1).refine(isRegisteredTemplateId, { message: 'templateId is not a registered template' }).optional(),
-    slides: z.array(PersistedAuthoredSlideSchema).min(1),
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — the EXPLICIT free mode
+    // (never inferred from an absent templateId, which older clients omit for
+    // the default Template). Collection-level, like templateId.
+    composition: z.literal('free').optional(),
+    slides: z.array(z.union([PersistedAuthoredSlideSchema, PersistedFreeSlideSchema])).min(1),
   })
   .strict()
+  .refine(
+    (value) => value.composition === 'free'
+      ? value.templateId === undefined && value.slides.every((slide) => 'composition' in slide)
+      : value.slides.every((slide) => !('composition' in slide)),
+    { message: 'a static composition is either all-free (no templateId) or all-Template', path: ['slides'] },
+  )
   .refine(
     (value) => new Set(value.slides.map((slide) => slide.id)).size === value.slides.length,
     { message: 'slide ids must be unique within a static authoring state', path: ['slides'] },
@@ -197,7 +231,7 @@ export const StaticAuthoringStateSchema = z
 export type StaticAuthoringStateContract = z.infer<typeof StaticAuthoringStateSchema>
 
 /** Sorted by `order` — the persisted field is the source of truth for sequence, never array position alone. */
-export function sortedSlides(slides: readonly PersistedAuthoredSlide[]): PersistedAuthoredSlide[] {
+export function sortedSlides<T extends { order: number }>(slides: readonly T[]): T[] {
   return [...slides].sort((a, b) => a.order - b.order)
 }
 

@@ -11,6 +11,11 @@
  * - paint order: array order, back -> front (the repository's element_order convention);
  * - style: Project Identity token ROLES only (typography display|body, color roles);
  * - images: LibraryFile identity only (no URL, no metadata copy).
+ *
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the element helpers are
+ * generic over their HOST (anything carrying `composition`), so a Static free
+ * slide (`{ id, order, composition: { kind: 'free', elements } }`) reuses the
+ * exact same spatial semantics. Only a Video Scene also has `element_timing`.
  */
 import type {
   FreeElementBox, FreeImageElement, FreeSceneComposition, FreeSceneElement, FreeTextElement, VideoScene,
@@ -32,6 +37,9 @@ export const FREE_IMAGE_FITS = ['cover', 'contain'] as const
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+/** Anything that carries a composition: a Video Scene, or a Static free slide. */
+export type FreeHost = { composition?: unknown; element_timing?: unknown }
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -41,11 +49,11 @@ export function isFreeComposition(raw: unknown): raw is FreeSceneComposition {
   return isPlainObject(raw) && raw.kind === 'free'
 }
 
-export function isFreeScene(scene: Pick<VideoScene, 'composition'>): boolean {
+export function isFreeScene(scene: FreeHost): boolean {
   return isFreeComposition(scene.composition)
 }
 
-export function freeElements(scene: Pick<VideoScene, 'composition'>): FreeSceneElement[] {
+export function freeElements(scene: FreeHost): FreeSceneElement[] {
   return isFreeComposition(scene.composition) && Array.isArray(scene.composition.elements) ? scene.composition.elements : []
 }
 
@@ -138,7 +146,7 @@ export function createFreeScene(order: number, id: string, durationSeconds: numb
   }
 }
 
-function withElements(scene: VideoScene, elements: FreeSceneElement[]): VideoScene {
+function withElements<T extends FreeHost>(scene: T, elements: FreeSceneElement[]): T {
   if (!isFreeComposition(scene.composition)) return scene
   return { ...scene, composition: { kind: 'free', elements } }
 }
@@ -146,14 +154,14 @@ function withElements(scene: VideoScene, elements: FreeSceneElement[]): VideoSce
 export const DEFAULT_FREE_TEXT_BOX: FreeElementBox = { x: 0.08, y: 0.1, width: 0.84, height: 0.2 }
 export const DEFAULT_FREE_IMAGE_BOX: FreeElementBox = { x: 0.1, y: 0.35, width: 0.8, height: 0.45 }
 
-export function addFreeTextElement(scene: VideoScene, id: string): VideoScene {
+export function addFreeTextElement<T extends FreeHost>(scene: T, id: string): T {
   const elements = freeElements(scene)
   if (!isFreeScene(scene) || elements.length >= MAX_FREE_ELEMENTS || elements.some((element) => element.id === id)) return scene
   const element: FreeTextElement = { id, kind: 'text', box: { ...DEFAULT_FREE_TEXT_BOX }, text: 'Texto', typography: 'display', color: 'foreground', align: 'left', size: 'large' }
   return withElements(scene, [...elements, element])
 }
 
-export function addFreeImageElement(scene: VideoScene, id: string, libraryFileId: string): VideoScene {
+export function addFreeImageElement<T extends FreeHost>(scene: T, id: string, libraryFileId: string): T {
   const elements = freeElements(scene)
   if (!isFreeScene(scene) || elements.length >= MAX_FREE_ELEMENTS || elements.some((element) => element.id === id)) return scene
   const element: FreeImageElement = { id, kind: 'image', box: { ...DEFAULT_FREE_IMAGE_BOX }, library_file_id: libraryFileId, fit: 'cover' }
@@ -164,7 +172,7 @@ export type FreeTextPatch = Partial<Pick<FreeTextElement, 'text' | 'typography' 
 export type FreeImagePatch = Partial<Pick<FreeImageElement, 'library_file_id' | 'fit'>>
 
 /** Kind-specific fields only; the element's id and kind never change. */
-export function updateFreeElement(scene: VideoScene, elementId: string, patch: FreeTextPatch | FreeImagePatch): VideoScene {
+export function updateFreeElement<T extends FreeHost>(scene: T, elementId: string, patch: FreeTextPatch | FreeImagePatch): T {
   const elements = freeElements(scene)
   const index = elements.findIndex((element) => element.id === elementId)
   if (index < 0) return scene
@@ -182,7 +190,7 @@ function pick<T extends object, K extends keyof T>(source: T, keys: readonly K[]
   return out
 }
 
-export function setFreeElementBox(scene: VideoScene, elementId: string, box: Partial<FreeElementBox>): VideoScene {
+export function setFreeElementBox<T extends FreeHost>(scene: T, elementId: string, box: Partial<FreeElementBox>): T {
   const elements = freeElements(scene)
   const index = elements.findIndex((element) => element.id === elementId)
   if (index < 0) return scene
@@ -190,7 +198,7 @@ export function setFreeElementBox(scene: VideoScene, elementId: string, box: Par
   return withElements(scene, elements.map((element, i) => (i === index ? next : element)))
 }
 
-export function setFreeElementHidden(scene: VideoScene, elementId: string, hidden: boolean): VideoScene {
+export function setFreeElementHidden<T extends FreeHost>(scene: T, elementId: string, hidden: boolean): T {
   const elements = freeElements(scene)
   if (!elements.some((element) => element.id === elementId)) return scene
   return withElements(scene, elements.map((element) => {
@@ -202,21 +210,21 @@ export function setFreeElementHidden(scene: VideoScene, elementId: string, hidde
 }
 
 /** Removes the element AND its Scene-local timing entry in the same edit (never an orphan timing id). */
-export function removeFreeElement(scene: VideoScene, elementId: string): VideoScene {
+export function removeFreeElement<T extends FreeHost>(scene: T, elementId: string): T {
   const elements = freeElements(scene)
   if (!elements.some((element) => element.id === elementId)) return scene
   const next = withElements(scene, elements.filter((element) => element.id !== elementId))
   const timing = next.element_timing
-  if (!timing || typeof timing !== 'object' || !(elementId in timing)) return next
+  if (!isPlainObject(timing) || !(elementId in timing)) return next
   const { [elementId]: _removed, ...remaining } = timing
   void _removed
   const { element_timing: _previous, ...rest } = next
   void _previous
-  return Object.keys(remaining).length > 0 ? { ...rest, element_timing: remaining } : rest
+  return (Object.keys(remaining).length > 0 ? { ...rest, element_timing: remaining } : rest) as T
 }
 
 /** One step in paint order: 'forward' = drawn later (in front). */
-export function moveFreeElement(scene: VideoScene, elementId: string, direction: 'forward' | 'backward'): VideoScene {
+export function moveFreeElement<T extends FreeHost>(scene: T, elementId: string, direction: 'forward' | 'backward'): T {
   const elements = freeElements(scene)
   const index = elements.findIndex((element) => element.id === elementId)
   const target = direction === 'forward' ? index + 1 : index - 1

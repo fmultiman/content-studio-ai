@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, Loader2, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronDown, Download, Hand, Loader2, MousePointer2, PanelRight, Play, Plus, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { DashboardPage, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -52,13 +52,21 @@ import {
   patchJobByExecution, renderPhaseLabel, startRenderJob, type StaticRenderJob, type StaticRenderJobs,
 } from '@/lib/creative/authoring/static-render-jobs'
 import type { LibraryFile, RenderExecutionSummary } from '@/lib/types'
+import { CompositionModePanel } from '@/components/creative/authoring/composition-mode-panel'
+import { FreeSceneElements, freeElementLabel } from '@/components/creative/video/free-scene-panels'
+import { FreeElementsOverlay } from '@/components/creative/video/free-scene-overlay'
+import { FreeStage } from '@/components/creative/free/free-stage'
+import { addFreeImageElement, addFreeTextElement, deriveFreeSegment, freeElements, setFreeElementBox, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
+import { DEFAULT_PREVIEW_INTERACTION_MODE, type PreviewInteractionMode } from '@/lib/creative/video-editor/free-manipulation'
+import { createFreeStaticSlide, freeCompositionHasContent, type FreeStaticSlide, type StaticCompositionMode } from '@/lib/creative/authoring/free-static'
+import { isPersistedFreeSlide, type PersistedStaticSlide } from '@/lib/creative/authoring/carousel-state'
 
 /** Image types a slot replacement may use (what the renderer paints as a CSS background). */
 const SLOT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
 
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
 const RENDER_POLL_INTERVAL_MS = 2000
-type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; templateId?: string | null; slides: PersistedAuthoredSlide[] } | null }
+type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; composition?: StaticCompositionMode; templateId?: string | null; slides: PersistedStaticSlide[] } | null }
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
 /** Instagram's carousel ceiling — "Adicionar slide" stops there. */
@@ -104,8 +112,19 @@ function singleSlideDefault(context: ContextResponse, productContext: AuthoringP
   return { id: 'slide-1', order: 0, state }
 }
 
-function persistedSnapshot(slides: AuthoringSlide[], templateId: string): string {
-  return JSON.stringify({ templateId, slides: slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order, templateId)) })
+/**
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — the persisted composition
+ * fields for either mode (the body minus schemaVersion/channelPieceId). FREE is
+ * explicit (`composition: 'free'`, no templateId); TEMPLATE keeps its exact
+ * previous shape, so every saved Template piece keeps an identical snapshot.
+ */
+function persistedBodyFields(mode: StaticCompositionMode, slides: AuthoringSlide[] | null, freeSlides: FreeStaticSlide[] | null, templateId: string) {
+  if (mode === 'free') return { composition: 'free' as const, slides: (freeSlides ?? []).map(({ id, order, composition }) => ({ id, order, composition })) }
+  return { templateId, slides: (slides ?? []).map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order, templateId)) }
+}
+
+function persistedSnapshot(mode: StaticCompositionMode, slides: AuthoringSlide[] | null, freeSlides: FreeStaticSlide[] | null, templateId: string): string {
+  return JSON.stringify(persistedBodyFields(mode, slides, freeSlides, templateId))
 }
 
 
@@ -114,6 +133,15 @@ export default function StaticAuthoringProductPage() {
   const router = useRouter()
   const [context, setContext] = useState<ContextResponse | null>(null)
   const [slides, setSlides] = useState<AuthoringSlide[] | null>(null)
+  // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: two modes, collection-level.
+  // FREE (the default for new authoring) or TEMPLATE (explicit opt-in). Exactly one list is live.
+  const [mode, setMode] = useState<StaticCompositionMode>('free')
+  const [freeSlides, setFreeSlides] = useState<FreeStaticSlide[] | null>(null)
+  // What "clean" means before the first save: the bootstrap itself (a blank free canvas is not an unsaved edit).
+  const [baselineSnapshot, setBaselineSnapshot] = useState<string | null>(null)
+  // Free canvas tool (UI only, never persisted): Mão pans, Selecionar moves/resizes free elements.
+  const [interactionMode, setInteractionMode] = useState<PreviewInteractionMode>(DEFAULT_PREVIEW_INTERACTION_MODE)
+  const [freeImagePicker, setFreeImagePicker] = useState<{ mode: 'add' } | { mode: 'replace'; elementId: string } | null>(null)
   // Creative Editor Template Foundation V1: the carousel's Template (root of
   // the authored state, not per slide). Legacy rows default to the first one.
   const [templateId, setTemplateId] = useState<string>(DEFAULT_TEMPLATE_ID)
@@ -157,9 +185,13 @@ export default function StaticAuthoringProductPage() {
   const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: context?.target.canvas.width ?? 1080, surfaceHeight: context?.target.canvas.height ?? 1350, floating })
 
   const isCarousel = context?.channelPiece.format === 'carousel'
-  // Derived, not stored: comparing the live slides against the last-saved
-  // snapshot is cheap and avoids a setState-in-effect render cascade.
-  const dirty = isCarousel && slides ? persistedSnapshot(slides, templateId) !== lastSavedSnapshot : false
+  // The live authored units of the active mode (a collection only for carousel).
+  const units: { id: string; order: number }[] | null = mode === 'free' ? freeSlides : slides
+  // Derived, not stored: comparing the live composition against the last-saved
+  // snapshot (or, before any save, the bootstrap) is cheap and avoids a
+  // setState-in-effect render cascade. Every static format persists now.
+  const currentSnapshot = units ? persistedSnapshot(mode, slides, freeSlides, templateId) : null
+  const dirty = currentSnapshot !== null && currentSnapshot !== (lastSavedSnapshot ?? baselineSnapshot)
 
   function setAutosaveEnabled(value: boolean) {
     setAutosaveEnabledState(value)
@@ -177,32 +209,52 @@ export default function StaticAuthoringProductPage() {
       setContext(payload)
       const productContext = buildProductContext(payload)
 
-      if (payload.channelPiece.format !== 'carousel') {
-        skipNextAutosaveRef.current = true
-        setLastSavedSnapshot(null)
-        const single = [singleSlideDefault(payload, productContext)]
-        setSlides(single)
-        return
-      }
-
+      // Every static format (post, story, feed, carousel…) persists through the
+      // SAME ChannelPiece-owned row; only a carousel is a collection.
       const stateResponse = await fetch(`/api/creative/static-authoring-state?channelPieceId=${payload.channelPiece.id}`)
       const statePayload = await stateResponse.json() as StaticAuthoringStateResponse & { error?: string }
       if (cancelled) return
-      const persisted = stateResponse.ok ? statePayload.state?.slides ?? null : null
-      const orderedSlides = persisted && persisted.length > 0 ? sortedSlides(persisted) : defaultCarouselSlides(payload.primitiveProjectRef)
+      const persistedState = stateResponse.ok ? statePayload.state ?? null : null
       const canvas = canvasKind(payload)
-      const { template, fallback } = resolveAuthoringTemplate(stateResponse.ok ? statePayload.state?.templateId : undefined)
-      setTemplateId(template.id)
-      setTemplateFallback(fallback)
-
       skipNextAutosaveRef.current = true
-      const hydrated = orderedSlides.map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, template.id) }))
-      setSlides(hydrated)
       setCurrentSlideIndex(0)
-      // Reload/read-back baseline: "saved" only reflects what the API actually
-      // has today. A freshly-defaulted (never-saved) carousel has no baseline
-      // — the first explicit Save (or first autosave) establishes one.
-      setLastSavedSnapshot(persisted && persisted.length > 0 ? persistedSnapshot(hydrated, template.id) : null)
+
+      if (persistedState && persistedState.composition === 'free') {
+        // Saved FREE composition: stays free (never reinterpreted as a Template).
+        const loaded = sortedSlides(persistedState.slides.filter(isPersistedFreeSlide)).map(({ id, order, composition }) => ({ id, order, composition }))
+        const snapshot = persistedSnapshot('free', null, loaded, DEFAULT_TEMPLATE_ID)
+        setMode('free')
+        setFreeSlides(loaded)
+        setSlides(null)
+        setLastSavedSnapshot(snapshot)
+        setBaselineSnapshot(snapshot)
+        return
+      }
+
+      const persisted = persistedState ? persistedState.slides.filter((slide): slide is PersistedAuthoredSlide => !isPersistedFreeSlide(slide)) : []
+      if (persisted.length > 0) {
+        // Saved TEMPLATE composition (e.g. the Documentary carousel): opens exactly as authored.
+        const { template, fallback } = resolveAuthoringTemplate(persistedState?.templateId ?? undefined)
+        setTemplateId(template.id)
+        setTemplateFallback(fallback)
+        const hydrated = sortedSlides(persisted).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, template.id) }))
+        const snapshot = persistedSnapshot('template', hydrated, null, template.id)
+        setMode('template')
+        setSlides(hydrated)
+        setFreeSlides(null)
+        setLastSavedSnapshot(snapshot)
+        setBaselineSnapshot(snapshot)
+        return
+      }
+
+      // Never saved: NEW authoring starts FREE — a blank canvas, no Template
+      // implicitly selected, nothing written until the author saves.
+      const blank = [createFreeStaticSlide('slide-1', 0)]
+      setMode('free')
+      setFreeSlides(blank)
+      setSlides(null)
+      setLastSavedSnapshot(null)
+      setBaselineSnapshot(persistedSnapshot('free', null, blank, DEFAULT_TEMPLATE_ID))
     }
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Erro ao carregar contexto.'))
     return () => { cancelled = true }
@@ -226,28 +278,34 @@ export default function StaticAuthoringProductPage() {
     return () => { cancelled = true }
   }, [projectIdForImages])
 
+  // Free compositions read the style tokens directly (no Template Appearance in between).
+  const freeTokens = useMemo(() => (context ? adaptProjectIdentityToVisualTokens(context.project.id, context.projectIdentity) : null), [context])
+
   /** Authored state of one slide as the render/stale comparison sees it (not UI state). */
   function slideSignature(slideState: AuthoringState): string {
     return JSON.stringify(authoringStateToPersistedSlide(slideState, 'slide', 0, templateId))
   }
+  /** Same, for either mode's unit. */
+  function unitSignature(unit: AuthoringSlide | FreeStaticSlide): string {
+    return 'state' in unit ? slideSignature(unit.state) : JSON.stringify(unit.composition)
+  }
 
-  async function saveNow() {
-    if (!isCarousel || !slides || !context) return
+  /** Persists the current composition (either mode). Resolves true only when the row really saved. */
+  async function saveNow(): Promise<boolean> {
+    if (!units || !context) return false
     setSaveStatus('saving')
-    const snapshot = persistedSnapshot(slides, templateId)
+    const fields = persistedBodyFields(mode, slides, freeSlides, templateId)
+    const snapshot = JSON.stringify(fields)
     try {
-      const body = {
-        schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION,
-        channelPieceId: context.channelPiece.id,
-        templateId,
-        slides: slides.map(({ id, order, state }) => authoringStateToPersistedSlide(state, id, order, templateId)),
-      }
+      const body = { schemaVersion: STATIC_AUTHORING_STATE_SCHEMA_VERSION, channelPieceId: context.channelPiece.id, ...fields }
       const response = await fetch('/api/creative/static-authoring-state', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       if (!response.ok) throw new Error('persist failed')
       setLastSavedSnapshot(snapshot)
       setSaveStatus('saved')
+      return true
     } catch {
       setSaveStatus('error')
+      return false
     }
   }
 
@@ -281,7 +339,7 @@ export default function StaticAuthoringProductPage() {
   // CREATIVE_EDITOR_STATIC_SHELL_FOUNDATION_V1.md for the previous always-on behavior
   // this replaces). Reuses the same 600ms debounce and the same PUT as explicit Save.
   useEffect(() => {
-    if (!isCarousel || !slides) return
+    if (!units) return
     // The skip exists only to never autosave the load/hydration itself. Consume it on
     // the first run after load regardless of autosave/dirty: it used to wait for the
     // first dirty run with autosave ON, silently swallowing the author's first real
@@ -291,10 +349,62 @@ export default function StaticAuthoringProductPage() {
     const timeout = setTimeout(() => { void saveNow() }, 600)
     return () => clearTimeout(timeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slides, isCarousel, autosaveEnabled, dirty])
+  }, [slides, freeSlides, mode, autosaveEnabled, dirty])
 
-  const currentSlide = slides?.[currentSlideIndex] ?? null
+  const currentSlide = mode === 'template' ? slides?.[currentSlideIndex] ?? null : null
+  const currentFreeSlide = mode === 'free' ? freeSlides?.[currentSlideIndex] ?? null : null
+  const currentUnit: AuthoringSlide | FreeStaticSlide | null = currentSlide ?? currentFreeSlide
   const state = currentSlide?.state ?? null
+
+  /** One free-slide edit (the shared free-composition helpers), applied to the current free unit only. */
+  function editCurrentFree(edit: (slide: FreeStaticSlide) => FreeStaticSlide) {
+    setFreeSlides((current) => current ? current.map((slide, index) => (index === currentSlideIndex ? edit(slide) : slide)) : current)
+  }
+
+  /** A fresh slide id, never one used before in this session (removed, switched away from, or with renders). */
+  function freshSlideIds(count: number): string[] {
+    const taken = [...(units ?? []).map((unit) => unit.id), ...reservedSlideIdsRef.current]
+    const ids: string[] = []
+    for (let index = 0; index < count; index += 1) {
+      const id = nextSlideId([...taken, ...ids])
+      ids.push(id)
+    }
+    return ids
+  }
+
+  /**
+   * Explicit Template entry: REPLACES the composition with the Template's own
+   * defaults (the carousel's Cover + Info, or a single piece's contextual
+   * Cover). No mapping from free elements. Unsaved until Salvar/autosave.
+   */
+  function enterTemplate(nextTemplateId: string) {
+    if (!context) return
+    const productContext = buildProductContext(context)
+    const canvas = canvasKind(context)
+    const created: AuthoringSlide[] = isCarousel
+      ? defaultCarouselSlides(context.primitiveProjectRef, nextTemplateId).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, nextTemplateId) }))
+      : [singleSlideDefault(context, productContext)]
+    const ids = freshSlideIds(created.length)
+    for (const unit of units ?? []) reservedSlideIdsRef.current.add(unit.id)
+    setTemplateId(nextTemplateId)
+    setTemplateFallback(false)
+    setSlides(created.map((slide, index) => ({ ...slide, id: ids[index], order: index })))
+    setFreeSlides(null)
+    setMode('template')
+    setCurrentSlideIndex(0)
+    setOpenElementId(null)
+  }
+
+  /** Explicit free entry: REPLACES the Template composition with ONE blank free unit (no conversion). */
+  function enterFree() {
+    const [id] = freshSlideIds(1)
+    for (const unit of units ?? []) reservedSlideIdsRef.current.add(unit.id)
+    setFreeSlides([createFreeStaticSlide(id, 0)])
+    setSlides(null)
+    setMode('free')
+    setCurrentSlideIndex(0)
+    setOpenElementId(null)
+  }
 
   function switchSlide(index: number) {
     // Render jobs are per-slide: switching never clears or rebinds them.
@@ -316,9 +426,21 @@ export default function StaticAuthoringProductPage() {
 
   function revert() {
     if (!lastSavedSnapshot || !context) return
+    const saved = JSON.parse(lastSavedSnapshot) as { composition?: 'free'; slides: PersistedStaticSlide[] }
+    if (saved.composition === 'free') {
+      // Back to the saved FREE composition (also undoes an unsaved Template entry).
+      const restoredFree = sortedSlides(saved.slides.filter(isPersistedFreeSlide)).map(({ id, order, composition }) => ({ id, order, composition }))
+      setMode('free')
+      setFreeSlides(restoredFree)
+      setSlides(null)
+      setCurrentSlideIndex((index) => Math.min(index, restoredFree.length - 1))
+      return
+    }
     const persisted = JSON.parse(lastSavedSnapshot) as { templateId: string; slides: PersistedAuthoredSlide[] }
     const productContext = buildProductContext(context)
     const canvas = canvasKind(context)
+    setMode('template')
+    setFreeSlides(null)
     setTemplateId(persisted.templateId)
     const restored = sortedSlides(persisted.slides).map((slide) => ({ id: slide.id, order: slide.order, state: persistedSlideToAuthoringState(slide, productContext, canvas, persisted.templateId) }))
     setSlides(restored)
@@ -338,11 +460,21 @@ export default function StaticAuthoringProductPage() {
   }
 
   function openAddSlide() {
+    if (mode === 'free') { addFreeSlide(); return }
     const template = resolveAuthoringTemplate(templateId).template
     const layoutId = currentSlide?.state.variant && getTemplateLayout(template, currentSlide.state.variant) ? currentSlide.state.variant : template.layouts[0].id
     setAddLayoutId(layoutId)
     setAddAppearance(getTemplateLayout(template, layoutId)?.defaultAppearance ?? 'light')
     setAddSlideOpen(true)
+  }
+
+  /** Free carousel: appends one blank free slide and selects it. Unsaved until Salvar/autosave. */
+  function addFreeSlide() {
+    if (!freeSlides || freeSlides.length >= MAX_CAROUSEL_SLIDES) return
+    const [id] = freshSlideIds(1)
+    setFreeSlides([...freeSlides, createFreeStaticSlide(id, nextSlideOrder(freeSlides))])
+    setCurrentSlideIndex(freeSlides.length)
+    setOpenElementId(null)
   }
 
   /** Appends a Template-initialized slide (never a clone) and selects it. Unsaved until Salvar/autosave. */
@@ -371,9 +503,18 @@ export default function StaticAuthoringProductPage() {
    * render executions, Gallery) are never touched.
    */
   function removeCurrentSlide() {
-    if (!slides || !currentSlide || slides.length <= 1) return
+    if (!units || !currentUnit || units.length <= 1) return
+    reservedSlideIdsRef.current.add(currentUnit.id)
+    if (mode === 'free' && freeSlides) {
+      const result = removeSlideFromCollection(freeSlides, currentSlideIndex)
+      setFreeSlides(result.slides)
+      setCurrentSlideIndex(result.selectedIndex)
+      setOpenElementId(null)
+      setRemoveDialogOpen(false)
+      return
+    }
+    if (!slides) return
     const result = removeSlideFromCollection(slides, currentSlideIndex)
-    reservedSlideIdsRef.current.add(currentSlide.id)
     setSlides(result.slides)
     setCurrentSlideIndex(result.selectedIndex)
     setOpenElementId(null)
@@ -397,7 +538,32 @@ export default function StaticAuthoringProductPage() {
     return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder, hiddenElements: deriveHiddenElementsRequest(state, templateId) }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
   }, [previewInput, state, slides, currentSlideIndex, templateId, projectImages])
 
+  /** "Gerar PNG" of a FREE unit: the template-free still (same execution plane; no TemplateRef). */
+  async function renderFree(unit: FreeStaticSlide) {
+    if (!context || !freeSlides) return
+    const slideRef = { id: unit.id, index: currentSlideIndex + 1, total: freeSlides.length }
+    const previous = renderJobs[slideRef.id]
+    if (previous && isActiveRenderPhase(previous.phase)) return
+    const body = {
+      context: { projectId: context.project.id, editorialContentId: context.editorialContent.id, channelPieceId: context.channelPiece.id },
+      composition: unit.composition,
+      idempotencyKey: crypto.randomUUID(),
+      slide: slideRef,
+      ...(previous?.phase === 'failed' && previous.executionId ? { retryOfExecutionId: previous.executionId } : {}),
+    }
+    setRenderJobs((jobs) => startRenderJob(jobs, slideRef, Date.now(), unitSignature(unit)))
+    try {
+      const response = await fetch('/api/creative/static-authoring/render', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      const payload = await response.json().catch(() => null) as { executionId?: string; status?: RenderExecutionSummary['status']; error?: string } | null
+      if (!response.ok || !payload?.executionId || !payload.status) throw new Error(payload?.error || 'Nao foi possivel enfileirar o render.')
+      setRenderJobs((jobs) => attachExecution(jobs, slideRef.id, payload.executionId as string, payload.status as RenderExecutionSummary['status']))
+    } catch (cause: unknown) {
+      setRenderJobs((jobs) => failEnqueue(jobs, slideRef.id, cause instanceof Error ? cause.message : 'Nao foi possivel enfileirar o render.', Date.now()))
+    }
+  }
+
   async function render() {
+    if (currentFreeSlide) { await renderFree(currentFreeSlide); return }
     if (!state?.productContext || !slides || !currentSlide) return
     const slideRef = { id: currentSlide.id, index: currentSlideIndex + 1, total: slides.length }
     const previous = renderJobs[slideRef.id]
@@ -479,12 +645,12 @@ export default function StaticAuthoringProductPage() {
     }
   }, [renderJobs])
 
-  const slidesRef = useRef<AuthoringSlide[] | null>(null)
-  useEffect(() => { slidesRef.current = slides }, [slides])
+  const slidesRef = useRef<(AuthoringSlide | FreeStaticSlide)[] | null>(null)
+  useEffect(() => { slidesRef.current = mode === 'free' ? freeSlides : slides }, [slides, freeSlides, mode])
 
   // Refresh/reopen: rebind recent executions to the slides that created them.
   const channelPieceIdForRenders = context?.channelPiece.id ?? null
-  const slideIdsKey = slides?.map((slide) => slide.id).join(',') ?? ''
+  const slideIdsKey = units?.map((slide) => slide.id).join(',') ?? ''
   useEffect(() => {
     if (!channelPieceIdForRenders || !slideIdsKey || hydratedRenderJobsRef.current === channelPieceIdForRenders) return
     hydratedRenderJobsRef.current = channelPieceIdForRenders
@@ -496,7 +662,7 @@ export default function StaticAuthoringProductPage() {
         const payload = await response.json() as { executions?: RenderExecutionSummary[] }
         for (const execution of payload.executions ?? []) if (execution.slide?.id) reservedSlideIdsRef.current.add(execution.slide.id)
         // Baseline for "Alterações ainda não renderizadas": the authored state at load. Any later edit is provably absent from these older renders.
-        const signaturesAtLoad = Object.fromEntries((slidesRef.current ?? []).map((slide) => [slide.id, slideSignature(slide.state)]))
+        const signaturesAtLoad = Object.fromEntries((slidesRef.current ?? []).map((slide) => [slide.id, unitSignature(slide)]))
         if (!cancelled && payload.executions?.length) setRenderJobs((jobs) => hydrateRenderJobs(jobs, payload.executions ?? [], new Set(slideIdsKey.split(',')), signaturesAtLoad))
       } catch {
         // hydration is best-effort; rendering still works
@@ -512,6 +678,13 @@ export default function StaticAuthoringProductPage() {
     // Explicit only: AUTHORING SAVE != PNG RENDER != SAVE OUTPUT TO LIBRARY.
     const executionId = job.executionId
     setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'saving', saveError: null }))
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a durable output never
+    // outlives its authored source. Unsaved authoring is saved FIRST; if that
+    // save fails, nothing is attached.
+    if (dirty && !(await saveNow())) {
+      setRenderJobs((jobs) => patchJobByExecution(jobs, executionId, { save: 'error', saveError: 'Salve a autoria antes de anexar: o salvamento falhou.' }))
+      return
+    }
     try {
       const response = await fetch(`/api/render-executions/${executionId}/output`)
       if (!response.ok) throw new Error('Nao foi possivel ler o PNG gerado.')
@@ -530,25 +703,25 @@ export default function StaticAuthoringProductPage() {
   const canvasH = context?.target.canvas.height ?? 1350
 
   if (error && !context) return <DashboardPage><DashboardPageContent width="4xl"><Card><CardContent className="p-6"><p className="text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => router.back()}>Voltar</Button></CardContent></Card></DashboardPageContent></DashboardPage>
-  if (!context || !state || !slides) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
+  if (!context || !units || !currentUnit) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
 
   const template = resolveAuthoringTemplate(templateId).template
-  const layout = getTemplateLayout(template, state.variant)
-  const elements = elementsForVariant(state.variant, template.id)
+  const layout = state ? getTemplateLayout(template, state.variant) : undefined
+  const elements = state ? elementsForVariant(state.variant, template.id) : []
   // The CURRENT slide's own render job only — other slides' jobs keep running
   // and stay bound to their slides (see static-render-jobs.ts).
-  const currentRenderJob = currentSlide ? renderJobs[currentSlide.id] : undefined
+  const currentRenderJob = renderJobs[currentUnit.id]
   const currentRenderActive = Boolean(currentRenderJob && isActiveRenderPhase(currentRenderJob.phase))
-  const currentRenderStale = isRenderStale(currentRenderJob, slideSignature(state))
+  const currentRenderStale = isRenderStale(currentRenderJob, unitSignature(currentUnit))
   const previewJob = previewJobSlideId ? renderJobs[previewJobSlideId] : undefined
-  const slideTotal = slides.length
+  const slideTotal = units.length
   // Static Detail Polish V1 (O): the UI shows the page NUMBER only; the total stays in state/aria/render metadata.
   const slideLabel = `Slide ${currentSlideIndex + 1}`
-  const currentHasSavedOutput = Boolean(currentSlide && renderJobs[currentSlide.id]?.save === 'saved')
+  const currentHasSavedOutput = renderJobs[currentUnit.id]?.save === 'saved'
   // An expanded element the active layout does not have (layout switch) is simply closed.
   const openElement = openElementId && elements.some((element) => element.key === openElementId) ? openElementId : null
   const elementLabels = Object.fromEntries(elements.map((element) => [element.key, element.label]))
-  const stack = resolveElementStack(template.id, state.variant, state.elementOrder)
+  const stack = state ? resolveElementStack(template.id, state.variant, state.elementOrder) : { order: [] as string[] }
   const stackIsDefault = layout ? isDefaultElementOrder(layout, stack.order) : true
   const slotsInUse = layout ? layoutAssetSlots(template, layout) : []
   const pickerSlot = assetPickerSlot ? slotsInUse.find(({ slot }) => slot.id === assetPickerSlot)?.slot ?? null : null
@@ -569,9 +742,14 @@ export default function StaticAuthoringProductPage() {
   }
 
   // Structured layouts (Lista, Grade, Mapa, Rede, Citação, Encerramento) edit through their field descriptors.
-  const structuredFields = LAYOUT_CONTENT_FIELDS[state.variant]
+  const structuredFields = state ? LAYOUT_CONTENT_FIELDS[state.variant] : undefined
 
-  const inspector = (
+  const templateChoices = listTemplateDefinitions().map((definition) => ({ id: definition.id, name: definition.name, description: definition.description }))
+  const compositionScope = isCarousel ? 'desta peça (todos os slides)' : 'desta peça'
+  const freeWording = { unit: isCarousel ? 'slide' as const : 'arte' as const, stage: 'do formato da peça' }
+  const freeUnitElements = currentFreeSlide ? freeElements(currentFreeSlide) : []
+
+  const freeInspector = currentFreeSlide ? (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
       <TabsList className="flex w-full">
         {INSPECTOR_SECTIONS.map((section) => (
@@ -582,6 +760,52 @@ export default function StaticAuthoringProductPage() {
         ))}
       </TabsList>
       <TabsContent value="template" className="space-y-3 pt-3">
+        <CompositionModePanel mode="free" templates={templateChoices} scope={compositionScope} freeHasContent={freeCompositionHasContent(freeSlides ?? [])} onChooseTemplate={enterTemplate} onChooseFree={enterFree} />
+      </TabsContent>
+      <TabsContent value="content" className="space-y-3 pt-3">
+        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-static-content">Composição livre: os textos são elementos, editados em Elementos (sem estrutura de template).</p>
+      </TabsContent>
+      <TabsContent value="assets" className="space-y-2 pt-3">
+        <p className="text-[11px] text-muted-foreground">Imagens da Biblioteca usadas pelos elementos {isCarousel ? 'deste slide' : 'desta arte'} (sem slots de template). Trocar aqui usa a mesma imagem do elemento; posição e encaixe ficam em Elementos.</p>
+        {freeUnitElements.filter((element) => element.kind === 'image').length === 0 ? <p className="text-[11px] text-muted-foreground" data-testid="free-static-assets-empty">Nenhuma imagem ainda.</p> : null}
+        {freeUnitElements.map((element) => element.kind === 'image' ? (
+          <div key={element.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 p-1.5" data-testid="free-static-asset">
+            <span className="min-w-0 truncate text-xs">{freeElementLabel(element, projectImages.get(element.library_file_id)?.name)}{element.hidden ? ' (oculta)' : ''}</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setFreeImagePicker({ mode: 'replace', elementId: element.id })}>Trocar</Button>
+          </div>
+        ) : null)}
+      </TabsContent>
+      <TabsContent value="style" className="pt-3">
+        <StyleSourcePanel tokens={freeTokens ?? undefined} free />
+      </TabsContent>
+      <TabsContent value="element" className="pt-3">
+        <FreeSceneElements
+          scene={currentFreeSlide}
+          fileNames={new Map([...projectImages.values()].map((file) => [file.id, file.name]))}
+          openId={openElementId}
+          onOpen={setOpenElementId}
+          onEdit={editCurrentFree}
+          onAddText={() => { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeTextElement(slide, id)); setOpenElementId(id) }}
+          onAddImage={() => setFreeImagePicker({ mode: 'add' })}
+          onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
+          wording={freeWording}
+        />
+      </TabsContent>
+    </Tabs>
+  ) : null
+
+  const templateInspector = state ? (
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
+      <TabsList className="flex w-full">
+        {INSPECTOR_SECTIONS.map((section) => (
+          <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label} aria-label={section.label}>
+            <span className="inspector-tab-full">{section.label}</span>
+            <span className="inspector-tab-compact" aria-hidden="true">{section.compactLabel}</span>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      <TabsContent value="template" className="space-y-3 pt-3">
+        <CompositionModePanel mode="template" templates={templateChoices} currentTemplateId={template.id} scope={compositionScope} freeHasContent={false} onChooseTemplate={enterTemplate} onChooseFree={enterFree}>
         <div className="space-y-1.5">
           <Label htmlFor="template-selector" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</Label>
           <Select value={template.id} onValueChange={(value) => setTemplateId(value)}>
@@ -595,6 +819,7 @@ export default function StaticAuthoringProductPage() {
         <p className="text-xs text-muted-foreground">{template.description}</p>
         <TemplateFamilyAnatomy template={template} />
         {layout ? <TemplateAnatomy template={template} layout={layout} /> : null}
+        </CompositionModePanel>
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
         {structuredFields ? <LayoutContentForm fields={structuredFields} content={state.contentOverride} dispatch={dispatch} /> : <>
@@ -634,31 +859,75 @@ export default function StaticAuthoringProductPage() {
         />
       </TabsContent>
     </Tabs>
-  )
+  ) : null
 
+  const inspector = mode === 'free' ? freeInspector : templateInspector
+
+  // Free canvas: the SAME drawing the still render uses (FreeStage), with the Library display URLs.
+  const freeSelecting = mode === 'free' && interactionMode === 'select'
+  const freeStage = currentFreeSlide && freeTokens ? deriveFreeSegment(currentFreeSlide.composition) : null
   const canvas = (
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
       <div
         ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
-        style={{ cursor: viewport.panning ? 'grabbing' : 'grab', touchAction: floating ? 'none' : 'pan-y' }}
-        {...viewport.panHandlers}
+        style={{ cursor: freeSelecting ? 'default' : viewport.panning ? 'grabbing' : 'grab', touchAction: floating || freeSelecting ? 'none' : 'pan-y' }}
+        {...(freeSelecting ? {} : viewport.panHandlers)}
+        data-interaction-mode={mode === 'free' ? interactionMode : 'pan'}
         aria-label="Canvas (arraste para mover a visualização)"
         data-testid="canvas-viewport"
         data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
       >
         <div className="absolute overflow-hidden" style={{ left: viewport.origin.left, top: viewport.origin.top, width: viewport.scaledWidth, height: viewport.scaledHeight }} data-testid="canvas-surface">
-          <div style={{ width: canvasW, height: canvasH, transform: `scale(${viewport.scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>{cardProps ? <DocumentaryCard {...cardProps} /> : null}</div>
+          <div style={{ position: 'relative', width: canvasW, height: canvasH, transform: `scale(${viewport.scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>
+            {mode === 'template' && cardProps ? <DocumentaryCard {...cardProps} /> : null}
+            {freeStage && freeTokens ? (
+              <FreeStage
+                elements={freeStage.payload.elements}
+                width={canvasW}
+                height={canvasH}
+                tokens={freeTokens}
+                imageUrl={(ref) => { const file = projectImages.get(freeStage.assets[ref]?.ref ?? ''); return file?.public_url ? { url: file.public_url, alt: file.name } : undefined }}
+                // eslint-disable-next-line @next/next/no-img-element -- editor preview of a signed Library display URL
+                ImageComponent={(props) => <img {...props} alt={props.alt ?? ''} />}
+                dataAttributes={{ 'data-testid': 'free-static-stage' }}
+              />
+            ) : null}
+          </div>
         </div>
+        {currentFreeSlide && freeUnitElements.length === 0 ? (
+          <p className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded bg-black/60 px-2 py-1 text-[11px] text-white" data-testid="free-static-empty-hint">Composição livre em branco · adicione um texto ou uma imagem em Elementos</p>
+        ) : null}
+        {freeSelecting && currentFreeSlide ? (
+          <FreeElementsOverlay
+            left={viewport.origin.left}
+            top={viewport.origin.top}
+            width={viewport.scaledWidth}
+            height={viewport.scaledHeight}
+            elements={freeUnitElements.filter((element) => !element.hidden)}
+            editable
+            selectedElementId={openElementId}
+            onSelect={(elementId) => { setOpenElementId(elementId); if (elementId) setActiveTab('element') }}
+            onBoxChange={(elementId, box) => editCurrentFree((slide) => setFreeElementBox(slide, elementId, box))}
+            onInteractionStart={() => undefined}
+            hostId={currentFreeSlide.id}
+          />
+        ) : null}
       </div>
       <div className="flex shrink-0 flex-nowrap items-center justify-between gap-2 overflow-x-auto border-t border-border/40 px-3 py-1.5" data-testid="editor-lower-toolbar">
         {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Slides" data-testid="slide-nav">
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.max(0, currentSlideIndex - 1))} disabled={currentSlideIndex === 0} aria-label="Slide anterior"><ArrowLeft className="h-3.5 w-3.5" /></Button>
-          {visibleSlideIndexes(slideTotal, currentSlideIndex, viewport.size.width > 0 && viewport.size.width < 600 ? 3 : 5).map((index) => { const slide = slides[index]; return <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button> })}
+          {visibleSlideIndexes(slideTotal, currentSlideIndex, viewport.size.width > 0 && viewport.size.width < 600 ? 3 : 5).map((index) => { const slide = units[index]; return <Button key={slide.id} size="sm" className="min-w-8 px-2 text-xs" variant={index === currentSlideIndex ? 'default' : 'outline'} aria-pressed={index === currentSlideIndex} aria-label={`Slide ${index + 1} de ${slideTotal}`} onClick={() => switchSlide(index)}>{index + 1}</Button> })}
           <Button size="icon-sm" variant="outline" onClick={() => switchSlide(Math.min(slideTotal - 1, currentSlideIndex + 1))} disabled={currentSlideIndex === slideTotal - 1} aria-label="Próximo slide"><ArrowRight className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={slideTotal <= 1} aria-label={`Remover slide ${currentSlideIndex + 1}`} title={slideTotal <= 1 ? 'O carrossel precisa de pelo menos um slide' : 'Remover slide'} data-testid="remove-slide"><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>}
+        {mode === 'free' ? (
+          <div className="flex shrink-0 items-center rounded-md border border-border/60 p-0.5" role="radiogroup" aria-label="Ferramenta do canvas" data-testid="preview-tool">
+            <Button size="icon-sm" variant={interactionMode === 'select' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'select'} onClick={() => setInteractionMode('select')} aria-label="Selecionar e editar" title="Selecionar e editar (mover e redimensionar elementos livres)" data-testid="preview-tool-select"><MousePointer2 className="h-3.5 w-3.5" /></Button>
+            <Button size="icon-sm" variant={interactionMode === 'pan' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'pan'} onClick={() => setInteractionMode('pan')} aria-label="Mão (mover a visualização)" title="Mão: arrastar move a visualização" data-testid="preview-tool-pan"><Hand className="h-3.5 w-3.5" /></Button>
+          </div>
+        ) : null}
         <ViewportZoomControls
           zoom={viewport.zoom}
           fitScale={viewport.fitScale}
@@ -667,9 +936,9 @@ export default function StaticAuthoringProductPage() {
           onAction={viewport.action}
           trailing={floating && !inspectorOpen ? <Button size="icon-sm" variant="outline" onClick={() => setInspectorOpen(true)} aria-label="Abrir Inspector" title="Abrir Inspector" data-testid="inspector-launcher"><PanelRight className="h-3.5 w-3.5" /></Button> : null}
         />
-        {isCarousel && <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado do slide">
+        {<div className="flex shrink-0 items-center gap-1" role="group" aria-label="Estado da autoria">
           <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" disabled={!dirty || !lastSavedSnapshot} onClick={revert} title="Descartar alterações não salvas e restaurar o último estado salvo."><Undo2 className="h-3 w-3" />Voltar ao salvo</Button>
-          <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button>
+          {mode === 'template' ? <Button size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-1.5 text-[11px]" onClick={() => setRestoreDialogOpen(true)} title="Aplicar ao slide atual os valores padrão do Template (ainda é preciso Salvar)."><RotateCcw className="h-3 w-3" />Restaurar padrão do Template</Button> : null}
           <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground"><input type="checkbox" checked={autosaveEnabled} onChange={(event) => setAutosaveEnabled(event.target.checked)} />Auto-save</label>
         </div>}
       </div>
@@ -692,6 +961,7 @@ export default function StaticAuthoringProductPage() {
         <h1 className="shrink-0 text-base font-semibold">Creative Editor</h1>
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span className="truncate">Static · {channelFormatLabel(context.channelPiece.channel, context.channelPiece.format)}</span>
+          <span aria-hidden="true">·</span><span className="shrink-0" data-testid="header-composition-mode">{mode === 'free' ? 'Livre' : template.name}</span>
           {isCarousel && <><span aria-hidden="true">·</span><span className="shrink-0 font-medium text-foreground" data-testid="header-slide-indicator" aria-label={`Slide ${currentSlideIndex + 1} de ${slideTotal}`}>{slideLabel}</span></>}
         </p>
         <DropdownMenu>
@@ -713,8 +983,8 @@ export default function StaticAuthoringProductPage() {
             : <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={currentRenderJob.save === 'saving'} onClick={() => void saveRenderOutput(currentRenderJob)} title={currentRenderJob.saveError ?? 'Anexar este PNG à peça (fica disponível na Galeria / Imagens geradas).'}>{currentRenderJob.save === 'saving' ? 'Salvando…' : currentRenderJob.save === 'error' ? 'Tentar salvar de novo' : 'Salvar nesta peça'}</Button>}
         </span>}
         {currentRenderStale && <span className="text-xs text-amber-600 dark:text-amber-400" data-testid="render-stale" title="O PNG atual não inclui as alterações feitas depois dele. Gere um novo PNG para incluí-las.">Alterações ainda não renderizadas</span>}
-        {isCarousel && <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>}
-        {isCarousel && <Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()} title="Salvar o estado de autoria (não gera PNG nem anexa mídia).">{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
+        <span className="text-xs text-muted-foreground" data-testid="save-status">{saveStatusLabel}</span>
+        {<Button size="sm" variant="outline" className="gap-1.5" disabled={!dirty && saveStatus !== 'error'} onClick={() => void saveNow()} title="Salvar o estado de autoria (não gera PNG nem anexa mídia).">{saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Salvar</Button>}
         {isCarousel && <div className="flex shrink-0 items-center gap-1">
           <Button size="sm" variant="outline" className="gap-1.5" disabled={zipBusy} onClick={() => void downloadCarouselZip()} title="Baixar os PNGs duráveis do carrossel em um ZIP" data-testid="download-carousel-zip">{zipBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Baixar ZIP</Button>
           {zipError ? <span className="max-w-40 truncate text-[11px] text-destructive" role="alert" title={zipError}>{zipError}</span> : null}
@@ -730,7 +1000,7 @@ export default function StaticAuthoringProductPage() {
       open={Boolean(pickerSlot)}
       onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}
       projectId={context.project.id}
-      selectedId={pickerSlot ? state.assetOverrides?.[pickerSlot.id]?.libraryFileId ?? null : null}
+      selectedId={pickerSlot ? state?.assetOverrides?.[pickerSlot.id]?.libraryFileId ?? null : null}
       allowedKinds={['image']}
       allowedMimeTypes={SLOT_IMAGE_MIME_TYPES}
       groupByOrigin
@@ -740,6 +1010,24 @@ export default function StaticAuthoringProductPage() {
         if (!pickerSlot) return
         setProjectImages((current) => new Map(current).set(file.id, file))
         dispatch({ type: 'SET_ASSET_OVERRIDE', slot: pickerSlot.id, libraryFileId: file.id })
+      }}
+    />
+    <ProjectLibraryAssetPicker
+      open={freeImagePicker !== null}
+      onOpenChange={(open) => { if (!open) setFreeImagePicker(null) }}
+      projectId={context.project.id}
+      selectedId={freeImagePicker?.mode === 'replace' ? (freeUnitElements.find((element) => element.id === freeImagePicker.elementId) as { library_file_id?: string } | undefined)?.library_file_id ?? null : null}
+      allowedKinds={['image']}
+      allowedMimeTypes={SLOT_IMAGE_MIME_TYPES}
+      groupByOrigin
+      title="Imagem da composição livre"
+      description="Escolha uma imagem do Projeto. Ela é referenciada (não copiada) e posicionada dentro do formato da peça."
+      onSelect={(file) => {
+        setProjectImages((current) => new Map(current).set(file.id, file))
+        const picker = freeImagePicker
+        if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
+        else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setOpenElementId(id) }
+        setFreeImagePicker(null)
       }}
     />
     <Dialog open={addSlideOpen} onOpenChange={setAddSlideOpen}>

@@ -186,7 +186,14 @@ function validateStaticInput(body) {
   }
   const canvas = staticInput.resolvedInput?.manifest?.canvas
   if (!canvas || !Number.isInteger(canvas.width) || !Number.isInteger(canvas.height)) errors.push('staticInput.resolvedInput.manifest.canvas is required')
-  if (!staticInput.resolvedInput?.resolvedTemplate?.descriptor?.component_key) errors.push('staticInput.resolvedInput.resolvedTemplate is required')
+  // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a FREE still (resolvedInput.kind === 'free')
+  // has no Template at all — it carries its composition instead of a resolvedTemplate.
+  const isFreeStill = staticInput.resolvedInput?.kind === 'free'
+  if (isFreeStill) {
+    if (!Array.isArray(staticInput.resolvedInput?.manifest?.composition?.elements)) errors.push('staticInput.resolvedInput.manifest.composition.elements is required for a free still')
+  } else if (!staticInput.resolvedInput?.resolvedTemplate?.descriptor?.component_key) {
+    errors.push('staticInput.resolvedInput.resolvedTemplate is required')
+  }
   if (!staticInput.resolvedInput?.typography) errors.push('staticInput.resolvedInput.typography is required')
   return { valid: errors.length === 0, errors, staticInput }
 }

@@ -19,7 +19,7 @@
  * No Supabase, S3, Remotion or React here — pure shape + validation.
  */
 import { z } from 'zod'
-import { StaticRenderManifestSchema, type StaticRenderManifest } from '@/lib/schemas/creative/static-render'
+import { AnyStaticRenderManifestSchema, type AnyStaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { AUTHORING_ASSET_SLOT_IDS, type AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 import { VisualTokensSnapshotSchema, type VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
 import {
@@ -82,7 +82,9 @@ export const StaticRenderExecutionSnapshotSchema = z
   .object({
     schema_version: z.literal(STATIC_RENDER_EXECUTION_SNAPSHOT_SCHEMA_VERSION),
     kind: z.literal('static_still'),
-    manifest: StaticRenderManifestSchema,
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a Template-backed OR a
+    // free (Template-less) still. Every snapshot frozen before stays valid.
+    manifest: AnyStaticRenderManifestSchema,
     identitySnapshot: VisualTokensSnapshotSchema,
     overrides: authoringRenderOverridesSchema.optional(),
     primitiveSelection: primitiveSelectionSchema.optional(),
@@ -105,11 +107,19 @@ export const StaticRenderExecutionSnapshotSchema = z
       .strict(),
   })
   .strict()
+  .refine(
+    (snapshot) => !('composition' in snapshot.manifest) || (
+      snapshot.templateId === undefined && snapshot.elementOrder === undefined && snapshot.hiddenElements === undefined
+      && snapshot.assetOverrides === undefined && snapshot.overrides === undefined && snapshot.primitiveSelection === undefined
+      && snapshot.primitiveAssets === undefined && snapshot.primitiveTransforms === undefined
+    ),
+    { message: 'a free still carries no Template-only field', path: ['manifest'] },
+  )
 
 export type StaticRenderExecutionSnapshot = {
   schema_version: typeof STATIC_RENDER_EXECUTION_SNAPSHOT_SCHEMA_VERSION
   kind: 'static_still'
-  manifest: StaticRenderManifest
+  manifest: AnyStaticRenderManifest
   identitySnapshot: VisualTokensSnapshot
   overrides?: AuthoringRenderOverrides
   primitiveSelection?: PrimitiveSelectionRequest
@@ -127,7 +137,7 @@ export type StaticRenderExecutionSnapshot = {
 }
 
 export function buildStaticRenderExecutionSnapshot(input: {
-  manifest: StaticRenderManifest
+  manifest: AnyStaticRenderManifest
   identitySnapshot: VisualTokensSnapshot
   overrides?: AuthoringRenderOverrides
   primitiveSelection?: PrimitiveSelectionRequest

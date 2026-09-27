@@ -1,5 +1,5 @@
 import type { AssetRef, VisualTokensSnapshot } from '@/lib/schemas/creative/primitives'
-import { StaticRenderManifestSchema, type StaticRenderManifest } from '@/lib/schemas/creative/static-render'
+import { StaticFreeRenderManifestSchema, StaticRenderManifestSchema, type StaticFreeRenderManifest, type StaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { resolveAsset, type ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import { resolveIdentitySnapshot } from '@/lib/creative/identity/resolve-identity-snapshot'
 import {
@@ -90,4 +90,63 @@ export function resolveStaticRenderManifest(
     diagnostics: [],
   }
   return resolutionResult([], value)
+}
+
+// ─── CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — free still ────────
+
+/**
+ * A free (Template-less) still, resolved. There is no `resolvedTemplate`: the
+ * renderer is chosen by `kind`, never by a component key. `resolvedAssets` is
+ * empty here — free images are `library_file` refs whose runtime URLs are
+ * presigned at claim time only (resolve-static-runtime-input.ts).
+ */
+export type ResolvedStaticFreeInput = {
+  kind: 'free'
+  manifest: StaticFreeRenderManifest
+  tokens: VisualTokensSnapshot
+  typography: ResolvedTypography
+  resolvedAssets: Record<string, ResolvedAsset>
+  diagnostics: RuntimeDiagnostic[]
+}
+
+export type AnyResolvedStaticInput = ResolvedStaticRenderInput | ResolvedStaticFreeInput
+
+export function isResolvedStaticFreeInput(input: AnyResolvedStaticInput): input is ResolvedStaticFreeInput {
+  return (input as ResolvedStaticFreeInput).kind === 'free'
+}
+
+export function resolveStaticFreeRenderManifest(
+  input: unknown,
+  options: { identitySnapshot: VisualTokensSnapshot },
+): ResolutionResult<ResolvedStaticFreeInput> {
+  const parsed = StaticFreeRenderManifestSchema.safeParse(input)
+  if (!parsed.success) return resolutionResult(schemaDiagnostics(parsed.error))
+  const manifest = parsed.data
+  const errors: RuntimeDiagnostic[] = []
+
+  const ids = new Set<string>()
+  manifest.composition.elements.forEach((element, index) => {
+    if (ids.has(element.element_id)) errors.push(bindingDiagnostic({ code: 'duplicate_free_element_id', message: `Free element id "${element.element_id}" is repeated.`, path: `composition.elements.${index}` }))
+    ids.add(element.element_id)
+    if (element.kind === 'image') {
+      const asset = manifest.assets[element.asset_ref]
+      if (!asset || asset.type !== 'library_file') errors.push(bindingDiagnostic({ code: 'free_asset_not_found', message: `Free image "${element.element_id}" names no library_file asset.`, path: `composition.elements.${index}.asset_ref` }))
+    }
+  })
+  if (Object.values(manifest.assets).some((asset) => asset.type !== 'library_file')) {
+    errors.push(bindingDiagnostic({ code: 'free_asset_type', message: 'A free still binds Library images only.', path: 'assets' }))
+  }
+
+  const typography = resolveTypography(options.identitySnapshot)
+  if (!typography.valid) errors.push(...typography.errors)
+  if (!typography.valid || errors.length > 0) return resolutionResult(errors)
+
+  return resolutionResult([], {
+    kind: 'free' as const,
+    manifest,
+    tokens: tokensWithResolvedTypography(options.identitySnapshot, typography.value),
+    typography: typography.value,
+    resolvedAssets: {},
+    diagnostics: [],
+  })
 }

@@ -9,6 +9,7 @@ import {
   StaticOutputFormatSchema,
   TemplateRefSchema,
 } from './primitives'
+import { FreeSegmentPayloadSchema } from './timeline'
 
 // ─── Wave 2 — Neutral Schemas ───────────────────────────────────────────────
 //
@@ -103,3 +104,53 @@ export const StaticRenderManifestSchema = z
   .strict()
 
 export type StaticRenderManifest = z.infer<typeof StaticRenderManifestSchema>
+
+// ─── CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — free still ────────
+//
+// A Static composition drawn WITHOUT a Template. Additive sibling of the
+// Template-backed manifest above: same envelope (source, context, canvas,
+// identity, sequence, assets, output), but NO `template` and NO `content` —
+// the structure is the composition itself. The element shape is exactly the
+// neutral free payload Video already renders (`FreeSegmentPayloadSchema`
+// elements), because the spatial semantics are identical; nothing temporal
+// (no element_timing) exists here. Never a TimelineManifest, never a fake
+// TemplateRef. Images are manifest-level `library_file` asset refs.
+
+export const StaticFreeCompositionSchema = z
+  .object({
+    kind: z.literal('free'),
+    elements: FreeSegmentPayloadSchema.shape.elements,
+  })
+  .strict()
+
+export const StaticFreeRenderManifestSchema = z
+  .object({
+    schema_version: z.literal('static-render.v0'),
+    manifest_id: RefSchema,
+
+    source: StaticRenderSourceSchema,
+    context: StaticRenderContextSchema,
+
+    composition: StaticFreeCompositionSchema,
+    canvas: CanvasSpecSchema,
+
+    identity: IdentitySnapshotRefSchema,
+    sequence: SequenceContextSchema.optional(),
+
+    assets: z.record(z.string().trim().min(1), AssetRefSchema),
+
+    output: StaticRenderOutputSchema,
+
+    metadata: StaticRenderMetadataSchema.optional(),
+  })
+  .strict()
+
+export type StaticFreeRenderManifest = z.infer<typeof StaticFreeRenderManifestSchema>
+
+/** Either still contract. The discriminant is structural: `composition` (free) vs `template`. */
+export const AnyStaticRenderManifestSchema = z.union([StaticRenderManifestSchema, StaticFreeRenderManifestSchema])
+export type AnyStaticRenderManifest = StaticRenderManifest | StaticFreeRenderManifest
+
+export function isStaticFreeRenderManifest(manifest: AnyStaticRenderManifest): manifest is StaticFreeRenderManifest {
+  return 'composition' in manifest
+}

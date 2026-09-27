@@ -343,17 +343,24 @@ describe('Renderer and Static boundaries', () => {
     expect(imports).not.toMatch(/documentary-card|quote-card|component-resolver|template-definitions|templates\/registry/)
     expect(renderer).not.toMatch(/resolveTemplateBinding|createProps|getTemplateDefinition/)
     // Element z-index must stay inside the Scene: root overlays (lower third, B-roll) paint above it.
-    expect(renderer).toMatch(/data-kind="free"/)
-    expect(renderer).toMatch(/isolation: 'isolate'/)
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the drawing is the shared FreeStage.
+    expect(renderer).toContain("'data-kind': 'free'")
+    expect(renderer).toContain('<FreeStage')
+    const stage = read('components/creative/free/free-stage.tsx')
+    expect(stage).toMatch(/isolation: 'isolate'/)
+    expect(stage.split(/\r?\n/).filter((line) => line.startsWith('import ')).join('\n')).not.toMatch(/documentary-card|quote-card|component-resolver|template-definitions|templates\/registry/)
+    expect(read('infra/render-worker-runtime/export.mjs')).toContain("'components/creative/free/free-stage.tsx'")
     expect(read('remotion/timeline/TimelineComposition.tsx')).toContain("if (segment.kind === 'free') return <FreeSegmentLayer")
     expect(read('infra/render-worker-runtime/export.mjs')).toContain("'remotion/timeline/FreeSegment.tsx'")
   })
 
-  it('Static stays Template-required and has no Blank', () => {
+  // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 supersedes "Static stays Template-required":
+  // Static has a real FREE mode built on the SAME free composition — and still no fake Blank Template.
+  it('Static free reuses the free composition and never fakes a Template', () => {
     for (const path of ['lib/creative/authoring/carousel-state.ts', 'app/(dashboard)/projetos/[id]/conteudos/[editorialContentId]/channel-pieces/[channelPieceId]/editar-visual/page.tsx']) {
       const source = read(path)
-      expect(source).not.toContain('free-composition')
-      expect(source).not.toMatch(/Em branco/)
+      expect(source).toContain('free-composition')
+      expect(source).not.toMatch(/templateId: 'blank'|layout: 'blank'|'blank'/)
     }
   })
 })

@@ -261,7 +261,7 @@ describe('The 10-slide collection', () => {
       const parsed = parseStaticRenderExecutionSnapshot(JSON.parse(JSON.stringify(snapshot)))
       expect(parsed.ok).toBe(true)
       expect(snapshot.slide).toEqual({ id: slide.id, index: index + 1, total: 10 })
-      expect(snapshot.manifest.template.variant).toBe(slide.variant)
+      expect('template' in snapshot.manifest ? snapshot.manifest.template.variant : null).toBe(slide.variant)
     })
   })
 

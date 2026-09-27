@@ -63,6 +63,9 @@ const REQUIRED_WORKER_SOURCE = [
   'remotion/timeline/IndependentSegments.tsx',
   // VIDEO_FREE_SCENE_COMPOSITION_V1: template-free Scene segments (imported by TimelineComposition).
   'remotion/timeline/FreeSegment.tsx',
+  // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the ONE free-composition drawing,
+  // shared by FreeSegment (video) and the free still (DocumentaryCardComposition).
+  'components/creative/free/free-stage.tsx',
   'remotion/timeline/frame-model.ts',
   'remotion/DocumentaryCardComposition.tsx',
   'remotion/TypographyReadyBoundary.tsx',

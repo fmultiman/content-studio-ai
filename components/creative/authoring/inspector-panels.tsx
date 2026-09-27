@@ -118,11 +118,15 @@ export function AssetSlotCard({
  * returns the Studio's CREATIVE_IDENTITY_DEFAULTS, and each layout's
  * appearance (Light/Dark) sets its own palette. Read-only; no overrides.
  */
-export function StyleSourcePanel({ tokens, unitLabel = 'slide' }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena' }) {
+export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena'; free?: boolean }) {
   return (
-    <div className="space-y-2" data-testid="style-source">
+    <div className="space-y-2" data-testid="style-source" data-free={free}>
       <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Padrão do Studio.</span> A Identidade do Projeto ainda não define tipografia nem cores visuais; estes valores não vêm dela. As cores de fundo e texto de cada {unitLabel} seguem a Aparência (Light/Dark) do Template.
+        <span className="font-medium text-foreground">Padrão do Studio.</span> A Identidade do Projeto ainda não define tipografia nem cores visuais; estes valores não vêm dela.{' '}
+        {/* CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a free composition has no Appearance — its roles read these tokens directly. */}
+        {free
+          ? 'Na composição livre, o fundo e os papéis de cor e fonte dos textos usam estes valores diretamente.'
+          : `As cores de fundo e texto de cada ${unitLabel} seguem a Aparência (Light/Dark) do Template.`}
       </p>
       <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Títulos</dt><dd className="truncate">{tokens?.typography.display.family ?? '—'}</dd>

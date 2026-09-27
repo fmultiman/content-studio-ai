@@ -518,7 +518,11 @@ export interface ChannelPieceStaticAuthoringStateRow {
   user_id: string
   channel_piece_id: string
   schema_version: string
-  /** Creative Editor Template Foundation V1 (migration 035). Absent only before the column existed. */
+  /**
+   * Creative Editor Template Foundation V1 (migration 035). NULL (migration 038,
+   * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1) = a FREE composition with
+   * no Template; it is only ever written together with free slides.
+   */
   template_id?: string | null
   slides: unknown[]
   created_at: string

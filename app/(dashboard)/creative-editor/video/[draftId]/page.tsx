@@ -53,7 +53,9 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_HERO_ASSET_REF } from '@/lib/creative/timeline-adapter/video-draft-to-timeline'
 import { effectiveVideoCanvas, readVideoCanvas, videoDraftCanvasSupport, type VideoCanvas } from '@/lib/creative/video-editor/video-canvas'
 import { addFreeImageElement, addFreeTextElement, createFreeScene, freeElements, isFreeScene, setFreeElementBox, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
-import { FreeSceneElements, FreeSceneTemplateState, freeElementLabel } from '@/components/creative/video/free-scene-panels'
+import { FreeSceneElements, freeElementLabel } from '@/components/creative/video/free-scene-panels'
+import { CompositionModePanel } from '@/components/creative/authoring/composition-mode-panel'
+import { listTemplateDefinitions } from '@/lib/creative/templates/template-definitions'
 import { FreeSceneOverlay } from '@/components/creative/video/free-scene-overlay'
 import { DEFAULT_PREVIEW_INTERACTION_MODE, type PreviewInteractionMode } from '@/lib/creative/video-editor/free-manipulation'
 import { VideoCanvasControl } from '@/components/creative/video/video-canvas-control'
@@ -63,14 +65,14 @@ import {
   sceneIndexAtFrame, setSceneDuration, MIN_SCENE_DURATION_SECONDS, MAX_SCENE_DURATION_SECONDS,
 } from '@/lib/creative/video-editor/scene-timeline'
 import {
-  MAX_VIDEO_SCENES, NEW_SCENE_DURATION_SECONDS, addVideoScene, buildVideoDraftSaveBody, insertVideoScene, motionOptions, normalizeLoadedScenes,
+  MAX_VIDEO_SCENES, NEW_SCENE_DURATION_SECONDS, buildVideoDraftSaveBody, insertVideoScene, motionOptions, normalizeLoadedScenes,
   persistedVideoSnapshot, removeVideoScene, updateVideoScene,
 } from '@/lib/creative/video-editor/video-authoring'
 import { buildLivePreviewInput, type PreviewLibraryFile } from '@/lib/creative/video-editor/live-preview-input'
 import { createFrameCursor, useFrameCursor, type FrameCursor } from '@/lib/creative/video-editor/frame-cursor'
 import { VIDEO_INSPECTOR_SECTIONS, sceneHeroSlotState, videoSceneComposition, type VideoInspectorSection } from '@/lib/creative/video-editor/video-workspace'
 import {
-  VIDEO_SCENE_LAYOUT_IDS, applySceneContentAction, resetSceneElementOrder, resolveSceneComposition, sceneContentFields,
+  VIDEO_SCENE_LAYOUT_IDS, applySceneContentAction, applySceneFreeComposition, applySceneTemplate, resetSceneElementOrder, resolveSceneComposition, sceneContentFields,
   setSceneAppearance, setSceneElementOrder, setSceneLayout, toggleSceneElementVisibility,
 } from '@/lib/creative/video-editor/scene-composition'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
@@ -186,7 +188,6 @@ export default function VideoCreativeEditorPage() {
   const [playerError, setPlayerError] = useState<string | null>(null)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   // VIDEO_FREE_SCENE_COMPOSITION_V1 (UI only): the explicit "Nova cena" choice and the free-image picker.
-  const [newSceneOpen, setNewSceneOpen] = useState(false)
   const [freeImagePicker, setFreeImagePicker] = useState<null | { mode: 'add' } | { mode: 'replace'; elementId: string }>(null)
   // Camadas disclosure (UI only, never persisted).
   const [openElementId, setOpenElementId] = useState<string | null>(null)
@@ -438,22 +439,25 @@ export default function VideoCreativeEditorPage() {
     const sceneId = selectedScene.id
     setScenes((current) => current.map((scene) => (scene.id === sceneId ? edit(scene) : scene)))
   }
-  /** "Nova cena" always asks: Em branco (free composition) or the Template. Cancelling changes nothing. */
+  /** Explicit, whole-composition replacement of the selected Scene (confirmed in the panel when work would be lost). */
+  function setSelectedSceneMode(mode: 'free' | 'template') {
+    editSelectedScene(mode === 'free' ? applySceneFreeComposition : applySceneTemplate)
+    setSelectedElementId(null)
+    setOpenElementId(null)
+  }
+  /**
+   * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: "Nova cena" is an explicit
+   * EMPTY FREE composition (never an absent composition, which means legacy
+   * Cover). A Template is an explicit opt-in from the Template tab.
+   */
   function addScene() {
     if (scenes.length >= MAX_VIDEO_SCENES) return
-    setNewSceneOpen(true)
-  }
-  function createScene(kind: 'free' | 'template') {
-    setNewSceneOpen(false)
-    if (scenes.length >= MAX_VIDEO_SCENES) return
     const afterIndex = safeSelectedIndex >= 0 ? safeSelectedIndex : undefined
-    const result = kind === 'free'
-      ? insertVideoScene(scenes, createFreeScene(scenes.length + 1, crypto.randomUUID(), NEW_SCENE_DURATION_SECONDS), afterIndex)
-      : addVideoScene(scenes, afterIndex)
+    const result = insertVideoScene(scenes, createFreeScene(scenes.length + 1, crypto.randomUUID(), NEW_SCENE_DURATION_SECONDS), afterIndex)
     setSelectedItemId(null)
     setSelectedElementId(null)
     setOpenElementId(null)
-    if (kind === 'free') setActiveTab('element')
+    setActiveTab('element')
     setScenes(result.scenes)
     setSelectedIndex(result.index)
     const start = deriveSceneRanges(result.scenes)[result.index]?.startFrame ?? 0
@@ -902,7 +906,15 @@ export default function VideoCreativeEditorPage() {
             <Label htmlFor="video-name" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nome do vídeo</Label>
             <Input id="video-name" value={name} onChange={(event) => setName(event.target.value)} className="h-8" />
           </div>
-          {selectedIsFree ? <FreeSceneTemplateState /> : <>
+          {selectedScene ? <CompositionModePanel
+            mode={selectedIsFree ? 'free' : 'template'}
+            templates={listTemplateDefinitions().map((template) => ({ id: template.id, name: template.name, description: template.description }))}
+            currentTemplateId={selectedIsFree ? null : sceneView.template.id}
+            scope={`da cena ${safeSelectedIndex + 1}`}
+            freeHasContent={freeElements(selectedScene).length > 0}
+            onChooseTemplate={() => setSelectedSceneMode('template')}
+            onChooseFree={() => setSelectedSceneMode('free')}
+          >
           <div className="space-y-1.5" data-testid="video-template">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
             <p className="text-sm">{sceneView.template.name}</p>
@@ -935,7 +947,7 @@ export default function VideoCreativeEditorPage() {
               {sceneView.resolved.fallbacks.length > 0 ? <p className="text-[11px] text-amber-600 dark:text-amber-400" role="alert">Esta cena tem {sceneView.resolved.fallbacks.includes('layout') ? 'uma estrutura' : 'uma aparência'} salva que o vídeo não suporta; o padrão do Template está sendo usado.</p> : null}
             </div>
           ) : null}
-          </>}
+          </CompositionModePanel> : null}
           <ContextMetadata dense items={[
             { label: 'Formato', value: `${canvasW}×${canvasH} · ${TIMELINE_FPS} fps` },
             { label: 'Cenas', value: String(scenes.length) },
@@ -1011,7 +1023,7 @@ export default function VideoCreativeEditorPage() {
           </> : null}
         </TabsContent>
         <TabsContent value="style" className="pt-3">
-          <StyleSourcePanel tokens={context.identitySnapshot ?? undefined} unitLabel="cena" />
+          <StyleSourcePanel tokens={context.identitySnapshot ?? undefined} unitLabel="cena" free={selectedIsFree} />
         </TabsContent>
         <TabsContent value="element" className="pt-3">
           {selectedIsFree && selectedScene ? (
@@ -1204,25 +1216,6 @@ export default function VideoCreativeEditorPage() {
   )
 
   const dialogs = <>
-    {/* VIDEO_FREE_SCENE_COMPOSITION_V1: a new Scene is always an explicit choice (never a silent Template). */}
-    <Dialog open={newSceneOpen} onOpenChange={setNewSceneOpen}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Nova cena</DialogTitle>
-          <DialogDescription>Começar com uma cena em branco ou com uma estrutura do template. As outras cenas não mudam.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-2" data-testid="new-scene-options">
-          <button type="button" className="rounded-md border border-border/70 p-3 text-left hover:border-primary" onClick={() => createScene('free')} data-testid="new-scene-free">
-            <span className="block text-sm font-medium">Em branco</span>
-            <span className="block text-xs text-muted-foreground">Composição livre: você posiciona textos e imagens. Sem template.</span>
-          </button>
-          <button type="button" className="rounded-md border border-border/70 p-3 text-left hover:border-primary" onClick={() => createScene('template')} data-testid="new-scene-template">
-            <span className="block text-sm font-medium">{sceneView.template.name}</span>
-            <span className="block text-xs text-muted-foreground">Template do vídeo: começa com a estrutura Cover e seus exemplos.</span>
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
     <ProjectLibraryAssetPicker
       open={freeImagePicker !== null}
       onOpenChange={(open) => { if (!open) setFreeImagePicker(null) }}

@@ -18,6 +18,12 @@
  *   -> freeze it into render_executions.input_snapshot (kind static_still)
  *   -> 201 { executionId, status: 'queued' }
  *
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a FREE composition is
+ * sent as `{ context, composition: { kind: 'free', elements } }` instead of the
+ * Template render request. Same ownership chain and execution plane; the
+ * canvas is the ChannelPiece target, images must be live Project images, and
+ * the frozen manifest is the template-free still (no TemplateRef, ever).
+ *
  * The browser supplies the authored render request plus an optional
  * `idempotencyKey`, `slide` ({ id, index, total }) and `retryOfExecutionId`.
  * Authority fields (identity snapshot, manifest source/context, the
@@ -34,7 +40,11 @@ import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
 import { normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
-import type { FrozenAssetOverrides } from '@/lib/render-execution/static-snapshot'
+import type { FrozenAssetOverrides, StaticRenderExecutionSnapshot } from '@/lib/render-execution/static-snapshot'
+import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
+import { buildStaticFreeRenderManifest } from '@/lib/creative/authoring/free-static'
+import { resolveStaticFreeRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
+import type { FreeSceneComposition } from '@/lib/types'
 import {
   StaticRenderSlideRefSchema,
   assertStaticSnapshotHasNoSignedUrl,
@@ -91,10 +101,24 @@ export async function POST(request: Request) {
       retryOfExecutionId = rawRetryOf
     }
 
-    const parsed = authoringRenderRequestSchema.safeParse(renderRequest)
-    if (!parsed.success) return fail(400, 'INVALID_RENDER_REQUEST', 'Request contextual invalida.')
-    const input = parsed.data
-    const context = input.context
+    // Two composition modes, two request shapes (never mixed): a free composition, or the Template render request.
+    const { composition: rawFreeComposition, ...templateRequest } = renderRequest as Record<string, unknown>
+    const freeComposition = rawFreeComposition === undefined ? null : rawFreeComposition
+    let input: ReturnType<typeof authoringRenderRequestSchema.parse> | null = null
+    let context: { projectId: string; editorialContentId: string; channelPieceId: string } | undefined
+    if (freeComposition !== null) {
+      const shape = validateFreeCompositionShape(freeComposition)
+      if (!shape.ok) return fail(400, 'INVALID_FREE_COMPOSITION', shape.message)
+      if (Object.keys(templateRequest).some((key) => key !== 'context')) return fail(400, 'INVALID_RENDER_REQUEST', 'Composicao livre nao aceita campos de Template.')
+      const rawContext = templateRequest.context as Record<string, unknown> | undefined
+      if (!rawContext || typeof rawContext !== 'object') return fail(400, 'CONTEXT_REQUIRED', 'Contexto de render obrigatorio.')
+      context = { projectId: String(rawContext.projectId ?? ''), editorialContentId: String(rawContext.editorialContentId ?? ''), channelPieceId: String(rawContext.channelPieceId ?? '') }
+    } else {
+      const parsed = authoringRenderRequestSchema.safeParse(templateRequest)
+      if (!parsed.success) return fail(400, 'INVALID_RENDER_REQUEST', 'Request contextual invalida.')
+      input = parsed.data
+      context = input.context
+    }
     if (!context) return fail(400, 'CONTEXT_REQUIRED', 'Contexto de render obrigatorio.')
     const { projectId, editorialContentId, channelPieceId } = context
     if (![projectId, editorialContentId, channelPieceId].every((id) => UUID_RE.test(id))) return fail(400, 'INVALID_CONTEXT', 'Contexto invalido.')
@@ -142,6 +166,38 @@ export async function POST(request: Request) {
     }
     if (!projectIdentity) return fail(409, 'PROJECT_IDENTITY_REQUIRED', 'Project sem identidade valida.')
 
+    let snapshot: StaticRenderExecutionSnapshot
+    if (!input) {
+      // ── Free composition (Template-less still) ──────────────────────────────
+      const composition = freeComposition as FreeSceneComposition
+      const imageIds = [...new Set(composition.elements.filter((element) => element.kind === 'image').map((element) => (element as { library_file_id: string }).library_file_id))]
+      if (imageIds.length > 0) {
+        const { data: files } = await supabase
+          .from('library_files')
+          .select('id, kind, mime_type, deleted_at')
+          .in('id', imageIds)
+          .eq('user_id', user.id)
+          .eq('project_id', project.id)
+        const usable = new Set((files ?? []).filter((file) => !file.deleted_at && file.kind === 'image' && OVERRIDE_IMAGE_MIME_TYPES.has(file.mime_type ?? '')).map((file) => file.id))
+        if (imageIds.some((id) => !usable.has(id))) return fail(403, 'FREE_IMAGE_FORBIDDEN', 'Imagem livre invalida ou fora do Projeto.')
+      }
+      const identitySnapshot = adaptProjectIdentityToVisualTokens(project.id, projectIdentity)
+      const manifest = buildStaticFreeRenderManifest({
+        composition,
+        canvas: target.canvas,
+        channelPieceId: channelPiece.id,
+        projectId: project.id,
+        productionId: editorialContent.production_id,
+        identitySnapshotRef: identitySnapshot.snapshot_ref,
+        slideId: slide?.id ?? null,
+      })
+      const resolution = resolveStaticFreeRenderManifest(manifest, { identitySnapshot })
+      if (!resolution.valid) {
+        const first = resolution.errors[0]
+        return NextResponse.json({ error: 'Composicao livre invalida para render.', code: 'INVALID_STATIC_PAYLOAD', details: first ? `${first.code}: ${first.message}`.slice(0, 300) : undefined }, { status: 400 })
+      }
+      snapshot = buildStaticRenderExecutionSnapshot({ manifest, identitySnapshot, slide })
+    } else {
     // Canvas is decided by the ChannelPiece's static target, never the browser.
     if (input.manifest.canvas.width !== target.canvas.width || input.manifest.canvas.height !== target.canvas.height) {
       return fail(400, 'CANVAS_MISMATCH', 'Canvas nao corresponde ao alvo da peca.')
@@ -241,7 +297,7 @@ export async function POST(request: Request) {
     // Static Detail Polish V1: authored hidden elements, normalized against the layout and frozen.
     const hiddenElements = normalizeHiddenElements(layout, input.hiddenElements)
 
-    const snapshot = buildStaticRenderExecutionSnapshot({
+    snapshot = buildStaticRenderExecutionSnapshot({
       manifest,
       identitySnapshot,
       overrides: input.overrides,
@@ -254,6 +310,7 @@ export async function POST(request: Request) {
       assetOverrides,
       slide,
     })
+    }
     assertStaticSnapshotHasNoSignedUrl(snapshot)
 
     if (retryOfExecutionId) {

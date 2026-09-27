@@ -16,11 +16,13 @@ import type { LibraryFile } from '@/lib/types'
 import type { ResolvedAsset } from '@/lib/creative/assets/resolve-asset'
 import type { AssetSlotId } from '@/lib/creative/templates/template-definitions'
 import type { AuthoringRenderOverrides, PrimitiveTransformsRequest } from '@/lib/creative/authoring/render-request'
-import { resolveStaticRenderManifest, type ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
+import { resolveStaticFreeRenderManifest, resolveStaticRenderManifest, type AnyResolvedStaticInput } from '@/lib/creative/resolution/resolve-static-render'
+import { isStaticFreeRenderManifest } from '@/lib/schemas/creative/static-render'
 import { parseStaticRenderExecutionSnapshot, type StaticRenderSlideRef } from './static-snapshot'
 
 export type ResolvedStaticWorkerInput = {
-  resolvedInput: ResolvedStaticRenderInput
+  /** Template-backed (`resolvedTemplate`) or free (`kind: 'free'`, CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1). */
+  resolvedInput: AnyResolvedStaticInput
   overrides?: AuthoringRenderOverrides
   primitiveMaterials?: Partial<Record<AssetSlotId, ResolvedAsset>>
   primitiveTransforms?: PrimitiveTransformsRequest
@@ -43,6 +45,29 @@ export async function resolveStaticRuntimeInput(input: {
   const parsed = parseStaticRenderExecutionSnapshot(input.rawSnapshot)
   if (!parsed.ok) return { ok: false, code: parsed.code, message: parsed.message }
   const snapshot = parsed.snapshot
+
+  // Free (Template-less) still: only Identity tokens and the frozen Library
+  // image ids. Same SSRF boundary: only DB-loaded, project-scoped rows are presigned.
+  if (isStaticFreeRenderManifest(snapshot.manifest)) {
+    const free = resolveStaticFreeRenderManifest(snapshot.manifest, { identitySnapshot: snapshot.identitySnapshot })
+    if (!free.valid) {
+      const first = free.errors[0]
+      return { ok: false, code: 'STATIC_MANIFEST_RESOLUTION_FAILED', message: `Free static manifest failed resolution${first ? `: ${first.code} ${first.message}` : '.'}`.slice(0, 500) }
+    }
+    const resolvedAssets: Record<string, ResolvedAsset> = {}
+    for (const [key, asset] of Object.entries(snapshot.manifest.assets)) {
+      const file = input.libraryFiles.find((candidate) => candidate.id === asset.ref && !candidate.deleted_at)
+      if (!file?.storage_path) return { ok: false, code: 'FREE_IMAGE_UNAVAILABLE', message: `LibraryFile for free image "${key}" is missing or not owned by this project.` }
+      const url = await input.createPresignedReadUrl(file.storage_path)
+      if (!url) return { ok: false, code: 'ASSET_PRESIGN_FAILED', message: `Could not presign free image "${key}".` }
+      resolvedAssets[key] = { ref: asset.ref, source: 'library_file', path: file.storage_path, url, mime_type: 'image/*', ...(asset.fit ? { fit: asset.fit } : {}) }
+    }
+    return {
+      ok: true,
+      warnings: [],
+      staticInput: { resolvedInput: { ...free.value, resolvedAssets }, output: snapshot.output, slide: snapshot.slide },
+    }
+  }
 
   const resolved = resolveStaticRenderManifest(snapshot.manifest, { identitySnapshot: snapshot.identitySnapshot })
   if (!resolved.valid) {

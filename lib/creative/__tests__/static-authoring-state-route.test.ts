@@ -26,8 +26,10 @@ describe('Static Authoring State route', () => {
   })
 
   it('verifies ChannelPiece ownership before read or write', () => {
-    expect(routeSource).toMatch(/verifyChannelPieceOwnership/)
-    expect(routeSource).toMatch(/from\('channel_pieces'\)\.select\('id'\)\.eq\('id', channelPieceId\)\.eq\('user_id', userId\)/)
+    expect(routeSource).toMatch(/ownedChannelPiece\(supabase, channelPieceId, user\.id\)/)
+    expect(routeSource).toMatch(/ownedChannelPiece\(supabase, body\.channelPieceId, user\.id\)/)
+    // CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the format is read for the single-piece cardinality rule.
+    expect(routeSource).toMatch(/from\('channel_pieces'\)\.select\('id, format'\)\.eq\('id', channelPieceId\)\.eq\('user_id', userId\)/)
   })
 
   it('validates the request body against StaticAuthoringStateSchema before persisting', () => {

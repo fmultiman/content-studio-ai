@@ -14,8 +14,13 @@
  * into a neighbouring Scene interval. Hidden elements, and elements outside
  * their Scene-local timing at this frame (VIDEO_FREE_ELEMENT_TIMING_V1), have
  * no hit target: the Inspector still addresses them.
+ *
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the hit targets, chrome
+ * and drag mapping live in `FreeElementsOverlay` (host-agnostic), also used by
+ * the Static free canvas. This wrapper only adds the Video concern: which free
+ * Scene is under the playhead and which of its elements are active now.
  */
-import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { FreeElementBox, FreeSceneElement, VideoScene } from '@/lib/types'
 import { isFreeScene } from '@/lib/creative/video-editor/free-composition'
 import { freeElementsActiveAt } from '@/lib/creative/video-editor/element-timing'
@@ -49,13 +54,53 @@ export function FreeSceneOverlay({ scenes, ranges, cursor, left, top, width, hei
   onInteractionStart: () => void
 }) {
   const frame = useFrameCursor(cursor)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<Drag | null>(null)
   const index = sceneIndexAtFrame(ranges, frame)
   const scene = index >= 0 ? scenes[index] : undefined
   const free = scene && isFreeScene(scene) ? scene : null
   const range = index >= 0 ? ranges[index] : undefined
   const elements = free && range ? freeElementsActiveAt(free, frame - range.startFrame, range.durationFrames) : []
+  return (
+    <FreeElementsOverlay
+      left={left}
+      top={top}
+      width={width}
+      height={height}
+      elements={elements}
+      editable={Boolean(free)}
+      selectedElementId={selectedElementId}
+      onSelect={(elementId) => { if (free) onSelect(free.id, elementId) }}
+      onBoxChange={(elementId, box) => { if (free) onBoxChange(free.id, elementId, box) }}
+      onInteractionStart={onInteractionStart}
+      hostId={free?.id ?? ''}
+      hint={scene && !free ? <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-white" data-testid="free-overlay-template-hint">Cena com template: edite pelo Inspector</span> : null}
+    />
+  )
+}
+
+/**
+ * Host-agnostic direct manipulation over a free composition's stage rectangle:
+ * one hit target per (visible, active) element in paint order, the selected
+ * element's outline + corner handles, and move/resize mapped through the
+ * overlay's live rectangle (= the stage). Reports new boxes only on a real delta.
+ */
+export function FreeElementsOverlay({ left, top, width, height, elements, editable, selectedElementId, onSelect, onBoxChange, onInteractionStart, hostId, hint }: {
+  left: number
+  top: number
+  width: number
+  height: number
+  /** Elements that have a hit target now (hidden/inactive ones are excluded by the caller). */
+  elements: readonly FreeSceneElement[]
+  /** Whether a free composition is under the overlay at all (background clicks clear its selection). */
+  editable: boolean
+  selectedElementId: string | null
+  onSelect: (elementId: string | null) => void
+  onBoxChange: (elementId: string, box: FreeElementBox) => void
+  onInteractionStart: () => void
+  hostId: string
+  hint?: ReactNode
+}) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<Drag | null>(null)
 
   function stagePoint(event: ReactPointerEvent) {
     const rect = rootRef.current?.getBoundingClientRect()
@@ -63,18 +108,18 @@ export function FreeSceneOverlay({ scenes, ranges, cursor, left, top, width, hei
   }
 
   function begin(event: ReactPointerEvent<HTMLElement>, element: FreeSceneElement, handle: ResizeHandle | null) {
-    if (event.button !== 0 || !free) return
+    if (event.button !== 0 || !editable) return
     event.preventDefault()
     event.stopPropagation() // never reaches the viewport pan handlers
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* not an active pointer */ }
     onInteractionStart()
-    onSelect(free.id, element.id)
+    onSelect(element.id)
     dragRef.current = { pointerId: event.pointerId, elementId: element.id, handle, start: stagePoint(event), box: element.box, last: element.box }
   }
 
   function move(event: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId || !free) return
+    if (!drag || drag.pointerId !== event.pointerId || !editable) return
     event.stopPropagation()
     const point = stagePoint(event)
     const dx = point.x - drag.start.x
@@ -83,7 +128,7 @@ export function FreeSceneOverlay({ scenes, ranges, cursor, left, top, width, hei
     // Only a real geometry delta is an authored edit (a click never dirties the draft).
     if (sameFreeBox(next, drag.last)) return
     drag.last = next
-    onBoxChange(free.id, drag.elementId, next)
+    onBoxChange(drag.elementId, next)
   }
 
   function end(event: ReactPointerEvent<HTMLElement>) {
@@ -102,14 +147,12 @@ export function FreeSceneOverlay({ scenes, ranges, cursor, left, top, width, hei
       onPointerDown={(event) => {
         if (event.button !== 0) return
         event.stopPropagation() // Select tool: the stage never pans
-        if (free) onSelect(free.id, null)
+        if (editable) onSelect(null)
       }}
       data-testid="free-overlay"
-      data-scene-id={free?.id ?? ''}
+      data-scene-id={hostId}
     >
-      {scene && !free ? (
-        <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-white" data-testid="free-overlay-template-hint">Cena com template: edite pelo Inspector</span>
-      ) : null}
+      {hint}
       {elements.map((element, order) => {
         const selected = element.id === selectedElementId
         return (

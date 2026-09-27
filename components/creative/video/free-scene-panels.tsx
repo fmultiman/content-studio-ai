@@ -5,7 +5,11 @@
  * WITHOUT a Template. Everything edits the Scene's own `composition`
  * (`{ kind: 'free', elements }`) through the pure helpers in free-composition.ts.
  * Geometry is shown in % of the stage and stored as fractions; styles are
- * Project Identity roles only.
+ * style-token ROLES only.
+ *
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: the Elementos panel is
+ * generic over its HOST (a Video Scene or a Static free slide) — the same free
+ * composition and helpers; only Video passes `onTiming`.
  */
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock, Eye, EyeOff, ImagePlus, Trash2, Type } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,10 +17,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import type { FreeElementBox, FreeSceneElement, VideoScene } from '@/lib/types'
+import type { FreeElementBox, FreeSceneElement } from '@/lib/types'
 import {
   MAX_FREE_ELEMENTS, MAX_FREE_TEXT_LENGTH, freeElements, moveFreeElement, removeFreeElement, setFreeElementBox, setFreeElementHidden,
-  updateFreeElement, type FreeImagePatch, type FreeTextPatch,
+  updateFreeElement, type FreeHost, type FreeImagePatch, type FreeTextPatch,
 } from '@/lib/creative/video-editor/free-composition'
 
 const TYPOGRAPHY_LABELS = { display: 'Título', body: 'Texto' } as const
@@ -25,30 +29,23 @@ const SIZE_LABELS = { small: 'P', medium: 'M', large: 'G', title: 'Título' } as
 const ALIGN_LABELS = { left: 'Esquerda', center: 'Centro', right: 'Direita' } as const
 const FIT_LABELS = { cover: 'Preencher', contain: 'Conter' } as const
 
-/** Template tab of a free Scene: no Template owns it (no fake id, no silent conversion). */
-export function FreeSceneTemplateState() {
-  return (
-    <div className="space-y-1.5 rounded-md border border-border/60 p-2" data-testid="free-scene-template">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Template</p>
-      <p className="text-sm font-medium" data-testid="free-scene-template-state">Nenhum template aplicado</p>
-      <p className="text-xs text-muted-foreground">Composição livre: textos e imagens posicionados por você, com as cores e fontes da Identidade do Projeto.</p>
-      <p className="text-[11px] text-muted-foreground">Converter para uma estrutura do template não está disponível: os elementos livres seriam perdidos. As outras cenas do vídeo continuam com o template.</p>
-    </div>
-  )
-}
-
 export function freeElementLabel(element: FreeSceneElement, fileName?: string): string {
   if (element.kind === 'image') return fileName ?? 'Imagem'
   const first = element.text.split('\n')[0].trim()
   return first ? first.slice(0, 40) : 'Texto vazio'
 }
 
-type ElementsProps = {
-  scene: VideoScene
+/** How the panel names its unit and stage (Video Scene vs Static piece/slide). */
+export type FreeUnitWording = { unit: 'cena' | 'slide' | 'arte'; stage: string }
+const VIDEO_WORDING: FreeUnitWording = { unit: 'cena', stage: 'do formato do vídeo' }
+
+type ElementsProps<T extends FreeHost & { id: string }> = {
+  scene: T
   fileNames: ReadonlyMap<string, string>
   openId: string | null
   onOpen: (id: string | null) => void
-  onEdit: (edit: (scene: VideoScene) => VideoScene) => void
+  onEdit: (edit: (scene: T) => T) => void
+  wording?: FreeUnitWording
   onAddText: () => void
   onAddImage: () => void
   onReplaceImage: (elementId: string) => void
@@ -56,8 +53,8 @@ type ElementsProps = {
   onTiming?: (elementId: string) => void
 }
 
-/** Elementos tab of a free Scene: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming }: ElementsProps) {
+/** Elementos tab of a free composition: the only authoring surface for its elements (list = paint order, front on top). */
+export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, wording = VIDEO_WORDING }: ElementsProps<T>) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
@@ -69,9 +66,9 @@ export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, on
         <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />Imagem da Biblioteca</Button>
       </div>
       {elements.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">Cena em branco. Adicione um texto ou uma imagem.</p>
+        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco. Adicione um texto ou uma imagem.</p>
       ) : (
-        <ol className="space-y-1" aria-label="Elementos da cena (frente no topo)">
+        <ol className="space-y-1" aria-label={`Elementos ${wording.unit === 'slide' ? 'do slide' : `da ${wording.unit}`} (frente no topo)`}>
           {listed.map((element) => {
             const index = elements.indexOf(element)
             const open = openId === element.id
@@ -105,7 +102,7 @@ export function FreeSceneElements({ scene, fileNames, openId, onOpen, onEdit, on
           })}
         </ol>
       )}
-      <p className="text-[11px] text-muted-foreground" data-testid="free-scene-elements-note">A lista mostra a frente no topo; a prévia e o render desenham na mesma ordem. Posição e tamanho são em % do formato do vídeo.</p>
+      <p className="text-[11px] text-muted-foreground" data-testid="free-scene-elements-note">A lista mostra a frente no topo; a prévia e o render desenham na mesma ordem. Posição e tamanho são em % {wording.stage}.</p>
     </div>
   )
 }
@@ -130,8 +127,8 @@ function TextFields({ sceneId, element, onPatch }: { sceneId: string; element: E
         <Label htmlFor={`free-text-${sceneId}-${element.id}`} className="text-[11px]">Texto</Label>
         <Textarea id={`free-text-${sceneId}-${element.id}`} value={element.text} maxLength={MAX_FREE_TEXT_LENGTH} rows={3} onChange={(event) => onPatch({ text: event.target.value })} data-testid="free-text-input" />
       </div>
-      <Choice label="Fonte da Identidade" value={element.typography} options={['display', 'body'] as const} labels={TYPOGRAPHY_LABELS} onChange={(typography) => onPatch({ typography })} testId="free-text-typography" />
-      <Choice label="Cor da Identidade" value={element.color} options={['foreground', 'background', 'accent', 'muted'] as const} labels={COLOR_LABELS} onChange={(color) => onPatch({ color })} testId="free-text-color" />
+      <Choice label="Fonte (papel do estilo)" value={element.typography} options={['display', 'body'] as const} labels={TYPOGRAPHY_LABELS} onChange={(typography) => onPatch({ typography })} testId="free-text-typography" />
+      <Choice label="Cor (papel do estilo)" value={element.color} options={['foreground', 'background', 'accent', 'muted'] as const} labels={COLOR_LABELS} onChange={(color) => onPatch({ color })} testId="free-text-color" />
       <Choice label="Tamanho" value={element.size} options={['small', 'medium', 'large', 'title'] as const} labels={SIZE_LABELS} onChange={(size) => onPatch({ size })} testId="free-text-size" />
       <Choice label="Alinhamento" value={element.align} options={['left', 'center', 'right'] as const} labels={ALIGN_LABELS} onChange={(align) => onPatch({ align })} testId="free-text-align" />
     </div>

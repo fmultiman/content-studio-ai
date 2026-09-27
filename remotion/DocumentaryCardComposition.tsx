@@ -1,13 +1,14 @@
 import React from 'react'
-import { useCurrentFrame, useVideoConfig } from 'remotion'
+import { Img, useCurrentFrame, useVideoConfig } from 'remotion'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import type { DocumentaryCardProps } from '@/components/creative/documentary-card'
-import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
+import type { AnyResolvedStaticInput, ResolvedStaticFreeInput } from '@/lib/creative/resolution/resolve-static-render'
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { TypographyReadyBoundary } from './TypographyReadyBoundary'
 import { RenderAssetsReadyBoundary } from './RenderAssetsReadyBoundary'
 import { materialUrl, type MaterialName } from '@/components/creative/documentary-card/primitives'
+import { FreeStage } from '@/components/creative/free/free-stage'
 
 /**
  * Remotion serves the bundled publicDir under `/public/` (the same prefix
@@ -64,7 +65,7 @@ export const DocumentaryCardStillComposition: React.FC<DocumentaryCardCompositio
 )
 
 export type StaticRenderManifestStillProps = {
-  resolvedInput: ResolvedStaticRenderInput
+  resolvedInput: AnyResolvedStaticInput
   overrides?: AuthoringRenderOverrides
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials']
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms']
@@ -78,7 +79,33 @@ export type StaticRenderManifestStillProps = {
  * resolved input, then chooses the registered component by component_key.
  * No manifest fixture is assembled here and no resolver state is persisted.
  */
+/**
+ * CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1 — a free (Template-less)
+ * still: the shared FreeStage drawing, chosen by `kind`, never by a component
+ * key. Held until the Identity fonts and every presigned image have loaded.
+ */
+export const StaticFreeStill: React.FC<{ resolvedInput: ResolvedStaticFreeInput }> = ({ resolvedInput }) => {
+  const { width, height } = resolvedInput.manifest.canvas
+  const elements = resolvedInput.manifest.composition.elements
+  const imageUrls = elements.flatMap((element) => (element.kind === 'image' ? [resolvedInput.resolvedAssets[element.asset_ref]?.url] : [])).filter((url): url is string => Boolean(url))
+  return (
+    <TypographyReadyBoundary typography={resolvedInput.typography}>
+      <RenderAssetsReadyBoundary urls={imageUrls}>
+        <div style={{ position: 'relative', width, height }}>
+          <FreeStage elements={elements} width={width} height={height} tokens={resolvedInput.tokens} imageUrl={(ref) => resolvedInput.resolvedAssets[ref]} ImageComponent={Img} dataAttributes={{ 'data-kind': 'free-still' }} />
+        </div>
+      </RenderAssetsReadyBoundary>
+    </TypographyReadyBoundary>
+  )
+}
+
+/** Local, import-free guard (the worker bundle does not ship the resolver module). */
+function isFreeStillInput(input: AnyResolvedStaticInput): input is ResolvedStaticFreeInput {
+  return (input as ResolvedStaticFreeInput).kind === 'free'
+}
+
 export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifestStillProps> = ({ resolvedInput, overrides, primitiveMaterials, primitiveTransforms, templateId, elementOrder, hiddenElements }) => {
+  if (isFreeStillInput(resolvedInput)) return <StaticFreeStill resolvedInput={resolvedInput} />
   const binding = resolveTemplateBinding(resolvedInput.resolvedTemplate.descriptor.component_key)
   if (!binding) throw new Error(`No visual component is registered for component_key "${resolvedInput.resolvedTemplate.descriptor.component_key}"`)
   const props = binding.createProps({
