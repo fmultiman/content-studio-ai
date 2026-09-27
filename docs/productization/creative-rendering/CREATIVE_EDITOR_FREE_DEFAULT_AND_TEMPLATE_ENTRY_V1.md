@@ -28,7 +28,7 @@ This applies to both media without a shared document:
   7. migration 038 applied;
   8. push;
   9. production proof.
-- **Final SHA:** the docs commit recording this validation. The next mission's housekeeping prints it.
+- **Final SHA:** `3653a7220ed5b2d23bffb6f112f53ad7a7741746` (the docs commit recording this validation; printed by CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1's housekeeping).
 
 ## 2. Clarified product model (and what was rejected)
 
