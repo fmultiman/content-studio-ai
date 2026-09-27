@@ -13,7 +13,7 @@ This is **Scene Motion only** — the behavior of the whole Template-backed comp
 - **Start:** `0228908fdf96e3955a1f1458e0c157e86e95d5eb`, equal on local, `origin/main` and remote `main`. Closure of CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1.
 - **Foreign file:** `docs/productization/creative-rendering/VIDEO_AUDIO_AUTHORING_V1.md` carries a pre-existing foreign one-line edit, left untouched and never staged.
 - **Implementation:** `15a6df74613cb402bc3c7cf0580ca915291c7fef` → Vercel Production `dpl_EB4Vq8wRYGXD3q2s5k324oV958MB`, READY, aliased to `content.multihuman.com.br`.
-- **Final SHA:** the docs commit recording this validation; the next mission's housekeeping prints it.
+- **Final SHA:** `e822c0bc38ce96d4792b9dbe7d4e9a162ec6388c`
 
 ## 2. Factual movement matrix (executing code at `0228908`, before any change)
 
