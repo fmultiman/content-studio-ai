@@ -105,11 +105,12 @@ describe('case 5 — saving single field → formStateToIdentityInput has only t
 describe('case 6 — saving multiple zones → all zones present in input', () => {
   it('includes all zones when all fields are set', () => {
     const state = {
+      ...emptyFormState(),
       purpose: 'Propósito',
       audience: 'Público',
       visual_identity: 'Estética escura',
       voice: 'Tom direto',
-      principles: 'Princípio A\nPrincípio B',
+      principles: 'Princípio A\\nPrincípio B',
       restrictions: 'Restrição X',
       generation_preferences: 'Luz natural',
     }
@@ -217,13 +218,14 @@ describe('case 11 — invalid data → normalizeProjectIdentity throws ProjectId
 describe('case 13 — formStateToIdentityInput output is always normalizable', () => {
   it('a fully filled state produces a valid normalizable output', () => {
     const state = {
+      ...emptyFormState(),
       purpose: 'Propósito claro',
       audience: 'Fotógrafos profissionais',
       visual_identity: 'Minimalista e clean',
       voice: 'Técnico e preciso',
-      principles: 'Qualidade acima de tudo\nAutenticidade',
+      principles: 'Qualidade acima de tudo\\nAutenticidade',
       restrictions: 'Sem filtros excessivos',
-      generation_preferences: 'Luz natural\nAngulo baixo',
+      generation_preferences: 'Luz natural\\nAngulo baixo',
     }
     const input = formStateToIdentityInput(state)
     expect(() => normalizeProjectIdentity(input)).not.toThrow()
@@ -264,6 +266,7 @@ describe('case 14 — identityToFormState does not mutate input identity', () =>
 describe('case 15 — formStateToIdentityInput output has no forbidden keys', () => {
   it('does not include context, style_profile, or evaluation_mode', () => {
     const state = {
+      ...emptyFormState(),
       purpose: 'Propósito',
       audience: 'Público',
       visual_identity: 'Estilo',

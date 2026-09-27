@@ -3,15 +3,16 @@ import {
   type VisualTokensSnapshot,
   VisualTokensSnapshotSchema,
 } from '@/lib/schemas/creative/primitives'
+import { RUNTIME_FONT_REGISTRY, type RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
 
 /**
  * DEFAULTS
- * 
- * Since Project Identity V1 does not yet store discrete visual tokens
- * (colors, typography, spacing) in the database, we provide safe fallback
- * defaults. These are currently modeled after the 'comunidades-alternativas'
- * visual language. They ensure the renderer can proceed deterministically
- * without inventing fake data in the database.
+ *
+ * Studio-level fallback visual tokens. Used whenever a Project Identity has no
+ * structured visual fields (identity.visuals is absent or partially populated).
+ *
+ * PROJECT_IDENTITY_VISUAL_TOKENS_V1: These remain the canonical defaults;
+ * Project Identity visuals override them per-role when explicitly authored.
  */
 export const CREATIVE_IDENTITY_DEFAULTS = {
   typography: {
@@ -37,35 +38,108 @@ export const CREATIVE_IDENTITY_DEFAULTS = {
   },
 } as const
 
+// ─── Font weight selection helpers ────────────────────────────────────────────
+
 /**
- * Product Integration Adapter
- * 
- * Adapts the canonical ProjectIdentity V1 (which contains primarily textual
- * expression data) into the VisualTokensSnapshot required by the Shared
- * Creative Rendering layer.
- * 
+ * Returns the first weight available for a family in RUNTIME_FONT_REGISTRY.
+ * Used when identity selects a font family — we choose the most appropriate
+ * weight from the registered set.
+ */
+function primaryWeightForFamily(family: RuntimeFontFamily, preferBold: boolean): number {
+  const reg = RUNTIME_FONT_REGISTRY[family]
+  const weights = Object.keys(reg.files).map(Number).sort((a, b) => a - b)
+  if (preferBold) {
+    // Prefer heaviest available (display role)
+    return weights[weights.length - 1] ?? 400
+  }
+  // Prefer lightest available (body role)
+  return weights[0] ?? 400
+}
+
+// ─── Product Integration Adapter ──────────────────────────────────────────────
+
+/**
+ * Adapts the canonical ProjectIdentity V1 into the VisualTokensSnapshot
+ * required by the Creative Rendering layer.
+ *
+ * PROJECT_IDENTITY_VISUAL_TOKENS_V1: This adapter now actually inspects
+ * `identity.visuals` (the new optional structured visual tokens zone) and
+ * applies those values instead of silently ignoring them.
+ *
+ * Precedence (per discovery):
+ *   1. identity.visuals.* — explicit structured token from the project
+ *   2. CREATIVE_IDENTITY_DEFAULTS — Studio fallback
+ *
+ * Partial identity.visuals is safe: each token is resolved independently.
+ * Template Appearance overrides (e.g., DocumentaryCard dark mode) remain
+ * in the Template layer and are NOT affected by this adapter.
+ *
  * @param projectId Used to generate a stable, traceable snapshot_ref.
- * @param identity The ProjectIdentity V1 canonical object.
+ * @param identity  The ProjectIdentity V1 canonical object.
  */
 export function adaptProjectIdentityToVisualTokens(
   projectId: string,
-  _identity: ProjectIdentity
+  identity: ProjectIdentity
 ): VisualTokensSnapshot {
-  // In the future, this function will inspect `identity.expression` or a
-  // newly added `identity.visuals` schema and override these defaults.
-  // For Phase 1A, since Project Identity V1 lacks structured visual fields,
-  // we apply the defaults explicitly.
-  
+  const visuals = identity.visuals
+
+  // ── Typography resolution ──────────────────────────────────────────────────
+  // Each font role is resolved independently: if the project specifies a font,
+  // derive an appropriate weight from what the registry actually offers for
+  // that family. Fall back to CREATIVE_IDENTITY_DEFAULTS otherwise.
+
+  const displayFontFamily = visuals?.typography?.display_font as RuntimeFontFamily | undefined
+  const bodyFontFamily = visuals?.typography?.body_font as RuntimeFontFamily | undefined
+
+  const resolvedDisplay = displayFontFamily && RUNTIME_FONT_REGISTRY[displayFontFamily]
+    ? { family: displayFontFamily, weight: primaryWeightForFamily(displayFontFamily, true), style: 'normal' as const }
+    : CREATIVE_IDENTITY_DEFAULTS.typography.display
+
+  const resolvedBody = bodyFontFamily && RUNTIME_FONT_REGISTRY[bodyFontFamily]
+    ? { family: bodyFontFamily, weight: primaryWeightForFamily(bodyFontFamily, false), style: 'normal' as const }
+    : CREATIVE_IDENTITY_DEFAULTS.typography.body
+
+  // Label inherits body font family (same selection) at weight 600 when available,
+  // otherwise uses the body registration's heaviest weight.
+  const labelFamilyForResolution = bodyFontFamily && RUNTIME_FONT_REGISTRY[bodyFontFamily]
+    ? bodyFontFamily
+    : (CREATIVE_IDENTITY_DEFAULTS.typography.label.family as RuntimeFontFamily)
+  const labelReg = RUNTIME_FONT_REGISTRY[labelFamilyForResolution]
+  const labelWeights = Object.keys(labelReg.files).map(Number).sort((a, b) => a - b)
+  const labelWeight = labelWeights.includes(600)
+    ? 600
+    : (labelWeights[labelWeights.length - 1] ?? 400)
+
+  const resolvedLabel = {
+    family: labelFamilyForResolution,
+    weight: labelWeight,
+    style: 'normal' as const,
+    text_transform: 'uppercase' as const,
+  }
+
+  // ── Color resolution ───────────────────────────────────────────────────────
+  // Each color slot resolved independently. Absent identity value → default.
+  const identityColors = visuals?.colors
+
+  const resolvedColors = {
+    background: identityColors?.background ?? CREATIVE_IDENTITY_DEFAULTS.colors.background,
+    foreground: identityColors?.foreground ?? CREATIVE_IDENTITY_DEFAULTS.colors.foreground,
+    muted: identityColors?.muted ?? CREATIVE_IDENTITY_DEFAULTS.colors.muted,
+    accent: identityColors?.accent ?? CREATIVE_IDENTITY_DEFAULTS.colors.accent,
+  }
+
+  // ── Assemble snapshot ──────────────────────────────────────────────────────
   const rawPayload = {
     schema_version: 'visual-tokens.v0',
     snapshot_ref: `project:${projectId}:snapshot`,
-    typography: CREATIVE_IDENTITY_DEFAULTS.typography,
-    colors: CREATIVE_IDENTITY_DEFAULTS.colors,
+    typography: {
+      display: resolvedDisplay,
+      body: resolvedBody,
+      label: resolvedLabel,
+    },
+    colors: resolvedColors,
     spacing: CREATIVE_IDENTITY_DEFAULTS.spacing,
-    // Brand logos would be mapped here if available in ProjectIdentity
   }
 
-  // Ensure the output rigidly conforms to the creative primitives schema
-  // before entering the rendering boundary.
   return VisualTokensSnapshotSchema.parse(rawPayload)
 }

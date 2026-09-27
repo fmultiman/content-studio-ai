@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RUNTIME_FONT_REGISTRY } from '@/lib/creative/typography/resolve-typography'
 
 // ─── Limits ──────────────────────────────────────────────────────────────────
 // These constants are exported for use in tests and UI validation.
@@ -72,6 +73,60 @@ export const ProjectIdentityPracticeSchema = z
   .object({ generation_preferences: optionalStringArray })
   .strict()
 
+// ─── Visual Tokens Zone ───────────────────────────────────────────────────────
+//
+// PROJECT_IDENTITY_VISUAL_TOKENS_V1: Structured visual design tokens that flow
+// into the visual-token adapter and ultimately resolve the VisualTokensSnapshot
+// used by all Creative Editor rendering surfaces.
+//
+// Design decisions (from discovery):
+// - Colors: optional hex strings, each validated as a CSS hex color (#RGB or #RRGGBB).
+// - Typography: font family is constrained to RUNTIME_FONT_REGISTRY keys only.
+//   Weight is constrained to values actually present in the registry per family.
+// - No paper/ink/surface color tokens — those are Template-governed.
+// - All fields optional and backward-compatible; absent = Studio/defaults.
+
+/** Validated optional CSS hex color string (#RGB or #RRGGBB, case-insensitive). */
+const optionalHexColor = z
+  .string()
+  .trim()
+  .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, 'Must be a valid CSS hex color (#RGB or #RRGGBB)')
+  .optional()
+
+/** Allowed display font families (constrained to RUNTIME_FONT_REGISTRY). */
+export const IDENTITY_DISPLAY_FONT_FAMILIES = Object.keys(RUNTIME_FONT_REGISTRY) as [string, ...string[]]
+
+/** Allowed body font families (constrained to RUNTIME_FONT_REGISTRY). */
+export const IDENTITY_BODY_FONT_FAMILIES = Object.keys(RUNTIME_FONT_REGISTRY) as [string, ...string[]]
+
+export const ProjectIdentityVisualsColorsSchema = z
+  .object({
+    background: optionalHexColor,
+    foreground: optionalHexColor,
+    accent: optionalHexColor,
+    muted: optionalHexColor,
+  })
+  .strict()
+
+export const ProjectIdentityVisualsTypographySchema = z
+  .object({
+    display_font: z.enum(IDENTITY_DISPLAY_FONT_FAMILIES as [string, ...string[]]).optional(),
+    body_font: z.enum(IDENTITY_BODY_FONT_FAMILIES as [string, ...string[]]).optional(),
+  })
+  .strict()
+
+/**
+ * Optional structured visual tokens zone.
+ * Present only when the user has explicitly authored visual token values.
+ * Absent = Studio/Template defaults (CREATIVE_IDENTITY_DEFAULTS).
+ */
+export const ProjectIdentityVisualsSchema = z
+  .object({
+    colors: ProjectIdentityVisualsColorsSchema.optional(),
+    typography: ProjectIdentityVisualsTypographySchema.optional(),
+  })
+  .strict()
+
 // ─── Root Schema ──────────────────────────────────────────────────────────────
 
 /**
@@ -91,6 +146,9 @@ export const ProjectIdentitySchema = z
     expression: ProjectIdentityExpressionSchema.optional(),
     governance: ProjectIdentityGovernanceSchema.optional(),
     practice: ProjectIdentityPracticeSchema.optional(),
+    // PROJECT_IDENTITY_VISUAL_TOKENS_V1: additive optional zone — absent on all
+    // existing records, always safe to omit.
+    visuals: ProjectIdentityVisualsSchema.optional(),
   })
   .strict()
 
