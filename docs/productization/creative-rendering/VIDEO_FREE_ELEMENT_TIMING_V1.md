@@ -189,7 +189,7 @@ The real 10-slide Carousel (`channel-pieces/1247e54b…/editar-visual`) opens wi
 ## 14. Final checkpoint
 
 - Feature `e777d77…` → Vercel `6684969817` success; fix `1bb8d1d…` → Vercel `6685185539` success (production then showed "oculto na cena (Elementos)" on a hidden free row; the edit was discarded with "Voltar ao salvo").
-- Final SHA: the docs commit recording this validation (printed by the next mission's housekeeping).
+- Final SHA: `269b11810d4e30d46f135ed1997e7dd7264c24bb` (the docs commit recording this validation; printed by CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1's housekeeping).
 - Housekeeping done here: `VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1.md` now prints its final SHA `ea805c8913225adb402c85551ed2728a1b431b7c`.
 - Production test data left: draft `55d449e0…` (timed proof state saved) and execution `b43ff0ad…`.
 - Not committed: `.env.local`, `.next/`, `tsbuildinfo`, `next-env.d.ts`, `infra/render-worker-runtime/dist/` (including the tarball), `.tmp/`, scratch scripts and downloaded MP4s.
