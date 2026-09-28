@@ -39,11 +39,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const klingAdapter = new KlingAdapter(apiKey)
-    const resOptions = await klingAdapter.getTaskStatus(generation.task_id)
+    const taskItem = await klingAdapter.getTaskStatus(generation.task_id)
     
-    const taskStatus = resOptions.status
+    const taskStatus = taskItem.status
     if (taskStatus === 'succeeded') {
-      const videoUrl = resOptions.result?.videos?.[0]?.url
+      const videoOutput = taskItem.outputs?.find(o => o.type === 'video')
+      const videoUrl = videoOutput?.url
       if (!videoUrl) {
          return NextResponse.json({ generation }) // wait for url?
       }
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         status: 'completed',
         storage_path: storagePath,
         public_url: publicUrl,
-        result_metadata: { mime, size, ...resOptions }
+        result_metadata: { mime, size, ...taskItem }
       }).eq('id', generation.id).select().single()
 
       if (updateError) throw updateError
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } else if (taskStatus === 'failed') {
       const { data: updated, error: updateError } = await supabase.from('video_generations').update({
         status: 'failed',
-        error_details: { message: resOptions.error?.message || 'Provider failed', payload: resOptions }
+        error_details: { message: taskItem.message || 'Provider failed', payload: taskItem }
       }).eq('id', generation.id).select().single()
       
       if (updateError) throw updateError

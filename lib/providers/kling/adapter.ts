@@ -36,21 +36,23 @@ export interface KlingSubmitResponse {
   task_id: string
 }
 
-export interface KlingTaskResponse {
-  task_id: string
+export interface KlingOutput {
+  type: string
+  url: string
+}
+
+export interface KlingTaskItem {
+  id: string
+  external_id?: string
   status: 'submitted' | 'processing' | 'succeeded' | 'failed'
+  message?: string
+  outputs?: KlingOutput[]
   created_at: number
   updated_at: number
-  result?: {
-    videos?: Array<{
-      id: string
-      url: string
-      duration: number
-    }>
-  }
-  error?: {
-    message: string
-  }
+}
+
+export interface KlingTaskResponse {
+  data: KlingTaskItem[]
 }
 
 export class KlingAdapter {
@@ -94,8 +96,7 @@ export class KlingAdapter {
     }
 
     const data = await res.json()
-    // Assume Kling returns the task_id directly or wrapped in data
-    const task_id = data.task_id || data.data?.task_id
+    const task_id = data.data?.id
     if (!task_id) {
        throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
@@ -131,7 +132,7 @@ export class KlingAdapter {
     }
 
     const data = await res.json()
-    const task_id = data.task_id || data.data?.task_id
+    const task_id = data.data?.id
     if (!task_id) {
        throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
@@ -139,8 +140,8 @@ export class KlingAdapter {
     return { task_id }
   }
 
-  async getTaskStatus(taskId: string): Promise<KlingTaskResponse> {
-    const res = await fetch(`${this.apiUrl}/tasks/${taskId}`, {
+  async getTaskStatus(taskId: string): Promise<KlingTaskItem> {
+    const res = await fetch(`${this.apiUrl}/tasks?task_ids=${taskId}`, {
       method: 'GET',
       headers: this.getHeaders(),
     })
@@ -149,7 +150,13 @@ export class KlingAdapter {
       throw new Error(`Kling API status read error: ${res.statusText}`)
     }
 
-    const data = await res.json()
-    return data.data || data
+    const data = await res.json() as KlingTaskResponse
+    const item = data.data?.[0]
+    
+    if (!item) {
+      throw new Error('Task not found in Kling response')
+    }
+
+    return item
   }
 }

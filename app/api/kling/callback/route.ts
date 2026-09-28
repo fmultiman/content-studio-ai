@@ -70,8 +70,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'Test callback received' })
     }
 
+    // Usually callbacks have tasks wrapped in data or directly sent
     const data = payload.data || payload
-    const taskId = data.task_id
+    // Kling callback matches query tasks item structure directly or inside data
+    const taskId = data.id || data.task_id // favor standard `id`
     const status = data.status || data.task_status // "succeeded", "failed", "processing"
 
     if (!taskId) {
@@ -98,9 +100,14 @@ export async function POST(req: NextRequest) {
 
     if (status === 'succeeded') {
       let videoUrl = ''
-      if (data.result?.videos?.[0]?.url) {
+      
+      const outputs = data.outputs || []
+      const videoOutput = outputs.find((o: any) => o.type === 'video')
+      if (videoOutput?.url) {
+        videoUrl = videoOutput.url
+      } else if (data.result?.videos?.[0]?.url) { // fallback
         videoUrl = data.result.videos[0].url
-      } else if (data.video_url) {
+      } else if (data.video_url) { // legacy fallback
         videoUrl = data.video_url
       }
 
