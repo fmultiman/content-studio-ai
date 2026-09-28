@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Image as ImageIcon, FileText, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -43,13 +43,20 @@ export function CreateVideoGenerationDialog({
   const [projectImages, setProjectImages] = useState<any[]>([])
   
   // Load images when dialog opens for I2V
-  useState(() => {
+  useEffect(() => {
     if (open && projectId) {
-       createClient().from('images').select('id, image_url, user_input').eq('project_id', projectId).eq('status', 'approved').neq('image_url', null).limit(50).then(({ data }) => {
-         if (data) setProjectImages(data)
-       })
+      createClient()
+        .from('images')
+        .select('id, image_url, user_input, created_at')
+        .eq('project_id', projectId)
+        .neq('image_url', null)
+        .order('created_at', { ascending: false })
+        .limit(30)
+        .then(({ data }) => {
+          if (data) setProjectImages(data)
+        })
     }
-  })
+  }, [open, projectId])
 
   // We fetch again here to be safe and responsive.
   const handleOpenChange = (newOpen: boolean) => {
