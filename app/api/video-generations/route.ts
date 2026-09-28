@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { KlingAdapter } from '@/lib/providers/kling/adapter'
+import { createPresignedReadUrl } from '@/lib/storage/s3'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,31 +13,56 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { projectId, productionId, mode, prompt, sourceImageId, duration = '5' } = body
+    const { projectId, productionId, mode, prompt, sourceImageId, sourceLibraryFileId, duration = '5' } = body
 
     if (!projectId || !productionId || !mode || !prompt) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (mode === 'image_to_video' && !sourceImageId) {
-      return NextResponse.json({ error: 'sourceImageId is required for image_to_video' }, { status: 400 })
+    if (mode === 'image_to_video' && !sourceImageId && !sourceLibraryFileId) {
+      return NextResponse.json({ error: 'sourceImageId or sourceLibraryFileId is required for image_to_video' }, { status: 400 })
     }
 
     let resolvedSourceUrl = ''
 
     if (mode === 'image_to_video') {
-      const { data: image, error: imageError } = await supabase
-        .from('images')
-        .select('*')
-        .eq('id', sourceImageId)
-        .eq('user_id', user.id)
-        .eq('project_id', projectId)
-        .single()
+      if (sourceImageId) {
+        const { data: image, error: imageError } = await supabase
+          .from('images')
+          .select('*')
+          .eq('id', sourceImageId)
+          .eq('user_id', user.id)
+          .eq('project_id', projectId)
+          .single()
 
-      if (imageError || !image) {
-        return NextResponse.json({ error: 'Source image not found or not owned by user in this project' }, { status: 403 })
+        if (imageError || !image) {
+          return NextResponse.json({ error: 'Source image not found or not owned by user in this project' }, { status: 403 })
+        }
+        if (image.storage_path) {
+          const presigned = await createPresignedReadUrl(image.storage_path)
+          resolvedSourceUrl = presigned || image.image_url
+        } else {
+          resolvedSourceUrl = image.image_url
+        }
+      } else if (sourceLibraryFileId) {
+        const { data: file, error: fileError } = await supabase
+          .from('library_files')
+          .select('*')
+          .eq('id', sourceLibraryFileId)
+          .eq('user_id', user.id)
+          .eq('project_id', projectId)
+          .single()
+
+        if (fileError || !file) {
+          return NextResponse.json({ error: 'Source library file not found or not owned by user in this project' }, { status: 403 })
+        }
+        if (file.storage_path) {
+          const presigned = await createPresignedReadUrl(file.storage_path)
+          resolvedSourceUrl = presigned || file.public_url || ''
+        } else {
+          resolvedSourceUrl = file.public_url || ''
+        }
       }
-      resolvedSourceUrl = image.image_url
     }
 
     // Insert queued state
@@ -49,9 +75,10 @@ export async function POST(req: NextRequest) {
         mode,
         prompt,
         source_image_id: sourceImageId || null,
+        source_library_file_id: sourceLibraryFileId || null,
         status: 'queued',
         provider: 'kling',
-        model: 'kling-v1', // standard Kling 1.0 or Kling 1.5, we will configure in adapter if needed.
+        model: 'kling-v3',
         request_config: { duration }
       })
       .select()
