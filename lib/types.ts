@@ -541,3 +541,26 @@ export interface ApiResponse<T> {
   data: T | null
   error: string | null
 }
+e x p o r t   i n t e r f a c e   V i d e o G e n e r a t i o n   { 
+     i d :   s t r i n g 
+     u s e r _ i d :   s t r i n g 
+     p r o j e c t _ i d :   s t r i n g 
+     p r o d u c t i o n _ i d :   s t r i n g 
+     m o d e :   ' i m a g e _ t o _ v i d e o '   |   ' t e x t _ t o _ v i d e o ' 
+     p r o m p t :   s t r i n g 
+     s o u r c e _ i m a g e _ i d ? :   s t r i n g 
+     p r o v i d e r :   s t r i n g 
+     m o d e l :   s t r i n g 
+     t a s k _ i d ? :   s t r i n g 
+     s t a t u s :   ' q u e u e d '   |   ' s u b m i t t e d '   |   ' r u n n i n g '   |   ' c o m p l e t e d '   |   ' f a i l e d ' 
+     r e q u e s t _ c o n f i g ? :   R e c o r d < s t r i n g ,   a n y > 
+     p r o v i d e r _ m e t a d a t a ? :   R e c o r d < s t r i n g ,   a n y > 
+     r e s u l t _ m e t a d a t a ? :   R e c o r d < s t r i n g ,   a n y > 
+     e r r o r _ d e t a i l s ? :   R e c o r d < s t r i n g ,   a n y > 
+     s t o r a g e _ p a t h ? :   s t r i n g 
+     p u b l i c _ u r l ? :   s t r i n g 
+     l i b r a r y _ f i l e _ i d ? :   s t r i n g 
+     c r e a t e d _ a t :   s t r i n g 
+     u p d a t e d _ a t :   s t r i n g 
+ }  
+ 

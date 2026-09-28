@@ -284,16 +284,8 @@ export default function ProductionDetailPage() {
     }
   }
 
-  const createVideoInCreativeEditor = async () => {
-    if (isCreatingVideo) return
-    setIsCreatingVideo(true)
-    const result = await createVideoDraftForCreativeEditor({ projectId, productionId })
-    if (result.ok) {
-      router.push(result.href)
-      return
-    }
-    toast({ title: 'Erro', description: result.error, variant: 'destructive' })
-    setIsCreatingVideo(false)
+  const createVideoInCreativeEditor = () => {
+    router.push(`/videos?project=${projectId}&production=${productionId}`)
   }
 
   const handleUnlink = async () => {

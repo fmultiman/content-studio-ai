@@ -52,6 +52,7 @@ import {
 } from '@/lib/draft-hub'
 import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-routes'
 import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
+import { CreateVideoGenerationDialog } from '@/components/videos/create-video-generation-dialog'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -64,8 +65,10 @@ function VideosPageContent() {
   const [projects, setProjects] = useState<Project[]>([])
   const [productions, setProductions] = useState<Production[]>([])
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
+  const [generations, setGenerations] = useState<any[]>([])
   const [isDataReady, setIsDataReady] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  
   const [retryKey, setRetryKey] = useState(0)
   const [hubProjectFilter, setHubProjectFilter] = useState('all')
   const [hubProductionFilter, setHubProductionFilter] = useState('all')
@@ -77,6 +80,8 @@ function VideosPageContent() {
   const [hubViewMode, setHubViewMode] = useViewModePreference('video-draft-hub-view', 'list')
   const [isCreatingInEditor, setIsCreatingInEditor] = useState(false)
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
+  
+  const [showAiModal, setShowAiModal] = useState(false)
 
   // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {
@@ -89,17 +94,24 @@ function VideosPageContent() {
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: projectsData }, { data: productionsData }, draftsResponse] = await Promise.all([
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('productions').select('*').order('updated_at', { ascending: false }),
           fetch('/api/video-drafts?limit=50'),
+          fetch('/api/video-generations')
         ])
         const draftsData = await draftsResponse.json()
+        const generationsData = await generationsResponse.json()
+
         if (cancelled) return
         if (projectsData) setProjects(projectsData)
         if (productionsData) setProductions(productionsData)
         if (draftsResponse.ok) setDrafts(draftsData.drafts || [])
         else console.error('[v0] Video drafts load error:', draftsData)
+        
+        if (generationsResponse.ok) setGenerations(generationsData.generations || [])
+        else console.error('[v0] Video generations load error:', generationsData)
+
         setLoadError(null)
         setIsDataReady(true)
       } catch (error) {
@@ -112,21 +124,62 @@ function VideosPageContent() {
   }, [legacyTarget, retryKey])
 
   const hubCards = buildVideoDraftHubCards({ drafts, projects, productions })
+  
+  const generationCards = generations.map((g) => {
+    const project = projects.find(p => p.id === g.project_id)
+    const production = productions.find(p => p.id === g.production_id)
+    return {
+      id: g.id,
+      kind: 'generation' as const,
+      title: g.prompt || 'Geraçao IA',
+      meta: `IA: ${g.mode === 'image_to_video' ? 'I2V' : 'T2V'}`,
+      projectName: project?.name || 'Projeto Desconhecido',
+      productionName: production?.title || 'Produção Desconhecida',
+      status: g.status,
+      updatedAt: g.updated_at,
+      projectId: g.project_id || '',
+      productionId: g.production_id || '',
+      href: g.public_url || '#',
+      productionHref: production ? `/projetos/${project?.id}/producoes/${production.id}` : undefined,
+      generation: g
+    }
+  })
+
+  // Mixed list
+  const allCards = [
+    ...hubCards.map(c => ({ ...c, kind: 'draft' as const })),
+    ...generationCards
+  ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  
   const hubFilteredProductions = hubProjectFilter === 'all'
     ? productions
     : productions.filter((production) => production.project_id === hubProjectFilter)
-  const filteredHubCards = filterDraftHubCards(hubCards, {
-    projectId: hubProjectFilter,
-    productionId: hubProductionFilter,
-    status: hubStatusFilter,
-    search: hubSearch,
+  
+  // Custom filter for mixed content since filterDraftHubCards expects DraftHubCard format
+  const filteredHubCards = allCards.filter(card => {
+    if (hubProjectFilter !== 'all' && card.projectId !== hubProjectFilter) return false
+    if (hubProductionFilter !== 'all' && card.productionId !== hubProductionFilter) return false
+    if (hubStatusFilter !== 'all') {
+      if (hubStatusFilter === 'Rascunho' && card.kind !== 'draft') return false
+      // maybe map status
+    }
+    if (hubSearch.trim()) {
+      const q = hubSearch.toLowerCase()
+      if (!card.title.toLowerCase().includes(q) &&
+          !card.projectName.toLowerCase().includes(q) &&
+          (!card.productionName || !card.productionName.toLowerCase().includes(q))) {
+        return false
+      }
+    }
+    return true
   })
+  
   const hasHubFilters = hubProjectFilter !== 'all' || hubProductionFilter !== 'all' || hubStatusFilter !== 'all' || !!hubSearch.trim()
   const hubEmptyState = getDraftHubEmptyState({
     kind: 'video',
     projectCount: projects.length,
     productionCount: productions.length,
-    totalDraftCount: hubCards.length,
+    totalDraftCount: allCards.length,
     filteredDraftCount: filteredHubCards.length,
     hasFilters: hasHubFilters,
     hasError: !!loadError,
@@ -162,26 +215,47 @@ function VideosPageContent() {
     )
   }
 
-  const renderDraftActions = (draft: (typeof filteredHubCards)[number], size: 'sm' | 'default') => (
-    <>
-      <Button size={size} onClick={() => router.push(draft.href)} className="gap-1" data-testid="open-in-creative-editor">
-        <Clapperboard className="h-4 w-4" />
-        Abrir
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-      {draftById.get(draft.id) && (
-        <Button size={size} variant="outline" onClick={() => setPublicationDraft(draftById.get(draft.id) ?? null)} className="gap-1" data-testid="prepare-publication">
-          <Zap className="h-4 w-4" />
-          Preparar publicação
+  const renderDraftActions = (item: (typeof filteredHubCards)[number], size: 'sm' | 'default') => {
+    if (item.kind === 'generation') {
+      return (
+        <>
+          <Button size={size} onClick={() => {
+            if (item.generation.public_url) window.open(item.generation.public_url, '_blank')
+            else toast({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+          }} className="gap-1">
+            <Video className="h-4 w-4" />
+            {item.generation.status === 'completed' ? 'Assistir' : item.generation.status}
+          </Button>
+          {item.productionHref && (
+            <Button size={size} variant="outline" onClick={() => router.push(item.productionHref!)}>
+              Ver Production
+            </Button>
+          )}
+        </>
+      )
+    }
+
+    return (
+      <>
+        <Button size={size} onClick={() => router.push(item.href)} className="gap-1" data-testid="open-in-creative-editor">
+          <Clapperboard className="h-4 w-4" />
+          Abrir Rascunho
+          <ChevronRight className="h-4 w-4" />
         </Button>
-      )}
-      {draft.productionHref && (
-        <Button size={size} variant="outline" onClick={() => router.push(draft.productionHref!)}>
-          Ver Production
-        </Button>
-      )}
-    </>
-  )
+        {draftById.get(item.id) && (
+          <Button size={size} variant="outline" onClick={() => setPublicationDraft(draftById.get(item.id) ?? null)} className="gap-1" data-testid="prepare-publication">
+            <Zap className="h-4 w-4" />
+            Preparar publicação
+          </Button>
+        )}
+        {item.productionHref && (
+          <Button size={size} variant="outline" onClick={() => router.push(item.productionHref!)}>
+            Ver Production
+          </Button>
+        )}
+      </>
+    )
+  }
 
   return (
     <>
@@ -292,15 +366,28 @@ function VideosPageContent() {
                         Este Project ainda nao possui Production. Crie uma Production antes de iniciar um video.
                       </p>
                     )}
-                    <Button
-                      className="mt-4 w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
-                      onClick={() => void createInCreativeEditor()}
-                      disabled={!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor}
-                      data-testid="create-in-creative-editor"
-                    >
-                      {isCreatingInEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-                      Criar no Creative Editor
-                    </Button>
+                    
+                    <div className="flex flex-col gap-2 mt-4">
+                      <Button
+                        className="w-full gap-2 text-primary-foreground bg-primary hover:bg-primary/90"
+                        onClick={() => setShowAiModal(true)}
+                        disabled={!hubCreateProjectId || !hubCreateProductionId}
+                      >
+                        <Zap className="h-4 w-4" />
+                        Gerar Vídeo IA (Kling)
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"
+                        onClick={() => void createInCreativeEditor()}
+                        disabled={!hubCreateProjectId || !hubCreateProductionId || isCreatingInEditor}
+                        data-testid="create-in-creative-editor"
+                      >
+                        {isCreatingInEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                        Criar no Creative Editor
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -402,9 +489,9 @@ function VideosPageContent() {
                   </div>
                 ) : hubViewMode === 'list' ? (
                   <div role="list" className="space-y-2">
-                    {filteredHubCards.map((draft) => (
+                    {filteredHubCards.map((item) => (
                       <Card
-                        key={draft.id}
+                        key={`list-${item.kind}-${item.id}`}
                         role="listitem"
                         className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
                       >
@@ -413,24 +500,24 @@ function VideosPageContent() {
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
-                                <CardTitle className="truncate text-sm" title={draft.title}>
-                                  {draft.title}
+                                <CardTitle className="truncate text-sm" title={item.title}>
+                                  {item.title}
                                 </CardTitle>
                               </div>
-                              <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
                             </div>
                             <ContextMetadata
                               dense
                               items={[
-                                { label: 'Project', value: draft.projectName, title: draft.projectName },
-                                { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
-                                { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
-                                { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleDateString('pt-BR') },
+                                { label: 'Project', value: item.projectName, title: item.projectName },
+                                { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                                { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                               ]}
                             />
                           </div>
                           <CardActions className="flex flex-wrap gap-2 md:justify-end">
-                            {renderDraftActions(draft, 'sm')}
+                            {renderDraftActions(item, 'sm')}
                           </CardActions>
                         </CardContent>
                       </Card>
@@ -438,31 +525,31 @@ function VideosPageContent() {
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
-                    {filteredHubCards.map((draft) => (
-                      <Card key={draft.id} className="border-border/50 bg-card/30 backdrop-blur-sm">
+                    {filteredHubCards.map((item) => (
+                      <Card key={`grid-${item.kind}-${item.id}`} className="border-border/50 bg-card/30 backdrop-blur-sm">
                         <CardContent className="space-y-4 p-4">
                           <div className="flex items-start gap-3">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
                               <Video className="h-5 w-5 text-pink-300" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <CardTitle className="line-clamp-2 text-base" title={draft.title}>
-                                {draft.title}
+                              <CardTitle className="line-clamp-2 text-base" title={item.title}>
+                                {item.title}
                               </CardTitle>
-                              <p className="mt-1 text-xs text-muted-foreground">{draft.meta}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
                             </div>
                           </div>
                           <ContextMetadata
                             dense
                             items={[
-                              { label: 'Project', value: draft.projectName, title: draft.projectName },
-                              { label: 'Production', value: draft.productionName || 'Sem Production associada', title: draft.productionName || 'Sem Production associada' },
-                              { label: 'Status', value: <StatusBadge label={draft.status} tone="neutral" /> },
-                              { label: 'Atualizado', value: new Date(draft.updatedAt).toLocaleString('pt-BR') },
+                              { label: 'Project', value: item.projectName, title: item.projectName },
+                              { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                              { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                              { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
                             ]}
                           />
                           <CardActions className="flex flex-wrap gap-2">
-                            {renderDraftActions(draft, 'default')}
+                            {renderDraftActions(item, 'default')}
                           </CardActions>
                         </CardContent>
                       </Card>
@@ -494,6 +581,14 @@ function VideosPageContent() {
           .join('\n')
           .slice(0, 1500)}
         sourceLabel={publicationDraft?.name || undefined}
+      />
+      
+      <CreateVideoGenerationDialog 
+        open={showAiModal}
+        onOpenChange={setShowAiModal}
+        projectId={hubCreateProjectId}
+        productionId={hubCreateProductionId}
+        onSuccess={() => setRetryKey((k) => k + 1)}
       />
     </>
   )
