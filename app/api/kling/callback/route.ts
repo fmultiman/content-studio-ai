@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
 import * as crypto from 'crypto'
 
@@ -81,7 +81,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'Verified signature, but no task_id found' })
     }
 
-    const supabase = await createClient()
+    // Service role client to bypass RLS for external provider callback
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey)
 
     const { data: generation, error: getError } = await supabase
       .from('video_generations')
@@ -132,7 +135,7 @@ export async function POST(req: NextRequest) {
     } else if (status === 'failed') {
       await supabase.from('video_generations').update({
         status: 'failed',
-        error_details: { message: data.error?.message || 'Provider reported failure', payload: data }
+        error_details: { message: data.error?.message || data.message || 'Provider reported failure', payload: data }
       }).eq('id', generation.id)
     }
 
