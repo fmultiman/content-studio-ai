@@ -55,7 +55,7 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
     expect(res.task_id).toBe('test-i2v-task-123')
   })
 
-  it('submits T2V using correct endpoint and parses data.data.id', async () => {
+  it('submits T2V using top-level prompt, settings.aspect_ratio, and NO contents[]', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -73,14 +73,13 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       expect.objectContaining({ 
         method: 'POST',
         body: JSON.stringify({
-          contents: [
-            { type: 'prompt', text: 'cinematic scene' }
-          ],
+          prompt: 'cinematic scene',
           settings: {
             resolution: '720p',
             duration: 5,
             audio: 'off',
-            multi_shot: false
+            multi_shot: false,
+            aspect_ratio: '16:9'
           },
           options: {
             external_task_id: 'ext-uuid',
@@ -91,7 +90,83 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     )
     
+    // Explicitly verify the contract invariants
+    const calledBody = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(calledBody.prompt).toBe('cinematic scene')
+    expect(calledBody.contents).toBeUndefined()
+    expect(calledBody.settings.aspect_ratio).toBe('16:9')
     expect(res.task_id).toBe('test-t2v-task-444')
+  })
+
+  it('submits T2V with explicit settings: 5s, 720p, 9:16, audio off, multi_shot false', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 200,
+        data: {
+          id: 'test-t2v-task-555'
+        }
+      })
+    })
+
+    const res = await adapter.submitTextToVideo('tropical forest at sunrise', 'ext-task-916', 'http://callback', {
+      duration: 5,
+      resolution: '720p',
+      aspect_ratio: '9:16',
+      audio: 'off',
+      multi_shot: false
+    })
+
+    const calledBody = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(calledBody).toEqual({
+      prompt: 'tropical forest at sunrise',
+      settings: {
+        resolution: '720p',
+        duration: 5,
+        audio: 'off',
+        multi_shot: false,
+        aspect_ratio: '9:16'
+      },
+      options: {
+        external_task_id: 'ext-task-916',
+        callback_url: 'http://callback',
+        watermark_info: { enabled: false }
+      }
+    })
+    expect(calledBody.contents).toBeUndefined()
+    expect(res.task_id).toBe('test-t2v-task-555')
+  })
+
+  it('preserves structured error details (code, message, request_id) when API returns HTTP 400', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: async () => ({
+        code: 1102,
+        message: 'Invalid parameter prompt',
+        request_id: 'req_kling_err_999'
+      })
+    })
+
+    await expect(
+      adapter.submitTextToVideo('test', 'task-1')
+    ).rejects.toThrow('Kling API HTTP error: Bad Request (code: 1102, message: Invalid parameter prompt, request_id: req_kling_err_999)')
+  })
+
+  it('falls back to statusText when error body cannot be parsed as JSON', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      json: async () => {
+        throw new Error('Not JSON')
+      }
+    })
+
+    await expect(
+      adapter.submitTextToVideo('test', 'task-1')
+    ).rejects.toThrow('Kling API HTTP error: Bad Gateway')
   })
 
   it('queries task status using ?task_ids= and parses submitted/processing from data array', async () => {

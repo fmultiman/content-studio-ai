@@ -32,6 +32,12 @@ export interface KlingRequestPayload {
   options?: KlingOptions
 }
 
+export interface KlingTextToVideoPayload {
+  prompt: string
+  settings?: KlingSettings
+  options?: KlingOptions
+}
+
 export interface KlingSubmitResponse {
   task_id: string
 }
@@ -67,6 +73,23 @@ export class KlingAdapter {
     }
   }
 
+  private async handleHttpError(res: Response): Promise<never> {
+    let errorDetail = ''
+    try {
+      const errorJson = await res.json()
+      const parts: string[] = []
+      if (errorJson?.code !== undefined) parts.push(`code: ${errorJson.code}`)
+      if (errorJson?.message) parts.push(`message: ${errorJson.message}`)
+      if (errorJson?.request_id) parts.push(`request_id: ${errorJson.request_id}`)
+      if (parts.length > 0) {
+        errorDetail = ` (${parts.join(', ')})`
+      }
+    } catch {
+      // ignore json parse error
+    }
+    throw new Error(`Kling API HTTP error: ${res.statusText || res.status}${errorDetail}`)
+  }
+
   async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
     const payload: KlingRequestPayload = {
       contents: [
@@ -95,7 +118,7 @@ export class KlingAdapter {
     })
 
     if (!res.ok) {
-        throw new Error(`Kling API HTTP error: ${res.statusText}`)
+      await this.handleHttpError(res)
     }
 
     const data = await res.json()
@@ -108,10 +131,8 @@ export class KlingAdapter {
   }
 
   async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
-    const payload: KlingRequestPayload = {
-      contents: [
-        { type: 'prompt', text: prompt }
-      ],
+    const payload: KlingTextToVideoPayload = {
+      prompt,
       settings: {
         resolution: settings.resolution || '720p',
         duration: settings.duration || 5,
@@ -135,7 +156,7 @@ export class KlingAdapter {
     })
 
     if (!res.ok) {
-        throw new Error(`Kling API HTTP error: ${res.statusText}`)
+      await this.handleHttpError(res)
     }
 
     const data = await res.json()
