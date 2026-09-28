@@ -1,277 +1,421 @@
-# AI Provider Credentials — BYOK Architecture V1
+# AI Provider Credentials — BYOK + Execution Modes Architecture V1
 
-`AI_PROVIDER_CREDENTIALS_BYOK_V1`
+`AI_PROVIDER_CREDENTIALS_BYOK_V1` and `AI_PROVIDER_CREDENTIALS_EXECUTION_MODES_V1`
+
+## Status at a glance
+
+| Concern | State |
+|---|---|
+| `user_byok` (user's own provider account pays) | **Implemented — ACTIVE — DEFAULT — the only user-facing mode** |
+| `content_studio_credits` (Content Studio's provider account pays) | **Credential/execution boundary prepared — NOT user-enabled — fails closed** |
+| Billing / wallet / ledger / plans / pricing | **Not implemented** (deliberately) |
+| Silent user → platform credential fallback | **Does not exist, for any provider** |
+| Application-level encryption at rest | **Not implemented** (future hardening) |
+| MCP / OAuth / Browser Bridge connections | **Not implemented** (separate future work) |
 
 ## Product decision
 
-Content Studio uses **Bring Your Own Key (BYOK)** for AI provider execution:
+Content Studio's current model is **Bring Your Own Key (BYOK)**:
 
 ```
-user
-  ↓
-Settings → API (AI Providers)
-  ↓
-OpenAI credential / Nano Banana credential / Kling credential
-  ↓
-provider becomes available for that user
+user → Content Studio → user's provider credential → provider
+                                       └─ the user's provider/API account pays
 ```
 
-- A user with no personal credential for a provider gets a typed
-  "not configured" result, never a platform-paid generation.
-- There is **no automatic platform-paid fallback** in this V1. A future
-  "Use Content Studio Credits" mode may introduce platform-owned
-  credentials, billing, quotas and margins — that system does not exist
-  yet (see FUTURE-027).
-- `KLING_WEBHOOK_SECRET` is infrastructure-only: it verifies inbound Kling
-  webhook signatures and is never a user-owned execution credential. It is
-  never read by, or exposed to, any Settings/credential code path.
+A user with no saved credential for a provider gets a typed
+`PROVIDER_NOT_CONFIGURED` result, never a platform-paid generation.
 
-## Phase A audit findings (evidence, pre-hardening)
-
-Audited at `main@064c48d`, before this work:
-
-| Provider | Storage | Returned to browser? | Prefilled on load? | Env fallback | Resolution call site |
-|---|---|---|---|---|---|
-| OpenAI | `user_settings.openai_api_key` (plaintext) | **Yes** — client `select('*')` in Settings and `/imagens` | **Yes** | `process.env.OPENAI_API_KEY` in all environments, in 6 server routes + `/api/openai/generate-image` | Server routes query `user_settings` directly ad hoc |
-| Nano Banana | `user_settings.nanobanana_api_key` (plaintext) | **Yes** — same client `select('*')` | **Yes** | None | `/api/nanobanana/generate` queries `user_settings` directly |
-| Replicate | `user_settings.replicate_api_key` (plaintext) | **Yes** | **Yes** | N/A — no provider invocation reads this column; dead/unwired field | none |
-| Kling | `process.env.KLING_API_KEY` only | N/A (not user-owned) | N/A | **Always** — no user ownership existed | `/api/video-generations`, `/api/video-generations/[id]/sync` |
-
-Most severe finding: `app/(dashboard)/imagens/page.tsx` called
-`generateImagePrompt()` from `lib/ai-simulator.ts` directly in the browser,
-which issued `fetch('https://api.openai.com/...')` **from client JS** with
-`Authorization: Bearer <plaintext key>` — the user's OpenAI key travelled
-over the wire from the browser, fully visible in devtools/network, not just
-"returned in an API response."
-
-Multi-user isolation was already sound at the database layer: `user_settings`
-has RLS policies scoping every operation to `auth.uid() = user_id`, and both
-the server (`lib/supabase/server.ts`) and browser (`lib/supabase/client.ts`)
-Supabase clients use the anon key plus the user's session — there is no
-service-role/bypass-RLS client anywhere in this path. No cross-user leak was
-found; the defect was full-secret exposure to a client that should only ever
-see configuration status.
-
-### Verdict
-
-**UNSAFE — required correction before adding Kling**, but bounded hardening
-was sufficient; no schema/architecture redesign was required (see
-"Migration" below). The unsafe behaviors were:
-
-1. Full secrets round-tripped to the browser on every Settings/`/imagens` load.
-2. Saved secrets prefilled into `<input>` fields.
-3. One feature (`/imagens` prompt generation) sent the raw key from the
-   browser directly to the OpenAI API.
-4. Kling had no user ownership model at all — a single platform env key.
-5. No shared credential-resolution contract; every route queried
-   `user_settings` ad hoc.
-
-## Target architecture (implemented)
+A second, **explicit** mode is prepared for the future:
 
 ```
-resolveProviderCredential({ userId, provider })
-  → { status: 'configured', secret }   // server-side only, never logged/returned
-  → { status: 'missing' }
+user → Content Studio Credits → platform-owned credential → provider
+            └─ Content Studio's provider account pays; the user's Content Studio balance is charged
 ```
 
-`lib/credentials/provider-credentials.ts` is the single shared module:
+These are **two execution modes, not fallbacks.** The following must never exist:
 
-- `AiProvider = 'openai' | 'nano_banana' | 'kling' | 'replicate'`
-- `resolveProviderCredential(supabase, { userId, provider })` — reads exactly
-  one secret column, scoped by `.eq('user_id', userId)` (defense in depth on
-  top of RLS), returns `configured`/`missing`, never falls back to an env var.
-- `getProviderConfigurationStatuses(supabase, userId)` — status-only view for
-  UI/API responses; never includes a secret value.
-- `resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, userId)` — see
-  "Documented exception" below.
+```
+user credential missing → silently use platform credential      ✗ FORBIDDEN
+```
 
-Every provider invocation route now resolves its credential through this
-module instead of querying `user_settings` ad hoc.
+## Domain vocabulary (kept deliberately separate)
 
-## Secret storage (Phase B decision)
+Do not collapse these into a single "provider settings" object.
 
-Storage remains the existing plaintext `TEXT` columns on `user_settings`,
-**not** re-encrypted at the application layer in this V1. This was a
-deliberate, evidence-based call, not an oversight:
+| Concept | Meaning | Values today | Where it lives |
+|---|---|---|---|
+| **Provider** | The external service | `openai`, `nano_banana`, `kling`, `replicate` | `AiProvider` in `lib/credentials/provider-credentials.ts` |
+| **Model** | The concrete generation model | e.g. Kling 3.0, `gpt-image-2` | Route/adapter level (e.g. `video_generations.model`) |
+| **Connection** | The configured way of reaching a provider (a user's, or later a platform-managed one) | one user API-key connection per provider, stored on `user_settings` | `user_settings` columns; `connectionMethod` in the status API |
+| **Connection method** | How the credential is obtained/held | `api_key` | `ProviderConnectionMethod` in `lib/credentials/provider-metadata.ts` |
+| **Transport** | How Content Studio reaches the provider | `rest` | `ProviderTransport` in `provider-metadata.ts` |
+| **Execution mode** | **Who pays** | `user_byok` (active), `content_studio_credits` (gated) | `ProviderExecutionMode` in `lib/credentials/provider-execution.ts` |
+| **Credential source** | **Whose credential** is used | `user`, `platform` | `CredentialSource` in `provider-execution.ts` |
 
-- Postgres/Supabase already encrypts data at rest at the infrastructure
-  layer, and RLS scopes every row read/write to `auth.uid() = user_id`.
-- Introducing an application-managed encryption key (a new master-key
-  infrastructure secret) is exactly the kind of casual cryptography this
-  mission's brief asked to avoid ("do not invent cryptography casually"),
-  and it adds real operational risk (key rotation, misconfiguration locking
-  out real users' real credentials) disproportionate to what's needed to
-  close the actual exposure found in Phase A — which was resolution/exposure
-  boundaries, not at-rest storage format.
-- The concrete hardening that matters is: never return the secret to the
-  browser, never prefill it, resolve it only server-side immediately before
-  the provider call, and never let it enter logs, errors, or persisted
-  generation/task records.
+Worked examples:
 
-Application-layer encryption of these columns is documented here as a
-legitimate **future** hardening step (see FUTURE-027), not implemented now.
+| | Provider | Model | Connection | Transport | Execution mode | Credential source |
+|---|---|---|---|---|---|---|
+| Today | Kling | Kling 3.0 | user's Kling API connection | REST | `user_byok` | `user` |
+| Future | Kling | Kling 3.0 | Content Studio managed Kling connection | REST | `content_studio_credits` | `platform` |
+| Possible future | Higgsfield | — | user's Higgsfield MCP connection | MCP | `user_byok` | `user` |
 
-### What changed to satisfy the contract
+"Who pays" (execution mode) is independent of "how we reach the provider"
+(transport). Neither is implied by the other. **Browser Bridge is only a
+*possible* integration mechanism for platforms with no usable official API;
+it is not a transport every provider has**, and nothing in this codebase
+implements it. Likewise, not every provider supports every connection
+method. Connection methods and transports beyond `api_key` / `rest` are
+intentionally **not** in the unions yet — they are added only when a real
+implementation lands.
 
-- `app/api/settings/providers/route.ts` (`GET`) returns `{ status }` per
-  provider — never a secret.
-- `app/api/settings/providers/[provider]/route.ts` (`PUT`/`DELETE`) saves,
-  replaces, or clears a credential and returns only `{ provider, status }`.
-- Settings → API tab (`app/(dashboard)/configuracoes/page.tsx`) no longer
-  selects secret columns from the browser Supabase client at all. The input
-  for each provider (`components/settings/ai-provider-credential-card.tsx`)
-  never prefills a saved value — it always starts empty, uses
-  `type="password"` by default, and only a fresh explicit "Save" round-trips
-  a new value to the server.
-- `/imagens` no longer selects secret columns client-side either; it fetches
-  `/api/settings/providers` for booleans (`openaiConfigured`,
-  `nanobananaConfigured`).
-- The browser→OpenAI direct call was replaced with
-  `app/api/prompts/generate-image-prompt/route.ts`, a server route that
-  resolves the credential and calls OpenAI itself; `/imagens` now calls this
-  route instead of `generateImagePrompt()` directly. `lib/ai-simulator.ts`
-  itself was not modified — it is simply no longer invoked from client code.
+## Resolver shape
 
-## Documented exception: OpenAI's legacy platform fallback
+### Before (PR #39)
 
-An initial `list_tables` read of `user_settings` reported an estimated 0
-rows (Postgres's cached `reltuples` statistic, stale for a table that had
-not been analyzed recently — not a reliable signal). A direct `COUNT(*)`
-taken later in this work found the real number: **3 rows**, of which 2 have
-a personal `openai_api_key` and 1 has a personal `nanobanana_api_key`; none
-had `kling_api_key` (expected — the column did not exist before this
-change). Not every current OpenAI call in the live app is covered by a
-personal key today, so `process.env.OPENAI_API_KEY` as a platform-level
-fallback, in every environment including Production, is still load-bearing
-for at least some users/routes.
+```ts
+resolveProviderCredential(supabase, { userId, provider })
+  → { status: 'configured', secret } | { status: 'missing' }
 
-Stripping that fallback in this change would risk breaking "Do not break
-image generation" for whichever current users/requests still depend on it,
-with no mitigation in place. This fallback is therefore **preserved**, but
-centralized into one
-explicitly-named function —
-`resolveOpenAiCredentialWithLegacyPlatformFallback` — instead of being
-duplicated ad hoc across seven routes as `settings?.openai_api_key ||
-process.env.OPENAI_API_KEY`. Nano Banana never had this fallback and still
-doesn't. **Kling gets no equivalent** — it is the one provider this mission
-explicitly moves to strict BYOK with zero platform fallback for
-user-triggered Production generation, since it has no legacy dependency to
-protect.
+resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, userId)
+  → user key, else process.env.OPENAI_API_KEY   // silent platform fallback
+```
 
-This is scoped as a temporary, load-bearing exception until either (a)
-personal-key adoption is verified, or (b) the future "Content Studio
-Credits" platform-funded mode ships with an explicit, billed, opt-in
-platform-fallback contract — see FUTURE-027.
+Mode, credential source and transport were implicit; OpenAI silently
+substituted the platform credential.
 
-## Kling BYOK
+### After (this closure)
 
-- Settings → API → "Kling" card: Configure / Substituir / Remover, same
-  pattern as OpenAI/Nano Banana. Saving never prefills; the response never
-  contains the secret.
-- `app/api/video-generations/route.ts` resolves the authenticated user's own
-  Kling credential **before** touching any source file and **before**
-  creating the `video_generations` row. If missing:
-  - Returns `{ error: 'PROVIDER_NOT_CONFIGURED', code: 'PROVIDER_NOT_CONFIGURED', provider: 'kling', message }` with HTTP 422.
-  - **Zero** database rows are created and **zero** Kling API calls are made.
-- `app/api/video-generations/[id]/sync/route.ts` re-resolves the credential
-  the same way before polling Kling for status.
-- `/videos` (`app/(dashboard)/videos/page.tsx` and
-  `components/videos/create-video-generation-dialog.tsx`) fetches
-  `/api/settings/providers` and only ever sees `kling.status`, never the
-  credential. When missing, the "Gerar Vídeo IA (Kling)" action is disabled
-  and a `StateMessage` points to Settings; a race (key removed in another
-  tab) is still caught server-side and surfaces the same typed error via a
-  toast, not a generic 500.
-- Non-production convenience: `process.env.KLING_API_KEY` may still stand in
-  for a developer with no personal key, but only when
-  `process.env.NODE_ENV !== 'production'`. This path is unreachable in
-  Production regardless of whether the env var is set — see
-  `resolveKlingApiKey()` in `app/api/video-generations/route.ts`.
+```ts
+resolveProviderExecution(supabase, { userId, provider, mode? = 'user_byok' }, deps?)
+  → { status: 'ready', provider, executionMode, credentialSource, secret }
+  | { status: 'provider_not_configured', code: 'PROVIDER_NOT_CONFIGURED', executionMode: 'user_byok' }
+  | { status: 'not_enabled',             code: 'CONTENT_STUDIO_CREDITS_NOT_ENABLED', executionMode: 'content_studio_credits' }
+  | { status: 'platform_credential_unavailable', code: 'PLATFORM_CREDENTIAL_UNAVAILABLE', executionMode: 'content_studio_credits' }
+```
 
-### `KLING_WEBHOOK_SECRET` boundary
+Four small modules, one responsibility each:
 
-`app/api/kling/callback/route.ts` reads `process.env.KLING_WEBHOOK_SECRET`
-to verify the inbound webhook HMAC signature. This is untouched by this
-change and remains structurally separate from `KLING_API_KEY` /
-`kling_api_key`:
+| Module | Responsibility |
+|---|---|
+| `lib/credentials/provider-credentials.ts` | **User** credential store only. `resolveProviderCredential`, `getProviderConfigurationStatuses`. Never reads env. |
+| `lib/credentials/platform-credentials.ts` | **Platform** credential boundary — the *only* file that may read `OPENAI_API_KEY` / `KLING_API_KEY`. |
+| `lib/credentials/provider-execution.ts` | Execution modes, credential-source typing, the fail-closed credits gate, `resolveProviderExecution`. |
+| `lib/credentials/provider-metadata.ts` | Static, non-secret provider metadata (connection methods, transports). |
 
-- It is never read by `lib/credentials/provider-credentials.ts`.
-- It is never selectable from, or writable through, any Settings API route.
-- It never appears in `user_settings` or any other user-scoped table.
-- It is not returned in any API response.
+A source-scan test (`lib/__tests__/credential-boundary.test.ts`) enforces the
+boundary: platform env names appear only in `platform-credentials.ts`, only
+`provider-execution.ts` imports it, and every provider route resolves through
+`resolveProviderExecution`.
+
+## `user_byok` (current)
+
+```
+configured user credential → ready { credentialSource: 'user', secret }
+missing user credential    → provider_not_configured (PROVIDER_NOT_CONFIGURED)
+                             → zero provider calls
+                             → never becomes a platform credential
+```
+
+Every route hard-codes `provider` and leaves `mode` at its default. **No route
+reads an execution mode or credential source from the request**; a client
+sending `executionMode: 'content_studio_credits'` or `credentialSource:
+'platform'` is ignored (or rejected as an unknown field) and still resolves as
+`user_byok`. A client-supplied string can never authorize platform spend.
+
+## `content_studio_credits` (prepared, disabled, fails closed)
+
+```
+mode = content_studio_credits
+  → checkContentStudioCreditsEntitlement()   // denies everyone today
+  → not_enabled (CONTENT_STUDIO_CREDITS_NOT_ENABLED)
+  → the platform credential is NOT EVEN READ
+  → zero provider calls, zero platform spend
+```
+
+- The mode is a recognised, typed value, so a future implementation does not
+  have to reinterpret `user_byok` or rewire credential resolution.
+- The entitlement check is the seam where a future billing/entitlement system
+  plugs in. It **must not** be widened to "allow" as a shortcut.
+- `resolveProviderExecution` accepts an optional `checkEntitlement` dependency
+  **solely so tests can prove the platform path is distinct** once entitlement
+  allows. No route passes it, and no route passes `mode: 'content_studio_credits'`
+  at all (guarded by a test).
+- No user-facing selector ("Use Content Studio Credits") exists, because there
+  is no balance system to support it truthfully.
+- Billing/entitlement belongs **above** credential/provider execution; a
+  provider adapter never needs to know a user's plan.
+
+## Platform credentials in Production
+
+Platform-owned provider credentials **may** exist in Production configuration
+(`OPENAI_API_KEY`, `KLING_API_KEY`, future ones). Their existence:
+
+- **does not** authorize any user-funded execution;
+- **is not** a fallback for a missing user credential;
+- belongs exclusively to the future explicit `content_studio_credits` path.
+
+They are intentionally **left in place** in the deployment environment — the
+work here corrects credential *routing*, not infrastructure configuration.
+Today they are effectively dormant: nothing in the running application reads
+them, because the only reader (`platform-credentials.ts`) is reachable solely
+through the credits gate, which denies everyone.
+
+## OpenAI: platform fallback removed from `user_byok`
+
+PR #39 kept one documented exception: OpenAI routes fell back to
+`process.env.OPENAI_API_KEY` in every environment. That contradicted the
+product model and is **removed**. Every OpenAI route now behaves as:
+
+```
+configured user OpenAI key → use it
+missing user OpenAI key    → 400 { code: 'PROVIDER_NOT_CONFIGURED', provider: 'openai' }, zero OpenAI calls
+```
+
+Routes covered: `/api/openai/generate-image`, `/api/prompts/translate`,
+`/api/prompts/generate-image-prompt`, `/api/evaluate-image`,
+`/api/channel-pieces/generate-body`, `/api/posts/generate-feed-text`,
+`/api/videos/generate-scene-prompt`. The two prompt routes keep their
+UI-facing `code: 'PROMPT_PROVIDER_NOT_CONFIGURED'` and add
+`providerCode: 'PROVIDER_NOT_CONFIGURED'`.
+
+`/imagens` now tells the user that image generation with OpenAI models — not
+only prompt generation — needs their own OpenAI key in Settings.
+
+### Audit: system-owned (non-user) OpenAI execution
+
+Before removing the fallback, every OpenAI execution path was audited:
+
+- All eight `api.openai.com` call sites are in seven authenticated user
+  request routes plus `lib/ai-simulator.ts` (reachable only through
+  `/api/prompts/generate-image-prompt`). Each route returns 401 when there is
+  no authenticated user *before* resolving any credential.
+- No `vercel.json` / `vercel.ts`, no cron, no scheduled task, no GitHub
+  workflow, and no background service exists in the repository.
+- The render-worker infrastructure (`infra/render-worker-runtime`) and
+  `scripts/` do not call OpenAI.
+
+**Result: no system-owned OpenAI workflow exists.** The fallback was therefore
+not preserved for hypothetical compatibility. If a genuine platform-owned
+workflow is ever introduced, it must be documented and use an explicit
+platform-owned path, not a user request's BYOK resolution.
+
+Real-world impact: `user_settings` holds 3 rows (2 with a personal OpenAI
+key, 1 with a personal Nano Banana key). A user without a personal OpenAI key
+now sees the "not configured" guidance instead of silently using the platform
+key — the intended BYOK behavior.
+
+## Kling
+
+- Settings → API → "Kling": Configure / Substituir / Remover; status-only.
+- `/api/video-generations` and `/api/video-generations/[id]/sync` resolve the
+  authenticated user's own credential via `resolveProviderExecution`
+  (`user_byok`) **before** touching source files or creating any DB row. Missing:
+  typed `422 { code: 'PROVIDER_NOT_CONFIGURED', provider: 'kling' }`, zero
+  `video_generations` rows, zero Kling calls.
+- **The non-production `KLING_API_KEY` stand-in from PR #39 is removed.**
+  `process.env.KLING_API_KEY` is not consulted in any `NODE_ENV`. Developers
+  save their own key through Settings like any user. (This also removes a
+  source of test/production divergence.)
+- `/videos` disables generation and shows "Kling não configurado" with a link
+  to Settings; a key removed in another tab is still caught server-side.
+- The platform `KLING_API_KEY` may remain in the environment for the future
+  `content_studio_credits` path only.
+
+### `KLING_WEBHOOK_SECRET`
+
+Verifies inbound Kling webhook signatures in `app/api/kling/callback/route.ts`
+only. It is environment-only, server-only, webhook-verification-only, never
+part of provider execution credential resolution, never selectable through
+Settings, never in `user_settings`, never in a response body. A test asserts
+it is referenced by no file other than the callback route.
+
+## Nano Banana and Replicate
+
+- **Nano Banana**: user-owned credential, server-side execution, no platform
+  credential exists for it. Now resolved through `resolveProviderExecution`
+  for a single shared contract (a small change; `/imagens` was not rewritten).
+- **Replicate**: credential storage and Settings card only. There is **no**
+  generation path (`PROVIDER_METADATA.replicate.executionImplemented === false`);
+  none was invented for symmetry. Its status participates in the shared
+  Settings model and is otherwise unaffected.
+
+## Execution provenance (persistence decision)
+
+A future execution needs to know historically: provider, model, execution
+mode, and credential-source category — **never** the credential itself.
+
+**Decision: nothing new is persisted now, and no migration is added.**
+
+- There is exactly one active mode, `user_byok`, so recording it would be a
+  constant column carrying no information.
+- `video_generations` already persists `provider` and `model`; it does not and
+  must not persist any secret (`request_config` and `provider_metadata` hold
+  only generation parameters and the provider's own response — asserted by a
+  test).
+- When `content_studio_credits` is enabled, provenance becomes load-bearing
+  (billing reconciliation, support, audit). At that point add
+  `execution_mode` (and a credential-source category) to the execution record
+  in the **same** change that enables the mode, together with the ledger/
+  reservation design — not before. Historical rows with no value are
+  unambiguously `user_byok`.
 
 ## Multi-user isolation
 
-Enforced at two layers:
+Two layers, unchanged:
 
-1. **Database (primary)**: `user_settings` RLS policies restrict every
-   `SELECT`/`INSERT`/`UPDATE`/`DELETE` to `auth.uid() = user_id`
-   (`scripts/003_create_user_settings_v2.sql`).
-2. **Application (defense in depth)**: every call into
-   `resolveProviderCredential` / `getProviderConfigurationStatuses` passes
-   an explicit `.eq('user_id', userId)` filter using the authenticated
-   user's own id from `supabase.auth.getUser()` — never a value from the
-   request body.
+1. **Database (primary)**: `user_settings` RLS restricts every operation to
+   `auth.uid() = user_id` (`scripts/003_create_user_settings_v2.sql`).
+2. **Application (defense in depth)**: every resolver call filters
+   `.eq('user_id', userId)` using the authenticated user's own id from
+   `supabase.auth.getUser()` — never a request-body value.
 
-There is no workspace/project-level credential sharing in this V1;
-ownership is strictly per-user, matching the current product decision.
+Under `user_byok`, platform credentials cannot become a way around ownership:
+the user path never touches them, and the platform path is unreachable.
+Ownership is strictly per user; there is no workspace/project credential
+sharing.
 
-## Migration
+## Secret handling (hard boundaries)
 
-**Required**: yes — one additive column.
+- No provider credential in client-visible JSON, query strings, URLs, logs,
+  analytics, toasts, browser storage, React props after save, or
+  `VideoGeneration.request_config` / provider metadata.
+- The browser never selects a secret column (source-scan tested); the Settings
+  card is status-only and starts every edit from an empty input
+  (component-tested).
+- No client code calls a provider API directly; the former browser →
+  `api.openai.com` path was removed in PR #39 and is guarded against
+  regression.
+- Save/replace/remove routes return only `{ provider, status }`.
 
-`scripts/040_add_kling_credential.sql`:
+## Storage at rest
 
-```sql
-ALTER TABLE user_settings
-ADD COLUMN IF NOT EXISTS kling_api_key TEXT DEFAULT NULL;
+Provider keys remain plaintext `TEXT` columns on `user_settings`, protected by
+Supabase/Postgres infrastructure encryption, RLS, and server-only resolution.
+**Application-level encryption at rest is not implemented** and is not claimed.
+It remains a legitimate future hardening step (new master-key secret, rotation,
+and migration of real credentials need their own design); it was not
+introduced here because no new critical vulnerability was found.
+
+## Settings UX
+
+### Current (unchanged visually)
+
+Settings → API lists one card per provider — OpenAI, Nano Banana, Kling,
+Replicate — each "Configurado ✓ / Não configurado" with Configure/Substituir/
+Remover. No saved secret is prefilled or returned. No Content Studio Credits
+control is exposed.
+
+### Intended next evolution: "AI Connections"
+
+Provider cards are fine for four providers but are **not** the long-term
+information architecture. Content Studio is expected to support more creative
+platforms and more than one connection mechanism per provider (API key/REST,
+OAuth, MCP, Browser Bridge where justified, other provider-supported methods).
+The credential architecture therefore does not depend on one permanent
+hardcoded card per provider. The target UX:
+
+```
+Settings → AI Connections
+
+  Configured connections
+    OpenAI        API Key   Configured
+    Nano Banana   API Key   Configured
+    Kling         API Key   Configured
+  [ + Add connection ]
+
+  Add connection
+    1. choose platform / provider
+    2. choose an available connection method (only ones that provider supports)
+    3. configure only the fields/actions that method requires
 ```
 
-- Additive and backward-compatible: no existing column altered/dropped, no
-  existing row mutated (defaults to `NULL`).
-- Applied directly to the Production Supabase project
-  (`nuhdhnasuohizxtmyiju` / "Content Agent Studio") via
-  `mcp__claude_ai_Supabase__apply_migration`, verified by
-  `information_schema.columns`.
-- `ADD COLUMN ... DEFAULT NULL` does not rewrite or lock existing rows in
-  Postgres — it is safe regardless of row count. A `COUNT(*)` taken after
-  applying the migration found 3 existing `user_settings` rows (2 with a
-  personal `openai_api_key`, 1 with a personal `nanobanana_api_key`); none
-  were read, written, or otherwise touched by this migration.
-- Rollback: `ALTER TABLE user_settings DROP COLUMN IF EXISTS kling_api_key;`
-  is safe at any time (nullable, no dependents).
-- No destructive migration of existing plaintext OpenAI/Nano Banana/Replicate
-  values was performed or required — those columns are unchanged.
+Illustrative, not a commitment: Kling → API Key/REST (later MCP);
+Higgsfield → API and/or MCP if supported; Google Flow → whichever official
+integration surface exists (Browser Bridge only if nothing better);
+OpenAI → API Key. Do not assume every provider supports every method.
 
-## Files changed (by area)
+What this closure did to keep that path open (without redesigning Settings or
+adding a connection table): provider metadata is isolated in
+`provider-metadata.ts`; the status API returns `{ status, connectionMethod }`
+per provider; and Provider / Connection / Connection method / Transport /
+Execution mode / Credential source are separate types. A connection database
+is not introduced until an implementation genuinely needs one.
 
-- **Credential resolution**: `lib/credentials/provider-credentials.ts` (new)
-- **Settings API**: `app/api/settings/providers/route.ts` (new),
-  `app/api/settings/providers/[provider]/route.ts` (new)
-- **Settings UI**: `app/(dashboard)/configuracoes/page.tsx`,
-  `components/settings/ai-provider-credential-card.tsx` (new)
-- **Prompt generation (moved server-side)**:
-  `app/api/prompts/generate-image-prompt/route.ts` (new)
-- **`/imagens`**: `app/(dashboard)/imagens/page.tsx`
-- **OpenAI-consuming routes** (resolver + documented legacy fallback):
-  `app/api/openai/generate-image/route.ts`,
-  `app/api/prompts/translate/route.ts`,
-  `app/api/channel-pieces/generate-body/route.ts`,
-  `app/api/evaluate-image/route.ts`,
-  `app/api/posts/generate-feed-text/route.ts`,
-  `app/api/videos/generate-scene-prompt/route.ts`
-- **Nano Banana**: `app/api/nanobanana/generate/route.ts`
-- **Kling BYOK**: `app/api/video-generations/route.ts`,
-  `app/api/video-generations/[id]/sync/route.ts`
-- **`/videos` UX**: `app/(dashboard)/videos/page.tsx`,
-  `components/videos/create-video-generation-dialog.tsx`
-- **Types**: `lib/types.ts` (`UserSettings.kling_api_key`)
-- **Migration**: `scripts/040_add_kling_credential.sql`
+## Future work (documented only — none of this is implemented)
 
-## Out of scope (unchanged by this work)
+### Content Studio Credits flow
 
-MCP, Kling MCP, Browser Bridge, Content Studio wallet/credits, subscriptions,
-provider billing, usage metering, pricing engine, platform-paid fallback, a
-second video provider, LibraryFile promotion, video evaluator, Creative
-Editor changes. See FUTURE-027 for what a platform-funded credits mode would
-require.
+```
+content_studio_credits request
+  → entitlement check
+  → available balance
+  → reserve estimated credits
+  → platform credential
+  → provider execution
+  → actual provider usage
+  → settlement / debit
+  → release / refund the difference
+```
+
+Asynchronous providers such as Kling likely need **reservation** semantics
+rather than a naive immediate debit (the final cost is known only after the
+webhook/poll). This is a separate project.
+
+### Pricing / provider-unit normalization
+
+Providers bill in different units (tokens, seconds, generations, API units,
+model-specific prices, resolution- and audio-dependent prices). Content Studio
+Credits will need a **pricing layer separate from credential resolution**.
+Provider API units must not be assumed equal to Content Studio Credits 1:1.
+No universal pricing model is created here.
+
+### Trial / plan compatibility
+
+The boundary already allows, without changing what BYOK means:
+
+```
+Free-trial user ── has own provider key ─────────► user_byok
+                └─ has Content Studio trial credits ─► content_studio_credits
+
+Paid plan ──────── own API key ──────────────────► user_byok
+                └─ plan-included credits ────────► content_studio_credits
+```
+
+The provider adapter never needs to know the subscription plan.
+
+## Phase A audit findings (PR #39, historical)
+
+Audited at `main@064c48d`, before any hardening:
+
+| Provider | Storage | Returned to browser? | Env fallback | Resolution |
+|---|---|---|---|---|
+| OpenAI | `user_settings.openai_api_key` plaintext | Yes (client `select('*')`) | `OPENAI_API_KEY`, all environments, 7 routes | ad hoc per route |
+| Nano Banana | `user_settings.nanobanana_api_key` plaintext | Yes | None | ad hoc |
+| Replicate | `user_settings.replicate_api_key` plaintext | Yes | N/A (no execution path) | none |
+| Kling | `process.env.KLING_API_KEY` only | N/A | Always | none |
+
+Most severe: `/imagens` called `generateImagePrompt()` in the browser, which
+fetched `api.openai.com` from client JS with the plaintext key. Multi-user
+isolation was already sound via RLS. Verdict then: **UNSAFE — corrected with
+bounded hardening**, no redesign. The browser-exposure defects are fixed; the
+OpenAI silent platform fallback that PR #39 preserved is removed by this
+closure.
+
+## Migrations
+
+- `scripts/040_add_kling_credential.sql` (PR #39) — additive
+  `ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS kling_api_key TEXT DEFAULT NULL;`,
+  applied to Production. `ADD COLUMN ... DEFAULT NULL` neither rewrites nor
+  locks existing rows; no existing row was read or written. Rollback:
+  `ALTER TABLE user_settings DROP COLUMN IF EXISTS kling_api_key;`.
+- **This closure requires no migration.** Migration 039 and all previously
+  applied migrations are untouched.
+
+## Out of scope (unchanged)
+
+MCP, Kling MCP, Browser Bridge, OAuth connections, credit wallet/balance,
+ledger, reservations, settlement, refunds, quotas, subscriptions/plans, Stripe/
+checkout/top-ups, pricing engine, provider/model cost mapping, platform-paid
+fallback, a second video provider, LibraryFile promotion, video evaluator,
+Creative Editor changes, application-level encryption at rest.

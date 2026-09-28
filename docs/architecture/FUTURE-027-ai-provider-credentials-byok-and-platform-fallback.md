@@ -1,66 +1,100 @@
 # FUTURE-027 — AI_PROVIDER_CREDENTIALS_BYOK_AND_PLATFORM_FALLBACK_V1
 
-This identifier did not exist anywhere in the repository before this change;
-it is created here as the canonical status record for BYOK vs. platform-paid
-credential work, per the `AI_PROVIDER_CREDENTIALS_BYOK_V1` mission.
+Canonical status record for BYOK vs. Content Studio-funded provider
+execution. Detail lives in
+[AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1](AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md).
 
-## Status
+> Note on the name: "platform fallback" in this identifier is historical. The
+> product decision is that platform-funded execution is **never a fallback**;
+> it is a separate, explicit execution mode (`content_studio_credits`).
 
-**Split.**
+## Final state
 
-### CURRENT — BYOK (this mission): CLOSED
+| Item | State |
+|---|---|
+| **BYOK** (`user_byok`) | **IMPLEMENTED — ACTIVE — DEFAULT** |
+| **Content Studio Credits** (`content_studio_credits`) | **EXECUTION / CREDENTIAL BOUNDARY PREPARED — NOT USER-ENABLED — BILLING SYSTEM NOT IMPLEMENTED** |
+| Silent user → platform fallback | **Does not exist** (OpenAI's legacy fallback was removed) |
+| Application-level encryption at rest | **FUTURE HARDENING** |
+| MCP | **SEPARATE FUTURE TASK** |
 
-Implemented and Production-deployed:
+## Implemented (BYOK) — CLOSED
 
-- One shared credential-resolution contract
-  (`lib/credentials/provider-credentials.ts`) used by OpenAI, Nano Banana,
-  Kling, and Replicate.
-- Settings → API → "AI Providers": Configure / Substituir / Remover per
-  provider, status-only (`configured`/`missing`), never a prefilled or
-  returned secret.
-- Kling added to the same BYOK pattern: `kling_api_key` on `user_settings`
-  (additive migration), resolved per authenticated user, zero database rows
-  or provider calls when missing, typed `PROVIDER_NOT_CONFIGURED` (HTTP 422)
-  response, `/videos` UI surfaces the missing state and blocks the action
-  instead of a generic failure.
-- `KLING_WEBHOOK_SECRET` confirmed and kept structurally separate from any
-  user-owned execution credential — infrastructure/env-only, never
-  selectable through Settings, never in a response body.
-- OpenAI/Nano Banana aligned to the same resolver module. Nano Banana has no
-  platform fallback (unchanged). OpenAI keeps its existing platform-env
-  fallback in all environments — see "documented exception" in
-  `AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md` — because personal-key
-  adoption is only partial today (a `COUNT(*)` found 3 `user_settings` rows,
-  2 with a personal OpenAI key) and removing the fallback now would risk
-  breaking image generation for whichever users/requests still depend on
-  it, with no mitigation in place.
-- Full detail: [AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1](AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md).
+- User-owned provider credentials on `user_settings` (OpenAI, Nano Banana,
+  Kling, Replicate), resolved server-side only.
+- One shared execution boundary:
+  `resolveProviderExecution` with explicit `ProviderExecutionMode`
+  (`user_byok` | `content_studio_credits`) and typed `CredentialSource`
+  (`user` | `platform`), separate from transport.
+- `user_byok`: configured user key → used; missing → `PROVIDER_NOT_CONFIGURED`,
+  zero provider calls. This now holds for **OpenAI, Nano Banana and Kling
+  alike** — no env fallback in any environment.
+- Settings → API status-only cards (Configure / Substituir / Remover); no
+  prefill; no secret returned to the browser; secrets never selected
+  client-side; no browser → provider calls.
+- `/videos` missing-Kling guidance with the action disabled; server-side
+  validation remains authoritative.
+- `KLING_WEBHOOK_SECRET` isolated (env-only, webhook-verification-only).
+- RLS + explicit `user_id` scoping; multi-user isolation tested.
+- Additive `kling_api_key` migration (PR #39). No migration in the closure.
 
-### FUTURE — Content Studio Credits / platform-funded execution: NOT IMPLEMENTED
+## Prepared, NOT enabled (Content Studio Credits)
 
-Explicitly **not** built by this mission, and nothing here should be read as
-implementing or scheduling it:
+Built now (so a future implementation does not rewire credential resolution):
 
-- No platform-owned provider credentials for user-triggered generation.
-- No billing, quotas, internal credits, or margin logic.
-- No automatic fallback from a missing user credential to a platform-paid
-  path, for any provider, in Production.
-- No usage metering or pricing engine.
+- The `content_studio_credits` mode as a recognised, typed value.
+- A distinct platform credential boundary (`platform-credentials.ts`) — the
+  only code allowed to read `OPENAI_API_KEY` / `KLING_API_KEY`.
+- A fail-closed gate: with no entitlement system, the mode returns
+  `CONTENT_STUDIO_CREDITS_NOT_ENABLED`, the platform credential is **not even
+  read**, and no provider is called. No route passes this mode, and no route
+  accepts a mode or credential source from the client.
+- Platform credentials in the deployment environment are allowed and were
+  deliberately **not** removed; they are dormant until this mode is enabled.
 
-When this future mode is designed, it needs (at minimum):
+Not built (explicitly out of scope, per the closure brief): credit wallet,
+balance table, payment system, Stripe, subscriptions, checkout, top-ups,
+pricing engine, provider/model price normalization, credit ledger,
+reservation, settlement, refunds, quota engine, monthly resets, plan
+entitlement system, commercial margins, and any user-facing "Use Content
+Studio Credits" selector.
 
-1. An explicit, user-visible "Use Content Studio Credits" opt-in — never an
-   implicit fallback from a missing BYOK credential.
-2. A platform-owned credential store, separate from the per-user
-   `user_settings` columns this V1 uses, with its own access boundary (it
-   must not be reachable through `resolveProviderCredential`, which is
-   deliberately user-scoped only).
-3. A billing/quota/credit ledger, which does not exist anywhere in this
-   codebase today.
-4. A decision on whether the OpenAI legacy platform-env fallback documented
-   above should be retired in favor of this new, explicit, billed mode
-   (likely yes) once it ships.
+## Deferred (all NOT implemented)
 
-Until that design exists, "missing user credential" must keep resulting in
-an unavailable provider and a clear configuration prompt, not a silent
-platform-paid generation, for every provider added after this V1 as well.
+- Plans / entitlements
+- Free-trial credit grants
+- Recurring monthly credits
+- Wallet / balance
+- Ledger
+- Reservations (likely required for async providers such as Kling)
+- Settlement / debit / refund of differences
+- Provider-unit → Content Studio Credit pricing normalization
+- Provider/model cost mapping
+- Top-ups / purchases
+- Refunds
+- Quotas
+- Commercial policy
+- Execution provenance persistence (`execution_mode`, credential-source
+  category on the execution record) — add in the same change that enables
+  `content_studio_credits`; historical rows are unambiguously `user_byok`
+- Application-level encryption at rest for provider keys
+- MCP and other non-REST transports / connection methods (OAuth, MCP,
+  Browser Bridge where justified) — separate future task
+- Settings evolution from per-provider cards to "AI Connections + Add
+  connection" (documented target in the architecture doc)
+
+## Requirements for enabling `content_studio_credits` later
+
+1. An explicit, user-visible opt-in — never an implicit fallback from a missing
+   BYOK credential.
+2. A real entitlement + balance check replacing the deny-all
+   `checkContentStudioCreditsEntitlement` — authorized server-side, never by a
+   client-supplied string.
+3. Reservation → execution → settlement semantics (documented flow in the
+   architecture doc).
+4. A pricing layer separate from credential resolution; provider API units are
+   not Content Studio Credits 1:1.
+5. Persisted execution provenance (mode + credential-source category, never a
+   secret).
+6. Tests proving `user_byok` with a missing credential can still never reach
+   the platform path.

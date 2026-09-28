@@ -65,27 +65,31 @@ describe('/api/openai/generate-image — BYOK credential resolution', () => {
     expect(JSON.stringify(payload)).not.toContain('sk-user-key')
   })
 
-  it('falls back to the platform env key when the user has none configured (documented legacy exception)', async () => {
-    process.env.OPENAI_API_KEY = 'sk-platform-fallback'
-    vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', null) as any)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ data: [{ url: 'https://openai.test/image.png' }] }), { status: 200 }),
-    )
-
-    const { POST } = await import('@/app/api/openai/generate-image/route')
-    const response = await POST(makeRequest({ prompt: 'a red bicycle' }))
-    expect(response.status).toBe(200)
-
-    const [, requestInit] = fetchSpy.mock.calls[0]
-    expect((requestInit as RequestInit).headers).toMatchObject({ Authorization: 'Bearer sk-platform-fallback' })
-  })
-
-  it('returns 400 when neither the user nor the platform has a key', async () => {
+  it('does NOT fall back to the platform OPENAI_API_KEY when the user has none (user_byok)', async () => {
+    process.env.OPENAI_API_KEY = 'sk-platform-must-not-be-used'
     vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', null) as any)
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
     const { POST } = await import('@/app/api/openai/generate-image/route')
     const response = await POST(makeRequest({ prompt: 'a red bicycle' }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED', provider: 'openai' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(JSON.stringify(payload)).not.toContain('sk-platform-must-not-be-used')
+  })
+
+  it('ignores a client-supplied execution mode — the client cannot force platform-funded execution', async () => {
+    process.env.OPENAI_API_KEY = 'sk-platform-must-not-be-used'
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', null) as any)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const { POST } = await import('@/app/api/openai/generate-image/route')
+    const response = await POST(
+      makeRequest({ prompt: 'a red bicycle', executionMode: 'content_studio_credits', mode: 'content_studio_credits', credentialSource: 'platform' }),
+    )
+
     expect(response.status).toBe(400)
     expect(fetchSpy).not.toHaveBeenCalled()
   })

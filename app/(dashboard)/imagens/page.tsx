@@ -1746,7 +1746,7 @@ function ImagesPageContent() {
                 <StateMessage
                   tone="info"
                   title="Provider de prompt não configurado"
-                  description="A geração e a tradução de prompt por IA exigem uma chave válida da OpenAI em Configurações."
+                  description="A geração e a tradução de prompt por IA, a avaliação e a geração de imagem com modelos OpenAI exigem uma chave válida da OpenAI em Configurações."
                   actionLabel="Abrir Configurações"
                   onAction={() => router.push('/configuracoes?tab=api')}
                   compact

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateImagePrompt, PromptGenerationError } from '@/lib/ai-simulator'
-import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
@@ -34,13 +34,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'userInput obrigatorio' }, { status: 400 })
     }
 
-    const credential = await resolveProviderCredential(supabase, { userId: user.id, provider: 'openai' })
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })
 
-    if (credential.status === 'missing') {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
         {
           error: 'PROMPT_PROVIDER_NOT_CONFIGURED',
           code: 'PROMPT_PROVIDER_NOT_CONFIGURED',
+          providerCode: execution.code,
+          provider: 'openai',
           message:
             'A geração de prompts precisa de um provedor de IA configurado. Configure sua chave da OpenAI em Configurações e tente novamente.',
         },
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
       const result = await generateImagePrompt(
         userInput,
         projectContext,
-        credential.secret,
+        execution.secret,
         evaluationMode,
         identity,
       )

@@ -65,6 +65,20 @@ describe('/api/nanobanana/generate — BYOK credential resolution', () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toMatch(/não configurada/)
+    expect(payload).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED', provider: 'nano_banana' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('a client-supplied execution mode cannot force platform-funded execution (and there is no platform NanoBanana credential)', async () => {
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', null) as any)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const { POST } = await import('@/app/api/nanobanana/generate/route')
+    const response = await POST(
+      makeRequest({ prompt: 'a red bicycle', executionMode: 'content_studio_credits', credentialSource: 'platform' }),
+    )
+
+    expect(response.status).toBe(400)
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { KlingAdapter } from '@/lib/providers/kling/adapter'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
-import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -33,22 +33,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
        return NextResponse.json({ error: 'No task_id associated' }, { status: 400 })
     }
 
-    const credential = await resolveProviderCredential(supabase, { userId: user.id, provider: 'kling' })
-    const apiKey = credential.status === 'configured'
-      ? credential.secret
-      : (process.env.NODE_ENV !== 'production' ? process.env.KLING_API_KEY || null : null)
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
 
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
         {
-          error: 'PROVIDER_NOT_CONFIGURED',
-          code: 'PROVIDER_NOT_CONFIGURED',
+          error: execution.code,
+          code: execution.code,
           provider: 'kling',
           message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
         },
         { status: 422 },
       )
     }
+    const apiKey = execution.secret
 
     const klingAdapter = new KlingAdapter(apiKey)
     const taskItem = await klingAdapter.getTaskStatus(generation.task_id)

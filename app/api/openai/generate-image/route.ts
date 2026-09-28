@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
-import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
@@ -42,15 +42,15 @@ export async function POST(request: Request) {
       )
     }
 
-    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
-    const apiKey = credential.status === 'configured' ? credential.secret : null
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })
 
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
-        { error: 'API Key da OpenAI nao configurada' },
+        { error: 'API Key da OpenAI nao configurada', code: execution.code, provider: 'openai' },
         { status: 400 },
       )
     }
+    const apiKey = execution.secret
 
     const response = await fetch(OPENAI_IMAGES_URL, {
       method: 'POST',

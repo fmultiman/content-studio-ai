@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   resolveProviderCredential,
   getProviderConfigurationStatuses,
-  resolveOpenAiCredentialWithLegacyPlatformFallback,
   isAiProvider,
 } from '@/lib/credentials/provider-credentials'
 
@@ -22,6 +21,19 @@ function buildSupabaseStub(rowsByUserId: Record<string, Record<string, unknown>>
 }
 
 describe('resolveProviderCredential', () => {
+  it('never consults platform env credentials — a missing user credential stays missing', async () => {
+    process.env.OPENAI_API_KEY = 'platform-openai'
+    process.env.KLING_API_KEY = 'platform-kling'
+    try {
+      const supabase = buildSupabaseStub({})
+      expect(await resolveProviderCredential(supabase as any, { userId: 'user-1', provider: 'openai' })).toEqual({ status: 'missing' })
+      expect(await resolveProviderCredential(supabase as any, { userId: 'user-1', provider: 'kling' })).toEqual({ status: 'missing' })
+    } finally {
+      delete process.env.OPENAI_API_KEY
+      delete process.env.KLING_API_KEY
+    }
+  })
+
   it('returns configured with the secret when the user has a saved key', async () => {
     const supabase = buildSupabaseStub({ 'user-1': { kling_api_key: 'secret-123' } })
     const result = await resolveProviderCredential(supabase as any, { userId: 'user-1', provider: 'kling' })
@@ -73,34 +85,6 @@ describe('getProviderConfigurationStatuses', () => {
     })
     expect(JSON.stringify(statuses)).not.toContain('sk-abc')
     expect(JSON.stringify(statuses)).not.toContain('kling-abc')
-  })
-})
-
-describe('resolveOpenAiCredentialWithLegacyPlatformFallback', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    delete process.env.OPENAI_API_KEY
-  })
-
-  it('prefers the user credential over the platform env fallback', async () => {
-    process.env.OPENAI_API_KEY = 'platform-key'
-    const supabase = buildSupabaseStub({ 'user-1': { openai_api_key: 'user-key' } })
-    const result = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase as any, 'user-1')
-    expect(result).toEqual({ status: 'configured', secret: 'user-key' })
-  })
-
-  it('falls back to the platform env key when the user has none (legacy exception, OpenAI only)', async () => {
-    process.env.OPENAI_API_KEY = 'platform-key'
-    const supabase = buildSupabaseStub({})
-    const result = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase as any, 'user-1')
-    expect(result).toEqual({ status: 'configured', secret: 'platform-key' })
-  })
-
-  it('returns missing when neither the user nor the platform has a key', async () => {
-    delete process.env.OPENAI_API_KEY
-    const supabase = buildSupabaseStub({})
-    const result = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase as any, 'user-1')
-    expect(result).toEqual({ status: 'missing' })
   })
 })
 

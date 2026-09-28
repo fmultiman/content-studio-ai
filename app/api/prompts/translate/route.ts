@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const TRANSLATION_MODEL = 'gpt-4o-mini'
@@ -26,18 +26,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
-    const apiKey = credential.status === 'configured' ? credential.secret : null
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })
 
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
         {
           error: 'Tradução indisponível sem provedor configurado.',
           code: 'PROMPT_PROVIDER_NOT_CONFIGURED',
+          providerCode: execution.code,
+          provider: 'openai',
         },
         { status: 400 },
       )
     }
+    const apiKey = execution.secret
 
     const response = await fetch(OPENAI_CHAT_URL, {
       method: 'POST',

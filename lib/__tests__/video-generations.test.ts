@@ -316,6 +316,101 @@ describe('Video Generation API Domain & T2V Validation', () => {
     delete process.env.KLING_API_KEY
   })
 
+  it.each(['development', 'test'])(
+    'does not use KLING_API_KEY as a BYOK fallback in %s either (env path removed entirely)',
+    async (nodeEnv) => {
+      vi.stubEnv('NODE_ENV', nodeEnv)
+      process.env.KLING_API_KEY = 'platform-level-key'
+
+      const insertSpy = vi.fn()
+      const mockSupabase = {
+        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
+        from: vi.fn((table) => {
+          if (table === 'user_settings') return mockUserSettingsTable(null)
+          if (table === 'video_generations') return { insert: insertSpy }
+          return {}
+        })
+      }
+      vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+      const req = new NextRequest('http://test.com/api', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
+      })
+
+      const res = await createGeneration(req)
+      expect(res.status).toBe(422)
+      expect((await res.json()).code).toBe('PROVIDER_NOT_CONFIGURED')
+      expect(constructedApiKeys).toEqual([])
+      expect(submitTextToVideo).not.toHaveBeenCalled()
+      expect(insertSpy).not.toHaveBeenCalled()
+    },
+  )
+
+  it('a client-supplied executionMode / credentialSource cannot enable platform-funded Kling execution', async () => {
+    process.env.KLING_API_KEY = 'platform-level-key'
+    const insertSpy = vi.fn()
+    const mockSupabase = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
+      from: vi.fn((table) => {
+        if (table === 'user_settings') return mockUserSettingsTable(null)
+        if (table === 'video_generations') return { insert: insertSpy }
+        return {}
+      })
+    }
+    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+    const req = new NextRequest('http://test.com/api', {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test',
+        executionMode: 'content_studio_credits', execution_mode: 'content_studio_credits', credentialSource: 'platform',
+      })
+    })
+
+    const res = await createGeneration(req)
+    expect(res.status).toBe(422)
+    expect((await res.json()).code).toBe('PROVIDER_NOT_CONFIGURED')
+    expect(constructedApiKeys).toEqual([])
+    expect(insertSpy).not.toHaveBeenCalled()
+  })
+
+  it('never persists the credential or execution provenance secrets in the generation record or provider metadata', async () => {
+    const persisted: unknown[] = []
+    const mockSupabase = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
+      from: vi.fn((table) => {
+        if (table === 'user_settings') return mockUserSettingsTable('secret-kling-key-123')
+        if (table === 'video_generations') {
+          return {
+            insert: vi.fn((payload) => {
+              persisted.push(payload)
+              return { select: () => ({ single: vi.fn().mockResolvedValue({ data: { id: 'gen-9' } }) }) }
+            }),
+            update: vi.fn((payload) => {
+              persisted.push(payload)
+              return { eq: () => ({ select: () => ({ single: vi.fn().mockResolvedValue({ data: { id: 'gen-9', status: 'submitted' } }) }) }) }
+            }),
+          }
+        }
+        return {}
+      })
+    }
+    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+    const req = new NextRequest('http://test.com/api', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
+    })
+
+    const res = await createGeneration(req)
+    expect(res.status).toBe(200)
+    expect(constructedApiKeys).toEqual(['secret-kling-key-123'])
+    expect(persisted.length).toBeGreaterThan(0)
+    expect(JSON.stringify(persisted)).not.toContain('secret-kling-key-123')
+    expect(JSON.stringify(await res.json())).not.toContain('secret-kling-key-123')
+  })
+
   it('does not resolve User B credential when User A has no key configured (per-user isolation)', async () => {
     // The mock only "has" a credential for user "owner"; it asserts the exact
     // userId the route filters by, mirroring the RLS `eq('user_id', ...)`

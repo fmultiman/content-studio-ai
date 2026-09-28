@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 // NanoBanana API endpoints (dois A's: nanobanana + api)
 const NANOBANANA_API_V1 = 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate'
@@ -22,18 +22,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { prompt, aspectRatio = '1:1', projectId, model: requestModel } = body
 
-    // Buscar API key (user-owned only — no platform fallback for NanoBanana)
-    const credential = await resolveProviderCredential(supabase, { userId: user.id, provider: 'nano_banana' })
-    const apiKey = credential.status === 'configured' ? credential.secret : null
+    // Buscar API key (user_byok only — sem fallback de plataforma)
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'nano_banana' })
     // Use model from request, fallback to v1
     const model = requestModel || 'v1'
     
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
-        { error: 'API Key do NanoBanana não configurada' },
+        { error: 'API Key do NanoBanana não configurada', code: execution.code, provider: 'nano_banana' },
         { status: 400 }
       )
     }
+    const apiKey = execution.secret
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'Prompt obrigatório' }, { status: 400 })
