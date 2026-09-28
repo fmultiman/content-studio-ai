@@ -29,9 +29,11 @@ Implemented and Production-deployed:
 - OpenAI/Nano Banana aligned to the same resolver module. Nano Banana has no
   platform fallback (unchanged). OpenAI keeps its existing platform-env
   fallback in all environments — see "documented exception" in
-  `AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md` — because `user_settings` had
-  zero rows in Production and removing it now would break existing image
-  generation for every current user with no mitigation.
+  `AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md` — because personal-key
+  adoption is only partial today (a `COUNT(*)` found 3 `user_settings` rows,
+  2 with a personal OpenAI key) and removing the fallback now would risk
+  breaking image generation for whichever users/requests still depend on
+  it, with no mitigation in place.
 - Full detail: [AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1](AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md).
 
 ### FUTURE — Content Studio Credits / platform-funded execution: NOT IMPLEMENTED

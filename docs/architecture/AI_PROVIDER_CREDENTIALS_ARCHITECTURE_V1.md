@@ -134,15 +134,21 @@ legitimate **future** hardening step (see FUTURE-027), not implemented now.
 
 ## Documented exception: OpenAI's legacy platform fallback
 
-`user_settings` had **zero rows** in Production at the time of this audit —
-every current OpenAI call in the live app (prompt generation, translation,
-image evaluation, channel-piece body generation, feed text, video scene
-prompts, and image generation) depends today on `process.env.OPENAI_API_KEY`
-as a platform-level fallback, in every environment including Production.
+An initial `list_tables` read of `user_settings` reported an estimated 0
+rows (Postgres's cached `reltuples` statistic, stale for a table that had
+not been analyzed recently — not a reliable signal). A direct `COUNT(*)`
+taken later in this work found the real number: **3 rows**, of which 2 have
+a personal `openai_api_key` and 1 has a personal `nanobanana_api_key`; none
+had `kling_api_key` (expected — the column did not exist before this
+change). Not every current OpenAI call in the live app is covered by a
+personal key today, so `process.env.OPENAI_API_KEY` as a platform-level
+fallback, in every environment including Production, is still load-bearing
+for at least some users/routes.
 
-Stripping that fallback in this change would break "Do not break image
-generation" for every current user with no mitigation (no one has a personal
-key yet). This fallback is therefore **preserved**, but centralized into one
+Stripping that fallback in this change would risk breaking "Do not break
+image generation" for whichever current users/requests still depend on it,
+with no mitigation in place. This fallback is therefore **preserved**, but
+centralized into one
 explicitly-named function —
 `resolveOpenAiCredentialWithLegacyPlatformFallback` — instead of being
 duplicated ad hoc across seven routes as `settings?.openai_api_key ||
@@ -227,8 +233,11 @@ ADD COLUMN IF NOT EXISTS kling_api_key TEXT DEFAULT NULL;
   (`nuhdhnasuohizxtmyiju` / "Content Agent Studio") via
   `mcp__claude_ai_Supabase__apply_migration`, verified by
   `information_schema.columns`.
-- `user_settings` had 0 rows in Production at migration time — there was no
-  existing secret data at risk.
+- `ADD COLUMN ... DEFAULT NULL` does not rewrite or lock existing rows in
+  Postgres — it is safe regardless of row count. A `COUNT(*)` taken after
+  applying the migration found 3 existing `user_settings` rows (2 with a
+  personal `openai_api_key`, 1 with a personal `nanobanana_api_key`); none
+  were read, written, or otherwise touched by this migration.
 - Rollback: `ALTER TABLE user_settings DROP COLUMN IF EXISTS kling_api_key;`
   is safe at any time (nullable, no dependents).
 - No destructive migration of existing plaintext OpenAI/Nano Banana/Replicate
