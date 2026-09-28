@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS video_generations (
   mode TEXT NOT NULL CHECK (mode IN ('image_to_video', 'text_to_video')),
   prompt TEXT NOT NULL,
   source_image_id UUID REFERENCES images(id) ON DELETE SET NULL,
+  source_library_file_id UUID REFERENCES library_files(id) ON DELETE SET NULL,
   
   -- Provider Execution
   provider TEXT NOT NULL DEFAULT 'kling',
@@ -64,6 +65,6 @@ USING (auth.uid() = user_id);
 ALTER TABLE video_generations
 ADD CONSTRAINT check_mode_source_image
 CHECK (
-  (mode = 'image_to_video' AND source_image_id IS NOT NULL) OR
+  (mode = 'image_to_video' AND (source_image_id IS NOT NULL OR source_library_file_id IS NOT NULL)) OR
   (mode = 'text_to_video')
 );
