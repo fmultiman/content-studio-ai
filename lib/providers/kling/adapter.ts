@@ -1,29 +1,28 @@
-export interface KlingContentItemImage {
-  type: 'image'
-  source: 'url' | 'base64'
-  id: 'first_frame' | 'last_frame'
-  url?: string
-  content?: string
+export interface KlingContentItemFirstFrame {
+  type: 'first_frame'
+  url: string
 }
 
-export interface KlingContentItemText {
-  type: 'text'
-  source: 'prompt'
+export interface KlingContentItemPrompt {
+  type: 'prompt'
   text: string
 }
 
-export type KlingContentItem = KlingContentItemImage | KlingContentItemText
+export type KlingContentItem = KlingContentItemFirstFrame | KlingContentItemPrompt
 
 export interface KlingSettings {
   resolution?: '720p' | '1080p' | '4K'
   duration?: 5 | 10
-  audio?: boolean
+  audio?: 'off' | 'on'
   multi_shot?: boolean
 }
 
 export interface KlingOptions {
   callback_url?: string
   external_task_id?: string
+  watermark_info?: {
+    enabled: boolean
+  }
 }
 
 export interface KlingRequestPayload {
@@ -70,18 +69,21 @@ export class KlingAdapter {
   async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
     const payload: KlingRequestPayload = {
       contents: [
-        { type: 'image', source: 'url', id: 'first_frame', url: imageUrl },
-        { type: 'text', source: 'prompt', text: prompt }
+        { type: 'prompt', text: prompt },
+        { type: 'first_frame', url: imageUrl }
       ],
       settings: {
         resolution: '720p',
         duration: 5,
-        audio: false,
+        audio: 'off',
         multi_shot: false
       },
       options: {
         external_task_id: externalTaskId,
-        callback_url: callbackUrl
+        callback_url: callbackUrl,
+        watermark_info: {
+          enabled: false
+        }
       }
     }
 
@@ -107,17 +109,20 @@ export class KlingAdapter {
   async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
     const payload: KlingRequestPayload = {
       contents: [
-        { type: 'text', source: 'prompt', text: prompt }
+        { type: 'prompt', text: prompt }
       ],
       settings: {
         resolution: '720p',
         duration: 5,
-        audio: false,
+        audio: 'off',
         multi_shot: false
       },
       options: {
         external_task_id: externalTaskId,
-        callback_url: callbackUrl
+        callback_url: callbackUrl,
+        watermark_info: {
+          enabled: false
+        }
       }
     }
 

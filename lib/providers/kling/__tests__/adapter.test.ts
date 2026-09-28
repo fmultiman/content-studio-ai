@@ -26,11 +26,30 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     })
 
-    const res = await adapter.submitImageToVideo('my motion', 'http://img.png', 'ext-uuid')
+    const res = await adapter.submitImageToVideo('my motion', 'http://img.png', 'ext-uuid', 'http://callback')
     
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api-singapore.klingai.com/image-to-video/kling-3.0',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({ 
+        method: 'POST',
+        body: JSON.stringify({
+          contents: [
+            { type: 'prompt', text: 'my motion' },
+            { type: 'first_frame', url: 'http://img.png' }
+          ],
+          settings: {
+            resolution: '720p',
+            duration: 5,
+            audio: 'off',
+            multi_shot: false
+          },
+          options: {
+            external_task_id: 'ext-uuid',
+            callback_url: 'http://callback',
+            watermark_info: { enabled: false }
+          }
+        })
+      })
     )
     
     expect(res.task_id).toBe('test-i2v-task-123')
@@ -47,11 +66,29 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     })
 
-    const res = await adapter.submitTextToVideo('cinematic scene', 'ext-uuid')
+    const res = await adapter.submitTextToVideo('cinematic scene', 'ext-uuid', 'http://callback')
     
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api-singapore.klingai.com/text-to-video/kling-3.0',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({ 
+        method: 'POST',
+        body: JSON.stringify({
+          contents: [
+            { type: 'prompt', text: 'cinematic scene' }
+          ],
+          settings: {
+            resolution: '720p',
+            duration: 5,
+            audio: 'off',
+            multi_shot: false
+          },
+          options: {
+            external_task_id: 'ext-uuid',
+            callback_url: 'http://callback',
+            watermark_info: { enabled: false }
+          }
+        })
+      })
     )
     
     expect(res.task_id).toBe('test-t2v-task-444')
