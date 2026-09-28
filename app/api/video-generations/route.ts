@@ -62,11 +62,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Prepare Provider Adapter
-    const ak = process.env.KLING_API_AK
-    const sk = process.env.KLING_API_SK
+    const apiKey = process.env.KLING_API_KEY
 
-    if (!ak || !sk) {
-      // Allow mocking/testing locally if keys are missing
+    if (!apiKey) {
       if (process.env.NODE_ENV !== 'production') {
         const { error: mockDbError } = await supabase
           .from('video_generations')
@@ -81,29 +79,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ generation: { ...generation, status: 'submitted' } })
       }
 
-      throw new Error('Kling API credentials are not configured')
+      throw new Error('KLING_API_KEY is not configured')
     }
 
-    const klingAdapter = new KlingAdapter(ak, sk)
+    const klingAdapter = new KlingAdapter(apiKey)
     let submitRes
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/kling/callback`
+    const externalTaskId = generation.id
 
     try {
       if (mode === 'image_to_video') {
-        submitRes = await klingAdapter.submitImageToVideo({
-          model_name: 'kling-v1',
-          image: resolvedSourceUrl,
+        submitRes = await klingAdapter.submitImageToVideo(
           prompt,
-          duration,
-          callback_url: callbackUrl,
-        })
+          resolvedSourceUrl,
+          externalTaskId,
+          callbackUrl
+        )
       } else {
-        submitRes = await klingAdapter.submitTextToVideo({
-          model_name: 'kling-v1',
+        submitRes = await klingAdapter.submitTextToVideo(
           prompt,
-          duration,
-          callback_url: callbackUrl,
-        })
+          externalTaskId,
+          callbackUrl
+        )
       }
 
       // Update provider status

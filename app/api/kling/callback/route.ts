@@ -1,21 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
+import * as crypto from 'crypto'
 
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.json()
-    // Validation strategy: Ideally Kling signs the payload or URL
-    // For now we assume typical payload { data: { task_id, task_status, task_result: { videos: [...] } } }
+    const rawBody = await req.text()
     
-    // Fallback signature/token - wait for exact signature config
-    // Actually, Kling standard webhook payload:
-    const data = rawBody.data || rawBody
+    // Webhook Verification
+    const webhookSecret = process.env.KLING_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('KLING_WEBHOOK_SECRET is not configured')
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+
+    const webhookId = req.headers.get('webhook-id')
+    const webhookTimestamp = req.headers.get('webhook-timestamp')
+    const webhookSignatureHeader = req.headers.get('webhook-signature')
+
+    if (!webhookId || !webhookTimestamp || !webhookSignatureHeader) {
+      return NextResponse.json({ error: 'Missing webhook headers' }, { status: 400 })
+    }
+
+    // Check Timestamp (tolerant +- 5 min)
+    const timestampUnix = parseInt(webhookTimestamp, 10)
+    const nowUnix = Math.floor(Date.now() / 1000)
+    if (Math.abs(nowUnix - timestampUnix) > 300) {
+      return NextResponse.json({ error: 'Webhook timestamp expired or too far in future' }, { status: 400 })
+    }
+
+    // Verify signatures
+    const secretB64 = webhookSecret.replace(/^whsec_/, '')
+    const secretBytes = Buffer.from(secretB64, 'base64')
+    const signedContent = `${webhookId}.${webhookTimestamp}.${rawBody}`
+    const expectedSignatureBytes = crypto.createHmac('sha256', secretBytes).update(signedContent).digest()
+    const expectedSignature = expectedSignatureBytes.toString('base64')
+
+    // Signatures might look like: "v1,signature1 v1,signature2"
+    const parsedSignatures = webhookSignatureHeader.split(' ').map(s => s.trim().split(','))
+    let isValid = false
+    
+    for (const [version, signatureValue] of parsedSignatures) {
+      if (version === 'v1') {
+        const providedSignatureBytes = Buffer.from(signatureValue, 'base64')
+        if (
+          providedSignatureBytes.length === expectedSignatureBytes.length &&
+          crypto.timingSafeEqual(providedSignatureBytes, expectedSignatureBytes)
+        ) {
+          isValid = true
+          break
+        }
+      }
+    }
+
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 400 })
+    }
+
+    // Payload Parsing
+    let payload: any = {}
+    try {
+      payload = JSON.parse(rawBody)
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
+    }
+
+    // Kling test callback / ping?
+    if (payload.type === 'ping' || payload.ping) {
+      return NextResponse.json({ success: true, message: 'Test callback received' })
+    }
+
+    const data = payload.data || payload
     const taskId = data.task_id
-    const status = data.task_status // "succeed", "failed", "processing"
+    const status = data.status || data.task_status // "succeeded", "failed", "processing"
 
     if (!taskId) {
-      return NextResponse.json({ error: 'Missing task_id' }, { status: 400 })
+      // Could be a test webhook without task_id
+      return NextResponse.json({ success: true, message: 'Verified signature, but no task_id found' })
     }
 
     const supabase = await createClient()
@@ -32,20 +93,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (generation.status === 'completed' || generation.status === 'failed') {
-      // Idempotency: skip if already completed
       return NextResponse.json({ success: true, warning: 'Already resolved' })
     }
 
-    if (status === 'succeed' || status === 'completed') { // adjust based on actual Kling payload
+    if (status === 'succeeded') {
       let videoUrl = ''
-      if (data.task_result?.videos?.[0]?.url) {
-        videoUrl = data.task_result.videos[0].url
-      } else {
-        videoUrl = data.video_url || '' // fallback heuristic
+      if (data.result?.videos?.[0]?.url) {
+        videoUrl = data.result.videos[0].url
+      } else if (data.video_url) {
+        videoUrl = data.video_url
       }
 
       if (!videoUrl) {
-         // Maybe it's missing the URL or we parse it wrong
          await supabase.from('video_generations').update({
            status: 'failed',
            error_details: { message: 'Missing video URL in payload', payload: data }
@@ -53,7 +112,6 @@ export async function POST(req: NextRequest) {
          return NextResponse.json({ success: true })
       }
 
-      // Download and S3 Upload
       const prefix = `${generation.user_id}/videos/ai/${generation.project_id}`
       const { storagePath, publicUrl, mime, size } = await downloadAndStoreVideo(videoUrl, prefix)
 
@@ -67,7 +125,7 @@ export async function POST(req: NextRequest) {
     } else if (status === 'failed') {
       await supabase.from('video_generations').update({
         status: 'failed',
-        error_details: { message: data.task_status_msg || 'Provider reported failure', payload: data }
+        error_details: { message: data.error?.message || 'Provider reported failure', payload: data }
       }).eq('id', generation.id)
     }
 

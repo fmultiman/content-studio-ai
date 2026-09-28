@@ -65,6 +65,9 @@ USING (auth.uid() = user_id);
 ALTER TABLE video_generations
 ADD CONSTRAINT check_mode_source_image
 CHECK (
-  (mode = 'image_to_video' AND (source_image_id IS NOT NULL OR source_library_file_id IS NOT NULL)) OR
-  (mode = 'text_to_video')
+  (mode = 'image_to_video' AND (
+    (source_image_id IS NOT NULL AND source_library_file_id IS NULL) OR 
+    (source_image_id IS NULL AND source_library_file_id IS NOT NULL)
+  )) OR
+  (mode = 'text_to_video' AND source_image_id IS NULL AND source_library_file_id IS NULL)
 );

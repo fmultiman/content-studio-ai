@@ -1,132 +1,155 @@
-import * as crypto from 'crypto'
-
-export interface KlingI2VPayload {
-  model_name: string
-  image: string
-  prompt: string
-  duration?: '5' | '10'
-  callback_url?: string
+export interface KlingContentItemImage {
+  type: 'image'
+  source: 'url' | 'base64'
+  id: 'first_frame' | 'last_frame'
+  url?: string
+  content?: string
 }
 
-export interface KlingT2VPayload {
-  model_name: string
-  prompt: string
-  duration?: '5' | '10'
+export interface KlingContentItemText {
+  type: 'text'
+  source: 'prompt'
+  text: string
+}
+
+export type KlingContentItem = KlingContentItemImage | KlingContentItemText
+
+export interface KlingSettings {
+  resolution?: '720p' | '1080p' | '4K'
+  duration?: 5 | 10
+  audio?: boolean
+  multi_shot?: boolean
+}
+
+export interface KlingOptions {
   callback_url?: string
+  external_task_id?: string
+}
+
+export interface KlingRequestPayload {
+  contents: KlingContentItem[]
+  settings?: KlingSettings
+  options?: KlingOptions
 }
 
 export interface KlingSubmitResponse {
-  code: number
-  message: string
-  data: {
-    task_id: string
-  }
+  task_id: string
 }
 
-export interface KlingTaskStatus {
+export interface KlingTaskResponse {
   task_id: string
-  task_status: 'submitted' | 'processing' | 'succeed' | 'failed'
-  task_status_msg: string
+  status: 'submitted' | 'processing' | 'succeeded' | 'failed'
   created_at: number
   updated_at: number
-  task_result?: {
-    videos: Array<{
+  result?: {
+    videos?: Array<{
       id: string
       url: string
-      duration: string
+      duration: number
     }>
   }
-}
-
-export interface KlingQueryResponse {
-  code: number
-  message: string
-  data: KlingTaskStatus
-}
-
-function generateKlingToken(ak: string, sk: string): string {
-  const header = { alg: 'HS256', typ: 'JWT' }
-  const payload = {
-    iss: ak,
-    exp: Math.floor(Date.now() / 1000) + 1800,
-    nbf: Math.floor(Date.now() / 1000) - 5,
+  error?: {
+    message: string
   }
-
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url')
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  const signatureInput = `${encodedHeader}.${encodedPayload}`
-
-  const signature = crypto.createHmac('sha256', sk).update(signatureInput).digest('base64url')
-
-  return `${signatureInput}.${signature}`
 }
 
 export class KlingAdapter {
-  private apiUrl = 'https://api.klingai.com/v1'
-
-  constructor(private ak: string, private sk: string) {}
+  private apiUrl = 'https://api-singapore.klingai.com' // Current Base
+  
+  constructor(private apiKey: string) {}
 
   private getHeaders(): Record<string, string> {
-    const token = generateKlingToken(this.ak, this.sk)
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${this.apiKey}`,
     }
   }
 
-  async submitImageToVideo(payload: KlingI2VPayload): Promise<KlingSubmitResponse> {
-    const res = await fetch(`${this.apiUrl}/videos/image2video`, {
+  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
+    const payload: KlingRequestPayload = {
+      contents: [
+        { type: 'image', source: 'url', id: 'first_frame', url: imageUrl },
+        { type: 'text', source: 'prompt', text: prompt }
+      ],
+      settings: {
+        resolution: '720p',
+        duration: 5,
+        audio: false,
+        multi_shot: false
+      },
+      options: {
+        external_task_id: externalTaskId,
+        callback_url: callbackUrl
+      }
+    }
+
+    const res = await fetch(`${this.apiUrl}/image-to-video/kling-3.0`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
     })
 
     if (!res.ok) {
-        throw new Error(`Kling API error: ${res.statusText}`)
+        throw new Error(`Kling API HTTP error: ${res.statusText}`)
     }
 
     const data = await res.json()
-    if (data.code !== 0) {
-      throw new Error(`Kling API business error: ${data.message}`)
+    // Assume Kling returns the task_id directly or wrapped in data
+    const task_id = data.task_id || data.data?.task_id
+    if (!task_id) {
+       throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
 
-    return data
+    return { task_id }
   }
-  
-  async submitTextToVideo(payload: KlingT2VPayload): Promise<KlingSubmitResponse> {
-    const res = await fetch(`${this.apiUrl}/videos/text2video`, {
+
+  async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
+    const payload: KlingRequestPayload = {
+      contents: [
+        { type: 'text', source: 'prompt', text: prompt }
+      ],
+      settings: {
+        resolution: '720p',
+        duration: 5,
+        audio: false,
+        multi_shot: false
+      },
+      options: {
+        external_task_id: externalTaskId,
+        callback_url: callbackUrl
+      }
+    }
+
+    const res = await fetch(`${this.apiUrl}/text-to-video/kling-3.0`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
     })
 
     if (!res.ok) {
-        throw new Error(`Kling API error: ${res.statusText}`)
+        throw new Error(`Kling API HTTP error: ${res.statusText}`)
     }
 
     const data = await res.json()
-    if (data.code !== 0) {
-      throw new Error(`Kling API business error: ${data.message}`)
+    const task_id = data.task_id || data.data?.task_id
+    if (!task_id) {
+       throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
 
-    return data
+    return { task_id }
   }
 
-  async getTaskStatus(taskId: string, internalMode: 'image_to_video' | 'text_to_video'): Promise<KlingQueryResponse> {
-    const endpointMode = internalMode === 'image_to_video' ? 'image2video' : 'text2video'
-    const res = await fetch(`${this.apiUrl}/videos/${endpointMode}/${taskId}`, {
+  async getTaskStatus(taskId: string): Promise<KlingTaskResponse> {
+    const res = await fetch(`${this.apiUrl}/tasks/${taskId}`, {
       method: 'GET',
       headers: this.getHeaders(),
     })
 
-    // If text2video, wait. Wait, does Kling have separate task endpoints for T2V vs I2V?
-    // Actually, Kling AI API tasks can usually be queried by the specific path they were submitted to.
-    // I should support dynamic route if so.
     if (!res.ok) {
       throw new Error(`Kling API status read error: ${res.statusText}`)
     }
 
     const data = await res.json()
-    return data
+    return data.data || data
   }
 }

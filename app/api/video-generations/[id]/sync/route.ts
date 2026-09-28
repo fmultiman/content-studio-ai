@@ -32,19 +32,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
        return NextResponse.json({ error: 'No task_id associated' }, { status: 400 })
     }
 
-    const ak = process.env.KLING_API_AK
-    const sk = process.env.KLING_API_SK
+    const apiKey = process.env.KLING_API_KEY
 
-    if (!ak || !sk) {
-      return NextResponse.json({ error: 'Kling API credentials are not configured' }, { status: 500 })
+    if (!apiKey) {
+      return NextResponse.json({ error: 'KLING_API_KEY is not configured' }, { status: 500 })
     }
 
-    const klingAdapter = new KlingAdapter(ak, sk)
-    const res = await klingAdapter.getTaskStatus(generation.task_id, generation.mode)
+    const klingAdapter = new KlingAdapter(apiKey)
+    const resOptions = await klingAdapter.getTaskStatus(generation.task_id)
     
-    const taskStatus = res.data.task_status
-    if (taskStatus === 'succeed') {
-      const videoUrl = res.data.task_result?.videos?.[0]?.url
+    const taskStatus = resOptions.status
+    if (taskStatus === 'succeeded') {
+      const videoUrl = resOptions.result?.videos?.[0]?.url
       if (!videoUrl) {
          return NextResponse.json({ generation }) // wait for url?
       }
@@ -56,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         status: 'completed',
         storage_path: storagePath,
         public_url: publicUrl,
-        result_metadata: { mime, size, ...res.data }
+        result_metadata: { mime, size, ...resOptions }
       }).eq('id', generation.id).select().single()
 
       if (updateError) throw updateError
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } else if (taskStatus === 'failed') {
       const { data: updated, error: updateError } = await supabase.from('video_generations').update({
         status: 'failed',
-        error_details: { message: res.data.task_status_msg, payload: res.data }
+        error_details: { message: resOptions.error?.message || 'Provider failed', payload: resOptions }
       }).eq('id', generation.id).select().single()
       
       if (updateError) throw updateError
