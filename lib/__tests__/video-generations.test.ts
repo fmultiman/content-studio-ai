@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { POST as createGeneration } from '@/app/api/video-generations/route'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
@@ -8,11 +8,18 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }))
 
+const constructedApiKeys: string[] = []
+let submitImageToVideo: (...args: unknown[]) => unknown
+let submitTextToVideo: (...args: unknown[]) => unknown
+
 vi.mock('@/lib/providers/kling/adapter', () => {
   return {
     KlingAdapter: class {
-      submitImageToVideo = vi.fn().mockResolvedValue({ task_id: 'mock-kling-123' })
-      submitTextToVideo = vi.fn().mockResolvedValue({ task_id: 'mock-kling-text-123' })
+      constructor(apiKey: string) {
+        constructedApiKeys.push(apiKey)
+      }
+      submitImageToVideo = (...args: unknown[]) => submitImageToVideo(...args)
+      submitTextToVideo = (...args: unknown[]) => submitTextToVideo(...args)
       getTaskStatus = vi.fn().mockResolvedValue({
         status: 'succeeded', outputs: [{ type: 'video', url: 'http://kling.test/video.mp4' }]
       })
@@ -20,10 +27,31 @@ vi.mock('@/lib/providers/kling/adapter', () => {
   }
 })
 
+/** Mocks the `user_settings` table's Kling-credential lookup used by resolveProviderCredential(). */
+function mockUserSettingsTable(klingApiKey: string | null) {
+  return {
+    select: () => ({
+      eq: () => ({
+        maybeSingle: () => Promise.resolve({
+          data: klingApiKey !== null ? { kling_api_key: klingApiKey } : null,
+          error: null,
+        }),
+      }),
+    }),
+  }
+}
+
 describe('Video Generation API Domain & T2V Validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.KLING_API_KEY = 'mock-key'
+    constructedApiKeys.length = 0
+    submitImageToVideo = vi.fn().mockResolvedValue({ task_id: 'mock-kling-123' })
+    submitTextToVideo = vi.fn().mockResolvedValue({ task_id: 'mock-kling-text-123' })
+    delete process.env.KLING_API_KEY
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   // I2V
@@ -32,7 +60,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'image_to_video', prompt: 'test' })
@@ -49,7 +77,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'image_to_video', prompt: 'test', sourceImageId: 'a', sourceLibraryFileId: 'b' })
@@ -67,7 +95,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test', sourceImageId: 'stale-id' })
@@ -84,7 +112,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test', sourceLibraryFileId: 'stale-id' })
@@ -96,13 +124,16 @@ describe('Video Generation API Domain & T2V Validation', () => {
     expect(json.error).toMatch(/must be absent for text_to_video/)
   })
 
-  it('accepts and passes shared settings explicitly', async () => {
+  it('accepts and passes shared settings explicitly, resolving the authenticated user Kling credential', async () => {
     const mockInsertSelectSingle = vi.fn().mockResolvedValue({ data: { id: 'gen-456' } })
     const mockUpdateSelectSingle = vi.fn().mockResolvedValue({ data: { id: 'gen-456', status: 'submitted' } })
-    
+
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'user_settings') {
+          return mockUserSettingsTable('user1-kling-key')
+        }
         if (table === 'video_generations') {
           return {
             insert: vi.fn((payload) => {
@@ -111,6 +142,8 @@ describe('Video Generation API Domain & T2V Validation', () => {
               expect(payload.request_config.audio).toBe('on')
               expect(payload.request_config.multi_shot).toBe(true)
               expect(payload.request_config.aspect_ratio).toBeUndefined()
+              // Credential must never enter the persisted generation record.
+              expect(JSON.stringify(payload)).not.toContain('user1-kling-key')
               return { select: () => ({ single: mockInsertSelectSingle }) }
             }),
             update: () => ({ eq: () => ({ select: () => ({ single: mockUpdateSelectSingle }) }) })
@@ -123,7 +156,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       })
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'image_to_video', prompt: 'test', sourceImageId: 'stale-id', duration: 10, resolution: '1080p', audio: 'on', multi_shot: true })
@@ -133,6 +166,9 @@ describe('Video Generation API Domain & T2V Validation', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.generation.id).toBe('gen-456')
+    // The configured user credential must reach the Kling adapter server-side.
+    expect(constructedApiKeys).toEqual(['user1-kling-key'])
+    expect(submitImageToVideo).toHaveBeenCalledTimes(1)
   })
 
   it('T2V rejects invalid aspect ratios', async () => {
@@ -140,7 +176,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test', aspect_ratio: '4:3' })
@@ -157,7 +193,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'image_to_video', prompt: 'test', aspect_ratio: '16:9', sourceImageId: 'a' })
@@ -172,10 +208,13 @@ describe('Video Generation API Domain & T2V Validation', () => {
   it('T2V succeeds without source images and properly inserts null sources', async () => {
     const mockInsertSelectSingle = vi.fn().mockResolvedValue({ data: { id: 'gen-123' } })
     const mockUpdateSelectSingle = vi.fn().mockResolvedValue({ data: { id: 'gen-123', status: 'submitted' } })
-    
+
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'user_settings') {
+          return mockUserSettingsTable('user1-kling-key')
+        }
         if (table === 'video_generations') {
           return {
             insert: vi.fn((payload) => {
@@ -194,7 +233,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       })
     }
     vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
-    
+
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
       body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
@@ -204,5 +243,115 @@ describe('Video Generation API Domain & T2V Validation', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.generation.id).toBe('gen-123')
+  })
+
+  // ─── AI_PROVIDER_CREDENTIALS_BYOK_V1 — Kling credential resolution ─────────
+
+  it('returns a typed missing-credential failure and makes zero provider calls when the user has no Kling key', async () => {
+    const insertSpy = vi.fn()
+    const mockSupabase = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
+      from: vi.fn((table) => {
+        if (table === 'user_settings') {
+          return mockUserSettingsTable(null)
+        }
+        if (table === 'video_generations') {
+          return { insert: insertSpy }
+        }
+        return {}
+      })
+    }
+    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+    const req = new NextRequest('http://test.com/api', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
+    })
+
+    const res = await createGeneration(req)
+    expect(res.status).toBe(422)
+    const json = await res.json()
+    expect(json.code).toBe('PROVIDER_NOT_CONFIGURED')
+    expect(json.provider).toBe('kling')
+
+    // Zero provider calls, zero created records.
+    expect(constructedApiKeys).toEqual([])
+    expect(submitTextToVideo).not.toHaveBeenCalled()
+    expect(submitImageToVideo).not.toHaveBeenCalled()
+    expect(insertSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not fall back to a Production platform env credential when the user has no Kling key', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    process.env.KLING_API_KEY = 'platform-level-key'
+
+    const insertSpy = vi.fn()
+    const mockSupabase = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
+      from: vi.fn((table) => {
+        if (table === 'user_settings') {
+          return mockUserSettingsTable(null)
+        }
+        if (table === 'video_generations') {
+          return { insert: insertSpy }
+        }
+        return {}
+      })
+    }
+    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+    const req = new NextRequest('http://test.com/api', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
+    })
+
+    const res = await createGeneration(req)
+    expect(res.status).toBe(422)
+    const json = await res.json()
+    expect(json.code).toBe('PROVIDER_NOT_CONFIGURED')
+
+    expect(constructedApiKeys).toEqual([])
+    expect(insertSpy).not.toHaveBeenCalled()
+
+    delete process.env.KLING_API_KEY
+  })
+
+  it('does not resolve User B credential when User A has no key configured (per-user isolation)', async () => {
+    // The mock only "has" a credential for user "owner"; it asserts the exact
+    // userId the route filters by, mirroring the RLS `eq('user_id', ...)`
+    // scoping enforced in the real database.
+    const mockSupabase = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-b' } } }) },
+      from: vi.fn((table) => {
+        if (table === 'user_settings') {
+          return {
+            select: () => ({
+              eq: (_col: string, value: string) => ({
+                maybeSingle: () => Promise.resolve({
+                  data: value === 'owner' ? { kling_api_key: 'owner-secret' } : null,
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === 'video_generations') {
+          return { insert: vi.fn() }
+        }
+        return {}
+      })
+    }
+    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+
+    const req = new NextRequest('http://test.com/api', {
+      method: 'POST',
+      body: JSON.stringify({ projectId: 'p1', productionId: 'p2', mode: 'text_to_video', prompt: 'test' })
+    })
+
+    const res = await createGeneration(req)
+    expect(res.status).toBe(422)
+    const json = await res.json()
+    expect(json.code).toBe('PROVIDER_NOT_CONFIGURED')
+    expect(constructedApiKeys).toEqual([])
   })
 })

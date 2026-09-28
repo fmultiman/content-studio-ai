@@ -24,7 +24,7 @@ function makeRequest(prompt = 'A clean editorial image prompt') {
 function setupSupabase(openaiApiKey: string | null) {
   mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
   mockSingle.mockResolvedValue({ data: { openai_api_key: openaiApiKey }, error: null })
-  mockEq.mockReturnValue({ single: mockSingle })
+  mockEq.mockReturnValue({ single: mockSingle, maybeSingle: mockSingle })
   mockSelect.mockReturnValue({ eq: mockEq })
   mockFrom.mockReturnValue({ select: mockSelect })
 }

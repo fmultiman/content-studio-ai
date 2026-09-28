@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { buildImageEvaluationContext } from '@/lib/context-compiler'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_EVALUATION_MODEL = 'gpt-4o-mini'
@@ -79,13 +80,8 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('openai_api_key')
-      .eq('user_id', user.id)
-      .single()
-
-    const apiKey = settings?.openai_api_key || process.env.OPENAI_API_KEY
+    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
+    const apiKey = credential.status === 'configured' ? credential.secret : null
 
     if (!apiKey) {
       return NextResponse.json(

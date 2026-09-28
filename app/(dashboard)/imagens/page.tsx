@@ -13,7 +13,7 @@ import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
-import { generateImagePrompt, PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
+import { PromptGenerationError, regeneratePrompt, type PromptGenerationResult } from '@/lib/ai-simulator'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -115,9 +115,10 @@ function ImagesPageContent() {
   const [hubCreateProductionId, setHubCreateProductionId] = useState('')
   const [hubViewMode, setHubViewMode] = useViewModePreference('image-draft-hub-view', 'list')
   
-  // API Key state
-  const [openaiApiKey, setOpenaiApiKey] = useState<string | null>(null)
-  const [nanobananaApiKey, setNanobananaApiKey] = useState<string | null>(null)
+  // Provider configuration status — booleans only. The full secret never
+  // reaches the browser; see /api/settings/providers (AI_PROVIDER_CREDENTIALS_BYOK_V1).
+  const [openaiConfigured, setOpenaiConfigured] = useState(false)
+  const [nanobananaConfigured, setNanobananaConfigured] = useState(false)
   const [isGeneratingNanoBanana, setIsGeneratingNanoBanana] = useState(false)
   const [automationEnabled, setAutomationEnabled] = useState(false)
   const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>('gpt-image-2')
@@ -390,22 +391,29 @@ function ImagesPageContent() {
         if (!cancelled && user) {
           const { data: settingsData } = await supabase
             .from('user_settings')
-            .select('openai_api_key, nanobanana_api_key, automation_enabled, default_image_model, image_evaluator_enabled, max_refinement_iterations')
+            .select('automation_enabled, default_image_model, image_evaluator_enabled, max_refinement_iterations')
             .eq('user_id', user.id)
             .single()
 
-          if (settingsData?.openai_api_key) {
-            setOpenaiApiKey(settingsData.openai_api_key)
-          }
-          if (settingsData?.nanobanana_api_key) {
-            setNanobananaApiKey(settingsData.nanobanana_api_key)
-          }
           setAutomationEnabled(settingsData?.automation_enabled ?? false)
           const model = normalizeImageModel(settingsData?.default_image_model)
           setDefaultImageModel(model)
           setSelectedModel(model)
           setEvaluatorEnabled(settingsData?.image_evaluator_enabled ?? false)
           setMaxRefinements(settingsData?.max_refinement_iterations ?? 2)
+
+          try {
+            const providersResponse = await fetch('/api/settings/providers')
+            if (providersResponse.ok) {
+              const providersPayload = await providersResponse.json()
+              if (!cancelled) {
+                setOpenaiConfigured(providersPayload?.providers?.openai?.status === 'configured')
+                setNanobananaConfigured(providersPayload?.providers?.nano_banana?.status === 'configured')
+              }
+            }
+          } catch (providerStatusError) {
+            console.error('[v0] Provider status load error:', providerStatusError)
+          }
         }
 
         const draftsResponse = await fetch('/api/image-drafts?limit=50')
@@ -568,7 +576,7 @@ function ImagesPageContent() {
   const handleTranslatePrompt = async () => {
     if (!generatedPrompt.trim() || isTranslatingPrompt) return
 
-    if (!openaiApiKey) {
+    if (!openaiConfigured) {
       setPromptTranslationError('Tradução indisponível sem provedor configurado.')
       return
     }
@@ -895,7 +903,7 @@ function ImagesPageContent() {
       return
     }
 
-    if (!nanobananaApiKey) {
+    if (!nanobananaConfigured) {
       toast({
         title: 'API Key não configurada',
         description: 'Configure sua API Key do NanoBanana em Configurações > API.',
@@ -1054,14 +1062,28 @@ function ImagesPageContent() {
         }
       }
 
-      const result = await generateImagePrompt(
-        userInput,
-        projectContext,
-        openaiApiKey || undefined,
-        evaluationMode,
-        projectIdentity,
-      )
-      
+      const promptResponse = await fetch('/api/prompts/generate-image-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userInput,
+          projectContext,
+          evaluationMode,
+          identity: projectIdentity,
+        }),
+      })
+      const promptPayload = await promptResponse.json()
+
+      if (!promptResponse.ok) {
+        throw new PromptGenerationError(
+          promptPayload?.code || 'PROMPT_PROVIDER_FAILED',
+          promptPayload?.message || 'Não foi possível gerar o prompt agora. Verifique a configuração do provedor ou tente novamente.',
+          promptResponse.status,
+        )
+      }
+
+      const result: PromptGenerationResult = promptPayload
+
       updateGeneratedPrompt(result.prompt)
       setPromptDetails({
         style: result.style,
@@ -1720,7 +1742,7 @@ function ImagesPageContent() {
                   productionHref={productionHref}
                 />
               )}
-              {!openaiApiKey && (
+              {!openaiConfigured && (
                 <StateMessage
                   tone="info"
                   title="Provider de prompt não configurado"
@@ -1730,7 +1752,7 @@ function ImagesPageContent() {
                   compact
                 />
               )}
-              {!nanobananaApiKey && (
+              {!nanobananaConfigured && (
                 <StateMessage
                   tone="info"
                   title="NanoBanana indisponível neste workspace"
@@ -1784,12 +1806,12 @@ function ImagesPageContent() {
                   generatedPromptPt={generatedPromptPt}
                   onTranslatePrompt={handleTranslatePrompt}
                   isTranslatingPrompt={isTranslatingPrompt}
-                  canTranslatePrompt={!!openaiApiKey}
+                  canTranslatePrompt={openaiConfigured}
                   translationError={promptTranslationError}
                   promptDetails={promptDetails}
                   onCreateImage={handleCreateImageWithModel}
                   isCreatingImage={isCreatingImage || isGeneratingNanoBanana}
-                  hasNanoBananaKey={!!nanobananaApiKey}
+                  hasNanoBananaKey={nanobananaConfigured}
                   automationEnabled={automationEnabled}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}

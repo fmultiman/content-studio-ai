@@ -10,14 +10,14 @@ import {
 import { PageHeader } from '@/components/layout/page-header'
 import { useStudioIntensity } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
-import { FieldError } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { StateMessage } from '@/components/ui/state-message'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
-import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Eye, EyeOff, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
+import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
+import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
 import { Slider } from '@/components/ui/slider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
@@ -61,9 +61,13 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('profile')
   const [saveFeedback, setSaveFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
-  const [showOpenAIKey, setShowOpenAIKey] = useState(false)
-  const [showReplicateKey, setShowReplicateKey] = useState(false)
-  const [showNanoBananaKey, setShowNanoBananaKey] = useState(false)
+  const [providerStatuses, setProviderStatuses] = useState<Record<string, AiProviderCredentialStatus>>({
+    openai: 'loading',
+    nano_banana: 'loading',
+    kling: 'loading',
+    replicate: 'loading',
+  })
+  const [nanobananaBaseUrl, setNanobananaBaseUrl] = useState<string | null>(null)
   const isThemeReady = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -76,10 +80,6 @@ export default function SettingsPage() {
     save_prompt_history: true,
     notifications_email: true,
     notifications_browser: false,
-    openai_api_key: '',
-    replicate_api_key: '',
-    nanobanana_api_key: '',
-    nanobanana_base_url: 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate',
     automation_enabled: false,
     default_image_model: 'gpt-image-2',
     image_evaluator_enabled: false,
@@ -108,19 +108,17 @@ export default function SettingsPage() {
         setUser(user)
 
         if (user) {
+          // Non-secret preferences only — provider credentials are never
+          // selected here. See /api/settings/providers (AI_PROVIDER_CREDENTIALS_BYOK_V1).
           const { data: settingsData } = await supabase
             .from('user_settings')
-            .select('*')
+            .select('theme, studio_intensity, auto_mode_default, save_prompt_history, notifications_email, notifications_browser, automation_enabled, default_image_model, image_evaluator_enabled, max_refinement_iterations')
             .eq('user_id', user.id)
             .single()
 
           if (settingsData) {
             setSettings({
               ...settingsData,
-              openai_api_key: settingsData.openai_api_key || '',
-              replicate_api_key: settingsData.replicate_api_key || '',
-              nanobanana_api_key: settingsData.nanobanana_api_key || '',
-              nanobanana_base_url: settingsData.nanobanana_base_url || 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate',
               automation_enabled: settingsData.automation_enabled ?? false,
               default_image_model: settingsData.default_image_model === 'openai'
                 ? 'gpt-image-2'
@@ -128,6 +126,22 @@ export default function SettingsPage() {
               image_evaluator_enabled: settingsData.image_evaluator_enabled ?? false,
               max_refinement_iterations: settingsData.max_refinement_iterations ?? 2,
             })
+          }
+
+          try {
+            const providersResponse = await fetch('/api/settings/providers')
+            if (providersResponse.ok) {
+              const providersPayload = await providersResponse.json()
+              setProviderStatuses({
+                openai: providersPayload?.providers?.openai?.status ?? 'missing',
+                nano_banana: providersPayload?.providers?.nano_banana?.status ?? 'missing',
+                kling: providersPayload?.providers?.kling?.status ?? 'missing',
+                replicate: providersPayload?.providers?.replicate?.status ?? 'missing',
+              })
+              setNanobananaBaseUrl(providersPayload?.nanobananaBaseUrl ?? null)
+            }
+          } catch (providerStatusError) {
+            console.error('Erro ao carregar status dos providers:', providerStatusError)
           }
         }
       } catch {
@@ -138,6 +152,43 @@ export default function SettingsPage() {
     }
     fetchData()
   }, [])
+
+  const handleSaveProviderCredential = async (provider: string, apiKey: string, baseUrl?: string) => {
+    const response = await fetch(`/api/settings/providers/${provider}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey, baseUrl }),
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      toast({
+        title: 'Erro ao salvar credencial',
+        description: payload?.error || 'Não foi possível salvar a credencial agora.',
+        variant: 'destructive',
+      })
+      throw new Error(payload?.error || 'Falha ao salvar credencial')
+    }
+    setProviderStatuses((prev) => ({ ...prev, [provider]: 'configured' }))
+    if (provider === 'nano_banana' && baseUrl) {
+      setNanobananaBaseUrl(baseUrl)
+    }
+    toast({ title: 'Credencial salva', description: 'O provider está configurado e pronto para uso.' })
+  }
+
+  const handleRemoveProviderCredential = async (provider: string) => {
+    const response = await fetch(`/api/settings/providers/${provider}`, { method: 'DELETE' })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      toast({
+        title: 'Erro ao remover credencial',
+        description: payload?.error || 'Não foi possível remover a credencial agora.',
+        variant: 'destructive',
+      })
+      throw new Error(payload?.error || 'Falha ao remover credencial')
+    }
+    setProviderStatuses((prev) => ({ ...prev, [provider]: 'missing' }))
+    toast({ title: 'Credencial removida', description: 'O provider ficará indisponível até uma nova configuração.' })
+  }
 
   const handleThemeChange = (nextTheme: UserSelectableTheme) => {
     setTheme(nextTheme)
@@ -170,10 +221,6 @@ export default function SettingsPage() {
           save_prompt_history: settings.save_prompt_history,
           notifications_email: settings.notifications_email,
           notifications_browser: settings.notifications_browser,
-          openai_api_key: settings.openai_api_key || null,
-          replicate_api_key: settings.replicate_api_key || null,
-          nanobanana_api_key: settings.nanobanana_api_key || null,
-          nanobanana_base_url: settings.nanobanana_base_url || 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate',
           automation_enabled: settings.automation_enabled ?? false,
           default_image_model: settings.default_image_model || 'gpt-image-2',
           image_evaluator_enabled: settings.image_evaluator_enabled ?? false,
@@ -697,144 +744,65 @@ export default function SettingsPage() {
             <TabsContent value="api">
               <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle>Chaves de API</CardTitle>
+                  <CardTitle>AI Providers</CardTitle>
                   <CardDescription>
-                    Configure suas chaves de API para integrações externas
+                    Cada provider usa sua própria chave (Bring Your Own Key). A chave nunca é reenviada
+                    para o navegador depois de salva — apenas o status de configuração.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-4">
                   <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
                     <p className="text-sm text-violet-200/80">
-                      <strong>Dica:</strong> A geracao de prompts por IA requer uma chave da OpenAI configurada.
-                      Sem uma chave valida, esse recurso ficara indisponivel.
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="openai-key">OpenAI API Key</Label>
-                    <div className="relative">
-                      <Input
-                        id="openai-key"
-                        type={showOpenAIKey ? 'text' : 'password'}
-                        placeholder="sk-..."
-                        value={settings.openai_api_key || ''}
-                        onChange={(e) => setSettings({ ...settings, openai_api_key: e.target.value })}
-                        className="bg-background/50 pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-                        onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                      >
-                        {showOpenAIKey ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Usada para geração de prompts otimizados via GPT
-                    </p>
-                    {!settings.openai_api_key?.trim() && (
-                      <FieldError>Sem uma chave válida, a geração de prompt por IA fica indisponível.</FieldError>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="replicate-key">Replicate API Key (opcional)</Label>
-                    <div className="relative">
-                      <Input
-                        id="replicate-key"
-                        type={showReplicateKey ? 'text' : 'password'}
-                        placeholder="r8_..."
-                        value={settings.replicate_api_key || ''}
-                        onChange={(e) => setSettings({ ...settings, replicate_api_key: e.target.value })}
-                        className="bg-background/50 pr-10"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-                        onClick={() => setShowReplicateKey(!showReplicateKey)}
-                      >
-                        {showReplicateKey ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Usada para geração de imagens via Replicate (futuro)
+                      <strong>Dica:</strong> A geração de prompts por IA requer uma chave da OpenAI configurada.
+                      Sem uma chave válida, esse recurso ficará indisponível.
                     </p>
                   </div>
 
-                  {/* NanoBanana Section */}
-                  <div className="space-y-4 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-4">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-5 w-5 text-cyan-400" />
-                      <h4 className="font-medium text-cyan-200">NanoBanana (Gemini Flash Image)</h4>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="nanobanana-key">NanoBanana API Key</Label>
-                      <div className="relative">
-                        <Input
-                          id="nanobanana-key"
-                          type={showNanoBananaKey ? 'text' : 'password'}
-                          placeholder="nb_..."
-                          value={settings.nanobanana_api_key || ''}
-                          onChange={(e) => setSettings({ ...settings, nanobanana_api_key: e.target.value })}
-                          className="bg-background/50 pr-10"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-                          onClick={() => setShowNanoBananaKey(!showNanoBananaKey)}
-                        >
-                          {showNanoBananaKey ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
+                  <AiProviderCredentialCard
+                    providerId="openai"
+                    title="OpenAI"
+                    description="Geração e tradução de prompts, avaliação de imagem e geração de imagem (GPT Image)."
+                    status={providerStatuses.openai}
+                    placeholder="sk-..."
+                    helpText="Usada para geração de prompts otimizados via GPT e para geração de imagem."
+                    onSave={(apiKey) => handleSaveProviderCredential('openai', apiKey)}
+                    onRemove={() => handleRemoveProviderCredential('openai')}
+                  />
 
-                    <div className="space-y-2">
-                      <Label htmlFor="nanobanana-url">Base URL (opcional)</Label>
-                      <Input
-                        id="nanobanana-url"
-                        type="text"
-                        placeholder="https://nanobananapi.ai/api/v1/nanobanana/generate"
-                        value={settings.nanobanana_base_url || ''}
-                        onChange={(e) => setSettings({ ...settings, nanobanana_base_url: e.target.value })}
-                        className="bg-background/50"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        URL personalizada (deixe em branco para usar o padrão)
-                      </p>
-                    </div>
+                  <AiProviderCredentialCard
+                    providerId="nano_banana"
+                    title="Nano Banana (Gemini Flash Image)"
+                    description="Geração de imagem via NanoBanana."
+                    status={providerStatuses.nano_banana}
+                    placeholder="nb_..."
+                    showBaseUrl
+                    baseUrl={nanobananaBaseUrl}
+                    baseUrlPlaceholder="https://api.nanobananaapi.ai/api/v1/nanobanana/generate"
+                    helpText="Base URL personalizada (opcional). Para testar, vá em Imagens e use o botão “Gerar Imagem (NanoBanana)”."
+                    onSave={(apiKey, baseUrl) => handleSaveProviderCredential('nano_banana', apiKey, baseUrl)}
+                    onRemove={() => handleRemoveProviderCredential('nano_banana')}
+                  />
 
-                    <p className="text-xs text-cyan-300/70">
-                      Para testar a API, vá em Imagens e use o botão &quot;Gerar Imagem (NanoBanana)&quot;.
-                    </p>
-                  </div>
+                  <AiProviderCredentialCard
+                    providerId="kling"
+                    title="Kling"
+                    description="Geração de vídeo por IA (texto→vídeo e imagem→vídeo) em /videos."
+                    status={providerStatuses.kling}
+                    placeholder="Chave de API do Kling..."
+                    helpText="Sem uma chave configurada, a geração de vídeo IA fica indisponível em /videos."
+                    onSave={(apiKey) => handleSaveProviderCredential('kling', apiKey)}
+                    onRemove={() => handleRemoveProviderCredential('kling')}
+                  />
 
-                  <Button onClick={handleSaveSettings} disabled={isSaving} className="w-full">
-                    {isSaving ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}
-                    Salvar Chaves de API
-                  </Button>
+                  <AiProviderCredentialCard
+                    providerId="replicate"
+                    title="Replicate (opcional)"
+                    description="Reservado para uso futuro de geração de imagem via Replicate."
+                    status={providerStatuses.replicate}
+                    placeholder="r8_..."
+                    onSave={(apiKey) => handleSaveProviderCredential('replicate', apiKey)}
+                    onRemove={() => handleRemoveProviderCredential('replicate')}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>

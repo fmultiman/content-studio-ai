@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
 
 // NanoBanana API endpoints (dois A's: nanobanana + api)
 const NANOBANANA_API_V1 = 'https://api.nanobananaapi.ai/api/v1/nanobanana/generate'
@@ -21,14 +22,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { prompt, aspectRatio = '1:1', projectId, model: requestModel } = body
 
-    // Buscar API key
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('nanobanana_api_key')
-      .eq('user_id', user.id)
-      .single()
-
-    const apiKey = settings?.nanobanana_api_key
+    // Buscar API key (user-owned only — no platform fallback for NanoBanana)
+    const credential = await resolveProviderCredential(supabase, { userId: user.id, provider: 'nano_banana' })
+    const apiKey = credential.status === 'configured' ? credential.secret : null
     // Use model from request, fallback to v1
     const model = requestModel || 'v1'
     
