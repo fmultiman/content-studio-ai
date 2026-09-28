@@ -15,6 +15,7 @@ export interface KlingSettings {
   duration?: 5 | 10
   audio?: 'off' | 'on'
   multi_shot?: boolean
+  aspect_ratio?: '16:9' | '9:16' | '1:1'
 }
 
 export interface KlingOptions {
@@ -66,17 +67,17 @@ export class KlingAdapter {
     }
   }
 
-  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
+  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
     const payload: KlingRequestPayload = {
       contents: [
         { type: 'prompt', text: prompt },
         { type: 'first_frame', url: imageUrl }
       ],
       settings: {
-        resolution: '720p',
-        duration: 5,
-        audio: 'off',
-        multi_shot: false
+        resolution: settings.resolution || '720p',
+        duration: settings.duration || 5,
+        audio: settings.audio || 'off',
+        multi_shot: settings.multi_shot || false
       },
       options: {
         external_task_id: externalTaskId,
@@ -106,16 +107,17 @@ export class KlingAdapter {
     return { task_id }
   }
 
-  async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string): Promise<KlingSubmitResponse> {
+  async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
     const payload: KlingRequestPayload = {
       contents: [
         { type: 'prompt', text: prompt }
       ],
       settings: {
-        resolution: '720p',
-        duration: 5,
-        audio: 'off',
-        multi_shot: false
+        resolution: settings.resolution || '720p',
+        duration: settings.duration || 5,
+        audio: settings.audio || 'off',
+        multi_shot: settings.multi_shot || false,
+        aspect_ratio: settings.aspect_ratio || '16:9'
       },
       options: {
         external_task_id: externalTaskId,
