@@ -13,10 +13,47 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { projectId, productionId, mode, prompt, sourceImageId, sourceLibraryFileId, duration = '5' } = body
+    const { 
+      projectId, 
+      productionId, 
+      mode, 
+      prompt, 
+      sourceImageId, 
+      sourceLibraryFileId,
+      duration = 5,
+      resolution = '720p',
+      audio = 'off',
+      multi_shot = false,
+      aspect_ratio
+    } = body
 
     if (!projectId || !productionId || !mode || !prompt) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    if (![5, 10].includes(Number(duration))) {
+      return NextResponse.json({ error: 'Unsupported duration value.' }, { status: 400 })
+    }
+    if (!['720p', '1080p'].includes(resolution)) {
+      return NextResponse.json({ error: 'Unsupported resolution value.' }, { status: 400 })
+    }
+    if (!['off', 'on'].includes(audio)) {
+      return NextResponse.json({ error: 'Unsupported audio value.' }, { status: 400 })
+    }
+    if (typeof multi_shot !== 'boolean') {
+      return NextResponse.json({ error: 'multi_shot must be a boolean.' }, { status: 400 })
+    }
+
+    if (mode === 'text_to_video') {
+      const allowedRatios = ['16:9', '9:16', '1:1']
+      const ratio = aspect_ratio || '16:9'
+      if (!allowedRatios.includes(ratio)) {
+        return NextResponse.json({ error: 'Unsupported aspect_ratio for text_to_video.' }, { status: 400 })
+      }
+    } else if (mode === 'image_to_video') {
+      if (aspect_ratio) {
+        return NextResponse.json({ error: 'aspect_ratio is not supported for image_to_video.' }, { status: 400 })
+      }
     }
 
     if (mode === 'image_to_video') {
@@ -88,7 +125,13 @@ export async function POST(req: NextRequest) {
         status: 'queued',
         provider: 'kling',
         model: 'kling-v3',
-        request_config: { duration }
+        request_config: { 
+          duration: Number(duration),
+          resolution,
+          audio,
+          multi_shot,
+          aspect_ratio: mode === 'text_to_video' ? aspect_ratio : undefined
+        }
       })
       .select()
       .single()
@@ -123,19 +166,29 @@ export async function POST(req: NextRequest) {
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/kling/callback`
     const externalTaskId = generation.id
 
+    const settings = {
+      duration: Number(duration) as 5 | 10,
+      resolution: resolution as '720p' | '1080p',
+      audio: audio as 'on' | 'off',
+      multi_shot: Boolean(multi_shot),
+      aspect_ratio: mode === 'text_to_video' ? (aspect_ratio as '16:9' | '9:16' | '1:1') : undefined
+    }
+
     try {
       if (mode === 'image_to_video') {
         submitRes = await klingAdapter.submitImageToVideo(
           prompt,
           resolvedSourceUrl,
           externalTaskId,
-          callbackUrl
+          callbackUrl,
+          settings
         )
       } else {
         submitRes = await klingAdapter.submitTextToVideo(
           prompt,
           externalTaskId,
-          callbackUrl
+          callbackUrl,
+          settings
         )
       }
 
