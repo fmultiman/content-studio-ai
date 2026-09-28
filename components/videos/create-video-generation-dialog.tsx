@@ -214,7 +214,7 @@ export function CreateVideoGenerationDialog({
                       <SelectItem value="10">10 segundos</SelectItem>
                     </SelectContent>
                   </Select>
-                  {duration === 10 && <p className="text-[10px] text-muted-foreground mt-1">Custa +3 unidades.</p>}
+                  {duration === 10 && <p className="text-[10px] text-muted-foreground mt-1">Maior duração pode aumentar o consumo de unidades.</p>}
                </div>
 
                <div className="space-y-2">
@@ -228,7 +228,7 @@ export function CreateVideoGenerationDialog({
                       <SelectItem value="1080p">Alta (1080p)</SelectItem>
                     </SelectContent>
                   </Select>
-                  {resolution === '1080p' && <p className="text-[10px] text-muted-foreground mt-1">Custa o triplo de unidades.</p>}
+                  {resolution === '1080p' && <p className="text-[10px] text-muted-foreground mt-1">Maior resolução pode aumentar o consumo de unidades.</p>}
                </div>
 
                <div className="space-y-2">
