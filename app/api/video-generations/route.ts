@@ -19,8 +19,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (mode === 'image_to_video' && !sourceImageId && !sourceLibraryFileId) {
-      return NextResponse.json({ error: 'sourceImageId or sourceLibraryFileId is required for image_to_video' }, { status: 400 })
+    if (mode === 'image_to_video') {
+      if (!sourceImageId && !sourceLibraryFileId) {
+        return NextResponse.json({ error: 'sourceImageId or sourceLibraryFileId is required for image_to_video.' }, { status: 400 })
+      }
+      if (sourceImageId && sourceLibraryFileId) {
+        return NextResponse.json({ error: 'Provide exactly one source: sourceImageId OR sourceLibraryFileId.' }, { status: 400 })
+      }
+    } else if (mode === 'text_to_video') {
+      if (sourceImageId || sourceLibraryFileId) {
+        return NextResponse.json({ error: 'sourceImageId and sourceLibraryFileId must be absent for text_to_video.' }, { status: 400 })
+      }
     }
 
     let resolvedSourceUrl = ''

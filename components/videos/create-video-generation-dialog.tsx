@@ -68,6 +68,13 @@ export function CreateVideoGenerationDialog({
     onOpenChange(newOpen)
   }
 
+  const handleModeChange = (newMode: 'image_to_video' | 'text_to_video') => {
+    setMode(newMode)
+    if (newMode === 'text_to_video') {
+      setSourceImageId('')
+    }
+  }
+
   const handleSubmit = async () => {
     if (!prompt.trim()) {
       toast({ title: 'Prompt obrigatório', variant: 'destructive' })
@@ -122,7 +129,7 @@ export function CreateVideoGenerationDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs value={mode} onValueChange={(v: any) => setMode(v)} className="w-full">
+        <Tabs value={mode} onValueChange={(v: any) => handleModeChange(v)} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
              <TabsTrigger value="image_to_video" className="gap-2"><ImageIcon className="w-4 h-4" /> Imagem → Vídeo</TabsTrigger>
              <TabsTrigger value="text_to_video" className="gap-2"><FileText className="w-4 h-4" /> Texto → Vídeo</TabsTrigger>
