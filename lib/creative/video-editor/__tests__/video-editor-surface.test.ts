@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
+﻿import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-// Creative Editor Video Foundation V1 — surface responsibility + authority wiring.
+// Creative Editor Video Foundation V1 â€” surface responsibility + authority wiring.
 const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), 'utf8').replace(/\r\n/g, '\n')
 
@@ -89,14 +89,14 @@ describe('route / entry boundary', () => {
   })
 })
 
-describe('/videos remains the Hub', () => {
-  it('keeps the draft hub and launches the Creative Editor for a VideoDraft', () => {
-    expect(hub).toContain('Rascunhos recentes')
-    // Hub cards carry the canonical editor href (lib/draft-hub.ts draftRoute).
-    expect(hub).toContain('router.push(draft.href)')
-    expect(hub).toContain('Criar no Creative Editor')
-    // VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1: the classic workspace is retired.
-    expect(hub).not.toContain('Abrir (clássico)')
-    expect(hub).not.toContain('<SceneCard')
-  })
+  describe('/videos remains the Hub', () => {
+    it('keeps the draft hub and launches the Creative Editor for a VideoDraft', () => {
+      expect(hub).toContain('Rascunhos recentes')
+      // Hub cards generic item access carries canonical editor hrefs for drafts and results for AI generations
+      expect(hub).toContain('router.push(item.href)')
+      expect(hub).toContain('Criar no Creative Editor')
+      // VIDEO_DRAFT_SINGLE_WRITER_AND_CANONICAL_ENTRY_V1: the classic workspace is retired.
+      expect(hub).not.toContain('Abrir (clássico)')
+      expect(hub).not.toContain('<SceneCard')
+    })
 })

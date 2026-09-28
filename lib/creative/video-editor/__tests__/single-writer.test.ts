@@ -111,8 +111,11 @@ describe('every "open draft" entry targets the canonical editor', () => {
     }
     const production = read('app/(dashboard)/projetos/[id]/producoes/[productionId]/page.tsx')
     expect(production).toContain('router.push(videoCreativeEditorHref(draft.id))')
-    expect(production).toContain('createVideoDraftForCreativeEditor({ projectId, productionId })')
-    expect(production).not.toMatch(/\/videos\?project=/)
+    
+    // NEW INVARIANT: Production navigates contextual creation to the Gen AI workspace,
+    // and no longer creates a VideoDraft implicitly.
+    expect(production).not.toContain('createVideoDraftForCreativeEditor({')
+    expect(production).toMatch(/router\.push\(`\/videos\?project=\$\{projectId\}&production=\$\{productionId\}`\)/)
   })
 })
 

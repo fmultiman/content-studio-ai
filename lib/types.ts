@@ -541,3 +541,26 @@ export interface ApiResponse<T> {
   data: T | null
   error: string | null
 }
+
+export interface VideoGeneration {
+  id: string
+  user_id: string
+  project_id: string
+  production_id: string
+  mode: 'image_to_video' | 'text_to_video'
+  prompt: string
+  source_image_id?: string
+  provider: string
+  model: string
+  task_id?: string
+  status: 'queued' | 'submitted' | 'processing' | 'succeeded' | 'failed'
+  request_config?: Record<string, any>
+  provider_metadata?: Record<string, any>
+  result_metadata?: Record<string, any>
+  error_details?: Record<string, any>
+  storage_path?: string
+  public_url?: string
+  library_file_id?: string
+  created_at: string
+  updated_at: string
+}
