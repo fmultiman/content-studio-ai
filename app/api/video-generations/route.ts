@@ -194,7 +194,19 @@ export async function GET(req: NextRequest) {
       throw error
     }
 
-    return NextResponse.json({ generations })
+    const signedGenerations = await Promise.all(
+      (generations || []).map(async (gen) => {
+        if (gen.status === 'succeeded' && gen.storage_path) {
+          const presigned = await createPresignedReadUrl(gen.storage_path)
+          if (presigned) {
+            return { ...gen, public_url: presigned }
+          }
+        }
+        return gen
+      })
+    )
+
+    return NextResponse.json({ generations: signedGenerations })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
