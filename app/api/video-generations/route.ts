@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
         .from('video_generations')
         .update({
           status: 'submitted',
-          task_id: submitRes.data.task_id,
+          task_id: submitRes.task_id,
           provider_metadata: submitRes,
         })
         .eq('id', generation.id)
