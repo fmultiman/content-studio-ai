@@ -2,13 +2,13 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 
 export const getS3Client = () =>
   new S3Client({
-    region: process.env.S3_REGION || 'auto',
+    region: process.env.S3_REGION || 'us-east-1',
     endpoint: process.env.S3_ENDPOINT,
     credentials: {
-      accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+      accessKeyId: process.env.S3_ACCESS_KEY || process.env.S3_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.S3_SECRET_KEY || process.env.S3_SECRET_ACCESS_KEY || '',
     },
-    forcePathStyle: true,
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
   })
 
 export async function uploadApplicationVideo(
@@ -17,8 +17,8 @@ export async function uploadApplicationVideo(
   contentType: string,
   size: number
 ) {
-  const Bucket = process.env.S3_BUCKET
-  if (!Bucket) throw new Error('S3_BUCKET is not defined')
+  const Bucket = process.env.S3_BUCKET_NAME || process.env.S3_BUCKET
+  if (!Bucket) throw new Error('S3_BUCKET_NAME is not defined')
 
   const client = getS3Client()
   await client.send(
@@ -30,7 +30,8 @@ export async function uploadApplicationVideo(
     })
   )
 
-  const publicUrl = `${process.env.PUBLIC_STORAGE_BASE_URL}/${Bucket}/${storagePath}`
+  const publicBase = process.env.PUBLIC_STORAGE_BASE_URL || `${(process.env.S3_ENDPOINT || '').replace(/\/$/, '')}/${Bucket}`
+  const publicUrl = `${publicBase.replace(/\/$/, '')}/${storagePath.split('/').map(encodeURIComponent).join('/')}`
 
   return { storagePath, publicUrl, mime: contentType, size }
 }
