@@ -53,6 +53,7 @@ import {
 import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-routes'
 import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
 import { CreateVideoGenerationDialog } from '@/components/videos/create-video-generation-dialog'
+import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
 
 function VideosPageContent() {
   const { toast } = useToast()
@@ -80,6 +81,7 @@ function VideosPageContent() {
   const [hubViewMode, setHubViewMode] = useViewModePreference('video-draft-hub-view', 'list')
   const [isCreatingInEditor, setIsCreatingInEditor] = useState(false)
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
+  const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
   const [showAiModal, setShowAiModal] = useState(false)
 
@@ -220,8 +222,11 @@ function VideosPageContent() {
       return (
         <>
           <Button size={size} onClick={() => {
-            if (item.generation.public_url) window.open(item.generation.public_url, '_blank')
-            else toast({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+            if (item.generation.status === 'succeeded') {
+              setSelectedVideoGeneration(item);
+            } else {
+              toast({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+            }
           }} className="gap-1">
             <Video className="h-4 w-4" />
             {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
@@ -589,6 +594,13 @@ function VideosPageContent() {
         projectId={hubCreateProjectId}
         productionId={hubCreateProductionId}
         onSuccess={() => setRetryKey((k) => k + 1)}
+      />
+          <VideoGenerationPreviewDialog
+        item={selectedVideoGeneration}
+        onOpenChange={(open) => {
+          if (!open) setSelectedVideoGeneration(null)
+        }}
+        onNavigate={(href) => router.push(href)}
       />
     </>
   )
