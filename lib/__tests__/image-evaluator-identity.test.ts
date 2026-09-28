@@ -76,7 +76,7 @@ vi.mock('@/lib/supabase/server', () => ({
 function setupAuthSuccess() {
   mockGetUser.mockResolvedValue({ data: { user: { id: 'test-user' } }, error: null })
   mockSingle.mockResolvedValue({ data: { openai_api_key: 'sk-test' }, error: null })
-  mockEq.mockReturnValue({ single: mockSingle })
+  mockEq.mockReturnValue({ single: mockSingle, maybeSingle: mockSingle })
   mockSelect.mockReturnValue({ eq: mockEq })
   mockFrom.mockReturnValue({ select: mockSelect })
 }

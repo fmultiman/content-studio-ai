@@ -2,6 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { KlingAdapter } from '@/lib/providers/kling/adapter'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
+
+/**
+ * Resolves the user's own Kling credential (BYOK). Production user-triggered
+ * generation NEVER falls back to a platform env credential — a missing user
+ * key is reported as `missing`, not silently substituted. In non-production
+ * only, `process.env.KLING_API_KEY` may stand in for a developer who hasn't
+ * configured a personal key, so local/test tooling keeps working; this path
+ * never runs in Production (see docs/architecture/AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md).
+ */
+async function resolveKlingApiKey(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<string | null> {
+  const userCredential = await resolveProviderCredential(supabase, { userId, provider: 'kling' })
+  if (userCredential.status === 'configured') {
+    return userCredential.secret
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KLING_API_KEY) {
+    return process.env.KLING_API_KEY
+  }
+
+  return null
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -67,6 +92,24 @@ export async function POST(req: NextRequest) {
       if (sourceImageId || sourceLibraryFileId) {
         return NextResponse.json({ error: 'sourceImageId and sourceLibraryFileId must be absent for text_to_video.' }, { status: 400 })
       }
+    }
+
+    // Resolve the user's own Kling credential BEFORE touching source files or
+    // creating any generation/task record. A missing credential must result
+    // in zero provider calls and zero created records — never a silent
+    // platform fallback (AI_PROVIDER_CREDENTIALS_BYOK_V1).
+    const apiKey = await resolveKlingApiKey(supabase, user.id)
+
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error: 'PROVIDER_NOT_CONFIGURED',
+          code: 'PROVIDER_NOT_CONFIGURED',
+          provider: 'kling',
+          message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
+        },
+        { status: 422 },
+      )
     }
 
     let resolvedSourceUrl = ''
@@ -138,27 +181,6 @@ export async function POST(req: NextRequest) {
 
     if (dbError || !generation) {
       throw new Error(`Failed to create generation record: ${dbError?.message}`)
-    }
-
-    // Prepare Provider Adapter
-    const apiKey = process.env.KLING_API_KEY
-
-    if (!apiKey) {
-      if (process.env.NODE_ENV !== 'production') {
-        const { error: mockDbError } = await supabase
-          .from('video_generations')
-          .update({
-            status: 'submitted',
-            task_id: `mock-task-${Date.now()}`
-          })
-          .eq('id', generation.id)
-
-        if (mockDbError) throw mockDbError
-
-        return NextResponse.json({ generation: { ...generation, status: 'submitted' } })
-      }
-
-      throw new Error('KLING_API_KEY is not configured')
     }
 
     const klingAdapter = new KlingAdapter(apiKey)

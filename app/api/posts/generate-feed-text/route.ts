@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -22,13 +23,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Descricao obrigatoria' }, { status: 400 })
     }
 
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('openai_api_key')
-      .eq('user_id', user.id)
-      .single()
-
-    const apiKey = settings?.openai_api_key || process.env.OPENAI_API_KEY
+    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
+    const apiKey = credential.status === 'configured' ? credential.secret : null
 
     if (!apiKey) {
       return NextResponse.json(

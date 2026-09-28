@@ -84,6 +84,7 @@ function VideosPageContent() {
   const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
   const [showAiModal, setShowAiModal] = useState(false)
+  const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
 
   // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {
@@ -96,11 +97,12 @@ function VideosPageContent() {
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse] = await Promise.all([
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, providersResponse] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('productions').select('*').order('updated_at', { ascending: false }),
           fetch('/api/video-drafts?limit=50'),
-          fetch('/api/video-generations')
+          fetch('/api/video-generations'),
+          fetch('/api/settings/providers'),
         ])
         const draftsData = await draftsResponse.json()
         const generationsData = await generationsResponse.json()
@@ -110,9 +112,16 @@ function VideosPageContent() {
         if (productionsData) setProductions(productionsData)
         if (draftsResponse.ok) setDrafts(draftsData.drafts || [])
         else console.error('[v0] Video drafts load error:', draftsData)
-        
+
         if (generationsResponse.ok) setGenerations(generationsData.generations || [])
         else console.error('[v0] Video generations load error:', generationsData)
+
+        if (providersResponse.ok) {
+          const providersPayload = await providersResponse.json()
+          setKlingConfigured(providersPayload?.providers?.kling?.status === 'configured')
+        } else {
+          console.error('[v0] Provider status load error:', providersResponse.status)
+        }
 
         setLoadError(null)
         setIsDataReady(true)
@@ -372,16 +381,28 @@ function VideosPageContent() {
                       </p>
                     )}
                     
+                    {klingConfigured === false && (
+                      <StateMessage
+                        tone="info"
+                        title="Kling não configurado"
+                        description="Adicione sua chave de API em Configurações para gerar vídeos com IA (Kling)."
+                        actionLabel="Abrir Configurações"
+                        onAction={() => router.push('/configuracoes?tab=api')}
+                        compact
+                        className="mt-3"
+                      />
+                    )}
+
                     <div className="flex flex-col gap-2 mt-4">
                       <Button
                         className="w-full gap-2 text-primary-foreground bg-primary hover:bg-primary/90"
                         onClick={() => setShowAiModal(true)}
-                        disabled={!hubCreateProjectId || !hubCreateProductionId}
+                        disabled={!hubCreateProjectId || !hubCreateProductionId || klingConfigured === false}
                       >
                         <Zap className="h-4 w-4" />
                         Gerar Vídeo IA (Kling)
                       </Button>
-                      
+
                       <Button
                         variant="outline"
                         className="w-full gap-2 text-[rgb(58_58_72)] disabled:text-[rgb(102_102_118)]"

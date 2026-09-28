@@ -114,15 +114,24 @@ export function CreateVideoGenerationDialog({
       })
       
       const data = await res.json()
-      
+
       if (!res.ok) {
+        if (data.code === 'PROVIDER_NOT_CONFIGURED') {
+          toast({
+            title: 'Kling não configurado',
+            description: 'Adicione sua chave de API do Kling em Configurações antes de gerar vídeos.',
+            variant: 'destructive',
+          })
+          router.push('/configuracoes?tab=api')
+          return
+        }
         throw new Error(data.error || 'Erro ao criar geração de vídeo')
       }
-      
+
       toast({ title: 'Geração iniciada!', description: 'O vídeo está sendo gerado pela IA (Kling)' })
       onOpenChange(false)
       if (onSuccess) onSuccess()
-      
+
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     } finally {
