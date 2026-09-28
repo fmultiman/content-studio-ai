@@ -224,7 +224,7 @@ function VideosPageContent() {
             else toast({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
           }} className="gap-1">
             <Video className="h-4 w-4" />
-            {item.generation.status === 'completed' ? 'Assistir' : item.generation.status}
+            {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
           </Button>
           {item.productionHref && (
             <Button size={size} variant="outline" onClick={() => router.push(item.productionHref!)}>

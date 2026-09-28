@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, warning: 'Unknown task_id ignored' })
     }
 
-    if (generation.status === 'completed' || generation.status === 'failed') {
+    if (generation.status === 'succeeded' || generation.status === 'failed') {
       return NextResponse.json({ success: true, warning: 'Already resolved' })
     }
 
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
       const { storagePath, publicUrl, mime, size } = await downloadAndStoreVideo(videoUrl, prefix)
 
       await supabase.from('video_generations').update({
-        status: 'completed',
+        status: 'succeeded',
         storage_path: storagePath,
         public_url: publicUrl,
         result_metadata: { mime, size, ...data }

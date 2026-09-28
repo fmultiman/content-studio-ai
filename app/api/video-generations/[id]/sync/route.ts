@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: generation, error } = await supabase
       .from('video_generations')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('user_id', user.id)
       .single()
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Generation not found' }, { status: 404 })
     }
 
-    if (generation.status === 'completed' || generation.status === 'failed') {
+    if (generation.status === 'succeeded' || generation.status === 'failed') {
       return NextResponse.json({ generation })
     }
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const { storagePath, publicUrl, mime, size } = await downloadAndStoreVideo(videoUrl, prefix)
 
       const { data: updated, error: updateError } = await supabase.from('video_generations').update({
-        status: 'completed',
+        status: 'succeeded',
         storage_path: storagePath,
         public_url: publicUrl,
         result_metadata: { mime, size, ...taskItem }

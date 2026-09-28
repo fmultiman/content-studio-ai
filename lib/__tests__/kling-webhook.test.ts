@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { POST } from '../route'
+import { POST } from '@/app/api/kling/callback/route'
 import { NextRequest } from 'next/server'
 import * as crypto from 'crypto'
 

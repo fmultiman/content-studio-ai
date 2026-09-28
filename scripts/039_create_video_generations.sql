@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS video_generations (
   provider TEXT NOT NULL DEFAULT 'kling',
   model TEXT NOT NULL,
   task_id TEXT UNIQUE,
-  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'submitted', 'running', 'completed', 'failed')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'submitted', 'processing', 'succeeded', 'failed')),
   
   -- Data
   request_config JSONB DEFAULT '{}',

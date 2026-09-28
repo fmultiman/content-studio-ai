@@ -553,7 +553,7 @@ export interface VideoGeneration {
   provider: string
   model: string
   task_id?: string
-  status: 'queued' | 'submitted' | 'running' | 'completed' | 'failed'
+  status: 'queued' | 'submitted' | 'processing' | 'succeeded' | 'failed'
   request_config?: Record<string, any>
   provider_metadata?: Record<string, any>
   result_metadata?: Record<string, any>
