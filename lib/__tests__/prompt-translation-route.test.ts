@@ -55,6 +55,20 @@ describe('/api/prompts/translate', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('does not use the platform OPENAI_API_KEY when the user has no key (user_byok)', async () => {
+    process.env.OPENAI_API_KEY = 'sk-platform-must-not-be-used'
+    setupSupabase(null)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const response = await POST(makeRequest())
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload).toMatchObject({ code: 'PROMPT_PROVIDER_NOT_CONFIGURED', providerCode: 'PROVIDER_NOT_CONFIGURED' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    delete process.env.OPENAI_API_KEY
+  })
+
   it('translates with a configured provider and returns Portuguese text', async () => {
     setupSupabase('sk-test')
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(

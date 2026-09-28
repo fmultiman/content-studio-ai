@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isValidChannel, isValidFormat, isValidChannelFormat } from '@/lib/publication-channels'
-import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -167,14 +167,14 @@ export async function POST(request: Request) {
     }
 
     // Get OpenAI API key
-    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
-    const apiKey = credential.status === 'configured' ? credential.secret : null
-    if (!apiKey) {
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })
+    if (execution.status !== 'ready') {
       return NextResponse.json(
-        { error: 'API Key da OpenAI nao configurada' },
+        { error: 'API Key da OpenAI nao configurada', code: execution.code, provider: 'openai' },
         { status: 400 },
       )
     }
+    const apiKey = execution.secret
 
     const ctx = CHANNEL_FORMAT_CONTEXT[`${channel}:${format}`] || {
       label: `${channel} / ${format}`,

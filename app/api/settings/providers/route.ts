@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getProviderConfigurationStatuses } from '@/lib/credentials/provider-credentials'
+import { AI_PROVIDERS, getProviderConfigurationStatuses } from '@/lib/credentials/provider-credentials'
+import { primaryConnectionMethod } from '@/lib/credentials/provider-metadata'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
 // Returns configuration status only — never a secret value — for every
@@ -26,12 +27,12 @@ export async function GET() {
       .maybeSingle()
 
     return NextResponse.json({
-      providers: {
-        openai: { status: statuses.openai },
-        nano_banana: { status: statuses.nano_banana },
-        kling: { status: statuses.kling },
-        replicate: { status: statuses.replicate },
-      },
+      providers: Object.fromEntries(
+        AI_PROVIDERS.map((provider) => [
+          provider,
+          { status: statuses[provider], connectionMethod: primaryConnectionMethod(provider) },
+        ]),
+      ),
       nanobananaBaseUrl: settings?.nanobanana_base_url ?? null,
     })
   } catch (error) {

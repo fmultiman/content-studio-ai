@@ -11,10 +11,15 @@
 // RLS policy on `user_settings`, and the explicit `.eq('user_id', userId)`
 // filter below).
 //
+// This module is the USER credential source only. It never consults an
+// environment/platform credential — platform-funded execution lives behind
+// the separate, gated `content_studio_credits` boundary in
+// `provider-execution.ts` / `platform-credentials.ts`.
+//
 // This module never logs, returns, or otherwise surfaces the secret value
 // itself — only `resolveProviderCredential` returns the plaintext secret,
-// and it must be called server-side only, immediately before the outbound
-// provider call.
+// and it must be called server-side only (normally via
+// `resolveProviderExecution`), immediately before the outbound provider call.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -89,41 +94,4 @@ export async function getProviderConfigurationStatuses(
 
 export function providerSecretColumn(provider: AiProvider): string {
   return PROVIDER_SECRET_COLUMN[provider]
-}
-
-/**
- * OpenAI-only, explicitly-named legacy exception.
- *
- * Every existing OpenAI-consuming route already fell back to
- * `process.env.OPENAI_API_KEY` in every environment (including
- * Production) whenever the user had no personal key saved. As of this
- * audit `user_settings` has zero rows in Production — every current
- * OpenAI call in the live app depends on this fallback today. Removing
- * it here would break "Do not break image generation" for all current
- * users with no mitigation, so it is preserved, but centralized in this
- * single function instead of being duplicated ad hoc across seven
- * routes.
- *
- * This is a deliberate, temporary exception to the BYOK-strict contract
- * (see docs/architecture/AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md and
- * FUTURE-027). Kling has no such legacy dependency and does NOT get an
- * equivalent — `resolveProviderCredential(..., { provider: 'kling' })`
- * never falls back to `process.env.KLING_API_KEY` for user-triggered
- * Production generation.
- */
-export async function resolveOpenAiCredentialWithLegacyPlatformFallback(
-  supabase: SupabaseClient,
-  userId: string,
-): Promise<ProviderCredentialResult> {
-  const userCredential = await resolveProviderCredential(supabase, { userId, provider: 'openai' })
-  if (userCredential.status === 'configured') {
-    return userCredential
-  }
-
-  const platformKey = process.env.OPENAI_API_KEY
-  if (platformKey && platformKey.trim().length > 0) {
-    return { status: 'configured', secret: platformKey }
-  }
-
-  return { status: 'missing' }
 }

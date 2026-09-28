@@ -2,31 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { KlingAdapter } from '@/lib/providers/kling/adapter'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
-import { resolveProviderCredential } from '@/lib/credentials/provider-credentials'
-
-/**
- * Resolves the user's own Kling credential (BYOK). Production user-triggered
- * generation NEVER falls back to a platform env credential — a missing user
- * key is reported as `missing`, not silently substituted. In non-production
- * only, `process.env.KLING_API_KEY` may stand in for a developer who hasn't
- * configured a personal key, so local/test tooling keeps working; this path
- * never runs in Production (see docs/architecture/AI_PROVIDER_CREDENTIALS_ARCHITECTURE_V1.md).
- */
-async function resolveKlingApiKey(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<string | null> {
-  const userCredential = await resolveProviderCredential(supabase, { userId, provider: 'kling' })
-  if (userCredential.status === 'configured') {
-    return userCredential.secret
-  }
-
-  if (process.env.NODE_ENV !== 'production' && process.env.KLING_API_KEY) {
-    return process.env.KLING_API_KEY
-  }
-
-  return null
-}
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 export async function POST(req: NextRequest) {
   try {
@@ -94,23 +70,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Resolve the user's own Kling credential BEFORE touching source files or
-    // creating any generation/task record. A missing credential must result
-    // in zero provider calls and zero created records — never a silent
-    // platform fallback (AI_PROVIDER_CREDENTIALS_BYOK_V1).
-    const apiKey = await resolveKlingApiKey(supabase, user.id)
+    // Resolve the authenticated user's own Kling credential (execution mode
+    // `user_byok`, decided server-side — never read from the request body)
+    // BEFORE touching source files or creating any generation/task record.
+    // A missing credential results in zero provider calls and zero created
+    // records, and never becomes a platform credential.
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
 
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
         {
-          error: 'PROVIDER_NOT_CONFIGURED',
-          code: 'PROVIDER_NOT_CONFIGURED',
+          error: execution.code,
+          code: execution.code,
           provider: 'kling',
           message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
         },
         { status: 422 },
       )
     }
+    const apiKey = execution.secret
 
     let resolvedSourceUrl = ''
 

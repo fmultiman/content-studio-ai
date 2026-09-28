@@ -48,6 +48,8 @@ describe('/api/settings/providers', () => {
     expect(payload.providers.openai.status).toBe('configured')
     expect(payload.providers.kling.status).toBe('configured')
     expect(payload.providers.nano_banana.status).toBe('missing')
+    expect(payload.providers.replicate.status).toBe('missing')
+    expect(payload.providers.kling.connectionMethod).toBe('api_key')
 
     const raw = JSON.stringify(payload)
     expect(raw).not.toContain('sk-should-never-leak')

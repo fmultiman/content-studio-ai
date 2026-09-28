@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { buildImageEvaluationContext } from '@/lib/context-compiler'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
-import { resolveOpenAiCredentialWithLegacyPlatformFallback } from '@/lib/credentials/provider-credentials'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_EVALUATION_MODEL = 'gpt-4o-mini'
@@ -80,15 +80,15 @@ export async function POST(request: Request) {
       }
     }
 
-    const credential = await resolveOpenAiCredentialWithLegacyPlatformFallback(supabase, user.id)
-    const apiKey = credential.status === 'configured' ? credential.secret : null
+    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })
 
-    if (!apiKey) {
+    if (execution.status !== 'ready') {
       return NextResponse.json(
-        { error: 'API Key da OpenAI nao configurada' },
+        { error: 'API Key da OpenAI nao configurada', code: execution.code, provider: 'openai' },
         { status: 400 },
       )
     }
+    const apiKey = execution.secret
 
     const compiledEvaluationContext = buildImageEvaluationContext({
       context,
