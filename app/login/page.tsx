@@ -24,6 +24,7 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const errorParam = searchParams.get('error')
+  const passwordReset = searchParams.get('password_reset') === '1'
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,7 +84,15 @@ function LoginForm() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="password">Senha</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Senha</Label>
+                      <Link
+                        href="/auth/forgot-password"
+                        className="text-xs text-violet-400 underline underline-offset-4 hover:text-violet-300"
+                      >
+                        Esqueci minha senha?
+                      </Link>
+                    </div>
                     <Input
                       id="password"
                       type="password"
@@ -93,6 +102,11 @@ function LoginForm() {
                       className="bg-background/50"
                     />
                   </div>
+                  {passwordReset && !error && !errorParam && (
+                    <p className="text-sm text-emerald-500" role="status">
+                      Senha alterada. Entre com a nova senha.
+                    </p>
+                  )}
                   {(error || errorParam) && (
                     <p className="text-sm text-destructive">
                       {error || 'Erro na autenticação. Tente novamente.'}
