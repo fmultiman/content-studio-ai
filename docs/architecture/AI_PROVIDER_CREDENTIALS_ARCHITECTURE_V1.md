@@ -11,7 +11,7 @@
 | Billing / wallet / ledger / plans / pricing | **Not implemented** (deliberately) |
 | Silent user → platform credential fallback | **Does not exist, for any provider** |
 | Application-level encryption at rest | **Not implemented** (future hardening) |
-| MCP / OAuth / Browser Bridge connections | **Not implemented** (separate future work) |
+| MCP / OAuth / Browser Bridge connections | **Not implemented** (separate future work). Kling MCP discovery: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md) — MCP uses per-user OAuth and bills the user's Kling web credits, so it needs a connection/secret store before implementation |
 
 ## Product decision
 

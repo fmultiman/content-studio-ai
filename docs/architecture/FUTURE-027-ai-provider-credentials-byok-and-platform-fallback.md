@@ -16,7 +16,7 @@ execution. Detail lives in
 | **Content Studio Credits** (`content_studio_credits`) | **EXECUTION / CREDENTIAL BOUNDARY PREPARED — NOT USER-ENABLED — BILLING SYSTEM NOT IMPLEMENTED** |
 | Silent user → platform fallback | **Does not exist** (OpenAI's legacy fallback was removed) |
 | Application-level encryption at rest | **FUTURE HARDENING** |
-| MCP | **SEPARATE FUTURE TASK** |
+| MCP | **SEPARATE FUTURE TASK** — discovery complete, **not implemented**: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md) |
 
 ## Implemented (BYOK) — CLOSED
 
