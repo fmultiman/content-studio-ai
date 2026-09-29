@@ -53,7 +53,8 @@ describe('completeVideoGeneration — the shared completion boundary', () => {
     const db = seed()
     await completeVideoGeneration(db, { ...identity, resultUrl: RESULT_URL }, { download: async () => stored() })
     const writes = db.log.filter((entry: string) => /^(insert|upsert|update|delete):/.test(entry))
-    expect(new Set(writes.map((entry: string) => entry.split(':')[1]))).toEqual(new Set(['video_generations']))
+    // The only other write is the usage-ledger event (AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1).
+    expect(new Set(writes.map((entry: string) => entry.split(':')[1]))).toEqual(new Set(['video_generations', 'provider_usage_events']))
     for (const table of ['video_drafts', 'video_scenes', 'library_files', 'channel_piece_media']) expect(db.tables[table]).toEqual([])
     expect(db.tables.video_generations[0].library_file_id).toBeUndefined()
   })

@@ -17,7 +17,11 @@
 //   - a provider result URL is temporary: success is only recorded AFTER the
 //     bytes are stored; the URL itself is never persisted;
 //   - it creates nothing else: no VideoDraft, no LibraryFile, no
-//     ChannelPieceMedia (Generation != Composition).
+//     ChannelPieceMedia (Generation != Composition);
+//   - it appends ONE provider-usage event per completed generation
+//     (AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1): idempotent on the generation id,
+//     best-effort (a ledger failure never undoes a durable completion), and the
+//     quantity is recorded only when the provider actually reported one.
 //
 // Callers do their own authentication BEFORE calling in (the REST callback
 // verifies the webhook HMAC first; the poller runs with server credentials).
@@ -27,6 +31,8 @@ import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
 import { isSafeResultUrl } from '@/lib/storage/safe-result-url'
 import type { VideoTransport } from './capabilities'
 import { videoStoragePrefix } from './storage-path'
+import { recordVideoGenerationUsage } from '@/lib/usage/provider-usage-recorder'
+import type { UsageMeasurement } from '@/lib/usage/provider-usage'
 
 export const NON_TERMINAL_STATUSES = ['queued', 'submitted', 'processing'] as const
 
@@ -98,11 +104,19 @@ async function casTerminal(
 
 export async function completeVideoGeneration(
   db: SupabaseClient,
-  params: Identity & { resultUrl: string; providerState?: string | null },
+  params: Identity & { resultUrl: string; providerState?: string | null; usage?: UsageMeasurement | null },
   deps: CompletionDependencies = {},
 ): Promise<CompletionResult> {
   const loaded = await loadIdentified(db, params)
-  if (loaded.outcome) return { outcome: loaded.outcome, generation: loaded.row }
+  if (loaded.outcome) {
+    // A duplicate delivery for a generation that already succeeded also re-asserts its usage event
+    // (idempotent): it repairs the case where the process died between the terminal write and the ledger write.
+    if (loaded.outcome === 'already_terminal' && loaded.row?.status === 'succeeded') {
+      const completedAt = new Date(loaded.row.result_metadata?.completed_at ?? '')
+      await recordVideoGenerationUsage(db, loaded.row, params.usage, Number.isNaN(completedAt.getTime()) ? undefined : completedAt)
+    }
+    return { outcome: loaded.outcome, generation: loaded.row }
+  }
   const generation = loaded.row!
 
   if (!isSafeResultUrl(params.resultUrl)) {
@@ -137,8 +151,11 @@ export async function completeVideoGeneration(
     },
   })
 
-  // Lost the race: another caller already finalized it. Nothing else to do.
-  return won ? { outcome: 'completed', generation: won } : { outcome: 'already_terminal', generation }
+  // Lost the race: another caller already finalized it (and records the usage event). Nothing else to do.
+  if (!won) return { outcome: 'already_terminal', generation }
+
+  await recordVideoGenerationUsage(db, won, params.usage, now)
+  return { outcome: 'completed', generation: won }
 }
 
 /** Ends a non-terminal row that never received a provider task id (nothing to poll or retrieve). */

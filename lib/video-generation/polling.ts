@@ -215,7 +215,7 @@ export async function syncGenerationWithProvider(
     try {
       const result = await completeVideoGeneration(
         db,
-        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState },
+        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState, usage: status.usage },
         { download: options.download, now: options.now },
       )
       return { outcome: mapOutcome(result.outcome), generation: result.generation }

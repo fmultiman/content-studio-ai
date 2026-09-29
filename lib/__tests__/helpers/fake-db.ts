@@ -22,9 +22,10 @@ const DEFAULT_UNIQUE: Record<string, string[][]> = {
   provider_oauth_authorizations: [['state_hash']],
   user_settings: [['user_id']],
   video_generations: [['id']],
+  provider_usage_events: [['idempotency_key']],
 }
 
-const DEFAULT_GENERATED_ID = ['provider_connections', 'provider_oauth_clients', 'video_generations']
+const DEFAULT_GENERATED_ID = ['provider_connections', 'provider_oauth_clients', 'video_generations', 'provider_usage_events']
 
 export interface FakeDb {
   from: (table: string) => any
@@ -64,6 +65,7 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     let op: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select'
     let payload: Row = {}
     let onConflict: string[] = []
+    let ignoreDuplicates = false
     const filters: Array<[string, string, any]> = []
     let returning = false
 
@@ -83,6 +85,8 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
         if (op === 'upsert' && onConflict.length > 0) {
           const existing = rows.find((candidate) => onConflict.every((col) => candidate[col] === row[col]))
           if (existing) {
+            // ON CONFLICT DO NOTHING keeps the original row untouched and returns nothing.
+            if (ignoreDuplicates) return { data: [], error: null }
             Object.assign(existing, payload)
             return { data: [{ ...existing }], error: null }
           }
@@ -114,9 +118,10 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
         payload = row
         return builder
       },
-      upsert(row: Row, opts?: { onConflict?: string }) {
+      upsert(row: Row, opts?: { onConflict?: string; ignoreDuplicates?: boolean }) {
         op = 'upsert'
         payload = row
+        ignoreDuplicates = opts?.ignoreDuplicates === true
         onConflict = opts?.onConflict ? opts.onConflict.split(',').map((column) => column.trim()) : []
         return builder
       },
