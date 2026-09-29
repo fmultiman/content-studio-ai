@@ -153,13 +153,16 @@ export function parseTaskReading(payload: unknown): KlingMcpTaskReading {
 }
 
 /**
- * Task-level errors the tool documents for `query_tasks` (moderation, credits,
- * unsupported combination, timeout, service error, bad parameter). These say
- * the GENERATION failed. Anything else (e.g. "Invalid generationId.") is
- * treated as transient by the poller.
+ * Task-level errors the tool documents for `query_tasks` that are UNAMBIGUOUS
+ * about the GENERATION itself (moderation, insufficient credits, unsupported
+ * parameter combination, "generation timed out", bad parameter). Anything
+ * else - including generic "service temporarily unavailable" text, which can
+ * just as well be a transient tool outage - is treated as transient by the
+ * poller: wrongly failing a paid job loses its result, while wrongly waiting
+ * only delays the failure until the max age.
  */
 const TASK_FAILURE_TEXT =
-  /disallowed content|insufficient|credits|does not support this parameter|timed out|temporarily unavailable|parameter format is invalid/i
+  /disallowed content|credits are insufficient|does not support this parameter|generation timed out|parameter format is invalid/i
 
 export function isTaskFailureText(text: string | null): boolean {
   return !!text && TASK_FAILURE_TEXT.test(text)

@@ -24,6 +24,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
+import { isSafeResultUrl } from '@/lib/storage/safe-result-url'
 import type { VideoTransport } from './capabilities'
 
 export const NON_TERMINAL_STATUSES = ['queued', 'submitted', 'processing'] as const
@@ -59,20 +60,7 @@ interface Identity {
   transport: VideoTransport
 }
 
-/** Result URLs must be plain https to a public host (blocks SSRF-style targets). */
-export function isSafeResultUrl(value: string): boolean {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    return false
-  }
-  if (url.protocol !== 'https:' || url.username || url.password) return false
-  const host = url.hostname.toLowerCase()
-  if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return false
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':') || /^\d+$/.test(host)) return false
-  return true
-}
+export { isSafeResultUrl }
 
 async function loadIdentified(
   db: SupabaseClient,

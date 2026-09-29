@@ -20,6 +20,8 @@
 // resolutions and aspect ratios): an unknown value never becomes a control.
 
 import {
+  MAX_DURATION_SECONDS,
+  MIN_DURATION_SECONDS,
   VIDEO_ASPECT_RATIOS,
   VIDEO_OPERATIONS,
   VIDEO_RESOLUTIONS,
@@ -110,7 +112,7 @@ function normalizeModel(operation: VideoOperation, raw: unknown): VideoModelCapa
     ...new Set(
       allowedStrings(findArgument(args, 'duration'))
         .map((value) => Number(value))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value <= 120),
+        .filter((value) => Number.isInteger(value) && value >= MIN_DURATION_SECONDS && value <= MAX_DURATION_SECONDS),
     ),
   ].sort((a, b) => a - b)
 

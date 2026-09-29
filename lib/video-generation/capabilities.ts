@@ -25,6 +25,10 @@ export function isVideoOperation(value: unknown): value is VideoOperation {
   return typeof value === 'string' && (VIDEO_OPERATIONS as readonly string[]).includes(value)
 }
 
+/** Bounds of a plausible duration control (seconds); shared by MCP normalization and request validation. */
+export const MIN_DURATION_SECONDS = 1
+export const MAX_DURATION_SECONDS = 120
+
 export const VIDEO_RESOLUTIONS = ['720p', '1080p', '4k'] as const
 export type VideoResolution = (typeof VIDEO_RESOLUTIONS)[number]
 

@@ -13,6 +13,8 @@
 //   - output count is pinned to 1 (one action -> one VideoGeneration -> one video).
 
 import {
+  MAX_DURATION_SECONDS,
+  MIN_DURATION_SECONDS,
   VIDEO_ASPECT_RATIOS,
   VIDEO_RESOLUTIONS,
   audioAllowedAt,
@@ -176,7 +178,7 @@ export function validateVideoRequest(
 export function validateControlVocabulary(operation: unknown, raw: RawVideoControls): VideoRequestValidation | null {
   if (raw.duration !== undefined) {
     const duration = Number(raw.duration)
-    if (!Number.isInteger(duration) || duration < 1 || duration > 120) {
+    if (!Number.isInteger(duration) || duration < MIN_DURATION_SECONDS || duration > MAX_DURATION_SECONDS) {
       return fail('UNSUPPORTED_DURATION', 'Unsupported duration value.')
     }
   }

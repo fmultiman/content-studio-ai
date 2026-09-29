@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { createMcpTransportForGeneration, syncGenerationWithProvider } from '@/lib/video-generation/polling'
 import { KlingRestTransport, type KlingVideoTransport } from '@/lib/video-generation/transport'
@@ -90,7 +91,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       )
     }
 
-    return NextResponse.json({ generation: result.generation ?? generation, outcome: result.outcome })
+    // Same contract as the history list: a finished video is served through a
+    // short-lived presigned URL, never the raw storage URL.
+    const current = result.generation ?? generation
+    let responseGeneration = current
+    if (current.status === 'succeeded' && current.storage_path) {
+      const presigned = await createPresignedReadUrl(current.storage_path)
+      if (presigned) responseGeneration = { ...current, public_url: presigned }
+    }
+
+    return NextResponse.json({ generation: responseGeneration, outcome: result.outcome })
   } catch (err: any) {
     console.error('Video generation sync error:', err instanceof Error ? err.name : 'unknown')
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

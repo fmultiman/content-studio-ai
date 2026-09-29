@@ -113,7 +113,11 @@ export async function syncGenerationWithProvider(
     transport: transport.transport,
   }
 
-  if (options.schedule && now.getTime() - new Date(generation.created_at).getTime() > POLL_MAX_AGE_MS) {
+  // The max age is a LAST resort applied only AFTER a final status check: a
+  // generation that finished at the provider while we were not polling (e.g.
+  // between daily sweeps) must still be completed, never timed out unseen.
+  const expired = options.schedule && now.getTime() - new Date(generation.created_at).getTime() > POLL_MAX_AGE_MS
+  const timeOut = async (): Promise<SyncResult> => {
     const result = await failVideoGeneration(db, {
       ...identity,
       code: 'PROVIDER_POLL_TIMEOUT',
@@ -126,6 +130,7 @@ export async function syncGenerationWithProvider(
   try {
     status = await transport.getStatus(identity.taskId)
   } catch (error) {
+    if (expired) return timeOut()
     if (options.schedule) {
       await reschedule(db, generation, error instanceof ProviderAuthorizationRequiredError ? POLL_AUTH_BACKOFF_MS : pollDelayMs(generation.poll_attempts ?? 0), now)
     }
@@ -146,6 +151,7 @@ export async function syncGenerationWithProvider(
   if (status.state === 'succeeded') {
     if (!status.resultUrl) {
       // Reported done but no downloadable result yet: keep waiting (bounded by the max age).
+      if (expired) return timeOut()
       if (options.schedule) await reschedule(db, generation, pollDelayMs(generation.poll_attempts ?? 0), now)
       return { outcome: 'incomplete_result', generation }
     }
@@ -156,15 +162,18 @@ export async function syncGenerationWithProvider(
         { download: options.download, now: options.now },
       )
       return { outcome: mapOutcome(result.outcome), generation: result.generation }
-    } catch (error) {
+    } catch {
       // Download/storage/DB hiccup: the row is untouched and retried while the URL is still valid.
+      if (expired) return timeOut()
       if (options.schedule) await reschedule(db, generation, pollDelayMs(generation.poll_attempts ?? 0), now)
-      if (error instanceof CompletionStoreError) return { outcome: 'transient_error', generation }
       return { outcome: 'transient_error', generation }
     }
   }
 
-  // Still running. Record `processing` once (compare-and-swap on the earlier statuses).
+  // Still running at the final check: only now may the max age end the wait.
+  if (expired) return timeOut()
+
+  // Record `processing` once (compare-and-swap on the earlier statuses).
   let current = generation
   if (generation.status !== 'processing') {
     const { data } = await db

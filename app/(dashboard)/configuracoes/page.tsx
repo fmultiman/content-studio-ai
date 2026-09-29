@@ -947,7 +947,8 @@ export default function SettingsPage() {
                     onRetryLoad={() => window.location.reload()}
                     connectionsAvailable={connectionsAvailable}
                     liveCredits={liveKlingCredits}
-                    onConnect={() => handleConnectKlingMcp('read_only')}
+                    // Reconnecting keeps the permission level the user already granted (never silently drops generation).
+                    onConnect={() => handleConnectKlingMcp(klingMcpConnection?.generationAuthorized ? 'generation' : 'read_only')}
                     onAuthorizeGeneration={() => handleConnectKlingMcp('generation')}
                     onCheck={async () => {
                       if (klingMcpConnection) await handleCheckKlingMcpConnection(klingMcpConnection.id)

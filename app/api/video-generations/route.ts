@@ -212,8 +212,9 @@ export async function POST(req: NextRequest) {
 
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/kling/callback`
 
+    let submitRes: Awaited<ReturnType<KlingVideoTransport['submit']>>
     try {
-      const submitRes = await transport.submit({
+      submitRes = await transport.submit({
         generationId: generation.id,
         prompt,
         request: videoRequest,
@@ -221,25 +222,6 @@ export async function POST(req: NextRequest) {
         sourceImageUrl: mode === 'image_to_video' ? resolvedSourceUrl : undefined,
         callbackUrl: transport.transport === 'rest' ? callbackUrl : undefined,
       })
-
-      // Update provider status. MCP has no callback: schedule its first poll now.
-      const { data: submittedGen, error: updateError } = await supabase
-        .from('video_generations')
-        .update({
-          status: 'submitted',
-          task_id: submitRes.taskId,
-          provider_metadata: submitRes.providerMetadata,
-          ...(transport.transport === 'mcp' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
-        })
-        .eq('id', generation.id)
-        .select()
-        .single()
-
-      if (updateError) {
-        throw new Error(`Failed to update task_id: ${updateError.message}`)
-      }
-
-      return NextResponse.json({ generation: submittedGen })
     } catch (providerError: any) {
       // Only the error CLASS is logged: provider text/URLs are never written to logs.
       console.error('Kling provider failure:', providerError instanceof Error ? providerError.name : 'unknown')
@@ -262,6 +244,43 @@ export async function POST(req: NextRequest) {
         .eq('id', generation.id)
       return NextResponse.json({ error: 'Provider submission failed', details: providerError.message }, { status: 500 })
     }
+
+    // The provider has ACCEPTED the job (and may bill it) from here on. Recording
+    // its task id is therefore handled separately from the submission itself: a
+    // failure to record must NEVER be reported as "the submission failed" (the
+    // user would retry and be charged twice). MCP has no callback, so its first
+    // poll is scheduled now.
+    const submittedPatch = {
+      status: 'submitted',
+      task_id: submitRes.taskId,
+      provider_metadata: submitRes.providerMetadata,
+      ...(transport.transport === 'mcp' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
+    }
+    let recorded = await supabase.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
+    if (recorded.error || !recorded.data) {
+      // One more attempt with server authority (not blocked by row-level policy).
+      try {
+        recorded = await createServiceRoleSupabase().from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
+      } catch {
+        // fall through to the unrecorded response below
+      }
+    }
+    if (recorded.error || !recorded.data) {
+      // Provider ids are not secrets; logged so an operator can reconcile the accepted job.
+      console.error('Video submission accepted but could not be recorded', {
+        generationId: generation.id,
+        taskId: submitRes.taskId,
+        transport: transport.transport,
+      })
+      return jsonError(
+        502,
+        'SUBMISSION_UNRECORDED',
+        'A Kling aceitou a geração, mas não conseguimos registrá-la. NÃO tente de novo: verifique a sua conta Kling antes de gerar outro vídeo.',
+        { outcomeUnknown: true },
+      )
+    }
+
+    return NextResponse.json({ generation: recorded.data })
   } catch (error: any) {
     console.error('Create video generation route error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

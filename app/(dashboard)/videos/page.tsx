@@ -14,7 +14,7 @@
  * Long-term /videos becomes AI video / clip source-media generation (like
  * /imagens); that does not exist yet and is not simulated here.
  */
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -90,29 +90,41 @@ function VideosPageContent() {
   // check the ones in flight. This is only a convenience — the scheduled
   // server-side poller completes them even if nobody is watching. REST
   // generations are unchanged (they complete through the Kling callback).
+  // One STABLE interval reads the latest list through a ref (so a state update
+  // never re-arms the timer) and checks the in-flight generations in parallel.
+  const generationsRef = useRef<any[]>([])
   useEffect(() => {
-    const active = generations.filter(
-      (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
-    )
-    if (active.length === 0) return
+    generationsRef.current = generations
+  }, [generations])
+
+  const hasActiveMcpGeneration = generations.some(
+    (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
+  )
+  useEffect(() => {
+    if (!hasActiveMcpGeneration) return
     const timer = setInterval(async () => {
-      for (const item of active) {
-        try {
-          const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
-          if (!response.ok) continue
-          const payload = await response.json()
-          if (payload?.generation && payload.generation.status !== item.status) {
-            setGenerations((previous: any[]) =>
-              previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
-            )
+      const active = generationsRef.current.filter(
+        (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
+      )
+      await Promise.all(
+        active.map(async (item: any) => {
+          try {
+            const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
+            if (!response.ok) return
+            const payload = await response.json()
+            if (payload?.generation && payload.generation.status !== item.status) {
+              setGenerations((previous: any[]) =>
+                previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
+              )
+            }
+          } catch {
+            // Next tick retries; the server poller does not depend on this.
           }
-        } catch {
-          // Next tick retries; the server poller does not depend on this.
-        }
-      }
+        }),
+      )
     }, 30_000)
     return () => clearInterval(timer)
-  }, [generations])
+  }, [hasActiveMcpGeneration])
 
   // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {

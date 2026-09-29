@@ -175,14 +175,50 @@ describe('syncGenerationWithProvider — status transitions', () => {
     expect(db.tables.video_generations).toHaveLength(1)
   })
 
-  it('a generation unresolved after the max age is failed with an explicit "check your Kling account" message', async () => {
-    const db = dbWith([generation({ status: 'processing', created_at: iso(-(POLL_MAX_AGE_MS + 1)) })])
-    const transport = transportReturning({ state: 'processing', rawState: 'processing' })
-    const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transport, options())
+  describe('max age (a LAST resort, applied only after a final status check)', () => {
+    const old = () => generation({ status: 'processing', created_at: iso(-(POLL_MAX_AGE_MS + 1)) })
 
-    expect(result.outcome).toBe('timed_out')
-    expect(transport.getStatus).not.toHaveBeenCalled()
-    expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'PROVIDER_POLL_TIMEOUT' } })
+    it('a generation still processing at the final check is failed with an explicit "check your Kling account" message', async () => {
+      const db = dbWith([old()])
+      const transport = transportReturning({ state: 'processing', rawState: 'processing' })
+      const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transport, options())
+
+      expect(result.outcome).toBe('timed_out')
+      expect(transport.getStatus).toHaveBeenCalledTimes(1)
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'PROVIDER_POLL_TIMEOUT' } })
+    })
+
+    it('a generation that FINISHED at the provider while nobody was polling is completed, never timed out unseen', async () => {
+      const db = dbWith([old()])
+      const opts = options()
+      const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning({ state: 'succeeded', resultUrl: RESULT_URL, rawState: 'succeed' }), opts)
+
+      expect(result.outcome).toBe('completed')
+      expect(opts.download).toHaveBeenCalledTimes(1)
+      expect(db.tables.video_generations[0].status).toBe('succeeded')
+    })
+
+    it('a provider-reported failure is recorded as the provider failure, not as a timeout', async () => {
+      const db = dbWith([old()])
+      await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning({ state: 'failed', message: 'blocked', code: 'PROVIDER_FAILED', rawState: 'failed' }), options())
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'PROVIDER_FAILED' } })
+    })
+
+    it.each([
+      ['an unreachable provider', new ProviderConnectionError('PROVIDER_UNAVAILABLE')],
+      ['a revoked authorization', new ProviderAuthorizationRequiredError()],
+    ])('%s past the max age ends the wait with a timeout', async (_name, error) => {
+      const db = dbWith([old()])
+      const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(error), options())
+      expect(result.outcome).toBe('timed_out')
+      expect(db.tables.video_generations[0].status).toBe('failed')
+    })
+
+    it('within the max age the same errors never fail the job', async () => {
+      const db = dbWith([generation({ status: 'processing', created_at: iso(-(POLL_MAX_AGE_MS - 60_000)) })])
+      await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(new ProviderConnectionError('PROVIDER_UNAVAILABLE')), options())
+      expect(db.tables.video_generations[0].status).toBe('processing')
+    })
   })
 
   it('manual REST sync (schedule:false) never touches scheduling columns or enforces the MCP max age', async () => {

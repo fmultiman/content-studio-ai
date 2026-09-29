@@ -451,6 +451,79 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
   })
 })
 
+describe('POST /api/video-generations — an ACCEPTED submission is never reported as failed', () => {
+  /** A user client whose UPDATE of video_generations fails (RLS/network) after the row was inserted. */
+  const breakUpdates = (db: any, options: { alsoServiceRole?: boolean } = {}) => {
+    const failing = () => {
+      const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'rls' } }), then: (r: any) => r({ data: null, error: { message: 'rls' } }) }
+      return chain
+    }
+    const original = db.from
+    const patched = (table: string) => {
+      const builder = original.call(db, table)
+      if (table === 'video_generations') builder.update = failing
+      return builder
+    }
+    const client = { from: patched, auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) } }
+    vi.mocked(server.createClient).mockResolvedValue(client as any)
+    if (options.alsoServiceRole) vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({ from: patched } as any)
+  }
+
+  it('MCP: if recording the task id fails once, a server-authority retry records it and the user is NOT told to retry', async () => {
+    const db = makeDb({ connections: [connectionRow()] })
+    signIn(db)
+    const mcp = installFakeMcp()
+    // User-session updates fail; the service-role client (same in-memory db) succeeds.
+    const original = db.from
+    vi.mocked(server.createClient).mockResolvedValue({
+      from: (table: string) => {
+        const builder = original.call(db, table)
+        if (table === 'video_generations') builder.update = () => { const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'rls' } }) }; return chain }
+        return builder
+      },
+      auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) },
+    } as any)
+
+    const response = await post(mcpBody())
+
+    expect(response.status).toBe(200)
+    expect(mcp.calls).toHaveLength(1)
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'submitted', task_id: 'mcp-gen-1', transport: 'mcp' })
+  })
+
+  it('if the accepted job cannot be recorded at all: 502 SUBMISSION_UNRECORDED with an explicit DO-NOT-RETRY message, the row is not marked failed, and the provider id is logged for reconciliation', async () => {
+    const db = makeDb({ connections: [connectionRow()] })
+    signIn(db)
+    breakUpdates(db, { alsoServiceRole: true })
+    const mcp = installFakeMcp()
+
+    const response = await post(mcpBody())
+    const body = await response.json()
+
+    expect(response.status).toBe(502)
+    expect(body).toMatchObject({ code: 'SUBMISSION_UNRECORDED', outcomeUnknown: true })
+    expect(body.error).toMatch(/NÃO tente de novo/)
+    // Exactly one billed submission; nothing was retried; the row was never mislabeled as a failed submission.
+    expect(mcp.calls).toHaveLength(1)
+    expect(db.tables.video_generations[0].status).toBe('queued')
+    expect(consoleError.mock.calls.flat().map((entry: unknown) => JSON.stringify(entry)).join(' ')).toContain('mcp-gen-1')
+    noSecretsIn(consoleError.mock.calls)
+  })
+
+  it('REST gets the same protection (the accepted Kling task is not reported as a failed submission)', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    signIn(db)
+    breakUpdates(db, { alsoServiceRole: true })
+
+    const response = await post({ ...base, mode: 'text_to_video' })
+
+    expect(response.status).toBe(502)
+    expect((await response.json()).code).toBe('SUBMISSION_UNRECORDED')
+    expect(restCalls).toHaveLength(1)
+    expect(db.tables.video_generations[0].status).toBe('queued')
+  })
+})
+
 describe('POST /api/video-generations — MCP provider errors are normalized safely', () => {
   const submit = async (reply: FakeMcp['reply'], setup?: (mcp: FakeMcp) => void) => {
     const db = makeDb({ connections: [connectionRow()] })
@@ -529,6 +602,18 @@ describe('POST /api/video-generations/[id]/sync — transport-aware', () => {
     noSecretsIn(body)
     // The REST adapter is not involved for an MCP generation.
     expect(constructedApiKeys).toEqual([])
+  })
+
+  it('the response for a finished video carries a PRESIGNED url (same contract as the history list), never the raw storage url', async () => {
+    const db = makeDb({ connections: [connectionRow()], generations: [mcpGeneration()] })
+    signIn(db)
+    installFakeMcp(() => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'succeed', works: [{ url: 'https://cdn.example.test/v.mp4' }] }) }] }))
+    vi.mocked(downloadAndStoreVideo).mockResolvedValue({ storagePath: 'user-a/videos/ai/proj-1/gen-1.mp4', publicUrl: 'https://s3.example.test/raw/gen-1.mp4', mime: 'video/mp4', size: 5 })
+
+    const body = await (await sync()).json()
+
+    expect(body.generation.public_url).toBe('https://s3.example.test/signed-source.png?sig=1')
+    expect(body.generation.public_url).not.toContain('/raw/')
   })
 
   it('a second sync of the finished generation is a no-op (idempotent)', async () => {

@@ -239,6 +239,8 @@ The spike's connection is read-only (`generation.read account.credit.read`). Gen
 - OAuth **client registration vs scope**: a client registered read-only is replaced by a broader
   registration for the explicit generation request (existing grants keep refreshing with the client
   they were issued to). Whether Kling enforces registered scope is **UNVERIFIED** (see §17).
+- **Reconnect keeps the permission level** already granted (a generation-authorized connection that
+  needs re-authorization re-requests `generation.create`; it is never silently downgraded).
 - If Kling grants fewer scopes than requested the connection truthfully stays read-only
   (`generationAuthorized` is computed from granted scopes).
 - A failed/declined upgrade leaves the existing connection and tokens exactly as they were.
@@ -273,6 +275,13 @@ no elements, no arbitrary UI JSON. Tool allow-list `text_to_video`, `image_to_vi
 (a second, separate gate from the read-only `who_am_i`/`query_membership_and_credits` gate; every
 other tool is refused locally).
 
+**Accepted-but-unrecorded submissions**: once the provider has accepted a job, recording its task id
+is handled separately from the submission (retried once with server authority). If it still cannot be
+recorded the API answers `502 SUBMISSION_UNRECORDED` ("do NOT retry — check your Kling account"), the
+row is *not* marked as a failed submission, and the provider id is logged for reconciliation — a
+recording failure can never be mistaken for "the submission failed" (which would invite a second
+charge). Applies to REST and MCP.
+
 **Submit failure semantics**: one attempt, never retried (a retry is a second charge). Provider
 rejections are classified (`PROVIDER_QUOTA_EXCEEDED` → 402 — Kling credits; `PROVIDER_CONTENT_REJECTED`;
 `PROVIDER_REJECTED`). A failure **after** the request may have reached Kling, or a success whose
@@ -306,8 +315,16 @@ plus DB-persisted schedule state — no Redis/BullMQ/Temporal/worker.
 thereafter (cap) — far under Kling's documented 5 QPS and inside the 24 h URL lifetime. Authorization
 lost → 5 min backoff and the paid job is **not** failed (recoverable on reconnect). Provider /
 store / encryption / download hiccups → backoff, row untouched. A generation unresolved after **6 h**
-is failed with an explicit "check your Kling account" message. A `queued` MCP row with no provider
+is failed with an explicit "check your Kling account" message — **but only after one final status
+check** (a job that finished at Kling while nobody was polling, e.g. between daily sweeps, is
+completed, never timed out unseen). A `queued` MCP row with no provider
 task older than 15 min (interrupted submit) is failed `SUBMISSION_INTERRUPTED`.
+
+**Task-error classification**: an `isError` `query_tasks` result fails the generation only for
+*unambiguous* documented task failures (moderation, insufficient credits, unsupported parameter
+combination, "generation timed out", invalid parameter). Generic outage text ("temporarily
+unavailable", request timeouts, unknown errors, "Invalid generationId.") is **transient** — wrongly
+failing a paid job loses its result, while waiting only delays the failure until the max age.
 
 **Status vocabulary caveat**: the raw `query_tasks` states and the exact submit/query response
 shapes are **UNVERIFIED** (discovery could not observe a real task). `kling-mcp-task.ts` is
@@ -316,7 +333,8 @@ URL, the raw state string is surfaced (bounded) as evidence, and a submit respon
 id is treated as possibly-billed. The first paid proof must capture the real payloads and tighten
 this parser and its tests.
 
-**Manual/recovery**: `POST /api/video-generations/[id]/sync` is now transport-aware and calls the
+**Manual/recovery**: `POST /api/video-generations/[id]/sync` is now transport-aware (and returns the
+same *presigned* URL contract as the history list for finished videos) and calls the
 **same** `syncGenerationWithProvider` — no second completion implementation. Legacy/REST rows
 (`transport` NULL/`rest`) sync via the user's Kling API key exactly as before.
 
@@ -353,6 +371,13 @@ to `vercel.json`: on a Hobby plan a sub-daily cron **fails the deployment**.
 - the terminal write is a **database compare-and-swap** (`WHERE status IN (queued, submitted,
   processing)`) — not an in-memory lock: exactly one caller wins, the rest see `already_terminal`;
 - a failed download/storage step leaves the row non-terminal (retryable while the URL is valid);
+- the provider result is fetched **defensively** (`lib/storage/video-downloader.ts`,
+  `safe-result-url.ts`): https only; every hop — redirects are followed **manually** (max 3) and
+  re-validated — must be a public host **and resolve to public addresses only** (DNS check blocks
+  private/loopback/link-local/CGNAT/unique-local); 50 s timeout; 300 MB cap enforced while streaming
+  (also when `content-length` lies or is absent); only `video/*` or `octet-stream` content types;
+  stored size is the actual byte count. (Residual: DNS is resolved before `fetch`, so a rebinding
+  race between the check and the connection is theoretically possible.);
 - the temporary provider URL is **never persisted**; only `{mime, size, transport, provider_task_id,
   provider_state, completed_at}`; result URLs must be plain `https` to a public host (no
   localhost/IP literals/`.internal`/`.local`/credentials) or the generation is failed

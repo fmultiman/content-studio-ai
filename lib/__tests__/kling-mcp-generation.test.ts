@@ -246,6 +246,27 @@ describe('MCP status query and result parsing', () => {
     await expect(queryKlingMcpTask(TOKEN, 'g', invalid.deps)).rejects.toMatchObject({ code: 'PROVIDER_TOOL_ERROR' })
   })
 
+  it.each([
+    'Service is temporarily unavailable; please retry later',
+    'Request timed out',
+    'Internal error',
+    'rate limited',
+  ])('ambiguous/outage text %j is TRANSIENT: it must never terminally fail a possibly-running paid generation', async (text) => {
+    const { deps } = fakeClient({ callTool: async () => ({ isError: true, content: [{ type: 'text', text }] }) })
+    await expect(queryKlingMcpTask(TOKEN, 'g', deps)).rejects.toMatchObject({ code: 'PROVIDER_TOOL_ERROR' })
+  })
+
+  it.each([
+    'The prompt/input media contains disallowed content',
+    'Account inspiration credits are insufficient; please top up',
+    'The selected model does not support this parameter combination',
+    'Generation timed out; please resubmit in a moment',
+    'Parameter format is invalid',
+  ])('unambiguous documented task failure %j fails the generation', async (text) => {
+    const { deps } = fakeClient({ callTool: async () => ({ isError: true, content: [{ type: 'text', text }] }) })
+    expect(await queryKlingMcpTask(TOKEN, 'g', deps)).toMatchObject({ state: 'failed', message: text })
+  })
+
   it('a malformed generation id is refused locally, before any connection', async () => {
     const { client, deps } = fakeClient()
     await expect(queryKlingMcpTask(TOKEN, 'x; drop', deps)).rejects.toBeInstanceOf(ProviderConnectionError)
