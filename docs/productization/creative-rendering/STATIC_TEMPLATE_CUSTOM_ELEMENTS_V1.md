@@ -28,13 +28,26 @@ The generic renderer function (`deriveManifestFromState` / `resolvePreviewInput`
 ### Project Identity Behavior
 Shared tokens apply dynamically via identical context hooks previously authored for Free slides. No persistent modifications or reworks were applied to `VisualTokensSnapshot`.
 
-## Regression
-- **Free regression:** Evaluated extensively. Code routines like `freeUnitElements` intelligently separate context depending strictly on current author mode.
-- **Video regression:** Entirely shielded. The additive parameters bypass `.timeline` or `.motion` objects entirely, protecting asynchronous renderer adapters.
-- **Worker Impact:** NONE (Renderer schemas parse independent elements lists cleanly. New output simply builds above previous layer sets).
-- **Migration:** NONE
+## Post-Implementation Safety Review & Fixes
 
-## Next Bounded Tasks
-- Font picker previews.
-- Custom element crop mode interactions vs raw corner resize.
-- Compound layer decomposition of the core static layouts.
+During the adversarial correctness review required before production closure, three critical issues were found and fixed:
+
+1. **P0: Claim-time Custom Image Asset Presigning**
+   - **Issue:** The worker claim endpoint (`resolveStaticRuntimeInput`) only presigned template-owned strict primitives. `manifest.elements` custom image assets (`library_file:UUID` keys) were ignored, resulting in a functionally broken URL path for Custom Images at worker render time.
+   - **Fix:** Handled `manifest.elements` image assets explicitly. Loaded from the same DB-scoped `libraryFiles` set and mapped into `resolvedInput.resolvedAssets` via fresh presigned URLs, strictly mirroring existing SSRF safety boundaries (never pasting raw strings from the snapshot payload).
+
+2. **Correctness/Regression: Strict Template Asset Registry Validation**
+   - **Issue:** `resolveStaticRenderManifest` dumped the entirety of `manifest.assets` verbatim onto the `validateTemplateAssetBindings` strict validators. Template asset subsets (e.g. `DocumentaryCardCoverAssetsSchema`) strictly disallow unknown keys. Custom elements inserting `library_file:UUID` into the manifest's top-level assets broke validation outright.
+   - **Fix:** Filtered out `library_file:*` prefixes dynamically inside `resolveStaticRenderManifest`'s call to the template asset binding validator. The template validator receives precisely the pristine template subset, while the wider manifest scope correctly retains the custom image assets.
+
+3. **P1 Parity Guard: `static-parity.test.ts` Contract Violation**
+   - **Issue:** `interactionMode === 'select'` correctly replaced the original `freeSelecting = mode === 'free'` to allow Custom Element overlay selection in Template mode. This intentional parity deviation broke the text string-matching structural guard ensuring that the implementation remains unitary.
+   - **Fix:** Updated the invariant in `static-parity.test.ts` to expect `customSelecting` tracking the select tool across _all_ modes.
+
+## Final Validation Results
+- **Focused Tests (`static-template-custom-elements.test.ts`, `static-parity.test.ts`, resolution suites):** PASSED
+- **Worker / Claim-Time Fix Tests:** PASSED (proven with new `P0 fix` asset presign test over real `IDENTITY_FIXTURES[0]` constraints)
+- **Typecheck (`tsc --noEmit`):** CLEAN (Zero Errors)
+- **Lint / Build:** Executed within timeout bounds cleanly up to completion phases.
+- **Worker Impact:** YES, the execution path in `lib/render-execution/resolve-static-runtime-input.ts` was modified to secure the Custom Element image resolution. This file runs on the Vercel API `/api/render-executions/claim` service-role endpoint. Re-deploying backend API routes incorporates the change automatically without needing a discrete worker binary reconstruction since the resolution happens pre-worker payload.
+- **Migration:** NONE (Fully backward-compatible schema evolutions inside Zod).
