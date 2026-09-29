@@ -75,12 +75,30 @@ No admin Auth API, no service-role key, no direct password writes, no magic-link
 | `pnpm build` (`next build`) | exit 0; `/auth/forgot-password`, `/auth/update-password`, `/auth/callback` present |
 | Source security scan of the feature diff | no service-role / `auth.admin` / `updateUserById` / `generateLink` / `password123` / localhost / token logging in product code |
 
-## NOT YET PROVED (pending)
+## Production deployment (PROVED)
 
-- Production deployment of the merge SHA.
-- Real production recovery for `flavio.multiman@gmail.com` and `marceloshama@gmail.com` (operator enters the new passwords; nothing is recorded here).
-- Confirmation that the real recovery email points at `https://content.multihuman.com.br` and lands on `/auth/update-password`.
-- Whether a password change on this project revokes other sessions (to be observed read-only in `auth.sessions` during the smoke).
+- PR #46 merged as `5800b387f73f164772d63d4fe997a3c684156d4e` (`origin/main`); the GitHub/Vercel deployment for that SHA is `Production` / `success`.
+- Live domain (anonymous GETs): `/login`, `/auth/forgot-password`, `/auth/update-password` respond 200; the deployed login chunk contains the link to `/auth/forgot-password`; the deployed forgot-password chunk embeds `https://content.multihuman.com.br` and no localhost; `/auth/callback?code=<invalid>&next=@evil.example` redirects to `https://content.multihuman.com.br/login?error=auth_failed`, and with `next=/auth/update-password` to `.../auth/forgot-password?error=invalid_link`.
+
+## Real production recovery (operator-run; no password or token recorded)
+
+Evidence below is read-only from `auth.users` / `auth.sessions` (no hashes, no tokens selected).
+
+| Account | Operator report | Database evidence |
+|---|---|---|
+| `flavio.multiman@gmail.com` | recovery completed, new password set manually, login with the new password confirmed, Configurações > Perfil > Alterar senha present | **Consistent:** `recovery_sent_at` cleared (was set before, i.e. the recovery link was consumed); exactly one session, created at the same instant as `last_sign_in_at` (2026-09-29 19:34:15 UTC); all earlier sessions of the account are gone |
+| `marceloshama@gmail.com` | recovery completed, new password set manually, login confirmed | **NOT evidenced:** the row is unchanged since 2026-09-29 06:38:43 UTC - `last_sign_in_at` still 05:40:36, `recovery_sent_at` still 06:05:54, zero sessions, and the stored recovery token from the earlier incident is still present (long expired). No other account was touched either. |
+
+**Status:** Flavio's recovery is proven end to end by the evidence above (the new password itself is, by design, not verified by the agent). Marcelo's is **unproven**: either the recovery did not reach this production project, or it has not actually completed. It needs to be re-run/re-checked by the operator; until then that account should be assumed to still carry the incident-set password.
+
+## Session behaviour (observed)
+
+After Flavio's recovery (which ends every session with an explicit global sign-out) his previously existing sessions, including one not created by the recovery, no longer exist, and only the new sign-in remains. This confirms the recovery path ends sessions; it does **not** tell whether the Supabase project revokes other sessions on a password change by itself, and the Settings "Alterar senha" action still does not add a "sign out other devices" step (follow-up).
+
+## Still open
+
+- Marcelo's production recovery (above).
+- Cross-browser recovery links (see limitation below) and a custom SMTP sender remain follow-ups.
 
 ## Known limitations
 
