@@ -7,7 +7,9 @@ import {
   pollDueMcpGenerations,
   POLL_AUTH_BACKOFF_MS,
   POLL_BATCH_LIMIT,
+  POLL_CONCURRENCY,
   POLL_DELAYS_MS,
+  POLL_HARD_MAX_AGE_MS,
   POLL_LEASE_MS,
   POLL_MAX_AGE_MS,
   QUEUED_ORPHAN_AGE_MS,
@@ -207,14 +209,43 @@ describe('syncGenerationWithProvider — status transitions', () => {
     it.each([
       ['an unreachable provider', new ProviderConnectionError('PROVIDER_UNAVAILABLE')],
       ['a revoked authorization', new ProviderAuthorizationRequiredError()],
-    ])('%s past the max age ends the wait with a timeout', async (_name, error) => {
+      ['a connection store outage', new ProviderConnectionError('CONNECTION_STORE_UNAVAILABLE')],
+    ])('%s past the SOFT max age is NOT a verdict: the paid job keeps being retried (a daily sweep may hit one blip)', async (_name, error) => {
       const db = dbWith([old()])
       const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(error), options())
-      expect(result.outcome).toBe('timed_out')
-      expect(db.tables.video_generations[0].status).toBe('failed')
+      expect(['transient_error', 'authorization_required']).toContain(result.outcome)
+      expect(db.tables.video_generations[0].status).toBe('processing')
+      expect(new Date(db.tables.video_generations[0].next_poll_at).getTime()).toBeGreaterThan(NOW.getTime())
     })
 
-    it('within the max age the same errors never fail the job', async () => {
+    it('a download/storage failure past the soft max age is retried too (the result URL is still valid)', async () => {
+      const db = dbWith([old()])
+      const result = await syncGenerationWithProvider(
+        db,
+        db.tables.video_generations[0],
+        transportReturning({ state: 'succeeded', resultUrl: RESULT_URL, rawState: 'succeed' }),
+        options({ download: async () => { throw new Error('S3 blip') } }),
+      )
+      expect(result.outcome).toBe('transient_error')
+      expect(db.tables.video_generations[0].status).toBe('processing')
+    })
+
+    it.each([
+      ['an unreachable provider', new ProviderConnectionError('PROVIDER_UNAVAILABLE')],
+      ['a revoked authorization', new ProviderAuthorizationRequiredError()],
+    ])('%s past the HARD cap (inside the 24 h URL lifetime) finally ends the wait', async (_name, error) => {
+      const db = dbWith([generation({ status: 'processing', created_at: iso(-(POLL_HARD_MAX_AGE_MS + 1)) })])
+      const result = await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(error), options())
+      expect(result.outcome).toBe('timed_out')
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'PROVIDER_POLL_TIMEOUT' } })
+    })
+
+    it('the hard cap sits inside the provider result-URL lifetime', () => {
+      expect(POLL_HARD_MAX_AGE_MS).toBeGreaterThan(POLL_MAX_AGE_MS)
+      expect(POLL_HARD_MAX_AGE_MS).toBeLessThan(24 * 60 * 60_000)
+    })
+
+    it('within the soft max age the same errors never fail the job', async () => {
       const db = dbWith([generation({ status: 'processing', created_at: iso(-(POLL_MAX_AGE_MS - 60_000)) })])
       await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(new ProviderConnectionError('PROVIDER_UNAVAILABLE')), options())
       expect(db.tables.video_generations[0].status).toBe('processing')
@@ -289,6 +320,20 @@ describe('pollDueMcpGenerations — the scheduled poller (no user session)', () 
     expect(summary.claimed).toBe(2)
     expect(db.tables.video_generations.find((row: any) => row.id === 'b').status).toBe('succeeded')
     expect(db.tables.video_generations.find((row: any) => row.id === 'a').status).toBe('submitted')
+  })
+
+  it('bounds concurrency (each completion can buffer a whole video) and stops starting rows when out of time', async () => {
+    expect(POLL_CONCURRENCY).toBeLessThanOrEqual(2)
+
+    const rows = [generation({ id: 'a', task_id: 't-a' }), generation({ id: 'b', task_id: 't-b' })]
+    const db = dbWith(rows)
+    const transport = transportReturning({ state: 'processing', rawState: 'x' })
+    const summary = await pollDueMcpGenerations(db, { now: () => NOW, transportFactory: async () => transport, timeBudgetMs: -1 })
+
+    // Out of time: nothing was claimed, so every row stays due for the next run.
+    expect(summary).toMatchObject({ due: 2, claimed: 0 })
+    expect(transport.getStatus).not.toHaveBeenCalled()
+    expect(db.tables.video_generations.map((row: any) => row.poll_attempts)).toEqual([0, 0])
   })
 
   it('bounds the batch size (no thundering herd)', async () => {

@@ -177,6 +177,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (mode === 'image_to_video' && !resolvedSourceUrl) {
+      return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
+    }
+
     // Insert queued state. `request_config` is the exact, explicit set of values
     // that is sent to the provider (reproducible/debuggable) — never a secret.
     const { data: generation, error: dbError } = await supabase

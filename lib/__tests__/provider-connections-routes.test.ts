@@ -401,11 +401,24 @@ describe('DELETE /api/provider-connections/[id]', () => {
     expect(db.log.filter((entry) => entry.endsWith(':user_settings'))).toEqual([])
   })
 
+  it('an INTERRUPTED queued row (no provider task, past the orphan cutoff) cannot need the grant and does not block a disconnect', async () => {
+    const db = seed()
+    db.tables.video_generations.push({ id: 'gen-orphan', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'queued', task_id: null, created_at: new Date(Date.now() - 60 * 60_000).toISOString() })
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(200)
+    expect(db.tables.provider_connections.map((row) => row.id)).toEqual(['conn-2'])
+  })
+
   it.each(['queued', 'submitted', 'processing'])(
     'REFUSES to disconnect (409) while a %s generation depends on the connection, keeping the grant needed to retrieve the paid result',
     async (status) => {
       const db = seed()
-      db.tables.video_generations.push({ id: 'gen-active', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status })
+      db.tables.video_generations.push({ id: 'gen-active', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status, created_at: new Date().toISOString() })
       signedIn('user-a')
       serviceDb(db)
 
@@ -446,7 +459,7 @@ describe('DELETE /api/provider-connections/[id]', () => {
     const originalFrom = db.from
     db.from = vi.fn((table: string) => {
       if (table === 'video_generations') {
-        const chain: any = { select: () => chain, eq: () => chain, in: () => chain, limit: () => chain, then: (resolve: any) => resolve({ data: null, error: { message: 'boom' } }) }
+        const chain: any = { select: () => chain, eq: () => chain, in: () => chain, gt: () => chain, limit: () => chain, then: (resolve: any) => resolve({ data: null, error: { message: 'boom' } }) }
         return chain
       }
       return originalFrom.call(db, table)

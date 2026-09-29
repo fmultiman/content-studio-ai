@@ -293,6 +293,33 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(false)
   })
 
+  it('an unconfirmed (possibly billed) submission LOCKS the form and tells the user not to retry', async () => {
+    connectionsPayload = { connections: [describeRestConnection('configured')] }
+    const onSuccess = vi.fn()
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/api/video-generations/connections') return new Response(JSON.stringify(connectionsPayload), { status: 200 })
+      if (url === '/api/video-generations' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ error: 'A Kling aceitou a geração, mas não conseguimos registrá-la. NÃO tente de novo.', code: 'SUBMISSION_UNRECORDED', outcomeUnknown: true }), { status: 502 })
+      }
+      return new Response('{}', { status: 200 })
+    })
+    render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" onSuccess={onSuccess} />)
+    await waitFor(() => expect(screen.getByTestId('video-model-select')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('operation-text_to_video'))
+    fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
+    await waitFor(() => expect(screen.getByPlaceholderText(/Descreva a cena/)).toBeTruthy())
+    fireEvent.change(screen.getByPlaceholderText(/Descreva a cena/), { target: { value: 'a fox' } })
+    fireEvent.click(screen.getByTestId('generate-video'))
+
+    await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
+    expect(screen.getByTestId('video-submission-unconfirmed').textContent).toMatch(/não tente de novo/i)
+    expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+    const posts = fetchMock.mock.calls.filter(([url, init]) => url === '/api/video-generations' && init?.method === 'POST')
+    expect(posts).toHaveLength(1)
+  })
+
   it('never renders provider secrets, raw schema keys or account identifiers', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     const { container } = renderDialog()

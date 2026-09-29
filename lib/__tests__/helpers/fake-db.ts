@@ -46,6 +46,7 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     filters.every(([column, op, value]) => {
       if (op === 'eq') return row[column] === value
       if (op === 'lt') return row[column] < value
+      if (op === 'gt') return row[column] !== null && row[column] !== undefined && row[column] > value
       if (op === 'lte') return row[column] !== null && row[column] !== undefined && row[column] <= value
       if (op === 'in') return (value as any[]).includes(row[column])
       if (op === 'is') return (row[column] ?? null) === value
@@ -134,6 +135,10 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       },
       lt(column: string, value: any) {
         filters.push([column, 'lt', value])
+        return builder
+      },
+      gt(column: string, value: any) {
+        filters.push([column, 'gt', value])
         return builder
       },
       lte(column: string, value: any) {

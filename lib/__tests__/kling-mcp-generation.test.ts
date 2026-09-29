@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { UnauthorizedError } from '@modelcontextprotocol/client'
+import { ProtocolError, ProtocolErrorCode, SdkErrorCode, SdkHttpError, UnauthorizedError } from '@modelcontextprotocol/client'
 import {
   buildKlingMcpVideoCall,
   KlingMcpSubmitError,
@@ -156,6 +156,34 @@ describe('MCP submit (mocked client only — no real provider call)', () => {
     expect(error).toMatchObject({ failureClass: 'PROVIDER_UNAVAILABLE', outcomeUnknown: true })
     expect(client.callTool).toHaveBeenCalledTimes(1)
     expect(String(error.message)).not.toContain(TOKEN)
+  })
+
+  it.each([
+    ['a JSON-RPC error response (invalid params)', () => new ProtocolError(ProtocolErrorCode.InvalidParams, 'bad params')],
+    ['an HTTP 403 (permission)', () => new SdkHttpError(SdkErrorCode.ClientHttpForbidden, 'forbidden', { status: 403 })],
+    ['an HTTP 400', () => new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'bad request', { status: 400 })],
+  ])('%s means the tool did NOT run: a definitive rejection, not an "unknown outcome"', async (_name, make) => {
+    const { client, deps } = fakeClient({ callTool: async () => { throw make() } })
+    const error = await submitKlingMcpVideo(TOKEN, builtCall(), deps).catch((e) => e)
+    expect(error).toBeInstanceOf(KlingMcpSubmitError)
+    expect(error).toMatchObject({ failureClass: 'PROVIDER_REJECTED', outcomeUnknown: false })
+    expect(client.callTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('a 403 tells the user the account is not authorized to generate (not "check for a charge")', async () => {
+    const { deps } = fakeClient({ callTool: async () => { throw new SdkHttpError(SdkErrorCode.ClientHttpForbidden, 'forbidden', { status: 403 }) } })
+    const error = await submitKlingMcpVideo(TOKEN, builtCall(), deps).catch((e) => e)
+    expect(error.message).toMatch(/Autorize a geração/)
+    expect(error.message).not.toMatch(/Verifique a sua conta/)
+  })
+
+  it.each([
+    ['a 5xx after sending', () => new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'upstream', { status: 502 })],
+    ['a dropped connection', () => new Error('ECONNRESET')],
+  ])('%s may have reached the tool: it stays an UNKNOWN outcome', async (_name, make) => {
+    const { deps } = fakeClient({ callTool: async () => { throw make() } })
+    const error = await submitKlingMcpVideo(TOKEN, builtCall(), deps).catch((e) => e)
+    expect(error).toMatchObject({ failureClass: 'PROVIDER_UNAVAILABLE', outcomeUnknown: true })
   })
 
   it('a token rejected before any tool call is an authorization error (nothing submitted)', async () => {

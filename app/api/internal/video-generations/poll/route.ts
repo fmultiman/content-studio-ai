@@ -15,7 +15,7 @@ import { pollDueMcpGenerations } from '@/lib/video-generation/polling'
 // text or anything token-related.
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const MIN_SECRET_LENGTH = 16
 

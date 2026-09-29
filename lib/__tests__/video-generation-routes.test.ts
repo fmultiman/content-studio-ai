@@ -41,6 +41,7 @@ import * as server from '@/lib/supabase/server'
 import * as serviceRole from '@/lib/supabase/service-role'
 import * as mcpClient from '@/lib/provider-connections/kling-mcp-client'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
+import { createPresignedReadUrl } from '@/lib/storage/s3'
 
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111'
 const FOREIGN_ID = '22222222-2222-4222-8222-222222222222'
@@ -387,6 +388,23 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
     expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: 'https://s3.example.test/signed-source.png?sig=1' }])
     expect(mcp.calls[0].arguments.arguments.map((a: any) => a.name)).not.toContain('aspect_ratio')
     expect(db.tables.video_generations[0]).toMatchObject({ mode: 'image_to_video', source_image_id: 'img-1', source_library_file_id: null, transport: 'mcp' })
+  })
+
+  it.each([
+    ['an image with no url at all', { id: 'img-empty', user_id: 'user-a', project_id: 'proj-1', image_url: '', storage_path: null }],
+  ])('%s is refused (422) BEFORE any record or provider call', async (_name, image) => {
+    const db = makeDb({ connections: [connectionRow()], images: [image] })
+    signIn(db)
+    const mcp = installFakeMcp()
+    vi.mocked(createPresignedReadUrl).mockResolvedValueOnce(null as any)
+
+    const response = await post({ ...base, mode: 'image_to_video', sourceImageId: 'img-empty', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0' })
+
+    expect(response.status).toBe(422)
+    expect((await response.json()).code).toBe('SOURCE_MEDIA_UNAVAILABLE')
+    expect(mcp.calls).toEqual([])
+    expect(restCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
   })
 
   it('MCP image_to_video still requires exactly one owned source', async () => {

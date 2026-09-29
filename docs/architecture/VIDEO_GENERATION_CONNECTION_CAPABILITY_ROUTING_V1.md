@@ -218,7 +218,9 @@ resets to an explicit default (no invisible invalid state).
    is its own state with **Tentar novamente** (explicitly "not a disconnection").
 3. Operation tabs (only supported ones), **Modelo** selector, prompt/source, then only the controls
    the model offers.
-4. **Gerar vídeo** is enabled only when the selected connection `canGenerate`.
+4. **Gerar vídeo** is enabled only when the selected connection `canGenerate`. A submission the
+   provider may have accepted but we could not confirm/record **locks the form** ("Envio não
+   confirmado — não tente de novo") so it cannot be resubmitted by mistake (double charge).
 
 The page no longer disables the button on REST status alone (a user with only a Kling account can
 generate once authorized). While /videos is open, in-flight **MCP** generations are also synced every
@@ -282,8 +284,10 @@ row is *not* marked as a failed submission, and the provider id is logged for re
 recording failure can never be mistaken for "the submission failed" (which would invite a second
 charge). Applies to REST and MCP.
 
-**Submit failure semantics**: one attempt, never retried (a retry is a second charge). Provider
-rejections are classified (`PROVIDER_QUOTA_EXCEEDED` → 402 — Kling credits; `PROVIDER_CONTENT_REJECTED`;
+**Submit failure semantics**: one attempt, never retried (a retry is a second charge). A refusal the
+server *answered* (JSON-RPC error, HTTP 4xx such as 403 for a missing permission) means the tool did not
+run and is a **definitive rejection** (not "check for a charge"); timeouts, dropped connections and 5xx
+after sending stay unknown-outcome. Provider rejections are classified (`PROVIDER_QUOTA_EXCEEDED` → 402 — Kling credits; `PROVIDER_CONTENT_REJECTED`;
 `PROVIDER_REJECTED`). A failure **after** the request may have reached Kling, or a success whose
 `generation_id` cannot be read, is failed with an explicit `outcome_unknown: true` ("verify your Kling
 account before retrying") so a possibly-billed job is never silently retried. Only the error class
@@ -303,7 +307,9 @@ plus DB-persisted schedule state — no Redis/BullMQ/Temporal/worker.
   digest compare). **Fails closed**: no/short secret → 503, wrong header → 401, both before any DB
   access. Returns **counts only**. Runs with server credentials, **no user session**.
 - `pollDueMcpGenerations` (`lib/video-generation/polling.ts`): selects `transport='mcp'` rows in
-  `submitted|processing` with `next_poll_at <= now` (batch ≤ 20, concurrency 4), **leases** each row
+  `submitted|processing` with `next_poll_at <= now` (batch ≤ 10, concurrency 2 — each completion can
+  buffer a whole video — and a 240 s budget inside the route's 300 s `maxDuration`, after which no new
+  row is started), **leases** each row
   with a compare-and-swap on the exact `next_poll_at` it read (also increments `poll_attempts`), so
   concurrent runs never poll the same row twice; obtains the **generation owner's** connection
   (`getOwnedConnection(connection_id, generation.user_id)` — a planted `connection_id` can never
@@ -315,9 +321,11 @@ plus DB-persisted schedule state — no Redis/BullMQ/Temporal/worker.
 thereafter (cap) — far under Kling's documented 5 QPS and inside the 24 h URL lifetime. Authorization
 lost → 5 min backoff and the paid job is **not** failed (recoverable on reconnect). Provider /
 store / encryption / download hiccups → backoff, row untouched. A generation unresolved after **6 h**
-is failed with an explicit "check your Kling account" message — **but only after one final status
-check** (a job that finished at Kling while nobody was polling, e.g. between daily sweeps, is
-completed, never timed out unseen). A `queued` MCP row with no provider
+is failed with an explicit "check your Kling account" message — **but only when the provider itself
+answers "still running"** at a final check (a job that finished at Kling while nobody was polling, e.g.
+between daily sweeps, is completed, never timed out unseen). Errors while checking (outage, refresh
+hiccup, revoked authorization, storage failure) are **not a verdict** and keep being retried until a
+**22 h hard cap**, inside the 24 h result-URL lifetime. A `queued` MCP row with no provider
 task older than 15 min (interrupted submit) is failed `SUBMISSION_INTERRUPTED`.
 
 **Task-error classification**: an `isError` `query_tasks` result fails the generation only for
@@ -376,8 +384,13 @@ to `vercel.json`: on a Hobby plan a sub-daily cron **fails the deployment**.
   re-validated — must be a public host **and resolve to public addresses only** (DNS check blocks
   private/loopback/link-local/CGNAT/unique-local); 50 s timeout; 300 MB cap enforced while streaming
   (also when `content-length` lies or is absent); only `video/*` or `octet-stream` content types;
-  stored size is the actual byte count. (Residual: DNS is resolved before `fetch`, so a rebinding
-  race between the check and the connection is theoretically possible.);
+  stored size is the actual byte count; special-use ranges blocked include RFC 1918, loopback,
+  link-local, CGNAT, 192.0.0.0/24, 198.18/15, multicast, IPv6 ULA/link-local and the hex/NAT64/6to4
+  encodings of IPv4. **Residual (accepted):** DNS is resolved before `fetch` opens its own connection,
+  so a DNS-rebinding race between the check and the connect is theoretically possible; the URL comes
+  from an authenticated provider response or an HMAC-verified webhook (a trusted party), so this is
+  defense in depth rather than the primary control. **Residual:** the video is buffered in memory
+  (≤ 300 MB) before upload — mitigated by concurrency 2, not eliminated;
 - the temporary provider URL is **never persisted**; only `{mime, size, transport, provider_task_id,
   provider_state, completed_at}`; result URLs must be plain `https` to a public host (no
   localhost/IP literals/`.internal`/`.local`/credentials) or the generation is failed
@@ -417,11 +430,15 @@ untouched; **applied to Production**, verified — the 3 historical rows are unc
 ## 15. Disconnect while a generation is active
 
 MCP has no callback, so the grant is the only way to retrieve a paid result. Policy (implemented):
-**`DELETE /api/provider-connections/[id]` is refused (409 `CONNECTION_HAS_ACTIVE_GENERATIONS`) while any
-`queued|submitted|processing` generation references the connection.** The Settings toast and the
+**`DELETE /api/provider-connections/[id]` is refused (409 `CONNECTION_HAS_ACTIVE_GENERATIONS`) while a
+job that can actually need the grant references the connection:** anything the provider has accepted
+(`submitted|processing`), or a `queued` row that is still plausibly mid-submit (< 15 min old). An
+*interrupted* `queued` row (no provider task, past the orphan cutoff) can never be retrieved and does not
+block. The Settings toast and the
 disconnect dialog say so. It fails **closed** (503 if the check cannot run; nothing is revoked or
 deleted). Finished generations never block it, and history is untouched (FK `SET NULL`). The residual
-window (a generation created in the instant between the check and the delete) is handled by the poller,
+window (a generation created in the instant between the check and the delete — the two are not one
+transaction) is handled by the poller,
 which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead of retrying forever.
 
 ## 16. Next task: the first controlled MCP generation proof
@@ -455,6 +472,7 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 | Non-subscribers: one concurrent video task; 5 QPS; tasks cannot be canceled | OFFICIAL (discovery) |
 | Terms (§18) | AMBIGUOUS |
 | Vercel plan / cron cadence | **UNVERIFIED** (see §12) |
+| **The only scheduler shipped is a DAILY recovery cron** — the 45–120 s backoff, leases and "works while /videos is closed" all assume a minute-level scheduler that the owner must activate (§12). Until then an away user's job is only retrieved by the daily sweep (or when they reopen /videos) | **Prerequisite for the paid proof** |
 | Pre-existing: RLS lets a user `UPDATE` their own `video_generations` rows (table policy from 039) — the poller therefore re-derives ownership of `connection_id` from the generation's `user_id` and never trusts the row alone | noted; column-level lockdown is a possible follow-up |
 
 ## 18. Terms / policy

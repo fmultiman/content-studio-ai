@@ -17,9 +17,12 @@
 //   - a rejected/expired authorization backs off to 5 min (the job is still
 //     recoverable once the user reconnects), and every poll is leased, so
 //     concurrent cron runs never check the same row twice;
-//   - a generation still unresolved after 6 h is failed with an explicit
-//     "verify your Kling account" message (the provider reports its own
-//     timeouts long before that).
+//   - a generation the provider STILL reports as running after 6 h is failed
+//     with an explicit "verify your Kling account" message (the provider
+//     reports its own timeouts long before that); errors while checking
+//     (outage, refresh hiccup, revoked authorization, storage) are NOT a
+//     verdict and keep being retried until the 22 h hard cap, which sits inside
+//     the 24 h result-URL lifetime;
 // The only scheduling state persisted is `next_poll_at` and `poll_attempts`.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -44,8 +47,13 @@ export const POLL_DELAYS_MS = [45_000, 60_000, 60_000, 90_000, 120_000] as const
 export const POLL_AUTH_BACKOFF_MS = 5 * 60_000
 export const POLL_LEASE_MS = 3 * 60_000
 export const POLL_MAX_AGE_MS = 6 * 60 * 60_000
-export const POLL_BATCH_LIMIT = 20
-export const POLL_CONCURRENCY = 4
+/** Errors (not provider verdicts) stop being retried only here, inside the 24 h result-URL lifetime. */
+export const POLL_HARD_MAX_AGE_MS = 22 * 60 * 60_000
+export const POLL_BATCH_LIMIT = 10
+/** Each completion can buffer a whole video in memory, so keep this low. */
+export const POLL_CONCURRENCY = 2
+/** Stop STARTING new rows after this (the route's maxDuration is 300 s). */
+export const POLL_TIME_BUDGET_MS = 240_000
 /** A generation stuck in `queued` with no provider task this long was interrupted mid-submit. */
 export const QUEUED_ORPHAN_AGE_MS = 15 * 60_000
 
@@ -116,7 +124,11 @@ export async function syncGenerationWithProvider(
   // The max age is a LAST resort applied only AFTER a final status check: a
   // generation that finished at the provider while we were not polling (e.g.
   // between daily sweeps) must still be completed, never timed out unseen.
-  const expired = options.schedule && now.getTime() - new Date(generation.created_at).getTime() > POLL_MAX_AGE_MS
+  const age = now.getTime() - new Date(generation.created_at).getTime()
+  // Soft: the provider answered and says it is still running. Hard: we could
+  // not get an answer (or could not store it) for almost the whole URL lifetime.
+  const expired = options.schedule && age > POLL_MAX_AGE_MS
+  const hardExpired = options.schedule && age > POLL_HARD_MAX_AGE_MS
   const timeOut = async (): Promise<SyncResult> => {
     const result = await failVideoGeneration(db, {
       ...identity,
@@ -130,7 +142,9 @@ export async function syncGenerationWithProvider(
   try {
     status = await transport.getStatus(identity.taskId)
   } catch (error) {
-    if (expired) return timeOut()
+    // An error is not a verdict: keep retrying (a revoked authorization stays
+    // recoverable on reconnect) until the hard cap.
+    if (hardExpired) return timeOut()
     if (options.schedule) {
       await reschedule(db, generation, error instanceof ProviderAuthorizationRequiredError ? POLL_AUTH_BACKOFF_MS : pollDelayMs(generation.poll_attempts ?? 0), now)
     }
@@ -164,7 +178,7 @@ export async function syncGenerationWithProvider(
       return { outcome: mapOutcome(result.outcome), generation: result.generation }
     } catch {
       // Download/storage/DB hiccup: the row is untouched and retried while the URL is still valid.
-      if (expired) return timeOut()
+      if (hardExpired) return timeOut()
       if (options.schedule) await reschedule(db, generation, pollDelayMs(generation.poll_attempts ?? 0), now)
       return { outcome: 'transient_error', generation }
     }
@@ -210,6 +224,8 @@ function mapOutcome(outcome: string): SyncOutcome {
 // ---------------------------------------------------------------------------
 
 export interface McpPollDependencies extends TokenRefreshDependencies, KlingMcpClientDependencies {
+  /** Test seam for the per-run time budget. */
+  timeBudgetMs?: number
   transportFactory?: (db: SupabaseClient, generation: Record<string, any>) => Promise<KlingVideoTransport | null>
 }
 
@@ -282,6 +298,7 @@ export async function pollDueMcpGenerations(
   deps: McpPollDependencies & CompletionDependencies = {},
 ): Promise<PollSummary> {
   const now = (deps.now ?? (() => new Date()))()
+  const startedAt = Date.now()
   const summary: PollSummary = { due: 0, claimed: 0, outcomes: {} }
   const count = (key: keyof PollSummary['outcomes']) => {
     summary.outcomes[key] = (summary.outcomes[key] ?? 0) + 1
@@ -316,6 +333,8 @@ export async function pollDueMcpGenerations(
   summary.due = due.length
 
   await mapWithConcurrency(due, POLL_CONCURRENCY, async (row) => {
+    // Out of time: leave the row unclaimed (still due) for the next run.
+    if (Date.now() - startedAt > (deps.timeBudgetMs ?? POLL_TIME_BUDGET_MS)) return
     const claimed = await claim(db, row, now)
     if (!claimed) return
     summary.claimed += 1

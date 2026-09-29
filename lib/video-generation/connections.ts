@@ -159,15 +159,11 @@ export async function listVideoGenerationConnections(
   userId: string,
   now: Date = new Date(),
 ): Promise<VideoGenerationConnectionDescriptor[]> {
-  const restState = await getProviderConfigurationState(supabase, { userId, provider: 'kling' })
-  if (restState === 'unavailable') throw new ConnectionsUnavailableError()
-
-  let rows: ProviderConnectionRow[]
-  try {
-    rows = await listConnectionsForUser(supabase, userId)
-  } catch {
-    throw new ConnectionsUnavailableError()
-  }
+  const [restState, rows] = await Promise.all([
+    getProviderConfigurationState(supabase, { userId, provider: 'kling' }),
+    listConnectionsForUser(supabase, userId).catch(() => null),
+  ])
+  if (restState === 'unavailable' || rows === null) throw new ConnectionsUnavailableError()
 
   return [
     describeRestConnection(restState),

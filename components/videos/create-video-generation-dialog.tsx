@@ -156,6 +156,9 @@ export function CreateVideoGenerationDialog({
   const [sourceImageId, setSourceImageId] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Set when the provider MAY have accepted (and billed) a generation we could not confirm:
+  // the form is locked so it cannot be resubmitted by mistake.
+  const [unconfirmedSubmission, setUnconfirmedSubmission] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState<'refresh' | 'authorize' | null>(null)
   const [projectImages, setProjectImages] = useState<any[]>([])
 
@@ -178,6 +181,8 @@ export function CreateVideoGenerationDialog({
 
   useEffect(() => {
     if (!open) return
+    // A fresh open starts a fresh, unlocked form.
+    const reset = setTimeout(() => setUnconfirmedSubmission(null), 0)
     let cancelled = false
     fetchConnections()
       .then((list) => {
@@ -188,6 +193,7 @@ export function CreateVideoGenerationDialog({
       })
     return () => {
       cancelled = true
+      clearTimeout(reset)
     }
   }, [open, applyConnections])
 
@@ -288,7 +294,12 @@ export function CreateVideoGenerationDialog({
   }
 
   const canSubmit =
-    loadState === 'ready' && !!connection?.canGenerate && !!selection.operation && !!selection.modelId && !isSubmitting
+    loadState === 'ready' &&
+    !!connection?.canGenerate &&
+    !!selection.operation &&
+    !!selection.modelId &&
+    !isSubmitting &&
+    unconfirmedSubmission === null
 
   const handleSubmit = async () => {
     if (!prompt.trim()) {
@@ -331,6 +342,12 @@ export function CreateVideoGenerationDialog({
         }
         if (data.code === 'GENERATION_AUTHORIZATION_REQUIRED' || data.code === 'AUTHORIZATION_REQUIRED') {
           await loadConnections()
+        }
+        if (data.outcomeUnknown === true) {
+          // Possibly billed: never leave a live "Gerar" button that invites a second charge.
+          setUnconfirmedSubmission(data.error || 'Não foi possível confirmar o envio à Kling.')
+          if (onSuccess) onSuccess()
+          return
         }
         throw new Error(data.error || 'Erro ao criar geração de vídeo')
       }
@@ -376,6 +393,16 @@ export function CreateVideoGenerationDialog({
             <Button size="sm" variant="outline" onClick={() => void loadConnections()}>
               Tentar novamente
             </Button>
+          </div>
+        )}
+
+        {unconfirmedSubmission && (
+          <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/5 p-4" role="alert" data-testid="video-submission-unconfirmed">
+            <p className="text-sm font-medium">Envio não confirmado — não tente de novo</p>
+            <p className="text-xs text-muted-foreground">{unconfirmedSubmission}</p>
+            <p className="text-xs text-muted-foreground">
+              Confira a sua conta Kling e a lista de vídeos antes de gerar outro. Este formulário foi bloqueado para evitar uma cobrança duplicada.
+            </p>
           </div>
         )}
 

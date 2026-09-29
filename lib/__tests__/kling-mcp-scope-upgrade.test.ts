@@ -90,6 +90,34 @@ describe('OAuth client registration vs. requested scope', () => {
     expect(db.tables.provider_oauth_clients[0]).toMatchObject({ client_id: 'client-2', registered_scope: KLING_MCP_GENERATION_SCOPE_STRING })
   })
 
+  it('a concurrent narrower registration is NEVER handed to a broader (generation) request', async () => {
+    const db = createFakeDb()
+    const { deps } = makeDeps({ clientIds: ['client-generation'] })
+    // Simulate losing the unique-key race to a READ-ONLY registration that lands while we register.
+    const register = vi.fn(async (_issuer: unknown, opts: { clientMetadata: Record<string, unknown> }) => {
+      db.tables.provider_oauth_clients = [
+        { provider: 'kling', issuer: ISSUER, redirect_uri: 'https://content.example.test/api/provider-connections/kling/mcp/callback', client_id: 'client-read-only', registered_scope: KLING_MCP_SCOPE_STRING, registration_response_fields: [] },
+      ]
+      return { client_id: 'client-generation', ...opts.clientMetadata }
+    })
+    await expect(
+      startKlingMcpAuthorization(db as any, { userId: 'user-a', intent: 'generation' }, { ...deps, register } as any),
+    ).rejects.toThrow(/registration/)
+  })
+
+  it('a concurrent registration that DOES cover the request is used', async () => {
+    const db = createFakeDb()
+    const { deps } = makeDeps()
+    const register = vi.fn(async (_issuer: unknown, opts: { clientMetadata: Record<string, unknown> }) => {
+      db.tables.provider_oauth_clients = [
+        { provider: 'kling', issuer: ISSUER, redirect_uri: 'https://content.example.test/api/provider-connections/kling/mcp/callback', client_id: 'client-winner', registered_scope: KLING_MCP_GENERATION_SCOPE_STRING, registration_response_fields: [] },
+      ]
+      return { client_id: 'client-loser', ...opts.clientMetadata }
+    })
+    const { authorizationUrl } = await startKlingMcpAuthorization(db as any, { userId: 'user-a', intent: 'generation' }, { ...deps, register } as any)
+    expect(new URL(authorizationUrl).searchParams.get('client_id')).toBe('client-winner')
+  })
+
   it('a client that already covers generation is reused for both intents (no needless re-registration)', async () => {
     const db = createFakeDb()
     const { deps, register } = makeDeps()

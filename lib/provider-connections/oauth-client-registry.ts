@@ -150,7 +150,9 @@ export async function getOrRegisterOAuthClient(
   if (error) {
     // A concurrent first-time registration won the unique key: use the stored one.
     const winner = await findOAuthClient(db, params)
-    if (winner) return winner
+    // Only a registration that ALSO covers the requested scope is usable; a
+    // concurrent narrower registration must not be handed to a broader request.
+    if (winner && registrationCoversScope(winner.registeredScope, params.scope)) return winner
     throw new Error('Failed to store the OAuth client registration')
   }
 

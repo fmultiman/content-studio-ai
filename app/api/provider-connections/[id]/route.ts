@@ -4,6 +4,7 @@ import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { deleteOwnedConnection, getOwnedConnection } from '@/lib/provider-connections/connections'
 import { revokeKlingMcpGrant } from '@/lib/provider-connections/kling-mcp-oauth'
 import { deleteConnectionTokens } from '@/lib/provider-connections/token-store'
+import { QUEUED_ORPHAN_AGE_MS } from '@/lib/video-generation/polling'
 
 // KLING_MCP_OAUTH_CONNECTION_SPIKE_V1
 //
@@ -36,19 +37,24 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     // (MCP has no callback). Disconnecting now would strand it, so it is refused
     // until every generation using this connection has finished. Fail closed:
     // if the check itself fails, nothing is deleted.
-    const { data: active, error: activeError } = await db
-      .from('video_generations')
-      .select('id')
-      .eq('connection_id', owned.id)
-      .in('status', ['queued', 'submitted', 'processing'])
-      .limit(1)
+    // Only jobs that can actually need the grant count: those the provider has
+    // accepted (submitted/processing) and a `queued` one that is still plausibly
+    // mid-submit. An interrupted `queued` row (no provider task, past the
+    // orphan cutoff) can never be retrieved and must not block a disconnect.
+    const queuedCutoff = new Date(Date.now() - QUEUED_ORPHAN_AGE_MS).toISOString()
+    const [inFlight, midSubmit] = await Promise.all([
+      db.from('video_generations').select('id').eq('connection_id', owned.id).in('status', ['submitted', 'processing']).limit(1),
+      db.from('video_generations').select('id').eq('connection_id', owned.id).eq('status', 'queued').gt('created_at', queuedCutoff).limit(1),
+    ])
+    const activeError = inFlight.error ?? midSubmit.error
+    const active = [...(inFlight.data ?? []), ...(midSubmit.data ?? [])]
     if (activeError) {
       return NextResponse.json(
         { error: 'Não foi possível verificar gerações em andamento.', code: 'CONNECTION_STORE_UNAVAILABLE' },
         { status: 503 },
       )
     }
-    if ((active ?? []).length > 0) {
+    if (active.length > 0) {
       return NextResponse.json(
         {
           error: 'Há vídeos ainda em geração com esta conta. Aguarde a conclusão para desconectar.',

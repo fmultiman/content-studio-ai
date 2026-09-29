@@ -28,6 +28,8 @@ export function isPrivateAddress(address: string): boolean {
     // IPv4-mapped IPv6 (::ffff:a.b.c.d) is judged by its IPv4 part.
     const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
     if (mapped) return isPrivateAddress(mapped[1])
+    // IPv4-mapped / embedded forms that hide an IPv4 address in hex (::ffff:7f00:1, 64:ff9b::/96 NAT64) and 6to4 (2002::/16).
+    if (value.startsWith('::ffff:') || value.startsWith('64:ff9b:') || value.startsWith('2002:')) return true
     return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb')
   }
   const parts = value.split('.').map(Number)
@@ -41,6 +43,8 @@ export function isPrivateAddress(address: string): boolean {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && parts[2] === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
     a >= 224
   )
 }

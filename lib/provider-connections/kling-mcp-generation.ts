@@ -14,7 +14,7 @@
 // offers is sent with its selected value (never a silent provider default),
 // and the output count is pinned to 1.
 
-import type { CallToolResult } from '@modelcontextprotocol/client'
+import { ProtocolError, SdkHttpError, type CallToolResult } from '@modelcontextprotocol/client'
 import {
   createKlingMcpClient,
   mapMcpError,
@@ -160,6 +160,18 @@ export async function submitKlingMcpVideo(
       const mapped = mapMcpError(error)
       // A rejected token never reached the tool: certainly not submitted.
       if (mapped instanceof ProviderAuthorizationRequiredError) throw mapped
+      // The server ANSWERED with a refusal (a JSON-RPC error, or an HTTP 4xx such
+      // as 403 for a missing permission): the tool did not run, nothing was billed.
+      const httpStatus = error instanceof SdkHttpError ? (error.data as { status?: number } | undefined)?.status : undefined
+      if (error instanceof ProtocolError || (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500)) {
+        throw new KlingMcpSubmitError(
+          'PROVIDER_REJECTED',
+          httpStatus === 403
+            ? 'A Kling recusou esta geração: a autorização da conta não permite gerar. Autorize a geração em Configurações.'
+            : REJECTION_MESSAGES.PROVIDER_REJECTED,
+        )
+      }
+      // Anything else (timeout, dropped connection, 5xx) may have reached the tool.
       throw new KlingMcpSubmitError(
         'PROVIDER_UNAVAILABLE',
         'Não foi possível confirmar o envio à Kling. Verifique a sua conta Kling antes de tentar novamente.',
