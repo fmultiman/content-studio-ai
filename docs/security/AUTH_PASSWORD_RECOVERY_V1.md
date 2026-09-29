@@ -87,9 +87,11 @@ Evidence below is read-only from `auth.users` / `auth.sessions` (no hashes, no t
 | Account | Operator report | Database evidence |
 |---|---|---|
 | `flavio.multiman@gmail.com` | recovery completed, new password set manually, login with the new password confirmed, Configurações > Perfil > Alterar senha present | **Consistent:** `recovery_sent_at` cleared (was set before, i.e. the recovery link was consumed); exactly one session, created at the same instant as `last_sign_in_at` (2026-09-29 19:34:15 UTC); all earlier sessions of the account are gone |
-| `marceloshama@gmail.com` | recovery completed, new password set manually, login confirmed | **NOT evidenced:** the row is unchanged since 2026-09-29 06:38:43 UTC - `last_sign_in_at` still 05:40:36, `recovery_sent_at` still 06:05:54, zero sessions, and the stored recovery token from the earlier incident is still present (long expired). No other account was touched either. |
+| `marceloshama@gmail.com` | initially reported as completed; **corrected by the operator: not performed yet** - the mailbox belongs to Marcelo, so the recovery depends on his own action | **Consistent with "not done yet":** the row is unchanged since 2026-09-29 06:38:43 UTC - `last_sign_in_at` still 05:40:36, `recovery_sent_at` still 06:05:54, zero sessions, and the stored recovery token from the earlier incident is still present (long expired). No other account was touched. |
 
-**Status:** Flavio's recovery is proven end to end by the evidence above (the new password itself is, by design, not verified by the agent). Marcelo's is **unproven**: either the recovery did not reach this production project, or it has not actually completed. It needs to be re-run/re-checked by the operator; until then that account should be assumed to still carry the incident-set password.
+**Status:** Flavio's recovery is proven end to end by the evidence above (the new password itself is, by design, not verified by the agent). **Marcelo's recovery remains PENDING his own action** through the normal flow (`/login` -> "Esqueci minha senha?"); nobody else can or should do it for him. Until he does, that account should be assumed to still carry the password set during the incident. Nothing in the Content Studio work depends on authenticating as Marcelo.
+
+**Mission state:** `AUTH_PASSWORD_RECOVERY_V1_IMPLEMENTED_AND_DEPLOYED` / `MANUAL_RECOVERY_PENDING_FOR_MARCELO`. The completion marker is intentionally **not** issued.
 
 ## Session behaviour (observed)
 
@@ -97,7 +99,7 @@ After Flavio's recovery (which ends every session with an explicit global sign-o
 
 ## Still open
 
-- Marcelo's production recovery (above).
+- Marcelo's production recovery: pending his own action (above). No agent action is to be taken on his account.
 - Cross-browser recovery links (see limitation below) and a custom SMTP sender remain follow-ups.
 
 ## Known limitations
