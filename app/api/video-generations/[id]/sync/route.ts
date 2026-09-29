@@ -4,6 +4,7 @@ import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { createMcpTransportForGeneration, syncGenerationWithProvider } from '@/lib/video-generation/polling'
+import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 import { KlingRestTransport, type KlingVideoTransport } from '@/lib/video-generation/transport'
 
 // VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1
@@ -48,12 +49,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     const isMcp = generation.transport === 'mcp'
     let transport: KlingVideoTransport | null
-    let writeDb = supabase
+    // Lifecycle writes (status, storage_path, result metadata, poll state) are server-owned: the user
+    // session can only READ this table. Ownership was verified above (`user_id = user.id`).
+    const writeDb = createServiceRoleSupabase()
 
     if (isMcp) {
       // Token material lives behind the service role; ownership of the
       // connection is re-verified against the generation's own user id.
-      writeDb = createServiceRoleSupabase()
       transport = await createMcpTransportForGeneration(writeDb, generation)
       if (!transport) {
         return NextResponse.json(
@@ -100,8 +102,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const current = result.generation ?? generation
     let responseGeneration = current
     if (current.status === 'succeeded' && current.storage_path) {
-      const presigned = await createPresignedReadUrl(current.storage_path)
-      if (presigned) responseGeneration = { ...current, public_url: presigned }
+      if (!isTenantVideoStoragePath(current.storage_path, current)) {
+        responseGeneration = { ...current, storage_path: null, public_url: null }
+      } else {
+        const presigned = await createPresignedReadUrl(current.storage_path)
+        if (presigned) responseGeneration = { ...current, public_url: presigned }
+      }
     }
 
     return NextResponse.json({ generation: responseGeneration, outcome: result.outcome })

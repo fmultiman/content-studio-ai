@@ -7,6 +7,7 @@ import { forceRefreshAccessToken, getValidAccessToken } from '@/lib/provider-con
 import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
 import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
+import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
 import {
@@ -134,6 +135,12 @@ export async function POST(req: NextRequest) {
       return jsonError(403, 'PRODUCTION_NOT_FOUND', 'Production não encontrada neste projeto.')
     }
 
+    // Every write to video_generations is SERVER-owned: the user session can only read this table
+    // (privileges revoked in scripts/043). The server has verified above that the project, production
+    // and any source belong to this user, and always writes `user_id` from the verified session.
+    // Created before any provider call, so a missing server credential is a pre-submission failure.
+    const serverDb = createServiceRoleSupabase()
+
     // Secrets are resolved only after every check passed.
     let transport: KlingVideoTransport
     let connectionId: string | null = null
@@ -144,7 +151,7 @@ export async function POST(req: NextRequest) {
       }
       transport = new KlingRestTransport(execution.secret)
     } else {
-      const db = createServiceRoleSupabase()
+      const db = serverDb
       const connection = resolved.connection
       connectionId = connection.id
       transport = new KlingMcpTransport({
@@ -201,7 +208,7 @@ export async function POST(req: NextRequest) {
 
     // Insert queued state. `request_config` is the exact, explicit set of values
     // that is sent to the provider (reproducible/debuggable) — never a secret.
-    const { data: generation, error: dbError } = await supabase
+    const { data: generation, error: dbError } = await serverDb
       .from('video_generations')
       .insert({
         user_id: user.id,
@@ -250,7 +257,7 @@ export async function POST(req: NextRequest) {
 
       if (transport.transport === 'mcp') {
         const known = describeMcpSubmitFailure(providerError)
-        await supabase
+        await serverDb
           .from('video_generations')
           .update({ status: 'failed', error_details: known.errorDetails })
           .eq('id', generation.id)
@@ -260,7 +267,7 @@ export async function POST(req: NextRequest) {
       // An HTTP error ANSWER from Kling is definitive (the job was refused). A network failure or a
       // 2xx whose body we cannot read may have created (and billed) the job: that is an unknown outcome.
       const definitive = typeof providerError?.message === 'string' && providerError.message.startsWith('Kling API HTTP error')
-      await supabase
+      await serverDb
         .from('video_generations')
         .update({
           status: 'failed',
@@ -294,11 +301,11 @@ export async function POST(req: NextRequest) {
       provider_metadata: submitRes.providerMetadata,
       ...(transport.transport === 'mcp' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
     }
-    let recorded = await supabase.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
+    let recorded = await serverDb.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
     if (recorded.error || !recorded.data) {
-      // One more attempt with server authority (not blocked by row-level policy).
+      // One more attempt (a transient store error must not be reported as a failed submission).
       try {
-        recorded = await createServiceRoleSupabase().from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
+        recorded = await serverDb.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
       } catch {
         // fall through to the unrecorded response below
       }
@@ -395,6 +402,10 @@ export async function GET(req: NextRequest) {
     const signedGenerations = await Promise.all(
       (generations || []).map(async (gen) => {
         if (gen.status === 'succeeded' && gen.storage_path) {
+          // Never sign (or echo the stored URL of) a path outside the owner's own namespace.
+          if (!isTenantVideoStoragePath(gen.storage_path, gen)) {
+            return { ...gen, storage_path: null, public_url: null }
+          }
           const presigned = await createPresignedReadUrl(gen.storage_path)
           if (presigned) {
             return { ...gen, public_url: presigned }

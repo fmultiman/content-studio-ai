@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -24,7 +25,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     const { data: generation, error } = await supabase
       .from('video_generations')
-      .select('id, user_id, status, storage_path')
+      .select('id, user_id, project_id, status, storage_path')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -41,6 +42,13 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Geração sem caminho de saída válido.', code: 'MISSING_STORAGE_PATH' }, { status: 500 })
     }
     
+    // The stored path is a database string, not an authority: it is signed only when it lies inside
+    // THIS owner's own project namespace. Anything else fails closed without naming the path.
+    if (!isTenantVideoStoragePath(generation.storage_path, generation)) {
+      console.error('[Video Generations playback-url] Rejected non-canonical storage path', { generationId: generation.id })
+      return NextResponse.json({ error: 'Geração sem caminho de saída válido.', code: 'INVALID_STORAGE_PATH' }, { status: 409 })
+    }
+
     const extension = 'mp4'
     const filename = disposition === 'attachment' ? `video-ai-${id}.${extension}` : undefined
     const url = await createPresignedReadUrl(generation.storage_path, { disposition, filename })

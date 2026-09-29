@@ -513,13 +513,14 @@ describe('POST /api/video-generations — project/production ownership and gener
   it('an unexpected pre-submission failure is a 500 with a CODE and a generic message (never the raw error text)', async () => {
     const db = makeDb({ klingKey: 'user-rest-key' })
     const original = db.from
-    vi.mocked(server.createClient).mockResolvedValue({
+    signIn(db)
+    // Row creation is server-owned: it is the service-role client whose INSERT fails here.
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({
       from: (table: string) => {
         const builder = original.call(db, table)
         if (table === 'video_generations') builder.insert = () => { throw new Error('duplicate key value violates unique constraint "secret_internal_name"') }
         return builder
       },
-      auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) },
     } as any)
 
     const response = await post({ ...base, mode: 'text_to_video' })
@@ -559,11 +560,86 @@ describe('POST /api/video-generations — REST submit outcome classification', (
   })
 })
 
+// VIDEO_GENERATION_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: after migration 043 the user session can
+// only READ video_generations. These tests give the user client a table that THROWS on any write, so
+// the flows only pass if every lifecycle write goes through the server-authority client.
+describe('video_generations lifecycle writes are server-owned (user session is read-only)', () => {
+  const readOnlyUser = (db: any, userId = 'user-a') => {
+    const denied = () => { throw new Error('permission denied for table video_generations') }
+    const client = {
+      from: (table: string) => {
+        const builder = db.from(table)
+        if (table === 'video_generations') Object.assign(builder, { insert: denied, update: denied, upsert: denied, delete: denied })
+        return builder
+      },
+      auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
+    }
+    vi.mocked(server.createClient).mockResolvedValue(client as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db)
+  }
+
+  it('REST create: the row is inserted and its task id recorded without any user-session write', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    readOnlyUser(db)
+    const response = await post({ ...base, mode: 'text_to_video' })
+    expect(response.status).toBe(200)
+    expect(db.tables.video_generations[0]).toMatchObject({ user_id: 'user-a', project_id: 'proj-1', transport: 'rest', status: 'submitted', task_id: 'rest-task-2' })
+  })
+
+  it('MCP create: same, including provenance and the first poll', async () => {
+    const db = makeDb({ connections: [connectionRow()] })
+    readOnlyUser(db)
+    installFakeMcp()
+    const response = await post(mcpBody())
+    expect(response.status).toBe(200)
+    expect(db.tables.video_generations[0]).toMatchObject({ user_id: 'user-a', transport: 'mcp', connection_id: CONNECTION_ID, status: 'submitted', task_id: 'mcp-gen-1' })
+    expect(db.tables.video_generations[0].next_poll_at).toBeTruthy()
+  })
+
+  it('a provider refusal is recorded as failed without any user-session write', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    readOnlyUser(db)
+    restFailure = new Error('Kling API HTTP error 400')
+    const response = await post({ ...base, mode: 'text_to_video' })
+    expect(response.status).toBe(500)
+    expect(db.tables.video_generations[0].status).toBe('failed')
+  })
+
+  it('the row is always created for the VERIFIED session user, never for a body-supplied id', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    readOnlyUser(db)
+    await post({ ...base, mode: 'text_to_video', user_id: 'user-b', userId: 'user-b' })
+    expect(db.tables.video_generations).toHaveLength(1)
+    expect(db.tables.video_generations[0].user_id).toBe('user-a')
+  })
+
+  it('REST manual sync: the status change is written with server authority (no user-session write)', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key', generations: [{ id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'submitted', task_id: 'rest-task-1' }] })
+    readOnlyUser(db)
+    const { POST } = await import('@/app/api/video-generations/[id]/sync/route')
+    const response = await POST(new NextRequest('http://localhost/api/video-generations/gen-1/sync', { method: 'POST' }), { params: Promise.resolve({ id: 'gen-1' }) })
+    expect(response.status).toBe(200)
+    expect(db.tables.video_generations[0].status).toBe('processing')
+  })
+
+  it('MCP manual sync completion stores storage_path, status and result metadata with server authority', async () => {
+    const db = makeDb({ connections: [connectionRow()], generations: [{ id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'processing', task_id: 'mcp-gen-1', transport: 'mcp', connection_id: CONNECTION_ID, created_at: NOW_ISO, poll_attempts: 1 }] })
+    readOnlyUser(db)
+    installFakeMcp(() => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'succeed', works: [{ url: 'https://cdn.example.test/v.mp4' }] }) }] }))
+    vi.mocked(downloadAndStoreVideo).mockResolvedValue({ storagePath: 'user-a/videos/ai/proj-1/gen-1.mp4', publicUrl: 'https://s3.example.test/gen-1.mp4', mime: 'video/mp4', size: 5 })
+    const { POST } = await import('@/app/api/video-generations/[id]/sync/route')
+    const response = await POST(new NextRequest('http://localhost/api/video-generations/gen-1/sync', { method: 'POST' }), { params: Promise.resolve({ id: 'gen-1' }) })
+    expect(response.status).toBe(200)
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'succeeded', storage_path: 'user-a/videos/ai/proj-1/gen-1.mp4' })
+    expect(db.tables.video_generations[0].result_metadata).toMatchObject({ transport: 'mcp', provider_task_id: 'mcp-gen-1' })
+  })
+})
+
 describe('POST /api/video-generations — an ACCEPTED submission is never reported as failed', () => {
-  /** A user client whose UPDATE of video_generations fails (RLS/network) after the row was inserted. */
-  const breakUpdates = (db: any, options: { alsoServiceRole?: boolean } = {}) => {
+  /** The server-authority client whose UPDATE of video_generations fails (network/store) after the row was inserted. */
+  const breakUpdates = (db: any) => {
     const failing = () => {
-      const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'rls' } }), then: (r: any) => r({ data: null, error: { message: 'rls' } }) }
+      const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'store' } }), then: (r: any) => r({ data: null, error: { message: 'store' } }) }
       return chain
     }
     const original = db.from
@@ -572,24 +648,29 @@ describe('POST /api/video-generations — an ACCEPTED submission is never report
       if (table === 'video_generations') builder.update = failing
       return builder
     }
-    const client = { from: patched, auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) } }
-    vi.mocked(server.createClient).mockResolvedValue(client as any)
-    if (options.alsoServiceRole) vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({ from: patched } as any)
+    vi.mocked(server.createClient).mockResolvedValue({ from: original, auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) } } as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({ from: patched } as any)
   }
 
-  it('MCP: if recording the task id fails once, a server-authority retry records it and the user is NOT told to retry', async () => {
+  it('MCP: if recording the task id fails once, a single retry records it and the user is NOT told to retry', async () => {
     const db = makeDb({ connections: [connectionRow()] })
     signIn(db)
     const mcp = installFakeMcp()
-    // User-session updates fail; the service-role client (same in-memory db) succeeds.
+    // The first UPDATE fails transiently; the retry succeeds.
     const original = db.from
-    vi.mocked(server.createClient).mockResolvedValue({
+    let failuresLeft = 1
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({
       from: (table: string) => {
         const builder = original.call(db, table)
-        if (table === 'video_generations') builder.update = () => { const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'rls' } }) }; return chain }
+        const realUpdate = builder.update
+        if (table === 'video_generations') {
+          builder.update = (...args: unknown[]) => {
+            if (failuresLeft-- > 0) { const chain: any = { eq: () => chain, select: () => chain, single: () => Promise.resolve({ data: null, error: { message: 'store' } }) }; return chain }
+            return realUpdate.apply(builder, args)
+          }
+        }
         return builder
       },
-      auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) },
     } as any)
 
     const response = await post(mcpBody())
@@ -602,7 +683,7 @@ describe('POST /api/video-generations — an ACCEPTED submission is never report
   it('if the accepted job cannot be recorded at all: 502 SUBMISSION_UNRECORDED with an explicit DO-NOT-RETRY message, the row is not marked failed, and the provider id is logged for reconciliation', async () => {
     const db = makeDb({ connections: [connectionRow()] })
     signIn(db)
-    breakUpdates(db, { alsoServiceRole: true })
+    breakUpdates(db)
     const mcp = installFakeMcp()
 
     const response = await post(mcpBody())
@@ -621,7 +702,7 @@ describe('POST /api/video-generations — an ACCEPTED submission is never report
   it('REST gets the same protection (the accepted Kling task is not reported as a failed submission)', async () => {
     const db = makeDb({ klingKey: 'user-rest-key' })
     signIn(db)
-    breakUpdates(db, { alsoServiceRole: true })
+    breakUpdates(db)
 
     const response = await post({ ...base, mode: 'text_to_video' })
 
@@ -812,8 +893,8 @@ describe('POST /api/video-generations/[id]/sync — transport-aware', () => {
 
 describe('GET /api/video-generations — history (historical rows stay valid)', () => {
   it('rows created before transport/connection provenance still load and play (presigned) without any backfill', async () => {
-    const legacy = { id: 'old-1', user_id: 'user-a', project_id: 'proj-1', production_id: 'prod-1', mode: 'text_to_video', status: 'succeeded', provider: 'kling', model: 'kling-v3', task_id: 'kling-old', storage_path: 'u/videos/ai/p/old.mp4', public_url: 'https://s3.example.test/old.mp4', request_config: { duration: 5, resolution: '720p' }, created_at: '2026-09-01T00:00:00Z' }
-    const mcpRow = { id: 'new-1', user_id: 'user-a', project_id: 'proj-1', production_id: 'prod-1', mode: 'text_to_video', status: 'succeeded', provider: 'kling', model: 'kling-video-v3_0', transport: 'mcp', connection_id: null, storage_path: 'u/videos/ai/p/new-1.mp4', created_at: '2026-09-29T00:00:00Z' }
+    const legacy = { id: 'old-1', user_id: 'user-a', project_id: 'proj-1', production_id: 'prod-1', mode: 'text_to_video', status: 'succeeded', provider: 'kling', model: 'kling-v3', task_id: 'kling-old', storage_path: 'user-a/videos/ai/proj-1/1759000000000-abc123.mp4', public_url: 'https://s3.example.test/old.mp4', request_config: { duration: 5, resolution: '720p' }, created_at: '2026-09-01T00:00:00Z' }
+    const mcpRow = { id: 'new-1', user_id: 'user-a', project_id: 'proj-1', production_id: 'prod-1', mode: 'text_to_video', status: 'succeeded', provider: 'kling', model: 'kling-video-v3_0', transport: 'mcp', connection_id: null, storage_path: 'user-a/videos/ai/proj-1/new-1.mp4', created_at: '2026-09-29T00:00:00Z' }
     const db = makeDb({ generations: [legacy, mcpRow, { ...legacy, id: 'other-user', user_id: 'user-b' }] })
     signIn(db)
 

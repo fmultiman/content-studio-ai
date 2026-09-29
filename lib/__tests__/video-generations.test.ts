@@ -2,11 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { POST as createGeneration } from '@/app/api/video-generations/route'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
+import * as serviceRole from '@/lib/supabase/service-role'
 
 // Mocks
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }))
+vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleSupabase: vi.fn() }))
+
+// Lifecycle writes are server-owned: the route reads with the user session and writes
+// through the service role. In these fixtures both are the same in-memory client.
+function useClient(client: unknown) {
+  vi.mocked(server.createClient).mockResolvedValue(client as any)
+  vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(client as any)
+}
 
 const constructedApiKeys: string[] = []
 let submitImageToVideo: (...args: unknown[]) => unknown
@@ -68,7 +77,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -85,7 +94,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -103,7 +112,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -120,7 +129,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -165,7 +174,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -185,7 +194,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -202,7 +211,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) }
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -243,7 +252,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -273,7 +282,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -311,7 +320,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -345,7 +354,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
           return {}
         })
       }
-      vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+      useClient(mockSupabase)
 
       const req = new NextRequest('http://test.com/api', {
         method: 'POST',
@@ -373,7 +382,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -412,7 +421,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',
@@ -453,7 +462,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
         return {}
       })
     }
-    vi.mocked(server.createClient).mockResolvedValue(mockSupabase as any)
+    useClient(mockSupabase)
 
     const req = new NextRequest('http://test.com/api', {
       method: 'POST',

@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
+import * as serviceRole from '@/lib/supabase/service-role'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleSupabase: vi.fn() }))
+
+// Lifecycle writes are server-owned: the route reads with the user session and writes
+// through the service role. In these fixtures both are the same in-memory client.
+function useClient(client: unknown) {
+  vi.mocked(server.createClient).mockResolvedValue(client as any)
+  vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(client as any)
+}
 vi.mock('@/lib/storage/video-downloader', () => ({ downloadAndStoreVideo: vi.fn() }))
 
 const constructedApiKeys: string[] = []
@@ -95,7 +104,7 @@ describe('/api/video-generations/[id]/sync — user_byok', () => {
     'missing user Kling key → typed 422 and zero Kling calls in %s, despite KLING_API_KEY being set',
     async (nodeEnv) => {
       vi.stubEnv('NODE_ENV', nodeEnv)
-      vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', null) as any)
+      useClient(buildSupabase('user-1', null))
 
       const response = await callSync()
       const payload = await response.json()
@@ -109,7 +118,7 @@ describe('/api/video-generations/[id]/sync — user_byok', () => {
   )
 
   it('configured user key → the adapter is constructed with the USER key', async () => {
-    vi.mocked(server.createClient).mockResolvedValue(buildSupabase('user-1', 'kling-user-key') as any)
+    useClient(buildSupabase('user-1', 'kling-user-key'))
     getTaskStatus.mockResolvedValue({ id: 'kling-task-1', status: 'processing', created_at: 1, updated_at: 1 })
 
     const response = await callSync()

@@ -26,6 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
 import { isSafeResultUrl } from '@/lib/storage/safe-result-url'
 import type { VideoTransport } from './capabilities'
+import { videoStoragePrefix } from './storage-path'
 
 export const NON_TERMINAL_STATUSES = ['queued', 'submitted', 'processing'] as const
 
@@ -113,7 +114,7 @@ export async function completeVideoGeneration(
   }
 
   const download = deps.download ?? downloadAndStoreVideo
-  const prefix = `${generation.user_id}/videos/ai/${generation.project_id}`
+  const prefix = videoStoragePrefix(generation.user_id, generation.project_id)
   // Throws on download/storage failure: the row stays non-terminal and the
   // caller (poller / callback retry) tries again while the URL is still valid.
   const { storagePath, publicUrl, mime, size } = await download(params.resultUrl, prefix, {
