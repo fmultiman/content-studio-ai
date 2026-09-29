@@ -11,21 +11,31 @@
 // executes one bounded pass of this module. The manual /sync endpoint calls the
 // SAME function, so there is one status/completion implementation, not two.
 //
-// Schedule (sized for a ~1-minute external tick, deliberately gentle):
-//   - first check 60 s after submit (a video takes minutes, never seconds),
-//     then 60 s, 60 s, 2 min, and 3 min thereafter (cap) — far under the
-//     provider's documented 5 QPS. A due time below the tick is simply served
-//     by the next tick; a slower tick only delays, never breaks, anything;
-//   - a rejected/expired authorization backs off to 5 min (the job is still
-//     recoverable once the user reconnects), and every poll is LEASED, so
-//     overlapping passes never check the same row twice;
+// VIDEO_GENERATION_POLLING_LATENCY_V1 — two SEPARATE mechanisms:
+//
+//   scheduler wake   the VPS calls the poll route every ~10 s. A wake that
+//                    finds no due row costs two cheap database reads and makes
+//                    NO provider call.
+//   per-job schedule each generation's own `next_poll_at`. Only rows whose
+//                    `next_poll_at <= now` are ever queried at the provider, so
+//                    the wake frequency never multiplies provider traffic.
+//
+// Per-job schedule (by number of checks already made, `poll_attempts`):
+//   - first check 10 s after submit, then every 10 s for the first 30 checks
+//     (~5 min: the window in which a short video normally finishes), every 20 s
+//     up to check 60 (~15 min), every 60 s up to check 120 (~1 h), then 3 min.
+//     A job therefore costs ~12 checks for a 2-minute video and is hard-bounded
+//     afterwards — far under the provider's documented 5 QPS;
+//   - errors (outage, refresh hiccup, storage) are NOT a verdict: they back off
+//     to 3x the normal step (floor 30 s, cap 5 min) instead of hammering a
+//     failing dependency, and keep being retried until 23 h;
+//   - a rejected/expired authorization backs off to 5 min (still recoverable
+//     once the user reconnects), and every poll is LEASED, so overlapping
+//     passes never check the same row twice;
 //   - a generation the provider STILL reports as running after 6 h is failed
-//     with an explicit "verify your Kling account" message (the provider
-//     reports its own timeouts long before that); errors while checking
-//     (outage, refresh hiccup, revoked authorization, storage) are NOT a
-//     verdict and keep being retried every few minutes until 23 h — inside
-//     the provider's 24 h result-URL lifetime, after which the result could no
-//     longer be fetched anyway.
+//     with an explicit "verify your Kling account" message; errors are retried
+//     until 23 h — inside the provider's 24 h result-URL lifetime, after which
+//     the result could no longer be fetched anyway.
 // The only scheduling state persisted is `next_poll_at` and `poll_attempts`.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -48,7 +58,19 @@ import {
 import { QUEUED_ORPHAN_AGE_MS } from './poll-constants'
 import { KlingMcpTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
 
-export const POLL_DELAYS_MS = [60_000, 60_000, 60_000, 120_000, 180_000] as const
+/** Per-job cadence tiers: [inclusive upper bound of `poll_attempts`, delay to the next check]. */
+export const POLL_SCHEDULE = [
+  [30, 10_000],
+  [60, 20_000],
+  [120, 60_000],
+] as const
+/** Beyond the last tier a long-running job is checked this often. */
+export const POLL_IDLE_MS = 180_000
+export const POLL_FIRST_CHECK_MS = POLL_SCHEDULE[0][1]
+/** Transient errors back off to this multiple of the normal step, within [floor, cap]. */
+export const POLL_ERROR_FACTOR = 3
+export const POLL_ERROR_MIN_MS = 30_000
+export const POLL_ERROR_MAX_MS = 5 * 60_000
 export const POLL_AUTH_BACKOFF_MS = 5 * 60_000
 export const POLL_LEASE_MS = 3 * 60_000
 export const POLL_MAX_AGE_MS = 6 * 60 * 60_000
@@ -63,12 +85,20 @@ export const POLL_CONCURRENCY = 2
 export const POLL_TIME_BUDGET_MS = 240_000
 export { QUEUED_ORPHAN_AGE_MS }
 
+/** Delay to the next check for a job that has made `attempts` checks. */
 export function pollDelayMs(attempts: number): number {
-  return POLL_DELAYS_MS[Math.min(Math.max(attempts, 0), POLL_DELAYS_MS.length - 1)]
+  const made = Math.max(attempts, 0)
+  for (const [upTo, delay] of POLL_SCHEDULE) if (made <= upTo) return delay
+  return POLL_IDLE_MS
+}
+
+/** Delay after a TRANSIENT failure: stepped backoff derived from the normal step. Never below the floor, never above the cap. */
+export function pollErrorDelayMs(attempts: number): number {
+  return Math.min(POLL_ERROR_MAX_MS, Math.max(POLL_ERROR_MIN_MS, pollDelayMs(attempts) * POLL_ERROR_FACTOR))
 }
 
 export function initialNextPollAt(now: Date = new Date()): string {
-  return new Date(now.getTime() + POLL_DELAYS_MS[0]).toISOString()
+  return new Date(now.getTime() + POLL_FIRST_CHECK_MS).toISOString()
 }
 
 export type SyncOutcome =
@@ -152,7 +182,7 @@ export async function syncGenerationWithProvider(
     // recoverable on reconnect) until the hard cap.
     if (hardExpired) return timeOut()
     if (options.schedule) {
-      await reschedule(db, generation, error instanceof ProviderAuthorizationRequiredError ? POLL_AUTH_BACKOFF_MS : pollDelayMs(generation.poll_attempts ?? 0), now)
+      await reschedule(db, generation, error instanceof ProviderAuthorizationRequiredError ? POLL_AUTH_BACKOFF_MS : pollErrorDelayMs(generation.poll_attempts ?? 0), now)
     }
     // Only the error class is ever surfaced/logged — never a message or token.
     return { outcome: error instanceof ProviderAuthorizationRequiredError ? 'authorization_required' : 'transient_error', generation }
@@ -190,9 +220,9 @@ export async function syncGenerationWithProvider(
       )
       return { outcome: mapOutcome(result.outcome), generation: result.generation }
     } catch {
-      // Download/storage/DB hiccup: the row is untouched and retried while the URL is still valid.
+      // Download/storage/DB hiccup: the row is untouched and retried (backed off) while the URL is still valid.
       if (hardExpired) return timeOut()
-      if (options.schedule) await reschedule(db, generation, pollDelayMs(generation.poll_attempts ?? 0), now)
+      if (options.schedule) await reschedule(db, generation, pollErrorDelayMs(generation.poll_attempts ?? 0), now)
       return { outcome: 'transient_error', generation }
     }
   }

@@ -311,7 +311,7 @@ existing Content Studio server route — no Redis/BullMQ/Temporal/worker service
 **not** moved to the VPS in this task:
 
 ```
-VPS scheduler (about once a minute)
+VPS scheduler (every ~10 s since VIDEO_GENERATION_POLLING_LATENCY_V1; was ~1 min)
   → authenticated POST to Content Studio  /api/internal/video-generations/poll
   → the endpoint claims due jobs with the existing leases
   → MCP status queries (query_tasks)
@@ -320,7 +320,8 @@ VPS scheduler (about once a minute)
 
 Explicitly **not** used as the reliability mechanism: Vercel Cron (plan-dependent; a sub-daily
 schedule is rejected on Hobby), `pg_cron`/`pg_net`, an unauthenticated endpoint, or /videos page
-traffic. The /videos 30 s sync remains only an **opportunistic** recovery path.
+traffic. Since VIDEO_GENERATION_POLLING_LATENCY_V1 the /videos page only refreshes status from the
+database (10 s) and syncs with the provider as a **recovery** path for a row overdue by more than 2 min.
 
 - `app/api/internal/video-generations/poll` — **POST only** (no GET), authenticated with a dedicated
   shared secret **`VIDEO_POLL_WORKER_SECRET`** (`Authorization: Bearer …`, constant-time digest compare,
@@ -337,6 +338,10 @@ traffic. The /videos 30 s sync remains only an **opportunistic** recovery path.
   borrow another user's grant); queries the exact `generation_id`; normalizes; on success calls the
   shared completion; on failure records a safe error; terminal rows are never selected.
 - Schedule state is only `next_poll_at` + `poll_attempts` (migration 042).
+
+> **SUPERSEDED by `VIDEO_GENERATION_POLLING_LATENCY_V1.md`**: the schedule is now adaptive (first check 10 s,
+> 10 s steps for ~5 min, then 20 s / 60 s / 3 min), errors back off 3× (30 s–5 min) and the scheduler wakes every
+> ~10 s. The paragraph below records the original 1-minute design.
 
 **Backoff / limits (sized for a ~1-minute external tick)**: first check 60 s after submit; then 60 s,
 60 s, 2 min, and 3 min thereafter (cap) — no delay is shorter than the tick, so the tick (not the
