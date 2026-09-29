@@ -312,7 +312,8 @@ describe('video generation connection routing boundary — VIDEO_GENERATION_CONN
       'lib/video-generation/polling.ts',
     ])
     const route = sourceFiles.find((f) => f.path === 'app/api/internal/video-generations/poll/route.ts')!
-    expect(route.text).toContain('CRON_SECRET')
+    expect(route.text).toContain('POLL_WORKER_SECRET')
+    expect(route.text).not.toMatch(/export (async function|const) (GET|PUT|PATCH|DELETE)/)
     expect(route.text).toContain('timingSafeEqual')
   })
 

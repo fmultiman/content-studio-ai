@@ -57,9 +57,10 @@ const defaultResolver: HostResolver = async (hostname) => (await lookup(hostname
  * Rejects a hostname that resolves to a non-public address (e.g. a public DNS
  * name pointing at an internal IP). Resolution failure is a failure.
  */
-export async function assertPublicHost(hostname: string, resolve: HostResolver = defaultResolver): Promise<void> {
+export async function assertPublicHost(hostname: string, resolve: HostResolver = defaultResolver): Promise<string[]> {
   const addresses = await resolve(hostname)
   if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
     throw new Error('Result host is not public.')
   }
+  return addresses
 }

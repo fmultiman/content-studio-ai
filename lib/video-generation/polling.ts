@@ -5,24 +5,27 @@
 // WHY POLLING: Kling MCP has no callback and no way to pass our own
 // correlation id (discovery §2.6). An MCP generation returns a generation_id
 // and can only be learned about by asking `query_tasks`. The product therefore
-// cannot depend on the user keeping /videos open: a scheduled server route
-// (Vercel Cron -> app/api/internal/video-generations/poll) drives this
-// module. The manual /sync endpoint calls the SAME function, so there is one
-// status/completion implementation, not two.
+// cannot depend on the user keeping /videos open: an always-on EXTERNAL
+// scheduler (the project's VPS) calls the authenticated route
+// app/api/internal/video-generations/poll about once a minute, and the route
+// executes one bounded pass of this module. The manual /sync endpoint calls the
+// SAME function, so there is one status/completion implementation, not two.
 //
-// Schedule (evidence-based, deliberately gentle):
-//   - the first check is 45 s after submit (a video takes minutes, never seconds);
-//   - then 60 s, 60 s, 90 s, and 120 s thereafter (cap) — well under the
-//     provider's documented 5 QPS, and far inside the 24 h result-URL lifetime;
+// Schedule (sized for a ~1-minute external tick, deliberately gentle):
+//   - first check 60 s after submit (a video takes minutes, never seconds),
+//     then 60 s, 60 s, 2 min, and 3 min thereafter (cap) — far under the
+//     provider's documented 5 QPS. A due time below the tick is simply served
+//     by the next tick; a slower tick only delays, never breaks, anything;
 //   - a rejected/expired authorization backs off to 5 min (the job is still
-//     recoverable once the user reconnects), and every poll is leased, so
-//     concurrent cron runs never check the same row twice;
+//     recoverable once the user reconnects), and every poll is LEASED, so
+//     overlapping passes never check the same row twice;
 //   - a generation the provider STILL reports as running after 6 h is failed
 //     with an explicit "verify your Kling account" message (the provider
 //     reports its own timeouts long before that); errors while checking
 //     (outage, refresh hiccup, revoked authorization, storage) are NOT a
-//     verdict and keep being retried until the 22 h hard cap, which sits inside
-//     the 24 h result-URL lifetime;
+//     verdict and keep being retried every few minutes until 23 h — inside
+//     the provider's 24 h result-URL lifetime, after which the result could no
+//     longer be fetched anyway.
 // The only scheduling state persisted is `next_poll_at` and `poll_attempts`.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -38,24 +41,27 @@ import {
   completeVideoGeneration,
   CompletionStoreError,
   failVideoGeneration,
+  failVideoGenerationWithoutTask,
   NON_TERMINAL_STATUSES,
   type CompletionDependencies,
 } from './completion'
-import { KlingMcpTransport, type KlingVideoTransport } from './transport'
+import { QUEUED_ORPHAN_AGE_MS } from './poll-constants'
+import { KlingMcpTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
 
-export const POLL_DELAYS_MS = [45_000, 60_000, 60_000, 90_000, 120_000] as const
+export const POLL_DELAYS_MS = [60_000, 60_000, 60_000, 120_000, 180_000] as const
 export const POLL_AUTH_BACKOFF_MS = 5 * 60_000
 export const POLL_LEASE_MS = 3 * 60_000
 export const POLL_MAX_AGE_MS = 6 * 60 * 60_000
 /** Errors (not provider verdicts) stop being retried only here, inside the 24 h result-URL lifetime. */
-export const POLL_HARD_MAX_AGE_MS = 22 * 60 * 60_000
+export const POLL_HARD_MAX_AGE_MS = 23 * 60 * 60_000
+/** An unrecognised provider state that carries a result URL is accepted as done after this many observations. */
+export const UNCONFIRMED_RESULT_ATTEMPTS = 4
 export const POLL_BATCH_LIMIT = 10
 /** Each completion can buffer a whole video in memory, so keep this low. */
 export const POLL_CONCURRENCY = 2
 /** Stop STARTING new rows after this (the route's maxDuration is 300 s). */
 export const POLL_TIME_BUDGET_MS = 240_000
-/** A generation stuck in `queued` with no provider task this long was interrupted mid-submit. */
-export const QUEUED_ORPHAN_AGE_MS = 15 * 60_000
+export { QUEUED_ORPHAN_AGE_MS }
 
 export function pollDelayMs(attempts: number): number {
   return POLL_DELAYS_MS[Math.min(Math.max(attempts, 0), POLL_DELAYS_MS.length - 1)]
@@ -138,7 +144,7 @@ export async function syncGenerationWithProvider(
     return { outcome: result.outcome === 'failed_recorded' ? 'timed_out' : mapOutcome(result.outcome), generation: result.generation }
   }
 
-  let status
+  let status: VideoTaskStatus
   try {
     status = await transport.getStatus(identity.taskId)
   } catch (error) {
@@ -150,6 +156,13 @@ export async function syncGenerationWithProvider(
     }
     // Only the error class is ever surfaced/logged — never a message or token.
     return { outcome: error instanceof ProviderAuthorizationRequiredError ? 'authorization_required' : 'transient_error', generation }
+  }
+
+  // The provider vocabulary is unverified: an unrecognised state that carries a
+  // result URL is not trusted at first sight, but once it has been observed
+  // repeatedly it is accepted rather than letting a finished paid video time out.
+  if (status.state === 'processing' && status.unconfirmedResultUrl && (generation.poll_attempts ?? 0) >= UNCONFIRMED_RESULT_ATTEMPTS) {
+    status = { state: 'succeeded', resultUrl: status.unconfirmedResultUrl, rawState: status.rawState }
   }
 
   if (status.state === 'failed') {
@@ -343,11 +356,17 @@ export async function pollDueMcpGenerations(
       const factory = deps.transportFactory ?? ((client, generation) => createMcpTransportForGeneration(client, generation, deps))
       const transport = await factory(db, claimed)
 
-      if (!transport || !claimed.task_id) {
+      if (!claimed.task_id) {
+        // A "submitted" row with no provider task id can never be polled: end it explicitly.
+        await failVideoGenerationWithoutTask(db, claimed.id).catch(() => undefined)
+        count('interrupted')
+        return
+      }
+      if (!transport) {
         // The grant this paid job depends on no longer exists: it cannot be retrieved here.
         await failVideoGeneration(db, {
           generationId: claimed.id,
-          taskId: claimed.task_id ?? '',
+          taskId: claimed.task_id,
           transport: 'mcp',
           code: 'CONNECTION_UNAVAILABLE',
           message: 'A conexão com a conta Kling não está mais disponível. Verifique o resultado diretamente na sua conta Kling.',

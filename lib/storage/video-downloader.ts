@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { pinnedFetch } from './pinned-fetch'
 import { assertPublicHost, isSafeResultUrl, type HostResolver } from './safe-result-url'
 
 export const getS3Client = () =>
@@ -52,7 +53,8 @@ export const VIDEO_DOWNLOAD_TIMEOUT_MS = 50_000
 export const MAX_REDIRECTS = 3
 
 export interface FetchDependencies {
-  fetchFn?: typeof fetch
+  /** Default: a GET pinned to the vetted address (no second DNS resolution, no redirect following). */
+  fetchFn?: (url: string, init: { redirect: 'manual'; signal: AbortSignal; address: string }) => Promise<Response>
   resolveHost?: HostResolver
   upload?: typeof uploadApplicationVideo
 }
@@ -66,15 +68,16 @@ const ACCEPTED_MIME = /^(video\/|application\/octet-stream|binary\/octet-stream)
  * size-capped while streaming; and only video-like content types are accepted.
  */
 async function fetchProviderVideo(url: string, deps: FetchDependencies): Promise<{ buffer: Buffer; mime: string }> {
-  const fetchFn = deps.fetchFn ?? fetch
+  const fetchFn = deps.fetchFn ?? ((target, init) => pinnedFetch(target, { address: init.address, signal: init.signal }))
   const signal = AbortSignal.timeout(VIDEO_DOWNLOAD_TIMEOUT_MS)
 
   let current = url
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
     if (!isSafeResultUrl(current)) throw new Error('Result URL is not allowed.')
-    await assertPublicHost(new URL(current).hostname, deps.resolveHost)
+    // Vet the DNS answer, then connect to THAT address (not to a fresh lookup).
+    const [address] = await assertPublicHost(new URL(current).hostname, deps.resolveHost)
 
-    const res = await fetchFn(current, { redirect: 'manual', signal })
+    const res = await fetchFn(current, { redirect: 'manual', signal, address })
 
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location')
@@ -98,20 +101,25 @@ async function fetchProviderVideo(url: string, deps: FetchDependencies): Promise
       return { buffer, mime }
     }
 
+    // With a declared length the body is written straight into ONE preallocated
+    // buffer (peak memory ~ the video size, not 2x); without one, chunks are
+    // collected and joined. Either way the cap is enforced while streaming.
+    const reader = res.body.getReader()
+    const preallocated = length > 0 ? Buffer.allocUnsafe(length) : null
     const chunks: Uint8Array[] = []
     let total = 0
-    const reader = res.body.getReader()
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
       total += value.byteLength
-      if (total > MAX_VIDEO_BYTES) {
+      if (total > MAX_VIDEO_BYTES || (preallocated && total > preallocated.length)) {
         await reader.cancel().catch(() => undefined)
         throw new Error('Result video is too large.')
       }
-      chunks.push(value)
+      if (preallocated) preallocated.set(value, total - value.byteLength)
+      else chunks.push(value)
     }
-    return { buffer: Buffer.concat(chunks), mime }
+    return { buffer: preallocated ? preallocated.subarray(0, total) : Buffer.concat(chunks, total), mime }
   }
 
   throw new Error('Too many redirects.')

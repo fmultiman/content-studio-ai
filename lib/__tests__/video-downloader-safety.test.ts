@@ -5,7 +5,10 @@ import {
   MAX_VIDEO_BYTES,
   VIDEO_DOWNLOAD_TIMEOUT_MS,
 } from '@/lib/storage/video-downloader'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { assertPublicHost, isPrivateAddress, isSafeResultUrl } from '@/lib/storage/safe-result-url'
+import { pinnedFetch } from '@/lib/storage/pinned-fetch'
 
 const PUBLIC = async () => ['203.0.113.10']
 const uploaded = () => vi.fn(async (buffer: Buffer, path: string, mime: string, size: number) => ({ storagePath: path, publicUrl: `https://s3.example.test/${path}`, mime, size }))
@@ -125,6 +128,117 @@ describe('provider result download hardening (external input)', () => {
     const fetchFn = vi.fn()
     await expect(downloadAndStoreVideo('http://cdn.example.test/v.mp4', 'p', {}, { fetchFn: fetchFn as any, resolveHost: PUBLIC, upload: uploaded() })).rejects.toThrow()
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('connection pinning (closes the DNS-rebinding gap between "check" and "connect")', () => {
+  it('connects to the VETTED address and never re-resolves the hostname', async () => {
+    const seen: string[] = []
+    const fetchFn = vi.fn(async (_url: string, init: { address: string }) => {
+      seen.push(init.address)
+      return response('ok')
+    })
+    // The vetted answer is the FIRST public address; a later lookup could differ, but we never do one.
+    await downloadAndStoreVideo('https://cdn.example.test/v.mp4', 'p', {}, { fetchFn: fetchFn as any, resolveHost: async () => ['93.184.216.34', '93.184.216.35'], upload: uploaded() })
+    expect(seen).toEqual(['93.184.216.34'])
+  })
+
+  it('re-vets EVERY redirect hop and pins each one to its own vetted address', async () => {
+    const seen: Array<[string, string]> = []
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce(async (url: string, init: { address: string }) => { seen.push([url, init.address]); return new Response(null, { status: 302, headers: { location: 'https://cdn2.example.test/x.mp4' } }) })
+      .mockImplementationOnce(async (url: string, init: { address: string }) => { seen.push([url, init.address]); return response('ok') })
+    const resolveHost = async (host: string) => (host === 'cdn.example.test' ? ['93.184.216.34'] : ['93.184.216.99'])
+
+    await downloadAndStoreVideo('https://cdn.example.test/v.mp4', 'p', {}, { fetchFn: fetchFn as any, resolveHost, upload: uploaded() })
+
+    expect(seen).toEqual([['https://cdn.example.test/v.mp4', '93.184.216.34'], ['https://cdn2.example.test/x.mp4', '93.184.216.99']])
+  })
+
+  describe('pinnedFetch (real sockets against a local server)', () => {
+    async function withServer(handler: http.RequestListener, run: (port: number) => Promise<void>) {
+      const server = http.createServer(handler)
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      try {
+        await run((server.address() as AddressInfo).port)
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    }
+
+    it('reaches the pinned address even though the URL hostname cannot be resolved (the lookup is overridden)', async () => {
+      await withServer((req, res) => { res.setHeader('content-type', 'video/mp4'); res.end(`host=${req.headers.host}`) }, async (port) => {
+        // "pinned.invalid" never resolves: only the pinned lookup can make this connect.
+        const res = await pinnedFetch(`http://pinned.invalid:${port}/v.mp4`, { address: '127.0.0.1', request: http.request })
+        expect(res.status).toBe(200)
+        expect(res.headers.get('content-type')).toBe('video/mp4')
+        // The Host header still carries the real hostname (virtual hosts, SNI, cert verification).
+        expect(await res.text()).toBe(`host=pinned.invalid:${port}`)
+      })
+    })
+
+    it('does NOT follow redirects: a 3xx is handed back for re-validation', async () => {
+      let hits = 0
+      await withServer((req, res) => {
+        hits += 1
+        if (req.url === '/start') { res.statusCode = 302; res.setHeader('location', 'http://169.254.169.254/latest/meta-data'); res.end(); return }
+        res.end('should never be requested')
+      }, async (port) => {
+        const res = await pinnedFetch(`http://pinned.invalid:${port}/start`, { address: '127.0.0.1', request: http.request })
+        expect(res.status).toBe(302)
+        expect(res.headers.get('location')).toBe('http://169.254.169.254/latest/meta-data')
+        expect(res.body).toBeNull()
+        expect(hits).toBe(1)
+      })
+    })
+
+    it('honours the abort signal (the download is time-bounded)', async () => {
+      await withServer(() => { /* never answers */ }, async (port) => {
+        const controller = new AbortController()
+        const pending = pinnedFetch(`http://pinned.invalid:${port}/slow`, { address: '127.0.0.1', request: http.request, signal: controller.signal })
+        setTimeout(() => controller.abort(), 20)
+        await expect(pending).rejects.toThrow()
+      })
+    })
+
+    it('streams a body larger than one chunk intact', async () => {
+      const payload = Buffer.alloc(200_000, 7)
+      await withServer((_req, res) => { res.setHeader('content-length', String(payload.length)); res.end(payload) }, async (port) => {
+        const res = await pinnedFetch(`http://pinned.invalid:${port}/big`, { address: '127.0.0.1', request: http.request })
+        expect(Buffer.from(await res.arrayBuffer()).equals(payload)).toBe(true)
+      })
+    })
+  })
+
+  it('the default download path is the pinned one (no plain fetch of provider URLs)', async () => {
+    const source = (await import('node:fs')).readFileSync('lib/storage/video-downloader.ts', 'utf8')
+    expect(source).toContain('pinnedFetch')
+    expect(source).not.toMatch(/\bfetch\(current/)
+  })
+})
+
+describe('single-buffer download (memory)', () => {
+  it('with a declared length the body is written into ONE buffer and the exact bytes are stored', async () => {
+    const upload = uploaded()
+    const body = new Uint8Array(1000).fill(3)
+    const fetchFn = vi.fn(async () => new Response(body, { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': '1000' } }))
+    const result = await downloadAndStoreVideo('https://cdn.example.test/v.mp4', 'p', {}, { fetchFn: fetchFn as any, resolveHost: PUBLIC, upload })
+    expect(result.size).toBe(1000)
+    const stored = upload.mock.calls[0][0] as Buffer
+    expect(stored.length).toBe(1000)
+    expect(stored.every((byte) => byte === 3)).toBe(true)
+  })
+
+  it('a body that ends SHORT of its declared length stores only what arrived; one that exceeds it is refused', async () => {
+    const shortUpload = uploaded()
+    const short = vi.fn(async () => new Response(new Uint8Array(400), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': '1000' } }))
+    expect((await downloadAndStoreVideo('https://cdn.example.test/v.mp4', 'p', {}, { fetchFn: short as any, resolveHost: PUBLIC, upload: shortUpload })).size).toBe(400)
+
+    const longUpload = uploaded()
+    const long = vi.fn(async () => new Response(new Uint8Array(1500), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': '1000' } }))
+    await expect(downloadAndStoreVideo('https://cdn.example.test/v.mp4', 'p', {}, { fetchFn: long as any, resolveHost: PUBLIC, upload: longUpload })).rejects.toThrow(/too large/)
+    expect(longUpload).not.toHaveBeenCalled()
   })
 })
 

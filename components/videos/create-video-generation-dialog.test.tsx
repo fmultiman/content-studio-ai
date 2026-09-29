@@ -320,6 +320,51 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
     expect(posts).toHaveLength(1)
   })
 
+  it.each([
+    ['a network drop after the request was sent', () => { throw new TypeError('Failed to fetch') }],
+    ['a gateway timeout with an HTML body', () => new Response('<html>504</html>', { status: 504 })],
+    ['a server error without a definitive code', () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 })],
+  ])('%s may already have been billed: the form locks instead of inviting a retry', async (_name, respond) => {
+    connectionsPayload = { connections: [describeRestConnection('configured')] }
+    const onSuccess = vi.fn()
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/api/video-generations/connections') return new Response(JSON.stringify(connectionsPayload), { status: 200 })
+      if (url === '/api/video-generations' && init?.method === 'POST') return respond()
+      return new Response('{}', { status: 200 })
+    })
+    render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" onSuccess={onSuccess} />)
+    await waitFor(() => expect(screen.getByTestId('video-model-select')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('operation-text_to_video'))
+    fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
+    await waitFor(() => expect(screen.getByPlaceholderText(/Descreva a cena/)).toBeTruthy())
+    fireEvent.change(screen.getByPlaceholderText(/Descreva a cena/), { target: { value: 'a fox' } })
+    fireEvent.click(screen.getByTestId('generate-video'))
+
+    await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
+    expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  it('a DEFINITIVE rejection (with a code) does not lock the form', async () => {
+    connectionsPayload = { connections: [describeRestConnection('configured')] }
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === '/api/video-generations/connections') return new Response(JSON.stringify(connectionsPayload), { status: 200 })
+      if (url === '/api/video-generations' && init?.method === 'POST') return new Response(JSON.stringify({ error: 'Rejected', code: 'PROVIDER_CONTENT_REJECTED', outcomeUnknown: false }), { status: 422 })
+      return new Response('{}', { status: 200 })
+    })
+    render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" />)
+    await waitFor(() => expect(screen.getByTestId('video-model-select')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('operation-text_to_video'))
+    fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
+    await waitFor(() => expect(screen.getByPlaceholderText(/Descreva a cena/)).toBeTruthy())
+    fireEvent.change(screen.getByPlaceholderText(/Descreva a cena/), { target: { value: 'a fox' } })
+    fireEvent.click(screen.getByTestId('generate-video'))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/video-generations' && init?.method === 'POST')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(false))
+    expect(screen.queryByTestId('video-submission-unconfirmed')).toBeNull()
+  })
+
   it('never renders provider secrets, raw schema keys or account identifiers', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     const { container } = renderDialog()

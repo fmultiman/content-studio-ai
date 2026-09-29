@@ -433,6 +433,21 @@ describe('DELETE /api/provider-connections/[id]', () => {
     },
   )
 
+  it('a connection that is NOT connected (revoked/expired) can always be removed: its dead tokens protect nothing', async () => {
+    const db = seed()
+    db.tables.provider_connections[0].status = 'authorization_required'
+    db.tables.video_generations.push({ id: 'gen-stuck', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'processing', created_at: new Date().toISOString() })
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('failed')
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(200)
+    expect(db.tables.provider_connections.map((row) => row.id)).toEqual(['conn-2'])
+    expect(db.tables.provider_connection_secrets.map((row) => row.connection_id)).toEqual(['conn-2'])
+  })
+
   it('does not let finished generations (or another connection’s active ones) block a disconnect', async () => {
     const db = seed()
     db.tables.video_generations.push(

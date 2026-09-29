@@ -140,6 +140,21 @@ export async function completeVideoGeneration(
   return won ? { outcome: 'completed', generation: won } : { outcome: 'already_terminal', generation }
 }
 
+/** Ends a non-terminal row that never received a provider task id (nothing to poll or retrieve). */
+export async function failVideoGenerationWithoutTask(db: SupabaseClient, generationId: string): Promise<void> {
+  const { error } = await db
+    .from('video_generations')
+    .update({
+      status: 'failed',
+      next_poll_at: null,
+      error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio à Kling não foi confirmado e não há como recuperar este vídeo.' },
+    })
+    .eq('id', generationId)
+    .is('task_id', null)
+    .in('status', [...NON_TERMINAL_STATUSES])
+  if (error) throw new CompletionStoreError()
+}
+
 export async function failVideoGeneration(
   db: SupabaseClient,
   params: Identity & { code: string; message: string; details?: Record<string, unknown> },

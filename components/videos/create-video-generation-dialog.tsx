@@ -156,8 +156,9 @@ export function CreateVideoGenerationDialog({
   const [sourceImageId, setSourceImageId] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  // Set when the provider MAY have accepted (and billed) a generation we could not confirm:
-  // the form is locked so it cannot be resubmitted by mistake.
+  // Set when the provider MAY have accepted (and billed) a generation we could not confirm
+  // (network drop, gateway timeout, unreadable response, unrecorded task): the form stays
+  // locked — until the page is reloaded after checking — so it cannot be resubmitted by mistake.
   const [unconfirmedSubmission, setUnconfirmedSubmission] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState<'refresh' | 'authorize' | null>(null)
   const [projectImages, setProjectImages] = useState<any[]>([])
@@ -181,8 +182,6 @@ export function CreateVideoGenerationDialog({
 
   useEffect(() => {
     if (!open) return
-    // A fresh open starts a fresh, unlocked form.
-    const reset = setTimeout(() => setUnconfirmedSubmission(null), 0)
     let cancelled = false
     fetchConnections()
       .then((list) => {
@@ -193,7 +192,6 @@ export function CreateVideoGenerationDialog({
       })
     return () => {
       cancelled = true
-      clearTimeout(reset)
     }
   }, [open, applyConnections])
 
@@ -314,21 +312,39 @@ export function CreateVideoGenerationDialog({
 
     setIsSubmitting(true)
 
-    try {
-      const res = await fetch('/api/video-generations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId,
-          productionId,
-          prompt,
-          sourceImageId: selection.operation === 'image_to_video' ? sourceImageId : undefined,
-          // Visible controls only: nothing hidden or stale is ever submitted.
-          ...toSubmitControls(selection),
-        }),
-      })
+    // From the moment the request is sent, a missing/garbled answer does NOT mean "not submitted".
+    const lockUnconfirmed = (message: string) => {
+      setUnconfirmedSubmission(message)
+      if (onSuccess) onSuccess()
+    }
 
-      const data = await res.json()
+    try {
+      let res: Response
+      try {
+        res = await fetch('/api/video-generations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId,
+            productionId,
+            prompt,
+            sourceImageId: selection.operation === 'image_to_video' ? sourceImageId : undefined,
+            // Visible controls only: nothing hidden or stale is ever submitted.
+            ...toSubmitControls(selection),
+          }),
+        })
+      } catch {
+        lockUnconfirmed('A conexão foi interrompida antes de recebermos a resposta.')
+        return
+      }
+
+      let data: any
+      try {
+        data = await res.json()
+      } catch {
+        lockUnconfirmed('Recebemos uma resposta ilegível do servidor.')
+        return
+      }
 
       if (!res.ok) {
         if (data.code === 'PROVIDER_NOT_CONFIGURED') {
@@ -343,10 +359,11 @@ export function CreateVideoGenerationDialog({
         if (data.code === 'GENERATION_AUTHORIZATION_REQUIRED' || data.code === 'AUTHORIZATION_REQUIRED') {
           await loadConnections()
         }
-        if (data.outcomeUnknown === true) {
-          // Possibly billed: never leave a live "Gerar" button that invites a second charge.
-          setUnconfirmedSubmission(data.error || 'Não foi possível confirmar o envio à Kling.')
-          if (onSuccess) onSuccess()
+        // Definitive answers carry a `code`. An unknown outcome (flagged by the server) or a
+        // server/gateway error WITHOUT a code may already have been billed: never leave a
+        // live "Gerar" button that invites a second charge.
+        if (data.outcomeUnknown === true || (res.status >= 500 && !data.code)) {
+          lockUnconfirmed(data.error || 'Não foi possível confirmar o envio à Kling.')
           return
         }
         throw new Error(data.error || 'Erro ao criar geração de vídeo')
@@ -401,7 +418,7 @@ export function CreateVideoGenerationDialog({
             <p className="text-sm font-medium">Envio não confirmado — não tente de novo</p>
             <p className="text-xs text-muted-foreground">{unconfirmedSubmission}</p>
             <p className="text-xs text-muted-foreground">
-              Confira a sua conta Kling e a lista de vídeos antes de gerar outro. Este formulário foi bloqueado para evitar uma cobrança duplicada.
+              Confira a sua conta Kling e a lista de vídeos antes de gerar outro. Este formulário foi bloqueado para evitar uma cobrança duplicada; recarregue a página para liberá-lo depois de conferir.
             </p>
           </div>
         )}

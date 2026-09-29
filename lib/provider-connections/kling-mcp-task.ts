@@ -23,6 +23,8 @@ export interface KlingMcpTaskReading {
   resultUrl: string | null
   /** Safe, bounded provider message for failed tasks. */
   message: string | null
+  /** A result URL that accompanied a state we do NOT recognise (never trusted on first sight). */
+  unconfirmedResultUrl: string | null
 }
 
 const SUCCESS_STATES = new Set(['succeed', 'succeeded', 'success', 'successful', 'completed', 'complete', 'done', 'finished'])
@@ -99,10 +101,33 @@ function findResultUrl(record: Record<string, unknown>): string | null {
   return null
 }
 
-function findRawState(record: Record<string, unknown>): string | null {
-  for (const key of ['status', 'state', 'taskStatus', 'task_status']) {
+const STATE_KEYS = ['status', 'state', 'taskStatus', 'task_status']
+
+function ownState(record: Record<string, unknown>): string | null {
+  for (const key of STATE_KEYS) {
     const value = bounded(record[key])
     if (value) return value
+  }
+  return null
+}
+
+/**
+ * The most SPECIFIC state wins: the work / task entry, then nested `data`/`result`,
+ * and only then the outer envelope (an envelope "ok" must not shadow the task's own state).
+ */
+function findRawState(record: Record<string, unknown>): string | null {
+  const work = asRecord(findWorks(record)[0])
+  if (work) {
+    const found = ownState(work)
+    if (found) return found
+  }
+  const tasks = record.tasks ?? record.generations
+  if (Array.isArray(tasks)) {
+    const nested = asRecord(tasks[0])
+    if (nested) {
+      const found = findRawState(nested)
+      if (found) return found
+    }
   }
   for (const key of ['data', 'result']) {
     const nested = asRecord(record[key])
@@ -111,17 +136,7 @@ function findRawState(record: Record<string, unknown>): string | null {
       if (found) return found
     }
   }
-  const work = asRecord(findWorks(record)[0])
-  if (work) {
-    const found = findRawState(work)
-    if (found) return found
-  }
-  const tasks = record.tasks ?? record.generations
-  if (Array.isArray(tasks)) {
-    const nested = asRecord(tasks[0])
-    if (nested) return findRawState(nested)
-  }
-  return null
+  return ownState(record)
 }
 
 function findMessage(record: Record<string, unknown>): string | null {
@@ -136,20 +151,21 @@ function findMessage(record: Record<string, unknown>): string | null {
 
 export function parseTaskReading(payload: unknown): KlingMcpTaskReading {
   const record = asRecord(payload)
-  if (!record) return { state: 'processing', rawState: null, resultUrl: null, message: null }
+  if (!record) return { state: 'processing', rawState: null, resultUrl: null, message: null, unconfirmedResultUrl: null }
 
   const rawState = findRawState(record)
   const normalized = rawState?.toLowerCase().replace(/[\s-]+/g, '_') ?? null
   const resultUrl = findResultUrl(record)
 
   if (normalized && FAILURE_STATES.has(normalized)) {
-    return { state: 'failed', rawState, resultUrl: null, message: findMessage(record) }
+    return { state: 'failed', rawState, resultUrl: null, message: findMessage(record), unconfirmedResultUrl: null }
   }
   if ((normalized && SUCCESS_STATES.has(normalized)) || (!normalized && resultUrl)) {
-    return { state: 'succeeded', rawState, resultUrl, message: null }
+    return { state: 'succeeded', rawState, resultUrl, message: null, unconfirmedResultUrl: null }
   }
-  // An unrecognised state with a result URL is not assumed final; keep waiting.
-  return { state: 'processing', rawState, resultUrl: null, message: null }
+  // An unrecognised state with a result URL is not assumed final on first sight;
+  // the URL is kept so repeated observation can accept it (see polling.ts).
+  return { state: 'processing', rawState, resultUrl: null, message: null, unconfirmedResultUrl: resultUrl }
 }
 
 /**

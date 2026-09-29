@@ -131,7 +131,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   consoleError.mockRestore()
-  delete process.env.CRON_SECRET
+  delete process.env.POLL_WORKER_SECRET
 })
 
 const noSecretsIn = (value: unknown) => {
@@ -722,11 +722,19 @@ describe('GET /api/video-generations — history (historical rows stay valid)', 
 // ===========================================================================
 // Scheduled poller endpoint
 // ===========================================================================
-describe('/api/internal/video-generations/poll — internal trigger authentication', () => {
-  const call = async (headers: Record<string, string> = {}, method: 'GET' | 'POST' = 'GET') => {
+describe('/api/internal/video-generations/poll — authenticated trigger for the external (VPS) scheduler', () => {
+  // A stand-in for the out-of-band secret: a test fixture only, never a real credential.
+  const SECRET = 'test-fixture-poll-worker-secret-0123456789abcdef'
+  const call = async (headers: Record<string, string> = {}) => {
     const route = await import('@/app/api/internal/video-generations/poll/route')
-    return route[method](new NextRequest('http://localhost/api/internal/video-generations/poll', { method, headers }))
+    return route.POST(new NextRequest('http://localhost/api/internal/video-generations/poll', { method: 'POST', headers }))
   }
+
+  it('exposes POST only: it cannot be triggered by a link, a prefetch or a GET', async () => {
+    const route = (await import('@/app/api/internal/video-generations/poll/route')) as Record<string, unknown>
+    expect(Object.keys(route).filter((key) => ['GET', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(key))).toEqual([])
+    expect(typeof route.POST).toBe('function')
+  })
 
   it('fails CLOSED when no secret is configured (503) — nothing is queried', async () => {
     const db = makeDb()
@@ -736,31 +744,40 @@ describe('/api/internal/video-generations/poll — internal trigger authenticati
     expect(vi.mocked(serviceRole.createServiceRoleSupabase)).not.toHaveBeenCalled()
   })
 
-  it('rejects a too-short secret as not configured', async () => {
-    process.env.CRON_SECRET = 'short'
+  it('rejects a too-short secret as not configured (a weak secret is treated as none)', async () => {
+    process.env.POLL_WORKER_SECRET = 'short'
     expect((await call({ authorization: 'Bearer short' })).status).toBe(503)
+    process.env.POLL_WORKER_SECRET = 'x'.repeat(31)
+    expect((await call({ authorization: `Bearer ${'x'.repeat(31)}` })).status).toBe(503)
+  })
+
+  it('the old shared-cron variable is NOT a valid trigger secret', async () => {
+    process.env.CRON_SECRET = SECRET
+    expect((await call({ authorization: `Bearer ${SECRET}` })).status).toBe(503)
+    delete process.env.CRON_SECRET
   })
 
   it.each([
     ['no header', {}],
-    ['wrong secret', { authorization: 'Bearer wrong-secret-wrong-secret' }],
-    ['not a bearer header', { authorization: 'cron-secret-value-0123456789' }],
+    ['wrong secret', { authorization: 'Bearer wrong-secret-wrong-secret-wrong-secret' }],
+    ['not a bearer header', { authorization: 'test-fixture-poll-worker-secret-0123456789abcdef' }],
+    ['a prefix of the secret', { authorization: 'Bearer test-fixture-poll-worker-secret' }],
     ['a user session cookie', { cookie: 'sb-access-token=abc' }],
   ])('rejects %s (401) before touching the database', async (_name, headers) => {
-    process.env.CRON_SECRET = 'cron-secret-value-0123456789'
+    process.env.POLL_WORKER_SECRET = SECRET
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(makeDb())
     expect((await call(headers as any)).status).toBe(401)
     expect(vi.mocked(serviceRole.createServiceRoleSupabase)).not.toHaveBeenCalled()
   })
 
-  it.each(['GET', 'POST'] as const)('with the right secret (%s) it polls due MCP generations and returns counts only', async (method) => {
-    process.env.CRON_SECRET = 'cron-secret-value-0123456789'
+  it('with the right secret it polls due MCP generations and returns counts only', async () => {
+    process.env.POLL_WORKER_SECRET = SECRET
     const due = { id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'submitted', task_id: 'mcp-gen-1', transport: 'mcp', connection_id: CONNECTION_ID, created_at: NOW_ISO, next_poll_at: new Date(Date.now() - 5000).toISOString(), poll_attempts: 0 }
     const db = makeDb({ connections: [connectionRow()], generations: [due] })
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db)
     const mcp = installFakeMcp(() => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'processing' }) }] }))
 
-    const response = await call({ authorization: 'Bearer cron-secret-value-0123456789' }, method)
+    const response = await call({ authorization: `Bearer ${SECRET}` })
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -772,10 +789,24 @@ describe('/api/internal/video-generations/poll — internal trigger authenticati
     expect(db.tables.video_generations[0]).toMatchObject({ status: 'processing', poll_attempts: 1 })
   })
 
+  it('overlapping passes (a slow tick plus the next one) never poll the same job twice: the lease serializes them', async () => {
+    process.env.POLL_WORKER_SECRET = SECRET
+    const due = { id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'submitted', task_id: 'mcp-gen-1', transport: 'mcp', connection_id: CONNECTION_ID, created_at: NOW_ISO, next_poll_at: new Date(Date.now() - 5000).toISOString(), poll_attempts: 0 }
+    const db = makeDb({ connections: [connectionRow()], generations: [due] })
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db)
+    const mcp = installFakeMcp(() => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'processing' }) }] }))
+
+    const [a, b] = await Promise.all([call({ authorization: `Bearer ${SECRET}` }), call({ authorization: `Bearer ${SECRET}` })])
+    const claimed = (await a.json()).claimed + (await b.json()).claimed
+
+    expect(claimed).toBe(1)
+    expect(mcp.calls).toHaveLength(1)
+  })
+
   it('a store failure is a controlled 500 without detail', async () => {
-    process.env.CRON_SECRET = 'cron-secret-value-0123456789'
+    process.env.POLL_WORKER_SECRET = SECRET
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({ from: () => { const chain: any = { update: () => chain, select: () => chain, eq: () => chain, in: () => chain, is: () => chain, lt: () => chain, lte: () => chain, order: () => chain, limit: () => chain, then: (r: any) => r({ data: null, error: { message: 'secret db detail' } }) }; return chain } } as any)
-    const response = await call({ authorization: 'Bearer cron-secret-value-0123456789' })
+    const response = await call({ authorization: `Bearer ${SECRET}` })
     expect(response.status).toBe(500)
     expect(JSON.stringify(await response.json())).not.toContain('secret db detail')
   })

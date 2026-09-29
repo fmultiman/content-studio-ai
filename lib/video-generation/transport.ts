@@ -43,7 +43,12 @@ export interface VideoSubmitResult {
 }
 
 export type VideoTaskStatus =
-  | { state: 'processing'; rawState: string | null }
+  | {
+      state: 'processing'
+      rawState: string | null
+      /** A result URL seen alongside a state we do not recognise (accepted only after repeated observation). */
+      unconfirmedResultUrl?: string | null
+    }
   | { state: 'succeeded'; resultUrl: string | null; rawState: string | null }
   | { state: 'failed'; message: string; code: string; rawState: string | null }
 
@@ -152,7 +157,7 @@ export class KlingMcpTransport implements KlingVideoTransport {
         rawState: reading.rawState,
       }
     }
-    return { state: 'processing', rawState: reading.rawState }
+    return { state: 'processing', rawState: reading.rawState, unconfirmedResultUrl: reading.unconfirmedResultUrl }
   }
 }
 

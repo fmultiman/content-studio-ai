@@ -100,29 +100,40 @@ function VideosPageContent() {
   const hasActiveMcpGeneration = generations.some(
     (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
   )
+  const syncInFlightRef = useRef(false)
   useEffect(() => {
     if (!hasActiveMcpGeneration) return
-    const timer = setInterval(async () => {
-      const active = generationsRef.current.filter(
-        (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
-      )
-      await Promise.all(
-        active.map(async (item: any) => {
-          try {
-            const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
-            if (!response.ok) return
-            const payload = await response.json()
-            if (payload?.generation && payload.generation.status !== item.status) {
-              setGenerations((previous: any[]) =>
-                previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
-              )
-            }
-          } catch {
-            // Next tick retries; the server poller does not depend on this.
-          }
-        }),
-      )
-    }, 30_000)
+    const syncOne = async (item: any) => {
+      try {
+        const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
+        if (!response.ok) return
+        const payload = await response.json()
+        if (payload?.generation && payload.generation.status !== item.status) {
+          setGenerations((previous: any[]) =>
+            previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
+          )
+        }
+      } catch {
+        // Next tick retries; the server poller does not depend on this.
+      }
+    }
+    const tick = async () => {
+      // Never overlap ticks: a slow completion (download + upload) must not spawn a second one.
+      if (syncInFlightRef.current) return
+      syncInFlightRef.current = true
+      try {
+        const active = generationsRef.current.filter(
+          (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
+        )
+        await Promise.all(active.map(syncOne))
+      } finally {
+        syncInFlightRef.current = false
+      }
+    }
+    // Check once right away (a job that finished while /videos was closed shows up
+    // immediately), then every 30 s.
+    void tick()
+    const timer = setInterval(() => void tick(), 30_000)
     return () => clearInterval(timer)
   }, [hasActiveMcpGeneration])
 

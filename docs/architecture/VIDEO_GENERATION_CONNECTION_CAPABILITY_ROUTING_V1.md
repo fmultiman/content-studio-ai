@@ -299,13 +299,27 @@ is logged; tokens and provider text never are.
 `query_tasks(generation_id)`. Result URLs live 24 h.
 
 **Audit result**: no cron routes, queue, worker or scheduler existed; nothing called `/sync`. The
-smallest mechanism compatible with the deployment (Vercel + Supabase) is a **scheduled server route**
-plus DB-persisted schedule state — no Redis/BullMQ/Temporal/worker.
+project has an **always-on VPS**, so the scheduler is external and the *execution* stays in the
+existing Content Studio server route — no Redis/BullMQ/Temporal/worker service, and the poll worker is
+**not** moved to the VPS in this task:
 
-- `app/api/internal/video-generations/poll` (GET for Vercel Cron, POST for other schedulers):
-  authenticated with a **shared secret** (`CRON_SECRET`, `Authorization: Bearer …`, constant-time
-  digest compare). **Fails closed**: no/short secret → 503, wrong header → 401, both before any DB
-  access. Returns **counts only**. Runs with server credentials, **no user session**.
+```
+VPS scheduler (about once a minute)
+  → authenticated POST to Content Studio  /api/internal/video-generations/poll
+  → the endpoint claims due jobs with the existing leases
+  → MCP status queries (query_tasks)
+  → shared completion
+```
+
+Explicitly **not** used as the reliability mechanism: Vercel Cron (plan-dependent; a sub-daily
+schedule is rejected on Hobby), `pg_cron`/`pg_net`, an unauthenticated endpoint, or /videos page
+traffic. The /videos 30 s sync remains only an **opportunistic** recovery path.
+
+- `app/api/internal/video-generations/poll` — **POST only** (no GET), authenticated with a dedicated
+  shared secret **`POLL_WORKER_SECRET`** (`Authorization: Bearer …`, constant-time digest compare,
+  minimum 32 characters; the old shared-cron variable is not accepted). **Fails closed**: no/short
+  secret → 503, wrong/missing header → 401, both before any DB access. Returns **counts only**. Runs
+  with server credentials, **no user session**. Overlapping/repeated calls are safe (leases).
 - `pollDueMcpGenerations` (`lib/video-generation/polling.ts`): selects `transport='mcp'` rows in
   `submitted|processing` with `next_poll_at <= now` (batch ≤ 10, concurrency 2 — each completion can
   buffer a whole video — and a 240 s budget inside the route's 300 s `maxDuration`, after which no new
@@ -317,16 +331,20 @@ plus DB-persisted schedule state — no Redis/BullMQ/Temporal/worker.
   shared completion; on failure records a safe error; terminal rows are never selected.
 - Schedule state is only `next_poll_at` + `poll_attempts` (migration 042).
 
-**Backoff / limits (evidence-based)**: first check 45 s after submit; then 60 s, 60 s, 90 s, and 120 s
-thereafter (cap) — far under Kling's documented 5 QPS and inside the 24 h URL lifetime. Authorization
-lost → 5 min backoff and the paid job is **not** failed (recoverable on reconnect). Provider /
-store / encryption / download hiccups → backoff, row untouched. A generation unresolved after **6 h**
-is failed with an explicit "check your Kling account" message — **but only when the provider itself
-answers "still running"** at a final check (a job that finished at Kling while nobody was polling, e.g.
-between daily sweeps, is completed, never timed out unseen). Errors while checking (outage, refresh
-hiccup, revoked authorization, storage failure) are **not a verdict** and keep being retried until a
-**22 h hard cap**, inside the 24 h result-URL lifetime. A `queued` MCP row with no provider
-task older than 15 min (interrupted submit) is failed `SUBMISSION_INTERRUPTED`.
+**Backoff / limits (sized for a ~1-minute external tick)**: first check 60 s after submit; then 60 s,
+60 s, 2 min, and 3 min thereafter (cap) — no delay is shorter than the tick, so the tick (not the
+backoff) bounds provider load, far under Kling's documented 5 QPS. A due time below the tick is served
+by the next tick; a slower tick only delays, never breaks, anything. Authorization lost → 5 min backoff
+and the paid job is **not** failed (recoverable on reconnect). Provider / store / encryption / download
+hiccups → backoff of a few minutes, row untouched. A generation is failed with an explicit "check your
+Kling account" message after **6 h** — **but only when the provider itself answers "still running"** at
+a final check. Errors while checking (outage, refresh hiccup, revoked authorization, storage failure)
+are **not a verdict**: with minute-level scheduling they are simply retried every few minutes until a
+**23 h hard cap**, inside the provider's 24 h result-URL lifetime (afterwards the result could no
+longer be fetched anyway). An unrecognised provider state that carries a result URL is accepted only
+after it has been observed on 4 consecutive polls. A `queued` MCP row with no provider task older than
+15 min (interrupted submit) is failed `SUBMISSION_INTERRUPTED`, as is a `submitted` row that never
+received a task id.
 
 **Task-error classification**: an `isError` `query_tasks` result fails the generation only for
 *unambiguous* documented task failures (moderation, insufficient credits, unsupported parameter
@@ -346,23 +364,34 @@ same *presigned* URL contract as the history list for finished videos) and calls
 **same** `syncGenerationWithProvider` — no second completion implementation. Legacy/REST rows
 (`transport` NULL/`rest`) sync via the user's Kling API key exactly as before.
 
-### Scheduler activation (owner action — recorded, not silently assumed)
+### Scheduler activation (owner action, out-of-band secret)
 
-The route is deployed and tested, but a scheduler must call it, and this environment could not set
-Production environment variables (403 on `create_project_env`, as in the spike). `vercel.json` ships a
-**daily** Vercel Cron as a last-resort recovery sweep only (valid on every plan; inside the 24 h URL
-window). For minute-level polling the owner must choose:
+The route is deployed and tested; a scheduler must call it. The **secret is supplied by the owner,
+out-of-band, to both places** — the application never generates, prints, logs or returns it, and this
+task never created it (Production env writes are also not possible from the agent environment):
 
-1. **Vercel Pro**: change the schedule to `* * * * *` and set a Sensitive Production `CRON_SECRET`
-   (≥ 16 chars, high entropy); Vercel then sends it as the Bearer header.
-2. **Any plan**: set `CRON_SECRET` and have any scheduler (e.g. Supabase `pg_cron` + `pg_net`, or an
-   external cron) call `GET /api/internal/video-generations/poll` every minute with
-   `Authorization: Bearer <CRON_SECRET>`.
+1. Generate a long random value **locally** (e.g. `openssl rand -base64 48`), keep it in the owner's
+   password manager, and set it as a **Sensitive Production** environment variable named
+   `POLL_WORKER_SECRET` in Vercel (then redeploy so it applies).
+2. Store the same value on the VPS in a root-only file (e.g. `/etc/content-studio/poll-worker.env`,
+   mode `0600`, containing `POLL_WORKER_SECRET=…`).
+3. Schedule one call per minute on the VPS (cron shown; a systemd timer is equivalent). `flock` avoids
+   stacking runs on the VPS side; the server-side leases make overlap harmless anyway:
 
-Until a scheduler with the secret is active, MCP generations are still completed by (a) the /videos
-page's 30 s sync while it is open and (b) the manual sync endpoint. **The Vercel plan could not be
-verified** (dashboard not accessible to the agent), which is why the per-minute cron was *not* added
-to `vercel.json`: on a Hobby plan a sub-daily cron **fails the deployment**.
+```
+* * * * * . /etc/content-studio/poll-worker.env && flock -n /run/content-studio-poll.lock \
+  curl -fsS -m 310 -X POST -H "Authorization: Bearer $POLL_WORKER_SECRET" \
+  https://content.multihuman.com.br/api/internal/video-generations/poll >/dev/null
+```
+
+`-f` makes a 401/503 visible as a failing job; alert on repeated failures. The response body (counts
+only, e.g. `{"ok":true,"due":1,"claimed":1,"outcomes":{"processing":1}}`) can be logged. Rotate the
+secret by updating both places (Vercel + VPS) — there is no secondary secret, so expect at most a few
+failing minutes during rotation; the jobs are leased state in the database and lose nothing.
+
+Until the scheduler is active, MCP generations are only completed by (a) the /videos page's sync
+(opportunistic: once immediately and then every 30 s while the page is open) and (b) the manual sync
+endpoint. **The scheduler is therefore a prerequisite for the first paid proof** (§16).
 
 ## 13. Shared, idempotent completion
 
@@ -447,8 +476,8 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 
 1. Owner presses **Autorizar geração** (Settings or /videos) and approves the Kling consent screen →
    `generation.create` granted; then **Verificar conexão** so the snapshot is fresh.
-2. Owner sets Production `CRON_SECRET` and activates a scheduler (§12) — or accepts manual/open-page
-   sync for the proof.
+2. Owner supplies `POLL_WORKER_SECRET` out-of-band to Vercel Production and to the VPS, and the
+   VPS calls the poll endpoint every minute (§12) — the paid proof must not depend on the page being open.
 3. Owner explicitly authorizes **one** paid generation and its parameters (suggested minimum:
    text-to-video, `kling-video-v3_0`, 3 s, 720p, 16:9, audio off, multi-shot off).
 4. Record **before** balances: Kling web credits and the Kling API package remaining units.
@@ -471,8 +500,7 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 | Watermark: prefer `urlWithoutWatermark` when offered, else `url` | **UNVERIFIED** policy choice; confirm in the proof |
 | Non-subscribers: one concurrent video task; 5 QPS; tasks cannot be canceled | OFFICIAL (discovery) |
 | Terms (§18) | AMBIGUOUS |
-| Vercel plan / cron cadence | **UNVERIFIED** (see §12) |
-| **The only scheduler shipped is a DAILY recovery cron** — the 45–120 s backoff, leases and "works while /videos is closed" all assume a minute-level scheduler that the owner must activate (§12). Until then an away user's job is only retrieved by the daily sweep (or when they reopen /videos) | **Prerequisite for the paid proof** |
+| The external VPS scheduler + `POLL_WORKER_SECRET` are **not yet active** (owner action, §12): until they are, an away user's job is only retrieved when they reopen /videos | **Prerequisite for the paid proof** |
 | Pre-existing: RLS lets a user `UPDATE` their own `video_generations` rows (table policy from 039) — the poller therefore re-derives ownership of `connection_id` from the generation's `user_id` and never trusts the row alone | noted; column-level lockdown is a possible follow-up |
 
 ## 18. Terms / policy
@@ -500,7 +528,7 @@ snapshot; browser echo never trusted; mapping hints stripped) · scope authoriza
 (`generation.create` required server-side) · transport selection (from the resolved connection) · OAuth
 token secrecy (encrypted at rest, never in responses/logs/`request_config`) · polling without a user
 session (secret-authenticated, fail-closed; owner-scoped grant lookup) · service-role usage (allow-list
-scan test) · internal cron authentication · completion idempotency (DB CAS + deterministic key) · S3 /
+scan test) · internal poll-trigger authentication (`POLL_WORKER_SECRET`, POST only) · completion idempotency (DB CAS + deterministic key) · S3 /
 result-URL safety (https + public host; URL never persisted) · Content Studio Credits fallback
 impossibility (scan test).
 
@@ -519,4 +547,4 @@ check (capability evidence, no generation tool).
 `app/api/internal/video-generations/poll/route.ts` · `app/api/kling/callback/route.ts` ·
 `app/api/provider-connections/{kling/mcp/connect,[id]}/route.ts` ·
 `components/videos/create-video-generation-dialog.tsx` · `components/settings/kling-mcp-connection-card.tsx` ·
-`scripts/042_video_generation_transport_provenance.sql` · `vercel.json`.
+`scripts/042_video_generation_transport_provenance.sql`.

@@ -225,7 +225,7 @@ export async function queryKlingMcpTask(
     if (result.isError) {
       const text = firstText(result)
       // Documented task-level failures mean the GENERATION failed.
-      if (isTaskFailureText(text)) return { state: 'failed', rawState: null, resultUrl: null, message: text }
+      if (isTaskFailureText(text)) return { state: 'failed', rawState: null, resultUrl: null, message: text, unconfirmedResultUrl: null }
       throw new ProviderConnectionError('PROVIDER_TOOL_ERROR')
     }
 

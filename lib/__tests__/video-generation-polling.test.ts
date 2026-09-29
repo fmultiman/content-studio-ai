@@ -14,6 +14,7 @@ import {
   POLL_MAX_AGE_MS,
   QUEUED_ORPHAN_AGE_MS,
   syncGenerationWithProvider,
+  UNCONFIRMED_RESULT_ATTEMPTS,
 } from '@/lib/video-generation/polling'
 import type { KlingVideoTransport, VideoTaskStatus } from '@/lib/video-generation/transport'
 import { createFakeDb } from './helpers/fake-db'
@@ -59,11 +60,12 @@ function transportReturning(...statuses: Array<VideoTaskStatus | Error>): KlingV
 const options = (overrides: Record<string, unknown> = {}) => ({ schedule: true, now: () => NOW, download: vi.fn(async () => stored()), ...overrides })
 
 describe('poll schedule (bounded, evidence-based)', () => {
-  it('first check after 45 s, then 60/60/90 s, capped at 120 s — never aggressive', () => {
-    expect(POLL_DELAYS_MS).toEqual([45_000, 60_000, 60_000, 90_000, 120_000])
-    expect([0, 1, 2, 3, 4, 5, 50].map(pollDelayMs)).toEqual([45_000, 60_000, 60_000, 90_000, 120_000, 120_000, 120_000])
-    expect(Math.min(...POLL_DELAYS_MS)).toBeGreaterThanOrEqual(30_000)
-    expect(new Date(initialNextPollAt(NOW)).getTime() - NOW.getTime()).toBe(45_000)
+  it('sized for a ~1-minute external tick: first check after 60 s, then 60/60/120 s, capped at 3 min — never aggressive', () => {
+    expect(POLL_DELAYS_MS).toEqual([60_000, 60_000, 60_000, 120_000, 180_000])
+    expect([0, 1, 2, 3, 4, 5, 50].map(pollDelayMs)).toEqual([60_000, 60_000, 60_000, 120_000, 180_000, 180_000, 180_000])
+    // No delay is shorter than the scheduler tick, so the tick — not the backoff — bounds provider QPS (<< 5 QPS).
+    expect(Math.min(...POLL_DELAYS_MS)).toBeGreaterThanOrEqual(60_000)
+    expect(new Date(initialNextPollAt(NOW)).getTime() - NOW.getTime()).toBe(60_000)
     // Fits inside the 24 h result-URL lifetime with a wide margin.
     expect(POLL_MAX_AGE_MS).toBeLessThan(24 * 60 * 60_000)
   })
@@ -240,9 +242,16 @@ describe('syncGenerationWithProvider — status transitions', () => {
       expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'PROVIDER_POLL_TIMEOUT' } })
     })
 
-    it('the hard cap sits inside the provider result-URL lifetime', () => {
+    it('the hard cap sits inside the provider 24 h result-URL lifetime (afterwards the result could not be fetched anyway)', () => {
       expect(POLL_HARD_MAX_AGE_MS).toBeGreaterThan(POLL_MAX_AGE_MS)
       expect(POLL_HARD_MAX_AGE_MS).toBeLessThan(24 * 60 * 60_000)
+    })
+
+    it('with minute-level scheduling an error is retried within minutes for hours (an outage is ridden out, not turned into a failure)', async () => {
+      const db = dbWith([generation({ status: 'processing', created_at: iso(-(12 * 60 * 60_000)), poll_attempts: 200 })])
+      await syncGenerationWithProvider(db, db.tables.video_generations[0], transportReturning(new ProviderConnectionError('PROVIDER_UNAVAILABLE')), options())
+      expect(db.tables.video_generations[0].status).toBe('processing')
+      expect(new Date(db.tables.video_generations[0].next_poll_at).getTime() - NOW.getTime()).toBeLessThanOrEqual(5 * 60_000)
     })
 
     it('within the soft max age the same errors never fail the job', async () => {
@@ -320,6 +329,28 @@ describe('pollDueMcpGenerations — the scheduled poller (no user session)', () 
     expect(summary.claimed).toBe(2)
     expect(db.tables.video_generations.find((row: any) => row.id === 'b').status).toBe('succeeded')
     expect(db.tables.video_generations.find((row: any) => row.id === 'a').status).toBe('submitted')
+  })
+
+  it('an UNRECOGNISED provider state carrying a result URL is not trusted at first sight, but accepted once observed repeatedly', async () => {
+    const unconfirmed: VideoTaskStatus = { state: 'processing', rawState: 'mystery_ok', unconfirmedResultUrl: RESULT_URL }
+
+    const early = dbWith([generation({ status: 'processing', poll_attempts: UNCONFIRMED_RESULT_ATTEMPTS - 1 })])
+    const earlyOpts = options()
+    expect((await syncGenerationWithProvider(early, early.tables.video_generations[0], transportReturning(unconfirmed), earlyOpts)).outcome).toBe('processing')
+    expect(earlyOpts.download).not.toHaveBeenCalled()
+
+    const late = dbWith([generation({ status: 'processing', poll_attempts: UNCONFIRMED_RESULT_ATTEMPTS })])
+    const lateOpts = options()
+    expect((await syncGenerationWithProvider(late, late.tables.video_generations[0], transportReturning(unconfirmed), lateOpts)).outcome).toBe('completed')
+    expect(lateOpts.download).toHaveBeenCalledTimes(1)
+    expect(late.tables.video_generations[0]).toMatchObject({ status: 'succeeded', result_metadata: { provider_state: 'mystery_ok' } })
+  })
+
+  it('a "submitted" row that never got a provider task id is failed explicitly instead of being re-leased forever', async () => {
+    const db = dbWith([generation({ task_id: null })])
+    const summary = await pollDueMcpGenerations(db, { now: () => NOW, transportFactory: async () => transportReturning({ state: 'processing', rawState: 'x' }) })
+    expect(summary.outcomes.interrupted).toBe(1)
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', next_poll_at: null, error_details: { code: 'SUBMISSION_INTERRUPTED' } })
   })
 
   it('bounds concurrency (each completion can buffer a whole video) and stops starting rows when out of time', async () => {

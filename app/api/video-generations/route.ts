@@ -246,7 +246,10 @@ export async function POST(req: NextRequest) {
           error_details: { message: providerError.message },
         })
         .eq('id', generation.id)
-      return NextResponse.json({ error: 'Provider submission failed', details: providerError.message }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Provider submission failed', code: 'PROVIDER_SUBMISSION_FAILED', details: providerError.message },
+        { status: 500 },
+      )
     }
 
     // The provider has ACCEPTED the job (and may bill it) from here on. Recording

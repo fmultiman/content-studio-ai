@@ -240,6 +240,17 @@ describe('MCP status query and result parsing', () => {
     expect(reading).toMatchObject({ state: 'processing', resultUrl: null, rawState: 'weird' })
   })
 
+  it('the most specific state wins: a task/work state is not shadowed by an envelope status', () => {
+    expect(parseTaskReading({ status: 'ok', tasks: [{ status: 'succeed', works: [{ url: 'https://a/v.mp4' }] }] })).toMatchObject({ state: 'succeeded', rawState: 'succeed', resultUrl: 'https://a/v.mp4' })
+    expect(parseTaskReading({ status: 'ok', works: [{ status: 'failed' }] })).toMatchObject({ state: 'failed', rawState: 'failed' })
+    expect(parseTaskReading({ status: 'ok', data: { status: 'processing' } })).toMatchObject({ state: 'processing', rawState: 'processing' })
+  })
+
+  it('an unrecognised state keeps the URL as UNCONFIRMED (for repeated-observation acceptance) but never as the result', () => {
+    expect(parseTaskReading({ status: 'finished_ok', works: [{ url: 'https://a/v.mp4' }] })).toMatchObject({ state: 'processing', resultUrl: null, unconfirmedResultUrl: 'https://a/v.mp4' })
+    expect(parseTaskReading({ status: 'processing' })).toMatchObject({ unconfirmedResultUrl: null })
+  })
+
   it('reads the result URL (prefers the watermark-free URL), only https', () => {
     expect(parseTaskReading({ status: 'succeed', works: [{ url: 'https://a/v.mp4', urlWithoutWatermark: 'https://b/v.mp4' }] }).resultUrl).toBe('https://b/v.mp4')
     expect(parseTaskReading({ status: 'succeed', data: { works: [{ resource: { url: 'https://c/v.mp4' } }] } }).resultUrl).toBe('https://c/v.mp4')
