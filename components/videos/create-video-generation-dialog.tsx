@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Image as ImageIcon, FileText, Zap, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ import {
   type VideoResolution,
 } from '@/lib/video-generation/capabilities'
 import { parseConnectionRef } from '@/lib/video-generation/connection-ref'
+import { connectionDisplayName, spendingSourceCopy, transportBadge } from '@/lib/video-generation/connection-presentation'
 import {
   EMPTY_SELECTION,
   reconcileSelection,
@@ -156,6 +157,14 @@ export function CreateVideoGenerationDialog({
   const [sourceImageId, setSourceImageId] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — a submission is paid, so it can only start ONCE
+  // per opening of the form. `submitLockRef` is a SYNCHRONOUS guard (React state settles only after the
+  // handler returns, so two activations in the same tick — double click, click + Enter — would both
+  // pass a state check). It stays locked after the server ACCEPTS the generation (`accepted`) and after
+  // an unconfirmed outcome; it is released only when the request failed BEFORE provider acceptance.
+  const submitLockRef = useRef(false)
+  const acceptedRef = useRef(false)
+  const [accepted, setAccepted] = useState(false)
   // Set when the provider MAY have accepted (and billed) a generation we could not confirm
   // (network drop, gateway timeout, unreadable response, unrecorded task): the form stays
   // locked — until the page is reloaded after checking — so it cannot be resubmitted by mistake.
@@ -194,6 +203,17 @@ export function CreateVideoGenerationDialog({
       cancelled = true
     }
   }, [open, applyConnections])
+
+  // Reopening the form after an accepted generation starts a NEW, empty form: the previous prompt is
+  // never left armed behind an enabled button. (An unconfirmed submission keeps its lock until reload.)
+  useEffect(() => {
+    if (!open || !acceptedRef.current) return
+    acceptedRef.current = false
+    submitLockRef.current = false
+    setAccepted(false)
+    setPrompt('')
+    setSourceImageId('')
+  }, [open])
 
   // Load images when dialog opens for I2V
   useEffect(() => {
@@ -297,9 +317,13 @@ export function CreateVideoGenerationDialog({
     !!selection.operation &&
     !!selection.modelId &&
     !isSubmitting &&
+    !accepted &&
     unconfirmedSubmission === null
 
   const handleSubmit = async () => {
+    // Synchronous re-entry guard: the FIRST activation wins, every other path (double click, Enter,
+    // programmatic) is a no-op while a submission is in flight or was already accepted.
+    if (submitLockRef.current) return
     if (!prompt.trim()) {
       toast({ title: 'Prompt obrigatório', variant: 'destructive' })
       return
@@ -310,10 +334,13 @@ export function CreateVideoGenerationDialog({
       return
     }
 
+    submitLockRef.current = true
     setIsSubmitting(true)
+    let keepLocked = false
 
     // From the moment the request is sent, a missing/garbled answer does NOT mean "not submitted".
     const lockUnconfirmed = (message: string) => {
+      keepLocked = true
       setUnconfirmedSubmission(message)
       if (onSuccess) onSuccess()
     }
@@ -369,6 +396,11 @@ export function CreateVideoGenerationDialog({
         throw new Error(data.error || 'Erro ao criar geração de vídeo')
       }
 
+      // ACCEPTED: this form instance can never submit again. It closes; if the host keeps it visible
+      // (animation, parent state), it shows a stable success state instead of an armed button.
+      keepLocked = true
+      acceptedRef.current = true
+      setAccepted(true)
       toast({ title: 'Geração iniciada!', description: 'O vídeo está sendo gerado pela IA (Kling)' })
       onOpenChange(false)
       if (onSuccess) onSuccess()
@@ -377,6 +409,8 @@ export function CreateVideoGenerationDialog({
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     } finally {
       setIsSubmitting(false)
+      // Failed BEFORE provider acceptance (definitive answer): the user may correct and retry normally.
+      if (!keepLocked) submitLockRef.current = false
     }
   }
 
@@ -423,7 +457,16 @@ export function CreateVideoGenerationDialog({
           </div>
         )}
 
-        {loadState === 'ready' && connections.length > 0 && connection && (
+        {accepted && (
+          <div className="space-y-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4" role="status" data-testid="video-submission-accepted">
+            <p className="text-sm font-medium">Geração enviada</p>
+            <p className="text-xs text-muted-foreground">
+              O vídeo está sendo gerado e aparecerá na lista de vídeos quando ficar pronto. Para gerar outro, feche e abra o formulário novamente.
+            </p>
+          </div>
+        )}
+
+        {!accepted && loadState === 'ready' && connections.length > 0 && connection && (
           <div className="space-y-5">
             {/* CONNECTION */}
             <div className="space-y-2">
@@ -435,16 +478,33 @@ export function CreateVideoGenerationDialog({
                 <SelectContent>
                   {connections.map((entry) => (
                     <SelectItem key={entry.ref} value={entry.ref}>
-                      {entry.label}
-                      {entry.accountLabel ? ` — ${entry.accountLabel}` : ''}
-                      {!entry.canGenerate && entry.status !== 'connected' ? ' (indisponível)' : ''}
+                      <span className="flex items-center gap-2">
+                        <span>
+                          {connectionDisplayName(entry)}
+                          {!entry.canGenerate && entry.status !== 'connected' ? ' (indisponível)' : ''}
+                        </span>
+                        <span
+                          className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
+                          data-transport-badge={transportBadge(entry.transport)}
+                        >
+                          {transportBadge(entry.transport)}
+                        </span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground" data-testid="video-connection-detail">
-                {connection.detail}
-              </p>
+              <div className="flex items-start gap-2" data-testid="video-connection-summary" data-transport={transportBadge(connection.transport)}>
+                <span
+                  className="mt-0.5 rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
+                  data-testid="video-connection-badge"
+                >
+                  {transportBadge(connection.transport)}
+                </span>
+                <p className="text-xs text-muted-foreground" data-testid="video-connection-detail">
+                  {spendingSourceCopy(connection.funding)}
+                </p>
+              </div>
             </div>
 
             {blockedCopy && (
@@ -674,11 +734,13 @@ export function CreateVideoGenerationDialog({
         )}
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-2" data-testid="generate-video">
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-            Gerar vídeo
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{accepted ? 'Fechar' : 'Cancelar'}</Button>
+          {!accepted && (
+            <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-2" data-testid="generate-video">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+              Gerar vídeo
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
