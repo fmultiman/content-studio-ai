@@ -119,9 +119,13 @@ export default function SettingsPage() {
     toast(messages[result] ?? messages.exchange_failed)
   }, [toast])
 
-  const handleConnectKlingMcp = async () => {
+  const handleConnectKlingMcp = async (intent: 'read_only' | 'generation' = 'read_only') => {
     try {
-      const response = await fetch('/api/provider-connections/kling/mcp/connect', { method: 'POST' })
+      const response = await fetch('/api/provider-connections/kling/mcp/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent }),
+      })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || typeof payload?.authorizationUrl !== 'string') {
         toast({
@@ -183,7 +187,15 @@ export default function SettingsPage() {
       return
     }
     if (!response.ok) {
-      toast({ title: 'Não foi possível desconectar', description: 'As credenciais ainda estão guardadas. Tente novamente.', variant: 'destructive' })
+      const failure = await response.json().catch(() => ({}))
+      toast({
+        title: 'Não foi possível desconectar',
+        description:
+          failure?.code === 'CONNECTION_HAS_ACTIVE_GENERATIONS'
+            ? 'Há vídeos ainda em geração com esta conta. Aguarde a conclusão para desconectar.'
+            : 'As credenciais ainda estão guardadas. Tente novamente.',
+        variant: 'destructive',
+      })
       return
     }
     const payload = await response.json().catch(() => ({}))
@@ -935,7 +947,8 @@ export default function SettingsPage() {
                     onRetryLoad={() => window.location.reload()}
                     connectionsAvailable={connectionsAvailable}
                     liveCredits={liveKlingCredits}
-                    onConnect={handleConnectKlingMcp}
+                    onConnect={() => handleConnectKlingMcp('read_only')}
+                    onAuthorizeGeneration={() => handleConnectKlingMcp('generation')}
                     onCheck={async () => {
                       if (klingMcpConnection) await handleCheckKlingMcpConnection(klingMcpConnection.id)
                     }}

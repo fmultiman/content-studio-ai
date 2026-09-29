@@ -18,6 +18,7 @@ const connection = (overrides: Partial<PublicProviderConnection> = {}): PublicPr
   connectionMethod: 'mcp_oauth',
   status: 'connected',
   scopes: ['generation.read', 'account.credit.read'],
+  generationAuthorized: false,
   accountHint: '4242',
   capabilities: { membership: { type: 'SVIP', label: 'Pro' }, models: { text_to_video: ['a', 'b', 'c'] } },
   lastCheckedAt: '2026-09-29T12:00:00.000Z',
@@ -131,6 +132,42 @@ describe('KlingMcpConnectionCard', () => {
     const confirm = screen.getAllByRole('button', { name: /^Desconectar$/ }).pop() as HTMLElement
     fireEvent.click(confirm)
     await waitFor(() => expect(onDisconnect).toHaveBeenCalledTimes(1))
+  })
+
+  it('a read-only connection says so truthfully and offers "Autorizar geração" (explicit action, never automatic)', async () => {
+    const onAuthorizeGeneration = vi.fn().mockResolvedValue(undefined)
+    const { onConnect } = renderCard({ connection: connection({ generationAuthorized: false }), onAuthorizeGeneration })
+
+    expect(screen.getByText(/Conexão somente leitura: ainda não gera vídeos/)).toBeTruthy()
+    // Nothing starts on render.
+    expect(onAuthorizeGeneration).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Autorizar geração/ }))
+    await waitFor(() => expect(onAuthorizeGeneration).toHaveBeenCalledTimes(1))
+    expect(onConnect).not.toHaveBeenCalled()
+  })
+
+  it('once generation is authorized the CTA is gone and the copy says so', () => {
+    renderCard({
+      connection: connection({ generationAuthorized: true, scopes: ['generation.read', 'account.credit.read', 'generation.create'] }),
+      onAuthorizeGeneration: vi.fn().mockResolvedValue(undefined),
+    })
+    expect(screen.queryByRole('button', { name: /Autorizar geração/ })).toBeNull()
+    expect(screen.getByText(/Geração de vídeos autorizada/)).toBeTruthy()
+  })
+
+  it('does not offer the authorization CTA when the connection is not connected or the environment cannot connect', () => {
+    renderCard({ connection: connection({ status: 'authorization_required', generationAuthorized: false }), onAuthorizeGeneration: vi.fn() })
+    expect(screen.queryByRole('button', { name: /Autorizar geração/ })).toBeNull()
+    cleanup()
+    renderCard({ connection: connection({ generationAuthorized: false }), onAuthorizeGeneration: vi.fn(), connectionsAvailable: false })
+    expect((screen.getByRole('button', { name: /Autorizar geração/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('warns that disconnecting waits for generations still in progress', async () => {
+    renderCard({ connection: connection() })
+    fireEvent.click(screen.getByRole('button', { name: /^Desconectar$/ }))
+    expect(await screen.findByText(/só é liberada quando terminarem/)).toBeTruthy()
   })
 
   it('has no credential input of any kind and renders no token-like content', () => {

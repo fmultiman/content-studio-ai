@@ -86,6 +86,34 @@ function VideosPageContent() {
   const [showAiModal, setShowAiModal] = useState(false)
   const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
 
+  // MCP generations have no callback: while /videos is open, ask the server to
+  // check the ones in flight. This is only a convenience — the scheduled
+  // server-side poller completes them even if nobody is watching. REST
+  // generations are unchanged (they complete through the Kling callback).
+  useEffect(() => {
+    const active = generations.filter(
+      (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
+    )
+    if (active.length === 0) return
+    const timer = setInterval(async () => {
+      for (const item of active) {
+        try {
+          const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
+          if (!response.ok) continue
+          const payload = await response.json()
+          if (payload?.generation && payload.generation.status !== item.status) {
+            setGenerations((previous: any[]) =>
+              previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
+            )
+          }
+        } catch {
+          // Next tick retries; the server poller does not depend on this.
+        }
+      }
+    }, 30_000)
+    return () => clearInterval(timer)
+  }, [generations])
+
   // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {
     if (legacyTarget) router.replace(legacyTarget)
@@ -384,8 +412,8 @@ function VideosPageContent() {
                     {klingConfigured === false && (
                       <StateMessage
                         tone="info"
-                        title="Kling não configurado"
-                        description="Adicione sua chave de API em Configurações para gerar vídeos com IA (Kling)."
+                        title="Kling API não configurada"
+                        description="Adicione sua chave de API em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
                         actionLabel="Abrir Configurações"
                         onAction={() => router.push('/configuracoes?tab=api')}
                         compact
@@ -397,10 +425,10 @@ function VideosPageContent() {
                       <Button
                         className="w-full gap-2 text-primary-foreground bg-primary hover:bg-primary/90"
                         onClick={() => setShowAiModal(true)}
-                        disabled={!hubCreateProjectId || !hubCreateProductionId || klingConfigured === false}
+                        disabled={!hubCreateProjectId || !hubCreateProductionId}
                       >
                         <Zap className="h-4 w-4" />
-                        Gerar Vídeo IA (Kling)
+                        Gerar vídeo com IA (Kling)
                       </Button>
 
                       <Button
