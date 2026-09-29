@@ -5,6 +5,15 @@
 Follows [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md)
 (merged in PR #42).
 
+> **Follow-up (status update):** the live OAuth proof below was **completed by the owner in
+> Production** (encryption key set, real Kling consent approved, read-only check run): Kling API →
+> configured; Kling account → connected, Pro plan, 6 video models reported, scopes
+> `generation.read` + `account.credit.read`, live credit read works, `generation.create` **not**
+> granted. The spike is therefore complete. The next slices are documented in
+> [VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1](VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md)
+> (capability routing, MCP transport, polling, explicit scope upgrade — all still without a real MCP
+> generation). The statements below describe the spike **as delivered** and are kept as history.
+
 **Scope: an OAuth/connection proof only.** Content Studio can now authorize a user's own Kling
 web account through Kling's official MCP OAuth flow, store the resulting tokens securely, refresh
 them, and run **read-only** MCP checks. **Kling MCP video generation is NOT implemented.** No
@@ -22,8 +31,8 @@ REST pipeline are unchanged, and `content_studio_credits` is still gated.
 | Read-only MCP check (initialize → tools/list → `who_am_i` → `query_membership_and_credits`) | Implemented, tested with a fake MCP client |
 | Disconnect + RFC 7009 revocation | Implemented, tested |
 | Minimal Settings UI ("Conta Kling") | Implemented |
-| **Live OAuth proof against Kling with the owner's account** | **Pending two manual steps** — see "Live proof status" |
-| MCP video transport / polling / `VideoGeneration` changes | **Not started** (next slice) |
+| **Live OAuth proof against Kling with the owner's account** | **Completed by the owner in Production** (see the follow-up note above; the "Live proof status" section is the original pre-proof record) |
+| MCP video transport / polling / `VideoGeneration` changes | Implemented later in `VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1` (mock-tested; no real generation) |
 | Full generic "AI Connections" redesign | **Not started** (evidence recorded below) |
 
 ## Connection model (concepts kept separate)
@@ -282,12 +291,20 @@ and account-level disclosures belong to the connection, not the provider.
 
 ## Scope elevation (future, not implemented)
 
+> **Implemented later** as the explicit *Autorizar geração* action (connect intent `generation`) — see
+> [VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1 §10](VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md#10-scope-upgrade-autorizar-geração).
+> Whether Kling enforces the DCR-registered scope remains UNVERIFIED.
+
 A future user choosing "Enable generation" would be sent through the same flow with
 `generation.create` added, replacing the grant. Kling may enforce the scopes recorded at client
 registration (**UNKNOWN**); if so the client registration would need updating or re-registering.
 Not built here.
 
 ## Next slice (document only)
+
+> The slice below was delivered as `VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1` (shared
+> completion, transport boundary, MCP transport, provenance, polling), with the first *paid* proof
+> deferred to `KLING_MCP_REAL_GENERATION_PROOF_V1`.
 
 `KLING_MCP_VIDEO_TRANSPORT_AND_POLLING_V1`: shared `completeVideoGeneration` function;
 `KlingVideoTransport` interface; REST transport wrapper; MCP transport; `connection_id` +

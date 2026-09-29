@@ -2,6 +2,13 @@
 
 **Status:** `VIDEO_AI_GENERATION_PRODUCT_FLOW_DISCOVERY_V1_COMPLETE`
 
+> **Later evolution:** this discovery assumed a single Kling REST connection. The /videos generation
+> surface is now **connection- and capability-driven** (Kling API and, when the user connects it, the
+> user's own Kling account via MCP) — see
+> [VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1](../architecture/VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md).
+> The product boundaries recorded below (Generation ≠ Composition, no automatic VideoDraft/LibraryFile)
+> are unchanged.
+
 This document is a discovery and architecture decision record. It does not implement video generation, change executable code, add a migration, call a paid provider, or deploy anything.
 
 ## Scope and evidence boundary

@@ -98,3 +98,12 @@ Studio Credits" selector.
    secret).
 6. Tests proving `user_byok` with a missing credential can still never reach
    the platform path.
+
+---
+
+## Status update (video routing)
+
+Kling MCP now participates in video generation routing (mock-tested transport, polling, shared
+completion; no real MCP generation yet): see
+[VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1](VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md).
+Content Studio Credits, wallet, plans and billing are still not implemented.

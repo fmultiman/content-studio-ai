@@ -446,3 +446,15 @@ ledger, reservations, settlement, refunds, quotas, subscriptions/plans, Stripe/
 checkout/top-ups, pricing engine, provider/model cost mapping, platform-paid
 fallback, a second video provider, LibraryFile promotion, video evaluator,
 Creative Editor changes, application-level encryption of user API keys.
+
+---
+
+## Follow-up: connection-driven video generation
+
+Video generation is now routed by **connection → operation → model → capabilities** (Kling API =
+`user_settings` API key over REST; Kling account = `provider_connections` OAuth grant over MCP). The
+`user_byok` execution-mode vocabulary is unchanged; MCP shows the broader concept is *user-owned
+execution*, and the rename remains deferred to the Browser Bridge research. `content_studio_credits`
+remains gated, not selectable and not a fallback. Details, the bounded capability contract, transport,
+polling, provenance and the security model:
+[VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1](VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md).
