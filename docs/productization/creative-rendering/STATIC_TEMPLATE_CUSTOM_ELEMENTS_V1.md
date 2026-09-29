@@ -47,7 +47,7 @@ During the adversarial correctness review required before production closure, th
 ## Render-path bug found during recovery (fixed)
 Tracing the actual render path (not the manifest) showed that `StaticRenderManifestStillComposition` never read `manifest.elements` for a Template input, so a Template PNG would have contained the base and **none** of the Custom Text/Image, and the editor preview drew the custom stage with an opaque background over the Template. The earlier tests only asserted the manifest, which is why this passed unnoticed.
 
-- **Fix (commit `c9c4cdc`):** `FreeStage` gained an opt-in `overlay` prop (transparent plane; default unchanged so Free/Video are identical). `DocumentaryCardComposition.tsx` wraps the Template base + a transparent `FreeStage` overlay **only when `manifest.elements` is non-empty** (and waits for the custom images); with none it renders the exact legacy tree. The editor's Template-mode preview uses the same overlay.
+- **Fix (commit `ea69b53`; `c9c4cdc` before the rebase onto main):** `FreeStage` gained an opt-in `overlay` prop (transparent plane; default unchanged so Free/Video are identical). `DocumentaryCardComposition.tsx` wraps the Template base + a transparent `FreeStage` overlay **only when `manifest.elements` is non-empty** (and waits for the custom images); with none it renders the exact legacy tree. The editor's Template-mode preview uses the same overlay.
 - **Regression tests** (`static-template-custom-elements-render.test.ts`): server-render the real still composition from a claim-time-resolved Template input; assert Text + Image present, exactly one image, base byte-identical and painted before the overlay, transparent overlay, and no wrapper when there are zero custom elements. Verified red on the previous code, green now.
 - **Local pixel proof (Chromium `renderStill`, claim-time resolver, `data:` image; not production):** the 1080x1350 PNG contains the intact Template base, the Custom Text and one Custom Image above it; the legacy render is unchanged.
 
@@ -59,7 +59,7 @@ Remediation (operational, performed with read-first forensics; no secrets record
 - The two incident-created browser sessions were revoked; no new tokens were created.
 - **The original passwords are not recoverable** (no plaintext exists in any incident artifact; the stored hash is irreversible). Both affected accounts therefore still carry the incident-set password and **require a manual reset by their owners** - `AUTH PASSWORD MANUAL RESET REQUIRED`.
 
-## Validation - PROVED (final code, HEAD `c9c4cdc`)
+## Validation - PROVED (final code, pre-rebase HEAD `f9c27d1`; after rebase onto main the affected/focused suites, typecheck and build were re-run - see below)
 | Check | Result |
 |---|---|
 | `pnpm vitest run` | 131 files / **1822 tests passed**, 0 failed |
@@ -69,8 +69,11 @@ Remediation (operational, performed with read-first forensics; no secrets record
 | Render regression (red -> green) | proved, see above |
 | Local Chromium PNG | proved, see above |
 
+### Post-rebase re-validation (rebased onto `origin/main` `6c96059`, clean, no conflicts)
+The 11 incoming commits touch only video-generation/provider code and three `lib/storage` video-download helpers - no authoring, render, schema or worker paths - so the full suite was not re-run; instead: focused suites (`lib/creative`, `lib/render-execution`, `components/creative`) 80 files / 1108 tests passed; `pnpm typecheck` exit 0; `pnpm tsc --noEmit` exit 0; `pnpm build` exit 0.
+
 ## NOT YET PROVED (pending; do not treat as passed)
-- Deployment of `c9c4cdc` to Vercel production (claim route) and the deployed SHA.
+- Deployment of the merged main (which includes the claim-route fix) to Vercel production, with the deployed SHA verified.
 - VPS worker update and restart (see Worker impact).
 - Legitimate browser smoke on the real Creative Editor: add/move/resize Custom Text and Image, save, reload, geometry persistence.
 - Real asynchronous production Static PNG containing Template + Custom Text + Custom Image.
@@ -78,5 +81,5 @@ Remediation (operational, performed with read-first forensics; no secrets record
 
 ## Worker / deployment impact
 - `lib/render-execution/resolve-static-runtime-input.ts` runs in the Vercel `/api/render-executions/claim` route: **Vercel deployment required** (custom-image presigning at claim time).
-- `remotion/DocumentaryCardComposition.tsx` and `components/creative/free/free-stage.tsx` are byte-copied into the VPS worker bundle by `infra/render-worker-runtime/export.mjs`: **WORKER IMPACT: YES - the exported runtime must be copied to the VPS bind-mounted tree and the worker service restarted** (operator step; same procedure as `STATIC_RENDER_WORKER_V1.md`). Local export at `c9c4cdc`: content-studio tree hash `322d99111f82a676`; `DocumentaryCardComposition.tsx` sha256 `4a97b00d98d1fd9d...`, `free-stage.tsx` sha256 `a541f9022ca5a77f...` (repo == export).
+- `remotion/DocumentaryCardComposition.tsx` and `components/creative/free/free-stage.tsx` are byte-copied into the VPS worker bundle by `infra/render-worker-runtime/export.mjs`: **WORKER IMPACT: YES - the exported runtime must be copied to the VPS bind-mounted tree and the worker service restarted** (operator step; same procedure as `STATIC_RENDER_WORKER_V1.md`). Local export of the fix: content-studio tree hash `322d99111f82a676`; `DocumentaryCardComposition.tsx` sha256 `4a97b00d98d1fd9d...`, `free-stage.tsx` sha256 `a541f9022ca5a77f...` (repo == export).
 - **MIGRATION: NONE.**
