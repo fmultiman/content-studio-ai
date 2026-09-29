@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { OAuthError, OAuthErrorCode } from '@modelcontextprotocol/client'
 import {
   completeKlingMcpAuthorization,
   startKlingMcpAuthorization,
@@ -264,6 +265,50 @@ describe('Kling MCP OAuth — callback completion', () => {
     expect(serialized).not.toMatch(/access_token|refresh_token/)
   })
 
+  it('reconnecting resets derived metadata on the connection row', async () => {
+    const db = createFakeDb({
+      seed: {
+        provider_connections: [{
+          id: 'conn-1', user_id: 'user-a', provider: 'kling', connection_method: 'mcp_oauth', status: 'authorization_required',
+          external_account_id: 'old-4242', capabilities: { models: {} }, last_error_code: 'SOMETHING'
+        }]
+      }
+    })
+    const { deps } = makeDeps()
+    const { state } = await start(db, deps)
+    await completeKlingMcpAuthorization(db as any, { userId: 'user-a', state, code: 'c' }, deps)
+
+    const [connection] = db.tables.provider_connections
+    expect(connection).toMatchObject({ status: 'connected', external_account_id: null, last_error_code: null, capabilities: {} })
+  })
+
+  it('a failure to store tokens leaves the connection row in authorization_required state (not connected)', async () => {
+    const db = createFakeDb()
+    const { deps } = makeDeps()
+    const { state } = await start(db, deps)
+    
+    // Simulate DB failure writing secrets
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connection_secrets') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: new Error('DB outage') }),
+          delete: vi.fn().mockResolvedValue({ error: new Error() }),
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null })
+        } as any
+      }
+      return originalFrom.call(db, table)
+    })
+
+    const result = await completeKlingMcpAuthorization(db as any, { userId: 'user-a', state, code: 'c' }, deps).catch(e => e)
+    expect(result).toBeInstanceOf(Error)
+    
+    const [connection] = db.tables.provider_connections
+    expect(connection.status).toBe('authorization_required') // Never flipped to connected
+  })
+
   it('stores tokens only as ciphertext, and they decrypt server-side', async () => {
     const db = createFakeDb()
     const { deps } = makeDeps()
@@ -362,6 +407,23 @@ describe('Kling MCP OAuth — callback completion', () => {
     expect(result).toEqual({ ok: false, failure: 'exchange_failed' })
     expect(JSON.stringify(result)).not.toContain('raw provider detail')
     expect(db.tables.provider_connections ?? []).toHaveLength(0)
+  })
+
+  it('deletes the registry row if the exchange fails with invalid_client, dropping the dead client_id', async () => {
+    const db = createFakeDb({
+      seed: {
+        provider_oauth_clients: [{
+          id: 'c1', provider: 'kling', issuer: ISSUER, redirect_uri: REDIRECT_URI, client_id: 'dead-client'
+        }]
+      }
+    })
+    const exchange = vi.fn(async () => { throw new OAuthError(OAuthErrorCode.InvalidClient, 'client rejected by provider') })
+    const { deps } = makeDeps({ exchange: exchange as never })
+    const { state } = await start(db, deps)
+
+    const result = await completeKlingMcpAuthorization(db as any, { userId: 'user-a', state, code: 'c' }, deps)
+    expect(result).toEqual({ ok: false, failure: 'exchange_failed' })
+    expect(db.tables.provider_oauth_clients).toHaveLength(0) // Deleted
   })
 
   it('rejects the exchange when the authorization server issuer changed since the attempt started', async () => {

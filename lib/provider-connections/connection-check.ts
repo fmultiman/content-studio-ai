@@ -21,16 +21,25 @@ import {
 export type CheckOutcome =
   | { ok: true; connection: PublicProviderConnection; credits: KlingReadOnlyCheckResult['credits'] }
   | { ok: false; notFound: true }
-  | { ok: false; notFound?: false; code: ProviderConnectionErrorCode; connectionStatus: 'authorization_required' | 'error' }
+  | {
+      ok: false
+      notFound?: false
+      code: ProviderConnectionErrorCode
+      /** Present ONLY when that status was actually persisted; absent for transient/infrastructure failures. */
+      connectionStatus?: 'authorization_required' | 'error'
+    }
 
 export interface CheckDependencies extends TokenRefreshDependencies, KlingMcpClientDependencies {
   runCheck?: typeof runKlingReadOnlyCheck
 }
 
+// Failures that say something about the CONNECTION itself and are therefore
+// persisted. (An unreadable secret / missing key is infrastructure, not a
+// verdict on the connection, and is deliberately absent.)
 const CONNECTION_FAULT_CODES: ProviderConnectionErrorCode[] = [
   'PROVIDER_SCOPE_INSUFFICIENT',
   'PROVIDER_TOOL_ERROR',
-  'PROVIDER_CONNECTION_INVALID',
+  'PROVIDER_CLIENT_REJECTED',
 ]
 
 function toConnectionError(error: unknown): ProviderConnectionError {
@@ -50,7 +59,13 @@ export async function checkKlingMcpConnection(
   deps: CheckDependencies = {},
 ): Promise<CheckOutcome> {
   // Ownership is verified first; a foreign or unknown id is indistinguishable.
-  const owned = await getOwnedConnection(db, params.connectionId, params.userId)
+  // A database failure is NOT "not found".
+  let owned
+  try {
+    owned = await getOwnedConnection(db, params.connectionId, params.userId)
+  } catch (error) {
+    return { ok: false, code: toConnectionError(error).code }
+  }
   if (!owned) return { ok: false, notFound: true }
 
   const runCheck = deps.runCheck ?? runKlingReadOnlyCheck
@@ -81,22 +96,25 @@ export async function checkKlingMcpConnection(
     const known = toConnectionError(error)
     const needsReauth = known instanceof ProviderAuthorizationRequiredError
 
-    // Only failures that say something about the CONNECTION are recorded.
-    // Transient unavailability and infrastructure problems (missing/rotated
-    // encryption key) must not flip a healthy connection to "error".
-    if (needsReauth || CONNECTION_FAULT_CODES.includes(known.code)) {
+    // Only failures that say something about the CONNECTION are recorded and
+    // reported as a status. Transient unavailability and infrastructure
+    // problems (store outage, missing/rotated encryption key) change nothing —
+    // and the caller is told nothing changed.
+    const persistedStatus = needsReauth
+      ? ('authorization_required' as const)
+      : CONNECTION_FAULT_CODES.includes(known.code)
+        ? ('error' as const)
+        : undefined
+
+    if (persistedStatus) {
       await recordCheckFailure(db, {
         connectionId: owned.id,
         userId: params.userId,
-        status: needsReauth ? 'authorization_required' : 'error',
+        status: persistedStatus,
         errorCode: known.code,
-      })
+      }).catch(() => undefined)
     }
 
-    return {
-      ok: false,
-      code: known.code,
-      connectionStatus: needsReauth ? 'authorization_required' : 'error',
-    }
+    return { ok: false, code: known.code, ...(persistedStatus ? { connectionStatus: persistedStatus } : {}) }
   }
 }

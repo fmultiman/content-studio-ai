@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { ConnectionEncryptionNotConfiguredError } from '@/lib/provider-connections/crypto'
 import { completeKlingMcpAuthorization } from '@/lib/provider-connections/kling-mcp-oauth'
-import { getAppBaseUrl, settingsRedirectUrl } from '@/lib/provider-connections/kling-mcp'
+import { settingsRedirectPath } from '@/lib/provider-connections/kling-mcp'
 import { discardAuthorizationAttempt } from '@/lib/provider-connections/oauth-state'
 import type { OAuthCallbackFailure } from '@/lib/provider-connections/types'
 
@@ -13,11 +13,21 @@ import type { OAuthCallbackFailure } from '@/lib/provider-connections/types'
 // exchanges the code SERVER-SIDE (PKCE), stores the tokens encrypted, then
 // 303-redirects to Settings with a short result code only. The authorization
 // code, state and tokens never appear in the redirect target or any response.
+// Relative `Location` on purpose: the redirect (including the failure paths)
+// cannot itself fail because of a missing or invalid base-URL configuration.
+function see(location: string) {
+  return new NextResponse(null, {
+    status: 303,
+    headers: {
+      Location: location,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    },
+  })
+}
+
 function redirectTo(result: 'connected' | OAuthCallbackFailure) {
-  const response = NextResponse.redirect(settingsRedirectUrl(result), 303)
-  response.headers.set('Cache-Control', 'no-store')
-  response.headers.set('Referrer-Policy', 'no-referrer')
-  return response
+  return see(settingsRedirectPath(result))
 }
 
 export async function GET(request: NextRequest) {
@@ -35,9 +45,7 @@ export async function GET(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      const login = NextResponse.redirect(new URL('/login', getAppBaseUrl()), 303)
-      login.headers.set('Cache-Control', 'no-store')
-      return login
+      return see('/login')
     }
 
     const db = createServiceRoleSupabase()

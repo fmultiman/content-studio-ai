@@ -74,6 +74,8 @@ export type ProviderConnectionErrorCode =
   | 'PROVIDER_SCOPE_INSUFFICIENT'
   | 'PROVIDER_TOOL_ERROR'
   | 'PROVIDER_CONNECTION_INVALID'
+  | 'PROVIDER_CLIENT_REJECTED'
+  | 'CONNECTION_STORE_UNAVAILABLE'
   | 'CONNECTION_ENCRYPTION_NOT_CONFIGURED'
 
 export class ProviderConnectionError extends Error {

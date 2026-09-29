@@ -14,6 +14,7 @@ import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/l
 import { clearTestConnectionEnv, createFakeDb, useTestConnectionEnv } from './helpers/fake-db'
 
 const ISSUER = 'https://kling.ai/auth'
+const GRANT = { clientId: 'client-content-studio-1', issuer: ISSUER }
 const REDIRECT_URI = 'https://content.example.test/api/provider-connections/kling/mcp/callback'
 const NOW = new Date('2026-09-29T12:00:00Z')
 
@@ -176,7 +177,7 @@ describe('connection check orchestration', () => {
         ],
       },
     })
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT, NOW)
     return db
   }
 
@@ -215,6 +216,7 @@ describe('connection check orchestration', () => {
 
   it('a different user cannot check another user’s connection, and no token is read', async () => {
     const db = await seed('user-a')
+    db.log.length = 0 // Clear seed log
     const client = fakeClient()
     const outcome = await checkKlingMcpConnection(db as any, { connectionId: 'conn-1', userId: 'user-b' }, baseDeps(client))
 
@@ -259,7 +261,7 @@ describe('connection check orchestration', () => {
 
   it('a revoked refresh token maps to authorization_required (never a generic 500)', async () => {
     const db = await seed()
-    await saveConnectionTokens(db as any, 'conn-1', { ...TOKENS, expires_in: 1 }, new Date(NOW.getTime() - 3600_000))
+    await saveConnectionTokens(db as any, 'conn-1', { ...TOKENS, expires_in: 1 }, GRANT, new Date(NOW.getTime() - 3600_000))
     const refresh = vi.fn(async () => { throw new OAuthError(OAuthErrorCode.InvalidGrant, 'revoked') })
 
     const outcome = await checkKlingMcpConnection(db as any, { connectionId: 'conn-1', userId: 'user-a' }, baseDeps(fakeClient(), { refresh: refresh as never }))
@@ -277,13 +279,33 @@ describe('connection check orchestration', () => {
     expect(db.tables.provider_connections[0]).toMatchObject({ status: 'error', last_error_code: 'PROVIDER_SCOPE_INSUFFICIENT' })
   })
 
-  it('a transient outage does not flip a healthy connection to error', async () => {
+  it('a transient outage does not flip a healthy connection to error and omits connectionStatus from the response', async () => {
     const db = await seed()
     const runCheck = vi.fn(async () => { throw new ProviderConnectionError('PROVIDER_UNAVAILABLE') })
     const outcome = await checkKlingMcpConnection(db as any, { connectionId: 'conn-1', userId: 'user-a' }, baseDeps(fakeClient(), { runCheck: runCheck as never }))
 
     expect(outcome).toMatchObject({ ok: false, code: 'PROVIDER_UNAVAILABLE' })
+    expect(outcome).not.toHaveProperty('connectionStatus')
     expect(db.tables.provider_connections[0].status).toBe('connected')
+  })
+
+  it('a DB error on ownership lookup throws CONNECTION_STORE_UNAVAILABLE instead of looking like notFound', async () => {
+    const db = await seed()
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connections') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: new Error('DB error') })
+        } as any
+      }
+      return originalFrom.call(db, table)
+    })
+
+    const outcome = await checkKlingMcpConnection(db as any, { connectionId: 'conn-1', userId: 'user-a' }, baseDeps(fakeClient()))
+    expect(outcome).toMatchObject({ ok: false, code: 'CONNECTION_STORE_UNAVAILABLE' })
+    expect(outcome).not.toHaveProperty('connectionStatus')
   })
 
   it('a missing encryption key is reported as an infrastructure problem and does not alter the connection', async () => {

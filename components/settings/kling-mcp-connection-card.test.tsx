@@ -57,13 +57,24 @@ describe('KlingMcpConnectionCard', () => {
     expect(screen.getByText(/apenas permissões de leitura/)).toBeTruthy()
   })
 
-  it('shows a loading badge while the connection state is unknown', () => {
-    renderCard({ connection: undefined })
+  it('shows a loading badge while the connection state is unknown but not failed', () => {
+    renderCard({ connection: undefined, loadFailed: false })
     expect(screen.getByText('Carregando...')).toBeTruthy()
   })
 
+  it('shows a loadFailed state instead of "Não conectada" with a retry button', () => {
+    const onRetryLoad = vi.fn()
+    renderCard({ connection: null, loadFailed: true, onRetryLoad })
+    expect(screen.getByText('Estado indisponível')).toBeTruthy()
+    expect(screen.queryByText('Não conectada')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Conectar conta/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Tentar novamente/ }))
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
   it('disables connecting and says why when this environment cannot store connection secrets', () => {
-    renderCard({ connection: null, connectionsAvailable: false })
+    renderCard({ connection: null, connectionsAvailable: false, loadFailed: false })
     expect((screen.getByRole('button', { name: /Conectar conta/ }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/ainda não estão habilitadas neste ambiente/)).toBeTruthy()
   })
@@ -101,16 +112,20 @@ describe('KlingMcpConnectionCard', () => {
     return waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1))
   })
 
-  it('an errored connection is labelled as such and can be re-checked', () => {
-    renderCard({ connection: connection({ status: 'error', lastErrorCode: 'PROVIDER_SCOPE_INSUFFICIENT' }) })
+  it('an errored connection is labelled as such, and offers BOTH Reconectar and Verificar', () => {
+    const { onConnect, onCheck } = renderCard({ connection: connection({ status: 'error', lastErrorCode: 'PROVIDER_CLIENT_REJECTED' }) })
     expect(screen.getByText('Erro na conexão')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Verificar conexão/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Reconectar/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Reconectar/ }))
+    return waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1))
   })
 
-  it('disconnect asks for confirmation and states the REST key and videos are unaffected', async () => {
+  it('disconnect asks for confirmation and states the honest revocation copy', async () => {
     const { onDisconnect } = renderCard({ connection: connection() })
     fireEvent.click(screen.getByRole('button', { name: /^Desconectar$/ }))
-    expect(await screen.findByText(/Sua chave de API da Kling e seus vídeos já gerados não são afetados/)).toBeTruthy()
+    expect(await screen.findByText(/Tentamos revogar a autorização na Kling e apagamos as credenciais guardadas aqui/)).toBeTruthy()
     expect(onDisconnect).not.toHaveBeenCalled()
 
     const confirm = screen.getAllByRole('button', { name: /^Desconectar$/ }).pop() as HTMLElement

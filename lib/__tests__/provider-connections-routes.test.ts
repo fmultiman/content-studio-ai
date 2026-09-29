@@ -98,30 +98,40 @@ describe('POST /api/provider-connections/kling/mcp/connect', () => {
   })
 })
 
-describe('GET /api/provider-connections/kling/mcp/callback', () => {
-  const call = async (query: string) => {
-    const { GET } = await import('@/app/api/provider-connections/kling/mcp/callback/route')
-    return GET(new NextRequest(`https://content.example.test/api/provider-connections/kling/mcp/callback${query}`))
-  }
-  const location = (response: Response) => new URL(response.headers.get('location') as string)
-
-  it('sends an unauthenticated visitor to login without touching any state', async () => {
-    signedIn(null)
-    const response = await call('?code=code-route-secret&state=state-route-secret')
-    expect(response.status).toBe(303)
-    expect(location(response).pathname).toBe('/login')
-    expect(oauthModule.completeKlingMcpAuthorization).not.toHaveBeenCalled()
-  })
-
-  it('rejects missing state or code', async () => {
-    signedIn('user-a')
-    serviceDb(createFakeDb())
-    for (const query of ['', '?code=code-route-secret', '?state=state-route-secret']) {
-      const response = await call(query)
-      expect(location(response).searchParams.get('result')).toBe('missing_parameters')
+  describe('GET /api/provider-connections/kling/mcp/callback', () => {
+    const call = async (query: string) => {
+      const { GET } = await import('@/app/api/provider-connections/kling/mcp/callback/route')
+      return GET(new NextRequest(`https://content.example.test/api/provider-connections/kling/mcp/callback${query}`))
     }
-    expect(oauthModule.completeKlingMcpAuthorization).not.toHaveBeenCalled()
-  })
+    const locationStr = (response: Response) => response.headers.get('location') as string
+    const location = (response: Response) => new URL(locationStr(response), 'https://content.example.test')
+
+    it('sends an unauthenticated visitor to login without touching any state via a relative redirect', async () => {
+      signedIn(null)
+      const response = await call('?code=code-route-secret&state=state-route-secret')
+      expect(response.status).toBe(303)
+      expect(locationStr(response)).toBe('/login')
+      expect(oauthModule.completeKlingMcpAuthorization).not.toHaveBeenCalled()
+    })
+
+    it('works safely even when NEXT_PUBLIC_APP_URL is unset', async () => {
+      signedIn(null)
+      const cached = process.env.NEXT_PUBLIC_APP_URL
+      delete process.env.NEXT_PUBLIC_APP_URL
+      const response = await call('?code=x')
+      expect(locationStr(response)).toBe('/login')
+      process.env.NEXT_PUBLIC_APP_URL = cached
+    })
+
+    it('rejects missing state or code', async () => {
+      signedIn('user-a')
+      serviceDb(createFakeDb())
+      for (const query of ['', '?code=code-route-secret', '?state=state-route-secret']) {
+        const response = await call(query)
+        expect(location(response).searchParams.get('result')).toBe('missing_parameters')
+      }
+      expect(oauthModule.completeKlingMcpAuthorization).not.toHaveBeenCalled()
+    })
 
   it('handles a provider OAuth error (user denied) and discards the pending attempt', async () => {
     const db = createFakeDb({ seed: { provider_oauth_authorizations: [] } })
@@ -145,27 +155,28 @@ describe('GET /api/provider-connections/kling/mcp/callback', () => {
     expect(response.headers.get('location')).not.toContain('leaky-detail')
   })
 
-  it('on success redirects to Settings with a result code ONLY — no code, state or token in the URL, no-store, no referrer', async () => {
-    signedIn('user-a')
-    serviceDb(createFakeDb())
-    vi.mocked(oauthModule.completeKlingMcpAuthorization).mockResolvedValue({
-      ok: true,
-      connection: { id: 'conn-1', access_token: 'at-route-secret' } as never,
+  it('on success redirects to Settings via a relative URL with a result code ONLY — no code, state or token in the URL, no-store, no referrer', async () => {
+      signedIn('user-a')
+      serviceDb(createFakeDb())
+      vi.mocked(oauthModule.completeKlingMcpAuthorization).mockResolvedValue({
+        ok: true,
+        connection: { id: 'conn-1', access_token: 'at-route-secret' } as never,
+      })
+
+      const response = await call('?code=code-route-secret&state=state-route-secret&iss=https%3A%2F%2Fkling.ai%2Fauth')
+      const targetStr = locationStr(response)
+      const target = location(response)
+
+      expect(response.status).toBe(303)
+      expect(targetStr.startsWith('/configuracoes')).toBe(true)
+      expect([...target.searchParams.keys()].sort()).toEqual(['connection', 'result'])
+      expect(target.searchParams.get('connection')).toBe('kling_mcp')
+      expect(target.searchParams.get('result')).toBe('connected')
+      expectNoSecrets(targetStr)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+      expectNoSecrets(await response.text())
     })
-
-    const response = await call('?code=code-route-secret&state=state-route-secret&iss=https%3A%2F%2Fkling.ai%2Fauth')
-    const target = location(response)
-
-    expect(response.status).toBe(303)
-    expect(`${target.origin}${target.pathname}`).toBe('https://content.example.test/configuracoes')
-    expect([...target.searchParams.keys()].sort()).toEqual(['connection', 'result'])
-    expect(target.searchParams.get('connection')).toBe('kling_mcp')
-    expect(target.searchParams.get('result')).toBe('connected')
-    expectNoSecrets(response.headers.get('location') as string)
-    expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(response.headers.get('referrer-policy')).toBe('no-referrer')
-    expectNoSecrets(await response.text())
-  })
 
   it('completes for the SESSION user with the presented code, state and iss', async () => {
     signedIn('user-a')
@@ -248,22 +259,33 @@ describe('POST /api/provider-connections/[id]/check', () => {
     expect((await call('conn-1')).status).toBe(404)
   })
 
-  it.each([
-    ['PROVIDER_AUTHORIZATION_REQUIRED', 409],
-    ['PROVIDER_SCOPE_INSUFFICIENT', 403],
-    ['PROVIDER_UNAVAILABLE', 502],
-    ['CONNECTION_ENCRYPTION_NOT_CONFIGURED', 503],
-  ] as const)('maps %s to HTTP %i with a controlled body', async (code, status) => {
-    signedIn('user-a')
-    serviceDb(createFakeDb())
-    vi.mocked(checkModule.checkKlingMcpConnection).mockResolvedValue({ ok: false, code, connectionStatus: code === 'PROVIDER_AUTHORIZATION_REQUIRED' ? 'authorization_required' : 'error' })
+    it.each([
+      ['PROVIDER_AUTHORIZATION_REQUIRED', 409, 'authorization_required'],
+      ['PROVIDER_CLIENT_REJECTED', 409, 'error'],
+      ['PROVIDER_SCOPE_INSUFFICIENT', 403, 'error'],
+      ['PROVIDER_UNAVAILABLE', 502, undefined],
+      ['CONNECTION_STORE_UNAVAILABLE', 503, undefined],
+      ['CONNECTION_ENCRYPTION_NOT_CONFIGURED', 503, undefined],
+    ] as const)('maps %s to HTTP %i with a controlled body and connectionStatus=%s', async (code, status, connectionStatus) => {
+      signedIn('user-a')
+      serviceDb(createFakeDb())
+      vi.mocked(checkModule.checkKlingMcpConnection).mockResolvedValue({ 
+        ok: false, 
+        code, 
+        ...(connectionStatus ? { connectionStatus } : {}) 
+      })
 
-    const response = await call('conn-1')
-    const body = await response.json()
-    expect(response.status).toBe(status)
-    expect(body.code).toBe(code)
-    expect(Object.keys(body).sort()).toEqual(['code', 'connectionStatus', 'error'])
-  })
+      const response = await call('conn-1')
+      const body = await response.json()
+
+      expect(response.status).toBe(status)
+      expect(body.code).toBe(code)
+      if (connectionStatus) {
+        expect(body.connectionStatus).toBe(connectionStatus)
+      } else {
+        expect(body).not.toHaveProperty('connectionStatus')
+      }
+    })
 })
 
 describe('DELETE /api/provider-connections/[id]', () => {
@@ -347,6 +369,30 @@ describe('DELETE /api/provider-connections/[id]', () => {
     expect(db.tables.user_settings[0].kling_api_key).toBe('REST-API-KEY-MUST-SURVIVE')
     expect(db.log.filter((entry) => entry.endsWith(':user_settings') || entry.endsWith(':video_generations'))).toEqual([])
   })
+
+  it('returns 500 when DB deletion throws, without claiming disconnection', async () => {
+    const db = seed()
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connections') {
+        const chain = {
+          delete: () => chain,
+          eq: () => chain,
+          then: (resolve: any) => resolve({ error: new Error('DB error') }) // Fake resolution
+        };
+        return chain as any;
+      }
+      return originalFrom.call(db, table)
+    })
+
+    const response = await call('conn-1')
+    expect(response.status).toBe(500)
+    expect(await response.text()).not.toContain('disconnected') // body doesn't claim disconnected
+  })
 })
 
 describe('GET /api/provider-connections', () => {
@@ -393,5 +439,26 @@ describe('GET /api/provider-connections', () => {
     delete process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY
     signedIn('user-a', db)
     expect((await (await call()).json()).connectionsAvailable).toBe(false)
+  })
+
+  it('returns 500 when DB lookup fails', async () => {
+    const db = seed()
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connections') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          then: (resolve: any) => resolve({ error: new Error('DB outage') })
+        };
+        return chain as any;
+      }
+      return originalFrom.call(db, table)
+    })
+    signedIn('user-a', db)
+
+    const response = await call()
+    expect(response.status).toBe(500)
   })
 })

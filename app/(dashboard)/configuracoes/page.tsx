@@ -72,6 +72,7 @@ export default function SettingsPage() {
   const [nanobananaBaseUrl, setNanobananaBaseUrl] = useState<string | null>(null)
   const [klingMcpConnection, setKlingMcpConnection] = useState<PublicProviderConnection | null | undefined>(undefined)
   const [connectionsAvailable, setConnectionsAvailable] = useState(true)
+  const [connectionsLoadFailed, setConnectionsLoadFailed] = useState(false)
   const [liveKlingCredits, setLiveKlingCredits] = useState<number | null>(null)
   const isThemeReady = useSyncExternalStore(
     () => () => {},
@@ -119,25 +120,35 @@ export default function SettingsPage() {
   }, [toast])
 
   const handleConnectKlingMcp = async () => {
-    const response = await fetch('/api/provider-connections/kling/mcp/connect', { method: 'POST' })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok || typeof payload?.authorizationUrl !== 'string') {
-      toast({
-        title: 'Não foi possível iniciar a conexão',
-        description:
-          payload?.code === 'CONNECTION_ENCRYPTION_NOT_CONFIGURED'
-            ? 'As conexões de conta ainda não estão habilitadas neste ambiente.'
-            : 'A Kling não respondeu agora. Tente novamente.',
-        variant: 'destructive',
-      })
-      return
+    try {
+      const response = await fetch('/api/provider-connections/kling/mcp/connect', { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || typeof payload?.authorizationUrl !== 'string') {
+        toast({
+          title: 'Não foi possível iniciar a conexão',
+          description:
+            payload?.code === 'CONNECTION_ENCRYPTION_NOT_CONFIGURED'
+              ? 'As conexões de conta ainda não estão habilitadas neste ambiente.'
+              : 'A Kling não respondeu agora. Tente novamente.',
+          variant: 'destructive',
+        })
+        return
+      }
+      // Full-page redirect to Kling's own consent screen; tokens never pass through the browser.
+      window.location.assign(payload.authorizationUrl)
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível iniciar a conexão. Verifique sua conexão e tente novamente.', variant: 'destructive' })
     }
-    // Full-page redirect to Kling's own consent screen; tokens never pass through the browser.
-    window.location.assign(payload.authorizationUrl)
   }
 
   const handleCheckKlingMcpConnection = useCallback(async (id: string) => {
-    const response = await fetch(`/api/provider-connections/${id}/check`, { method: 'POST' })
+    let response: Response
+    try {
+      response = await fetch(`/api/provider-connections/${id}/check`, { method: 'POST' })
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível verificar a conexão agora.', variant: 'destructive' })
+      return
+    }
     const payload = await response.json().catch(() => ({}))
     if (response.ok) {
       setKlingMcpConnection(payload.connection as PublicProviderConnection)
@@ -164,14 +175,28 @@ export default function SettingsPage() {
 
   const handleDisconnectKlingMcp = async () => {
     if (!klingMcpConnection) return
-    const response = await fetch(`/api/provider-connections/${klingMcpConnection.id}`, { method: 'DELETE' })
-    if (!response.ok) {
-      toast({ title: 'Não foi possível desconectar', description: 'Tente novamente.', variant: 'destructive' })
+    let response: Response
+    try {
+      response = await fetch(`/api/provider-connections/${klingMcpConnection.id}`, { method: 'DELETE' })
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível desconectar agora. Tente novamente.', variant: 'destructive' })
       return
     }
+    if (!response.ok) {
+      toast({ title: 'Não foi possível desconectar', description: 'As credenciais ainda estão guardadas. Tente novamente.', variant: 'destructive' })
+      return
+    }
+    const payload = await response.json().catch(() => ({}))
     setKlingMcpConnection(null)
     setLiveKlingCredits(null)
-    toast({ title: 'Conta Kling desconectada', description: 'Sua chave de API da Kling e seus vídeos não foram afetados.' })
+    if (payload?.revocation === 'succeeded') {
+      toast({ title: 'Conta Kling desconectada', description: 'A autorização foi revogada na Kling e as credenciais foram apagadas. Sua chave de API de Kling e seus vídeos não foram afetados.' })
+    } else {
+      toast({
+        title: 'Conta Kling desconectada',
+        description: 'Apagamos as credenciais guardadas, mas não conseguimos confirmar a revogação na Kling. Se quiser, remova o acesso do Content Studio nas configurações da sua conta Kling.'
+      })
+    }
   }
 
   useEffect(() => {
@@ -232,12 +257,13 @@ export default function SettingsPage() {
                 ) ?? null
               setKlingMcpConnection(loadedConnection)
               setConnectionsAvailable(connectionsPayload?.connectionsAvailable !== false)
+              setConnectionsLoadFailed(false)
             } else {
-              setKlingMcpConnection(null)
+              setConnectionsLoadFailed(true)
             }
           } catch (connectionsError) {
             console.error('Erro ao carregar conexões:', connectionsError)
-            setKlingMcpConnection(null)
+            setConnectionsLoadFailed(true)
           }
 
           // Result of the OAuth redirect: show it, open the API tab, then remove
@@ -905,6 +931,8 @@ export default function SettingsPage() {
 
                   <KlingMcpConnectionCard
                     connection={klingMcpConnection}
+                    loadFailed={connectionsLoadFailed}
+                    onRetryLoad={() => window.location.reload()}
                     connectionsAvailable={connectionsAvailable}
                     liveCredits={liveKlingCredits}
                     onConnect={handleConnectKlingMcp}

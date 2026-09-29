@@ -30,6 +30,9 @@ import type { PublicProviderConnection } from '@/lib/provider-connections/types'
 interface KlingMcpConnectionCardProps {
   /** null = no connection row = "not configured". `undefined` while loading. */
   connection: PublicProviderConnection | null | undefined
+  /** The connection state could not be loaded: unknown is never presented as "not connected". */
+  loadFailed?: boolean
+  onRetryLoad?: () => void
   /** False when this environment cannot store connection secrets. */
   connectionsAvailable: boolean
   liveCredits: number | null
@@ -46,6 +49,8 @@ const STATUS_LABEL: Record<string, { label: string; tone: 'success' | 'warning' 
 
 export function KlingMcpConnectionCard({
   connection,
+  loadFailed = false,
+  onRetryLoad,
   connectionsAvailable,
   liveCredits,
   onConnect,
@@ -56,13 +61,18 @@ export function KlingMcpConnectionCard({
   const [isChecking, setIsChecking] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
 
-  const badge =
-    connection === undefined
+  const stateUnknown = loadFailed && !connection
+  const badge = stateUnknown
+    ? { label: 'Estado indisponível', tone: 'warning' as const }
+    : connection === undefined
       ? { label: 'Carregando...', tone: 'neutral' as const }
       : connection === null
         ? { label: 'Não conectada', tone: 'unavailable' as const }
         : STATUS_LABEL[connection.status]
 
+  // Reconnecting is offered when authorization is lost, and also for an error state
+  // (e.g. the provider rejected our registration) where re-checking alone cannot help.
+  const canReconnect = connection?.status === 'authorization_required' || connection?.status === 'error'
   const needsAuthorization = connection?.status === 'authorization_required'
   const modelCount = connection?.capabilities.models?.text_to_video?.length
 
@@ -126,14 +136,25 @@ export function KlingMcpConnectionCard({
         </dl>
       ) : null}
 
-      {!connectionsAvailable && connection === null ? (
+      {stateUnknown ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-amber-500">
+          <span>Não foi possível carregar o estado da conexão.</span>
+          {onRetryLoad ? (
+            <Button type="button" size="sm" variant="outline" onClick={onRetryLoad}>
+              Tentar novamente
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!connectionsAvailable && connection === null && !stateUnknown ? (
         <p className="text-xs text-amber-500">
           As conexões de conta ainda não estão habilitadas neste ambiente.
         </p>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        {connection === null || needsAuthorization ? (
+        {(connection === null && !stateUnknown) || canReconnect ? (
           <Button
             type="button"
             size="sm"
@@ -142,7 +163,7 @@ export function KlingMcpConnectionCard({
             onClick={() => void run(setIsConnecting, onConnect)}
           >
             {isConnecting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-2 h-3.5 w-3.5" />}
-            {needsAuthorization ? 'Reconectar' : 'Conectar conta'}
+            {canReconnect ? 'Reconectar' : 'Conectar conta'}
           </Button>
         ) : null}
 
@@ -164,8 +185,8 @@ export function KlingMcpConnectionCard({
               <AlertDialogHeader>
                 <AlertDialogTitle>Desconectar a conta Kling?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Revogamos a autorização na Kling e apagamos as credenciais guardadas. Sua chave de API da Kling e
-                  seus vídeos já gerados não são afetados.
+                  Tentamos revogar a autorização na Kling e apagamos as credenciais guardadas aqui. Sua chave de API da
+                  Kling e seus vídeos já gerados não são afetados.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -177,7 +198,7 @@ export function KlingMcpConnectionCard({
         ) : null}
       </div>
 
-      {connection === null ? (
+      {connection === null && !stateUnknown ? (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Você será levado à Kling para autorizar. Pedimos apenas permissões de leitura (consultar conta e créditos).

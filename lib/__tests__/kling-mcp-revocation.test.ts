@@ -4,6 +4,7 @@ import { saveConnectionTokens } from '@/lib/provider-connections/token-store'
 import { clearTestConnectionEnv, createFakeDb, useTestConnectionEnv } from './helpers/fake-db'
 
 const ISSUER = 'https://kling.ai/auth'
+const GRANT = { clientId: 'client-content-studio-1', issuer: ISSUER }
 const REDIRECT_URI = 'https://content.example.test/api/provider-connections/kling/mcp/callback'
 const TOKENS = { access_token: 'at-revoke-secret-1', refresh_token: 'rt-revoke-secret-1', token_type: 'Bearer', expires_in: 3600 }
 
@@ -27,7 +28,7 @@ describe('Kling MCP grant revocation (RFC 7009)', () => {
 
   it('revokes the refresh token and the access token at the provider’s revocation endpoint', async () => {
     const db = seed()
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
     const fetchFn = vi.fn(async (_url: unknown, _init?: unknown) => new Response('', { status: 200 }))
 
     const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {
@@ -52,12 +53,48 @@ describe('Kling MCP grant revocation (RFC 7009)', () => {
     expect(bodies.map((body) => body.get('token_type_hint'))).toEqual(['refresh_token', 'access_token'])
     expect(bodies[0].get('token')).toBe(TOKENS.refresh_token)
     expect(bodies[1].get('token')).toBe(TOKENS.access_token)
-    expect(bodies.every((body) => body.get('client_id') === 'client-1')).toBe(true)
+    // Uses the grant context client, not the registry string
+    expect(bodies.every((body) => body.get('client_id') === GRANT.clientId)).toBe(true)
   })
+
+  it('runs revocations without depending on an OAuth client registry row', async () => {
+    const db = seed(false) // No registry row
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
+    const fetchFn = vi.fn(async () => new Response('', { status: 200 }))
+
+    const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {
+      discover: discoverWith({ issuer: ISSUER, revocation_endpoint: 'https://kling.ai/auth/revoke' }),
+      fetchFn: fetchFn as never,
+    } as KlingOAuthDependencies)
+
+    expect(outcome).toBe('succeeded')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('is bounded: a hung provider returns failed when the signal aborts (timeout)', async () => {
+    const db = seed()
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
+    const fetchFn = vi.fn(async (url: unknown, init?: RequestInit) => {
+      // Simulate real AbortSignal behavior
+      if (init?.signal?.aborted) throw init.signal.reason
+      return new Promise<Response>((_, reject) => {
+        if (init?.signal) {
+          init.signal.addEventListener('abort', () => reject(init.signal!.reason ?? new Error('DOMException: The operation was aborted.')))
+        }
+      })
+    })
+
+    const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {
+      discover: discoverWith({ issuer: ISSUER, revocation_endpoint: 'https://kling.ai/auth/revoke' }),
+      fetchFn: fetchFn as never,
+    } as KlingOAuthDependencies)
+    
+    expect(outcome).toBe('failed')
+  }, 10000)
 
   it('reports failure (without throwing) when the provider rejects the revocation', async () => {
     const db = seed()
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
     const fetchFn = vi.fn(async () => new Response('', { status: 500 }))
 
     const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {
@@ -69,7 +106,7 @@ describe('Kling MCP grant revocation (RFC 7009)', () => {
 
   it('reports failure (without throwing) on a network error', async () => {
     const db = seed()
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
     const fetchFn = vi.fn(async () => {
       throw new TypeError('fetch failed')
     })
@@ -94,7 +131,7 @@ describe('Kling MCP grant revocation (RFC 7009)', () => {
 
   it('skips when the authorization server advertises no revocation endpoint', async () => {
     const db = seed()
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
     const fetchFn = vi.fn()
     const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {
       discover: discoverWith({ issuer: ISSUER }),
@@ -106,7 +143,7 @@ describe('Kling MCP grant revocation (RFC 7009)', () => {
 
   it('never throws when the encryption key is unavailable (local cleanup still proceeds)', async () => {
     const db = seed()
-    await saveConnectionTokens(db as any, 'conn-1', TOKENS)
+    await saveConnectionTokens(db as any, 'conn-1', TOKENS, GRANT)
     delete process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY
 
     const outcome = await revokeKlingMcpGrant(db as any, 'conn-1', {

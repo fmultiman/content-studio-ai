@@ -14,6 +14,8 @@ const HTTP_STATUS: Record<ProviderConnectionErrorCode, number> = {
   PROVIDER_AUTHORIZATION_REQUIRED: 409,
   PROVIDER_SCOPE_INSUFFICIENT: 403,
   PROVIDER_CONNECTION_INVALID: 409,
+  PROVIDER_CLIENT_REJECTED: 409,
+  CONNECTION_STORE_UNAVAILABLE: 503,
   PROVIDER_TOOL_ERROR: 502,
   PROVIDER_UNAVAILABLE: 502,
   CONNECTION_ENCRYPTION_NOT_CONFIGURED: 503,
@@ -45,8 +47,13 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Conexão não encontrada' }, { status: 404 })
     }
 
+    // `connectionStatus` is included only when it was actually persisted.
     return NextResponse.json(
-      { error: 'Não foi possível verificar a conexão.', code: outcome.code, connectionStatus: outcome.connectionStatus },
+      {
+        error: 'Não foi possível verificar a conexão.',
+        code: outcome.code,
+        ...(outcome.connectionStatus ? { connectionStatus: outcome.connectionStatus } : {}),
+      },
       { status: HTTP_STATUS[outcome.code] ?? 502 },
     )
   } catch (error) {

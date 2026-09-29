@@ -66,10 +66,12 @@ export function klingMcpRedirectUri(): string {
   return `${getAppBaseUrl()}${CALLBACK_PATH}`
 }
 
-/** Where the callback sends the browser afterwards. Carries a result code only — never code/state/tokens. */
-export function settingsRedirectUrl(result: string): string {
-  const url = new URL(SETTINGS_PATH, getAppBaseUrl())
-  url.searchParams.set('connection', 'kling_mcp')
-  url.searchParams.set('result', result)
-  return url.toString()
+/**
+ * Where the callback sends the browser afterwards, as a RELATIVE location, so
+ * the error/redirect path has no dependency on configuration that could itself
+ * be the thing that failed. Carries a result code only — never code/state/tokens.
+ */
+export function settingsRedirectPath(result: string): string {
+  const query = new URLSearchParams({ connection: 'kling_mcp', result })
+  return `${SETTINGS_PATH}?${query.toString()}`
 }

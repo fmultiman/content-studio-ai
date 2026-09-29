@@ -143,3 +143,16 @@ export async function getOrRegisterOAuthClient(
     newlyRegistered: true,
   }
 }
+
+/**
+ * Forget a registration the provider no longer accepts (invalid_client), so the
+ * next connection attempt registers afresh instead of retrying a dead client_id.
+ */
+export async function deleteOAuthClient(db: SupabaseClient, lookup: OAuthClientLookup): Promise<void> {
+  await db
+    .from(TABLE)
+    .delete()
+    .eq('provider', lookup.provider)
+    .eq('issuer', lookup.issuer)
+    .eq('redirect_uri', lookup.redirectUri)
+}

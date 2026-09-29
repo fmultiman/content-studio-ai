@@ -14,6 +14,7 @@ import { KLING_MCP_URL } from '@/lib/provider-connections/kling-mcp'
 import { clearTestConnectionEnv, createFakeDb, useTestConnectionEnv } from './helpers/fake-db'
 
 const ISSUER = 'https://kling.ai/auth'
+const GRANT = { clientId: 'client-content-studio-1', issuer: ISSUER }
 const REDIRECT_URI = 'https://content.example.test/api/provider-connections/kling/mcp/callback'
 const NOW = new Date('2026-09-29T12:00:00Z')
 
@@ -59,7 +60,7 @@ describe('connection token storage', () => {
 
   it('persists tokens as ciphertext only, with a clear (non-secret) expiry', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
 
     const [row] = db.tables.provider_connection_secrets
     expect(JSON.stringify(row)).not.toContain(INITIAL.access_token)
@@ -71,7 +72,7 @@ describe('connection token storage', () => {
 
   it('binds each secret to its connection: a ciphertext copied to another connection is unreadable', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     db.tables.provider_connection_secrets.push({ ...db.tables.provider_connection_secrets[0], connection_id: 'conn-other' })
 
     await expect(getValidAccessToken(db as any, 'conn-other', makeDeps(vi.fn(), NOW))).rejects.toThrow()
@@ -79,10 +80,26 @@ describe('connection token storage', () => {
 
   it('deleting a connection’s tokens removes all secret material', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     await deleteConnectionTokens(db as any, 'conn-1')
     expect(db.tables.provider_connection_secrets).toHaveLength(0)
     expect(await readTokensForRevocation(db as any, 'conn-1')).toBeNull()
+  })
+
+  it('deleteConnectionTokens throws CONNECTION_STORE_UNAVAILABLE on DB error', async () => {
+    const db = seedDb()
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connection_secrets') {
+        return {
+          delete: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockResolvedValue({ error: new Error('DB error') }) 
+        } as any
+      }
+      return originalFrom.call(db, table)
+    })
+
+    await expect(deleteConnectionTokens(db as any, 'conn-1')).rejects.toThrow('CONNECTION_STORE_UNAVAILABLE')
   })
 })
 
@@ -95,7 +112,7 @@ describe('access-token refresh', () => {
 
   it('returns a fresh access token without refreshing', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn()
 
     const token = await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(60_000)))
@@ -105,7 +122,7 @@ describe('access-token refresh', () => {
 
   it('refreshes an expired access token using the stored refresh token, server-side', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({
       access_token: 'at-refreshed-0002',
       refresh_token: 'rt-rotated-0002',
@@ -125,7 +142,7 @@ describe('access-token refresh', () => {
 
   it('refreshes when the token is inside the expiry skew window', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({ access_token: 'at-near-expiry', token_type: 'Bearer', expires_in: 3600 }))
 
     const almostExpired = later(3600_000 - ACCESS_TOKEN_REFRESH_SKEW_MS + 1000)
@@ -134,7 +151,7 @@ describe('access-token refresh', () => {
 
   it('persists a ROTATED refresh token securely and bumps the secret version', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({
       access_token: 'at-refreshed-0002',
       refresh_token: 'rt-rotated-0002',
@@ -157,7 +174,7 @@ describe('access-token refresh', () => {
 
   it('keeps the existing refresh token when the provider does not rotate it', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({ access_token: 'at-refreshed-0003', token_type: 'Bearer', expires_in: 3600 }))
     await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(2 * 3600_000)))
 
@@ -166,11 +183,11 @@ describe('access-token refresh', () => {
     expect(stored?.access_token).toBe('at-refreshed-0003')
   })
 
-  it.each([OAuthErrorCode.InvalidGrant, OAuthErrorCode.InvalidClient, OAuthErrorCode.UnauthorizedClient])(
+  it.each([OAuthErrorCode.InvalidGrant, OAuthErrorCode.UnauthorizedClient])(
     'a revoked/invalid grant (%s) maps to PROVIDER_AUTHORIZATION_REQUIRED and clears the dead secrets',
     async (code) => {
       const db = seedDb()
-      await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+      await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
       const refresh = vi.fn(async () => {
         throw new OAuthError(code, 'token revoked')
       })
@@ -189,7 +206,7 @@ describe('access-token refresh', () => {
 
   it('a transient failure is PROVIDER_UNAVAILABLE and does NOT touch status or secrets', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => {
       throw new TypeError('fetch failed')
     })
@@ -203,7 +220,7 @@ describe('access-token refresh', () => {
 
   it('requires re-authorization when there is no refresh token to use', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-only', token_type: 'Bearer', expires_in: 60 }, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-only', token_type: 'Bearer', expires_in: 60 }, GRANT, NOW)
 
     await expect(getValidAccessToken(db as any, 'conn-1', makeDeps(vi.fn(), later(3600_000)))).rejects.toBeInstanceOf(
       ProviderAuthorizationRequiredError,
@@ -218,22 +235,99 @@ describe('access-token refresh', () => {
     )
   })
 
-  it('requires re-authorization when Content Studio’s client registration is missing', async () => {
+  it('refreshes successfully even if the environment has no client registration row (uses the grant’s own client)', async () => {
+    // The registry is empty.
     const db = createFakeDb({ seed: { provider_connections: [{ id: 'conn-1', user_id: 'user-a', provider: 'kling', connection_method: 'mcp_oauth', status: 'connected' }] } })
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
 
-    await expect(getValidAccessToken(db as any, 'conn-1', makeDeps(vi.fn(), later(2 * 3600_000)))).rejects.toBeInstanceOf(
-      ProviderAuthorizationRequiredError,
+    const refresh = vi.fn(async () => ({ access_token: 'at-no-registry', token_type: 'Bearer', expires_in: 3600 }))
+    const token = await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(2 * 3600_000)))
+    expect(token).toBe('at-no-registry')
+    expect(refresh).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ clientInformation: { client_id: GRANT.clientId } })
     )
+  })
+
+  it('an invalid_client error during refresh is a PROVIDER_CLIENT_REJECTED error without deleting the tokens (status unchanged)', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    const refresh = vi.fn(async () => {
+      throw new OAuthError(OAuthErrorCode.InvalidClient, 'client rejected')
+    })
+    
+    const error = await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(2 * 3600_000))).catch(e => e)
+    expect(error).toBeInstanceOf(ProviderConnectionError)
+    expect(error.code).toBe('PROVIDER_CLIENT_REJECTED')
+    expect(db.tables.provider_connections[0].status).toBe('connected')
+    expect(db.tables.provider_connection_secrets).toHaveLength(1)
+  })
+
+  it('a DB read error on readSecretRow is a CONNECTION_STORE_UNAVAILABLE error (not AuthRequired)', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    
+    const originalFrom = db.from;
+    db.from = vi.fn((table: string) => {
+      if (table === 'provider_connection_secrets') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: new Error('DB outage') })
+        } as any
+      }
+      return originalFrom.call(db, table)
+    })
+
+    const error = await getValidAccessToken(db as any, 'conn-1', makeDeps(vi.fn(), later(2 * 3600_000))).catch(e => e)
+    expect(error).toBeInstanceOf(ProviderConnectionError)
+    expect(error.code).toBe('CONNECTION_STORE_UNAVAILABLE')
+  })
+
+  it('a missing client_id or mismatched issuer in the grant results in PROVIDER_CONNECTION_INVALID without deleting secrets', async () => {
+    const db = seedDb()
+    // Malformed grant (no client_id)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, { clientId: '', issuer: GRANT.issuer }, NOW)
+
+    const error = await getValidAccessToken(db as any, 'conn-1', makeDeps(vi.fn(), later(2 * 3600_000))).catch(e => e)
+    expect(error).toBeInstanceOf(ProviderConnectionError)
+    expect(error.code).toBe('PROVIDER_CONNECTION_INVALID')
+    expect(db.tables.provider_connection_secrets).toHaveLength(1) // not deleted
+  })
+
+  it('mismatched issuer across discovery yields PROVIDER_CONNECTION_INVALID without deleting secrets', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    
+    // Discover returns a different issuer than the one in the grant!
+    const discover = vi.fn(async () => ({ authorizationServerUrl: 'https://other.kling.ai/auth' } as any))
+    
+    const error = await getValidAccessToken(db as any, 'conn-1', {
+      ...makeDeps(vi.fn(), later(2 * 3600_000)),
+      discover
+    }).catch(e => e)
+    expect(error).toBeInstanceOf(ProviderConnectionError)
+    expect(error.code).toBe('PROVIDER_CONNECTION_INVALID')
+    expect(db.tables.provider_connection_secrets).toHaveLength(1)
+  })
+
+  it('reconnecting monotonically increments the secret_version', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    expect(db.tables.provider_connection_secrets[0].secret_version).toBe(1)
+    
+    // Simulating reconnect
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, later(60000))
+    expect(db.tables.provider_connection_secrets[0].secret_version).toBe(2)
   })
 
   it('concurrent refresh: the loser of the compare-and-swap uses the winner’s newer token and never overwrites it', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
 
     // While our refresh is "in flight", another invocation stores a newer token set.
     const refresh = vi.fn(async () => {
-      await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-winner', refresh_token: 'rt-winner', token_type: 'Bearer', expires_in: 3600 }, NOW)
+      await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-winner', refresh_token: 'rt-winner', token_type: 'Bearer', expires_in: 3600 }, GRANT, NOW)
       db.tables.provider_connection_secrets[0].secret_version = 2
       return { access_token: 'at-loser', refresh_token: 'rt-loser', token_type: 'Bearer', expires_in: 3600 }
     })
@@ -246,10 +340,10 @@ describe('access-token refresh', () => {
 
   it('if a refresh is rejected because another invocation already rotated the token, the newer stored token is used', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
 
     const refresh = vi.fn(async () => {
-      await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-rotated-elsewhere', refresh_token: 'rt-rotated-elsewhere', token_type: 'Bearer', expires_in: 3600 }, NOW)
+      await saveConnectionTokens(db as any, 'conn-1', { access_token: 'at-rotated-elsewhere', refresh_token: 'rt-rotated-elsewhere', token_type: 'Bearer', expires_in: 3600 }, GRANT, NOW)
       db.tables.provider_connection_secrets[0].secret_version = 2
       throw new OAuthError(OAuthErrorCode.InvalidGrant, 'already used')
     })
@@ -261,7 +355,7 @@ describe('access-token refresh', () => {
 
   it('forceRefreshAccessToken refreshes even when the recorded expiry has not passed', async () => {
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({ access_token: 'at-forced', token_type: 'Bearer', expires_in: 3600 }))
 
     expect(await forceRefreshAccessToken(db as any, 'conn-1', makeDeps(refresh, later(1000)))).toBe('at-forced')
@@ -271,7 +365,7 @@ describe('access-token refresh', () => {
   it('never logs a token, and thrown errors carry no token', async () => {
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => vi.spyOn(console, method).mockImplementation(() => undefined))
     const db = seedDb()
-    await saveConnectionTokens(db as any, 'conn-1', INITIAL, NOW)
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
 
     const failing = vi.fn(async () => {
       throw new OAuthError(OAuthErrorCode.InvalidGrant, `revoked ${INITIAL.refresh_token}`)

@@ -14,6 +14,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  OAuthError,
+  OAuthErrorCode,
   discoverOAuthServerInfo,
   exchangeAuthorization,
   startAuthorization,
@@ -27,10 +29,10 @@ import {
   getAppBaseUrl,
   klingMcpRedirectUri,
 } from './kling-mcp'
-import { getOrRegisterOAuthClient, findOAuthClient, type RegisterDependencies } from './oauth-client-registry'
+import { deleteOAuthClient, getOrRegisterOAuthClient, type RegisterDependencies } from './oauth-client-registry'
 import { consumeAuthorizationAttempt, generateOAuthState, storeAuthorizationAttempt } from './oauth-state'
 import { readTokensForRevocation, saveConnectionTokens } from './token-store'
-import { upsertKlingMcpConnection } from './connections'
+import { activateConnection, upsertKlingMcpConnection } from './connections'
 import type { OAuthCallbackFailure, ProviderConnectionRow } from './types'
 
 export interface KlingOAuthDependencies extends RegisterDependencies {
@@ -140,22 +142,41 @@ export async function completeKlingMcpAuthorization(
       redirectUri: attempt.redirectUri,
       resource: KLING_MCP_URL,
     })
-  } catch {
+  } catch (error) {
+    // The provider no longer recognises our registration: forget it so the next
+    // attempt registers a fresh client instead of retrying a dead client_id.
+    if (error instanceof OAuthError && error.code === OAuthErrorCode.InvalidClient) {
+      await deleteOAuthClient(db, {
+        provider: KLING_MCP_PROVIDER,
+        issuer: attempt.issuer,
+        redirectUri: attempt.redirectUri,
+      }).catch(() => undefined)
+    }
     return { ok: false, failure: 'exchange_failed' }
   }
 
   const grantedScopes = (tokens.scope ?? attempt.scope).split(/\s+/).filter(Boolean)
-  const connection = await upsertKlingMcpConnection(db, { userId: params.userId, scopes: grantedScopes })
-  await saveConnectionTokens(db, connection.id, tokens, now)
+
+  // 1) the row exists as "authorization_required", 2) tokens are stored,
+  // 3) only then is it "connected". A failure in between can never leave a
+  // "connected" connection without credentials.
+  const pending = await upsertKlingMcpConnection(db, { userId: params.userId })
+  await saveConnectionTokens(db, pending.id, tokens, { clientId: attempt.clientId, issuer: attempt.issuer }, now)
+  const connection = await activateConnection(db, { connectionId: pending.id, userId: params.userId, scopes: grantedScopes })
 
   return { ok: true, connection }
 }
 
 export type RevocationOutcome = 'succeeded' | 'failed' | 'skipped'
 
+/** Discovery and each revocation call are bounded so a hung provider can never block local cleanup. */
+export const REVOCATION_TIMEOUT_MS = 5_000
+
 /**
- * RFC 7009 revocation of the user's grant at Kling. Best effort: the caller
- * deletes local secrets regardless of the outcome.
+ * RFC 7009 revocation of the user's grant at Kling. Best effort and bounded:
+ * it never throws and never waits longer than the timeouts, and the caller
+ * deletes local secrets regardless of the outcome. Uses the client the grant
+ * was issued to (stored with the tokens), not the current environment's.
  */
 export async function revokeKlingMcpGrant(
   db: SupabaseClient,
@@ -164,27 +185,22 @@ export async function revokeKlingMcpGrant(
 ): Promise<RevocationOutcome> {
   const discover = deps.discover ?? discoverOAuthServerInfo
   const doFetch = deps.fetchFn ?? fetch
+  const boundedFetch = (url: string | URL, init?: RequestInit) =>
+    doFetch(url, { ...init, signal: AbortSignal.timeout(REVOCATION_TIMEOUT_MS) })
 
   try {
     const tokens = await readTokensForRevocation(db, connectionId)
-    if (!tokens) return 'skipped'
+    if (!tokens?.client_id) return 'skipped'
 
-    const info = await discover(KLING_MCP_URL)
+    const info = await discover(KLING_MCP_URL, { fetchFn: boundedFetch as never })
     // RFC 8414 field; the SDK's metadata union type does not model it.
     const revocationEndpoint = (info.authorizationServerMetadata as { revocation_endpoint?: string } | undefined)
       ?.revocation_endpoint
     if (!revocationEndpoint) return 'skipped'
 
-    const client = await findOAuthClient(db, {
-      provider: KLING_MCP_PROVIDER,
-      issuer: String(info.authorizationServerUrl),
-      redirectUri: klingMcpRedirectUri(),
-    })
-    if (!client) return 'skipped'
-
     const revoke = async (token: string, hint: 'refresh_token' | 'access_token') => {
-      const body = new URLSearchParams({ token, token_type_hint: hint, client_id: client.clientId })
-      const response = await doFetch(revocationEndpoint, {
+      const body = new URLSearchParams({ token, token_type_hint: hint, client_id: tokens.client_id })
+      const response = await boundedFetch(revocationEndpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body,
@@ -192,10 +208,12 @@ export async function revokeKlingMcpGrant(
       return response.ok
     }
 
-    let ok = true
-    if (tokens.refresh_token) ok = (await revoke(tokens.refresh_token, 'refresh_token')) && ok
-    ok = (await revoke(tokens.access_token, 'access_token')) && ok
-    return ok ? 'succeeded' : 'failed'
+    const attempts: Array<Promise<boolean>> = []
+    if (tokens.refresh_token) attempts.push(revoke(tokens.refresh_token, 'refresh_token'))
+    attempts.push(revoke(tokens.access_token, 'access_token'))
+
+    const results = await Promise.all(attempts)
+    return results.every(Boolean) ? 'succeeded' : 'failed'
   } catch {
     return 'failed'
   }
