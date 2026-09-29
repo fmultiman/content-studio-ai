@@ -125,9 +125,27 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
   const renderProps = remotionTemplateProps(props)
   // A still is one captured frame: hold it until every painted image loaded.
   const imageUrls = 'materialUrls' in (renderProps as object) ? documentaryCardImageUrls(renderProps as DocumentaryCardProps) : []
+  // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1: author-added Custom Text/Image paint in a
+  // transparent plane ABOVE the Template base. With no custom elements the
+  // output is exactly the legacy tree (no wrapper, no extra node).
+  const customElements = resolvedInput.manifest.elements ?? []
+  if (customElements.length === 0) {
+    return (
+      <TypographyReadyBoundary typography={resolvedInput.typography}>
+        <RenderAssetsReadyBoundary urls={imageUrls}>{binding.component(renderProps)}</RenderAssetsReadyBoundary>
+      </TypographyReadyBoundary>
+    )
+  }
+  const { width, height } = resolvedInput.manifest.canvas
+  const customImageUrls = customElements.flatMap((element) => (element.kind === 'image' ? [resolvedInput.resolvedAssets[element.asset_ref]?.url] : [])).filter((url): url is string => Boolean(url))
   return (
     <TypographyReadyBoundary typography={resolvedInput.typography}>
-      <RenderAssetsReadyBoundary urls={imageUrls}>{binding.component(renderProps)}</RenderAssetsReadyBoundary>
+      <RenderAssetsReadyBoundary urls={[...imageUrls, ...customImageUrls]}>
+        <div style={{ position: 'relative', width, height }} data-custom-elements-overlay="true">
+          {binding.component(renderProps)}
+          <FreeStage overlay elements={customElements} width={width} height={height} tokens={resolvedInput.tokens} imageUrl={(ref) => resolvedInput.resolvedAssets[ref]} ImageComponent={Img} dataAttributes={{ 'data-kind': 'template-custom-elements' }} />
+        </div>
+      </RenderAssetsReadyBoundary>
     </TypographyReadyBoundary>
   )
 }

@@ -917,6 +917,7 @@ export default function StaticAuthoringProductPage() {
             {mode === 'template' && cardProps ? <DocumentaryCard {...cardProps} /> : null}
             {freeStage && freeTokens ? (
               <FreeStage
+                overlay={mode === 'template'}
                 elements={freeStage.payload.elements}
                 width={canvasW}
                 height={canvasH}
