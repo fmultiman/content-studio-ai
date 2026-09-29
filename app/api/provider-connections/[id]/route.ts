@@ -32,6 +32,32 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       return NextResponse.json({ error: 'Conexão não encontrada' }, { status: 404 })
     }
 
+    // A paid generation that is still running needs this grant to be retrieved
+    // (MCP has no callback). Disconnecting now would strand it, so it is refused
+    // until every generation using this connection has finished. Fail closed:
+    // if the check itself fails, nothing is deleted.
+    const { data: active, error: activeError } = await db
+      .from('video_generations')
+      .select('id')
+      .eq('connection_id', owned.id)
+      .in('status', ['queued', 'submitted', 'processing'])
+      .limit(1)
+    if (activeError) {
+      return NextResponse.json(
+        { error: 'Não foi possível verificar gerações em andamento.', code: 'CONNECTION_STORE_UNAVAILABLE' },
+        { status: 503 },
+      )
+    }
+    if ((active ?? []).length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Há vídeos ainda em geração com esta conta. Aguarde a conclusão para desconectar.',
+          code: 'CONNECTION_HAS_ACTIVE_GENERATIONS',
+        },
+        { status: 409 },
+      )
+    }
+
     const revocation = await revokeKlingMcpGrant(db, owned.id)
     // Explicit token removal (the FK also cascades) so secrets never outlive the connection.
     await deleteConnectionTokens(db, owned.id)

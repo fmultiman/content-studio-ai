@@ -36,7 +36,20 @@ export async function uploadApplicationVideo(
   return { storagePath, publicUrl, mime: contentType, size }
 }
 
-export async function downloadAndStoreVideo(url: string, prefix: string): Promise<{ storagePath: string, publicUrl: string, mime: string, size: number }> {
+export interface DownloadAndStoreOptions {
+  /**
+   * Deterministic object file name. Completion passes the generation id so a
+   * retried/duplicated/concurrent completion overwrites the SAME object instead
+   * of creating a second one (idempotent promotion to app-owned storage).
+   */
+  objectName?: string
+}
+
+export async function downloadAndStoreVideo(
+  url: string,
+  prefix: string,
+  options: DownloadAndStoreOptions = {},
+): Promise<{ storagePath: string, publicUrl: string, mime: string, size: number }> {
   const res = await fetch(url)
   
   if (!res.ok) {
@@ -47,7 +60,7 @@ export async function downloadAndStoreVideo(url: string, prefix: string): Promis
   const size = parseInt(res.headers.get('content-length') || '0', 10)
   const buffer = Buffer.from(await res.arrayBuffer())
 
-  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`
+  const fileName = options.objectName ?? `${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`
   const objectPath = `${prefix}/${fileName}`
 
   return await uploadApplicationVideo(buffer, objectPath, mime, size)

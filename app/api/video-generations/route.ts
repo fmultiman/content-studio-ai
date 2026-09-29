@@ -1,8 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { KlingAdapter } from '@/lib/providers/kling/adapter'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
+import { forceRefreshAccessToken, getValidAccessToken } from '@/lib/provider-connections/token-store'
+import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
+import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
+import { initialNextPollAt } from '@/lib/video-generation/polling'
+import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
+import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
+import {
+  KlingMcpSubmitError,
+  KlingMcpTransport,
+  KlingRestTransport,
+  type KlingVideoTransport,
+} from '@/lib/video-generation/transport'
+
+// VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1
+//
+// Fields a client must never supply: the SERVER decides the transport, the
+// credential source / execution mode and the connection's identity.
+const FORBIDDEN_CLIENT_FIELDS = [
+  'transport',
+  'executionMode',
+  'execution_mode',
+  'credentialSource',
+  'credential_source',
+  'connection_id',
+  'connectionId',
+  'provider',
+] as const
+
+function jsonError(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ error: message, code, ...extra }, { status })
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,48 +44,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await req.json()
-    const { 
-      projectId, 
-      productionId, 
-      mode, 
-      prompt, 
-      sourceImageId, 
-      sourceLibraryFileId,
-      duration = 5,
-      resolution = '720p',
-      audio = 'off',
-      multi_shot = false,
-      aspect_ratio
-    } = body
+    let body: Record<string, any>
+    try {
+      body = await req.json()
+    } catch {
+      return jsonError(400, 'INVALID_JSON', 'Invalid JSON body.')
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return jsonError(400, 'INVALID_BODY', 'Invalid request body.')
+    }
+
+    const { projectId, productionId, mode, prompt, sourceImageId, sourceLibraryFileId } = body
 
     if (!projectId || !productionId || !mode || !prompt) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-
-    if (![5, 10].includes(Number(duration))) {
-      return NextResponse.json({ error: 'Unsupported duration value.' }, { status: 400 })
-    }
-    if (!['720p', '1080p'].includes(resolution)) {
-      return NextResponse.json({ error: 'Unsupported resolution value.' }, { status: 400 })
-    }
-    if (!['off', 'on'].includes(audio)) {
-      return NextResponse.json({ error: 'Unsupported audio value.' }, { status: 400 })
-    }
-    if (typeof multi_shot !== 'boolean') {
-      return NextResponse.json({ error: 'multi_shot must be a boolean.' }, { status: 400 })
+    if (typeof prompt !== 'string') {
+      return jsonError(400, 'INVALID_PROMPT', 'prompt must be a string.')
     }
 
-    if (mode === 'text_to_video') {
-      const allowedRatios = ['16:9', '9:16', '1:1']
-      const ratio = aspect_ratio || '16:9'
-      if (!allowedRatios.includes(ratio)) {
-        return NextResponse.json({ error: 'Unsupported aspect_ratio for text_to_video.' }, { status: 400 })
-      }
-    } else if (mode === 'image_to_video') {
-      if (aspect_ratio) {
-        return NextResponse.json({ error: 'aspect_ratio is not supported for image_to_video.' }, { status: 400 })
-      }
+    const forbidden = FORBIDDEN_CLIENT_FIELDS.find((field) => field in body)
+    if (forbidden) {
+      return jsonError(400, 'UNSUPPORTED_FIELD', `"${forbidden}" cannot be set by the client.`)
+    }
+
+    const rawControls = {
+      operation: mode,
+      model: body.model ?? undefined,
+      duration: body.duration ?? undefined,
+      resolution: body.resolution ?? undefined,
+      aspect_ratio: body.aspect_ratio ?? undefined,
+      audio: body.audio ?? undefined,
+      multi_shot: body.multi_shot ?? undefined,
+      outputCount: body.outputCount ?? body.imageCount ?? undefined,
+    }
+    // Vocabulary/shape errors are rejected before any database access.
+    const vocabularyFailure = validateControlVocabulary(mode, rawControls)
+    if (vocabularyFailure && !vocabularyFailure.ok) {
+      return jsonError(400, vocabularyFailure.code, vocabularyFailure.message)
     }
 
     if (mode === 'image_to_video') {
@@ -70,25 +97,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Resolve the authenticated user's own Kling credential (execution mode
-    // `user_byok`, decided server-side — never read from the request body)
-    // BEFORE touching source files or creating any generation/task record.
-    // A missing credential results in zero provider calls and zero created
-    // records, and never becomes a platform credential.
-    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
-
-    if (execution.status !== 'ready') {
-      return NextResponse.json(
-        {
-          error: execution.code,
-          code: execution.code,
-          provider: 'kling',
-          message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
-        },
-        { status: 422 },
-      )
+    // The connection is resolved SERVER-side from the user's own data. The
+    // reference is only a pointer: ownership, status, scopes, capabilities and
+    // therefore the transport all come from the resolved connection, never from
+    // the request. An absent reference means the existing Kling API (REST) default.
+    // A missing credential/connection = zero created records, zero provider
+    // calls, and it never becomes a platform credential.
+    const resolved = await resolveGenerationConnection(supabase, user.id, body.connectionRef ?? REST_CONNECTION_REF)
+    if (!resolved.ok) {
+      return jsonError(resolved.status, resolved.code, resolved.message, { provider: 'kling' })
     }
-    const apiKey = execution.secret
+
+    const operations = resolved.kind === 'rest' ? restVideoOperations() : resolved.operations
+
+    const validation = validateVideoRequest(operations, rawControls)
+    if (!validation.ok) {
+      return jsonError(400, validation.code, validation.message)
+    }
+    const { request: videoRequest, model: modelCapability } = validation
+
+    // Secrets are resolved only after every check passed.
+    let transport: KlingVideoTransport
+    let connectionId: string | null = null
+    if (resolved.kind === 'rest') {
+      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
+      if (execution.status !== 'ready') {
+        return jsonError(422, execution.code, 'Kling não configurado. Adicione sua chave de API em Configurações.', { provider: 'kling' })
+      }
+      transport = new KlingRestTransport(execution.secret)
+    } else {
+      const db = createServiceRoleSupabase()
+      const connection = resolved.connection
+      connectionId = connection.id
+      transport = new KlingMcpTransport({
+        get: () => getValidAccessToken(db, connection.id),
+        refresh: () => forceRefreshAccessToken(db, connection.id),
+      })
+    }
 
     let resolvedSourceUrl = ''
 
@@ -132,7 +177,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Insert queued state
+    // Insert queued state. `request_config` is the exact, explicit set of values
+    // that is sent to the provider (reproducible/debuggable) — never a secret.
     const { data: generation, error: dbError } = await supabase
       .from('video_generations')
       .insert({
@@ -145,14 +191,17 @@ export async function POST(req: NextRequest) {
         source_library_file_id: sourceLibraryFileId || null,
         status: 'queued',
         provider: 'kling',
-        model: 'kling-v3',
-        request_config: { 
-          duration: Number(duration),
-          resolution,
-          audio,
-          multi_shot,
-          aspect_ratio: mode === 'text_to_video' ? aspect_ratio : undefined
-        }
+        model: videoRequest.model,
+        transport: transport.transport,
+        connection_id: connectionId,
+        request_config: {
+          duration: videoRequest.duration,
+          resolution: videoRequest.resolution,
+          audio: videoRequest.audio ?? undefined,
+          multi_shot: videoRequest.multiShot ?? undefined,
+          aspect_ratio: videoRequest.aspectRatio ?? undefined,
+          output_count: 1,
+        },
       })
       .select()
       .single()
@@ -161,44 +210,26 @@ export async function POST(req: NextRequest) {
       throw new Error(`Failed to create generation record: ${dbError?.message}`)
     }
 
-    const klingAdapter = new KlingAdapter(apiKey)
-    let submitRes
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/kling/callback`
-    const externalTaskId = generation.id
-
-    const settings = {
-      duration: Number(duration) as 5 | 10,
-      resolution: resolution as '720p' | '1080p',
-      audio: audio as 'on' | 'off',
-      multi_shot: Boolean(multi_shot),
-      aspect_ratio: mode === 'text_to_video' ? (aspect_ratio as '16:9' | '9:16' | '1:1') : undefined
-    }
 
     try {
-      if (mode === 'image_to_video') {
-        submitRes = await klingAdapter.submitImageToVideo(
-          prompt,
-          resolvedSourceUrl,
-          externalTaskId,
-          callbackUrl,
-          settings
-        )
-      } else {
-        submitRes = await klingAdapter.submitTextToVideo(
-          prompt,
-          externalTaskId,
-          callbackUrl,
-          settings
-        )
-      }
+      const submitRes = await transport.submit({
+        generationId: generation.id,
+        prompt,
+        request: videoRequest,
+        model: modelCapability,
+        sourceImageUrl: mode === 'image_to_video' ? resolvedSourceUrl : undefined,
+        callbackUrl: transport.transport === 'rest' ? callbackUrl : undefined,
+      })
 
-      // Update provider status
+      // Update provider status. MCP has no callback: schedule its first poll now.
       const { data: submittedGen, error: updateError } = await supabase
         .from('video_generations')
         .update({
           status: 'submitted',
-          task_id: submitRes.task_id,
-          provider_metadata: submitRes,
+          task_id: submitRes.taskId,
+          provider_metadata: submitRes.providerMetadata,
+          ...(transport.transport === 'mcp' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
         })
         .eq('id', generation.id)
         .select()
@@ -209,21 +240,67 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ generation: submittedGen })
-    } catch (klingError: any) {
-      console.error('Kling provider failure:', klingError)
+    } catch (providerError: any) {
+      // Only the error CLASS is logged: provider text/URLs are never written to logs.
+      console.error('Kling provider failure:', providerError instanceof Error ? providerError.name : 'unknown')
+
+      if (transport.transport === 'mcp') {
+        const known = describeMcpSubmitFailure(providerError)
+        await supabase
+          .from('video_generations')
+          .update({ status: 'failed', error_details: known.errorDetails })
+          .eq('id', generation.id)
+        return jsonError(known.httpStatus, known.code, known.message, { outcomeUnknown: known.outcomeUnknown })
+      }
+
       await supabase
         .from('video_generations')
         .update({
           status: 'failed',
-          error_details: { message: klingError.message }
+          error_details: { message: providerError.message },
         })
         .eq('id', generation.id)
-      return NextResponse.json({ error: 'Provider submission failed', details: klingError.message }, { status: 500 })
+      return NextResponse.json({ error: 'Provider submission failed', details: providerError.message }, { status: 500 })
     }
-
   } catch (error: any) {
     console.error('Create video generation route error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
+
+/** Maps an MCP submission failure to a safe response + the persisted error record. */
+function describeMcpSubmitFailure(error: unknown) {
+  if (error instanceof ProviderAuthorizationRequiredError) {
+    return {
+      code: 'AUTHORIZATION_REQUIRED',
+      httpStatus: 409,
+      message: 'A conexão com a conta Kling precisa ser reautorizada em Configurações.',
+      outcomeUnknown: false,
+      errorDetails: { code: 'AUTHORIZATION_REQUIRED', message: 'A conexão com a conta Kling precisa ser reautorizada.' },
+    }
+  }
+  if (error instanceof KlingMcpSubmitError) {
+    const status = error.failureClass === 'PROVIDER_QUOTA_EXCEEDED' ? 402 : error.outcomeUnknown ? 502 : 422
+    return {
+      code: error.failureClass,
+      httpStatus: status,
+      message: error.message,
+      outcomeUnknown: error.outcomeUnknown,
+      errorDetails: {
+        code: error.failureClass,
+        message: error.message,
+        outcome_unknown: error.outcomeUnknown,
+        ...(error.providerText ? { provider_text: error.providerText } : {}),
+      },
+    }
+  }
+  const code = error instanceof ProviderConnectionError ? error.code : 'PROVIDER_UNAVAILABLE'
+  return {
+    code,
+    httpStatus: 502,
+    message: 'Não foi possível enviar a geração à Kling agora.',
+    outcomeUnknown: false,
+    errorDetails: { code, message: 'Não foi possível enviar a geração à Kling agora.' },
   }
 }
 
