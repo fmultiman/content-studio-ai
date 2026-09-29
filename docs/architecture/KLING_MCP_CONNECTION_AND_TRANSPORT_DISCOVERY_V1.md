@@ -8,6 +8,10 @@ Discovery date: **2026-09-28/29**. Baseline: `origin/main` = `bde1165e32d09b0ef0
 Kling MCP is NOT implemented in Content Studio.** No generation of any kind was
 submitted; real provider calls that could cost money = **0**.
 
+> **Follow-up:** the OAuth connection layer recommended below was built as a read-only proof in
+> [KLING_MCP_OAUTH_CONNECTION_SPIKE_V1](KLING_MCP_OAUTH_CONNECTION_SPIKE_V1.md). Kling MCP *generation* is
+> still not implemented; this discovery's other conclusions are unchanged.
+
 Evidence labels used throughout:
 
 | Label | Meaning |
