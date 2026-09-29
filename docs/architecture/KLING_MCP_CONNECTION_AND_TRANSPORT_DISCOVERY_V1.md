@@ -11,6 +11,13 @@ submitted; real provider calls that could cost money = **0**.
 > **Follow-up:** the OAuth connection layer recommended below was built as a read-only proof in
 > [KLING_MCP_OAUTH_CONNECTION_SPIKE_V1](KLING_MCP_OAUTH_CONNECTION_SPIKE_V1.md). Kling MCP *generation* is
 > still not implemented; this discovery's other conclusions are unchanged.
+>
+> **Follow-up 2:** the connection-driven capability model, the MCP transport (mock-tested), the
+> polling architecture, the shared idempotent completion and the `transport`/`connection_id`
+> provenance recommended in §6/§7/§12 were implemented (still **without** any real MCP generation) in
+> [VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1](VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1.md).
+> The evidence tables above are historical and were not rewritten; the "raw `query_tasks` state
+> vocabulary UNKNOWN" finding **still stands** until the first paid proof.
 
 Evidence labels used throughout:
 

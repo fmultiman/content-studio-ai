@@ -33,6 +33,15 @@ export interface RegisteredOAuthClient {
   clientId: string
   registrationResponseFields: string[]
   newlyRegistered: boolean
+  /** Scope the client was registered with (may be null for rows that predate the column's use). */
+  registeredScope: string | null
+}
+
+/** True when every requested scope was part of the registration. */
+export function registrationCoversScope(registered: string | null, requested: string): boolean {
+  if (!registered) return false
+  const have = new Set(registered.split(/\s+/).filter(Boolean))
+  return requested.split(/\s+/).filter(Boolean).every((scope) => have.has(scope))
 }
 
 export interface OAuthClientLookup {
@@ -50,7 +59,7 @@ export async function findOAuthClient(
 ): Promise<RegisteredOAuthClient | null> {
   const { data } = await db
     .from(TABLE)
-    .select('client_id, registration_response_fields')
+    .select('client_id, registration_response_fields, registered_scope')
     .eq('provider', lookup.provider)
     .eq('issuer', lookup.issuer)
     .eq('redirect_uri', lookup.redirectUri)
@@ -61,6 +70,7 @@ export async function findOAuthClient(
     clientId: data.client_id,
     registrationResponseFields: data.registration_response_fields ?? [],
     newlyRegistered: false,
+    registeredScope: data.registered_scope ?? null,
   }
 }
 
@@ -78,7 +88,14 @@ export async function getOrRegisterOAuthClient(
   deps: RegisterDependencies = {},
 ): Promise<RegisteredOAuthClient> {
   const existing = await findOAuthClient(db, params)
-  if (existing) return existing
+  if (existing) {
+    // A client registered for read-only scopes may not be accepted for an
+    // explicit "authorize generation" request. Register a broader client for
+    // THIS request; grants already issued keep (and refresh with) the client
+    // they were issued to, so nothing existing is disturbed.
+    if (registrationCoversScope(existing.registeredScope, params.scope)) return existing
+    await deleteOAuthClient(db, params)
+  }
 
   const captured: { fields: string[]; management: Record<string, unknown> } = { fields: [], management: {} }
 
@@ -133,7 +150,9 @@ export async function getOrRegisterOAuthClient(
   if (error) {
     // A concurrent first-time registration won the unique key: use the stored one.
     const winner = await findOAuthClient(db, params)
-    if (winner) return winner
+    // Only a registration that ALSO covers the requested scope is usable; a
+    // concurrent narrower registration must not be handed to a broader request.
+    if (winner && registrationCoversScope(winner.registeredScope, params.scope)) return winner
     throw new Error('Failed to store the OAuth client registration')
   }
 
@@ -141,6 +160,7 @@ export async function getOrRegisterOAuthClient(
     clientId: registration.client_id,
     registrationResponseFields: captured.fields,
     newlyRegistered: true,
+    registeredScope: params.scope,
   }
 }
 

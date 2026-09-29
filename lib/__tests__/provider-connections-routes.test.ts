@@ -44,9 +44,14 @@ afterEach(() => {
 })
 
 describe('POST /api/provider-connections/kling/mcp/connect', () => {
-  const call = async () => {
+  const call = async (body?: unknown) => {
     const { POST } = await import('@/app/api/provider-connections/kling/mcp/connect/route')
-    return POST()
+    return POST(
+      new Request('http://localhost/api/provider-connections/kling/mcp/connect', {
+        method: 'POST',
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    )
   }
 
   it('rejects an unauthenticated user', async () => {
@@ -77,9 +82,31 @@ describe('POST /api/provider-connections/kling/mcp/connect', () => {
 
     expect(response.status).toBe(200)
     expect(Object.keys(body)).toEqual(['authorizationUrl'])
-    expect(oauthModule.startKlingMcpAuthorization).toHaveBeenCalledWith(expect.anything(), { userId: 'user-a' })
+    expect(oauthModule.startKlingMcpAuthorization).toHaveBeenCalledWith(expect.anything(), { userId: 'user-a', intent: 'read_only' })
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(body.authorizationUrl).not.toMatch(/code_verifier|verifier/)
+  })
+
+  it('requests the generation permission ONLY when the client explicitly asks for that intent', async () => {
+    signedIn('user-a')
+    serviceDb(createFakeDb())
+    vi.mocked(oauthModule.startKlingMcpAuthorization).mockResolvedValue({ authorizationUrl: 'https://kling.ai/auth/authorize?state=s' })
+
+    const response = await call({ intent: 'generation' })
+
+    expect(response.status).toBe(200)
+    expect(oauthModule.startKlingMcpAuthorization).toHaveBeenCalledWith(expect.anything(), { userId: 'user-a', intent: 'generation' })
+  })
+
+  it.each([{ intent: 'admin' }, { intent: 42 }, '{not json'])('rejects an unknown intent (%o) without starting any flow', async (payload) => {
+    signedIn('user-a')
+    serviceDb(createFakeDb())
+    const { POST } = await import('@/app/api/provider-connections/kling/mcp/connect/route')
+    const response = await POST(
+      new Request('http://localhost/x', { method: 'POST', body: typeof payload === 'string' ? payload : JSON.stringify(payload) }),
+    )
+    expect(response.status).toBe(400)
+    expect(oauthModule.startKlingMcpAuthorization).not.toHaveBeenCalled()
   })
 
   it('returns a generic error (no provider detail) when the flow cannot start', async () => {
@@ -238,7 +265,7 @@ describe('POST /api/provider-connections/[id]/check', () => {
     serviceDb(createFakeDb())
     vi.mocked(checkModule.checkKlingMcpConnection).mockResolvedValue({
       ok: true,
-      connection: { id: 'conn-1', provider: 'kling', connectionMethod: 'mcp_oauth', status: 'connected', scopes: ['generation.read'], accountHint: '4242', capabilities: {}, lastCheckedAt: null, lastErrorCode: null },
+      connection: { id: 'conn-1', provider: 'kling', connectionMethod: 'mcp_oauth', status: 'connected', scopes: ['generation.read'], generationAuthorized: false, accountHint: '4242', capabilities: {}, lastCheckedAt: null, lastErrorCode: null },
       credits: { available: 100 },
     })
 
@@ -367,7 +394,119 @@ describe('DELETE /api/provider-connections/[id]', () => {
 
     expect(JSON.stringify({ settings: db.tables.user_settings, generations: db.tables.video_generations })).toBe(before)
     expect(db.tables.user_settings[0].kling_api_key).toBe('REST-API-KEY-MUST-SURVIVE')
-    expect(db.log.filter((entry) => entry.endsWith(':user_settings') || entry.endsWith(':video_generations'))).toEqual([])
+    // The active-generation guard READS video_generations; nothing is ever written to it or to user_settings.
+    expect(
+      db.log.filter((entry) => /^(insert|upsert|update|delete):(user_settings|video_generations)$/.test(entry)),
+    ).toEqual([])
+    expect(db.log.filter((entry) => entry.endsWith(':user_settings'))).toEqual([])
+  })
+
+  it('an INTERRUPTED queued row (no provider task, past the orphan cutoff) cannot need the grant and does not block a disconnect', async () => {
+    const db = seed()
+    db.tables.video_generations.push({ id: 'gen-orphan', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'queued', task_id: null, created_at: new Date(Date.now() - 60 * 60_000).toISOString() })
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(200)
+    expect(db.tables.provider_connections.map((row) => row.id)).toEqual(['conn-2'])
+  })
+
+  it.each(['queued', 'submitted', 'processing'])(
+    'REFUSES to disconnect (409) while a %s generation depends on the connection, keeping the grant needed to retrieve the paid result',
+    async (status) => {
+      const db = seed()
+      db.tables.video_generations.push({ id: 'gen-active', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status, created_at: new Date().toISOString() })
+      signedIn('user-a')
+      serviceDb(db)
+
+      const response = await call('conn-1')
+      const body = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(body.code).toBe('CONNECTION_HAS_ACTIVE_GENERATIONS')
+      expect(oauthModule.revokeKlingMcpGrant).not.toHaveBeenCalled()
+      expect(db.tables.provider_connections).toHaveLength(2)
+      expect(db.tables.provider_connection_secrets).toHaveLength(2)
+    },
+  )
+
+  it('a connection that is NOT connected (revoked/expired) can always be removed: its dead tokens protect nothing', async () => {
+    const db = seed()
+    db.tables.provider_connections[0].status = 'authorization_required'
+    db.tables.video_generations.push({ id: 'gen-stuck', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'processing', created_at: new Date().toISOString() })
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('failed')
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(200)
+    expect(db.tables.provider_connections.map((row) => row.id)).toEqual(['conn-2'])
+    expect(db.tables.provider_connection_secrets.map((row) => row.connection_id)).toEqual(['conn-2'])
+  })
+
+  it('does not let finished generations (or another connection’s active ones) block a disconnect', async () => {
+    const db = seed()
+    db.tables.video_generations.push(
+      { id: 'gen-done', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'succeeded' },
+      { id: 'gen-failed', user_id: 'user-a', connection_id: 'conn-1', transport: 'mcp', status: 'failed' },
+      { id: 'gen-other', user_id: 'user-b', connection_id: 'conn-2', transport: 'mcp', status: 'processing' },
+    )
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(200)
+    expect(db.tables.provider_connections.map((row) => row.id)).toEqual(['conn-2'])
+    // History is untouched by the disconnect (the FK only ever nulls connection_id in the real database).
+    expect(db.tables.video_generations).toHaveLength(4)
+  })
+
+  it('fails closed (503) when the active-generation check itself fails, deleting nothing', async () => {
+    const db = seed()
+    signedIn('user-a')
+    serviceDb(db)
+    const originalFrom = db.from
+    db.from = vi.fn((table: string) => {
+      if (table === 'video_generations') {
+        const chain: any = { select: () => chain, eq: () => chain, in: () => chain, gt: () => chain, limit: () => chain, then: (resolve: any) => resolve({ data: null, error: { message: 'boom' } }) }
+        return chain
+      }
+      return originalFrom.call(db, table)
+    }) as any
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(503)
+    expect(oauthModule.revokeKlingMcpGrant).not.toHaveBeenCalled()
+    expect(db.tables.provider_connections).toHaveLength(2)
+  })
+
+  it('if deleting the connection row fails, the tokens are STILL there (never a "connected" row with no credentials)', async () => {
+    const db = seed()
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+    const originalFrom = db.from
+    db.from = vi.fn((table: string) => {
+      const real = originalFrom.call(db, table)
+      if (table !== 'provider_connections') return real
+      // Reads (ownership) work; the DELETE fails.
+      const failing: any = { eq: () => failing, then: (resolve: any) => resolve({ error: { message: 'boom' } }) }
+      return { ...real, delete: () => failing }
+    }) as any
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(500)
+    expect(db.tables.provider_connection_secrets.map((row) => row.connection_id).sort()).toEqual(['conn-1', 'conn-2'])
+    expect(db.tables.provider_connections.map((row) => row.id).sort()).toEqual(['conn-1', 'conn-2'])
   })
 
   it('returns 500 when DB deletion throws, without claiming disconnection', async () => {

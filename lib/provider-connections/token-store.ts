@@ -142,7 +142,17 @@ async function markAuthorizationRequired(db: SupabaseClient, connectionId: strin
   }
 }
 
+/**
+ * After the provider answers invalid_grant, the row is re-read at these
+ * delays before the grant is declared revoked: a concurrent invocation may
+ * have ROTATED the refresh token (making ours "already used") and its
+ * compare-and-swap write may simply not have landed yet.
+ */
+export const INVALID_GRANT_RECHECK_DELAYS_MS = [250, 750] as const
+
 export interface TokenRefreshDependencies {
+  /** Test seam for the invalid_grant re-check delays. */
+  sleep?: (ms: number) => Promise<void>
   discover?: typeof discoverOAuthServerInfo
   refresh?: typeof refreshAuthorization
   now?: () => Date
@@ -228,10 +238,15 @@ async function refreshAccessToken(
 
       if (REAUTHORIZATION_ERROR_CODES.includes(error.code)) {
         // Another invocation may have already rotated the token; if the stored
-        // version moved on, that newer token is the one to use.
-        const latest = await readSecretRow(db, connectionId)
-        if (latest && latest.secret_version !== row.secret_version) {
-          return readPayload(latest, connectionId).access_token
+        // version moved on, that newer token is the one to use. Its write may not
+        // have landed yet, so re-read a couple of times before declaring the grant dead.
+        const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+        for (const delay of [0, ...INVALID_GRANT_RECHECK_DELAYS_MS]) {
+          if (delay > 0) await sleep(delay)
+          const latest = await readSecretRow(db, connectionId)
+          if (latest && latest.secret_version !== row.secret_version) {
+            return readPayload(latest, connectionId).access_token
+          }
         }
         await markAuthorizationRequired(db, connectionId)
         throw new ProviderAuthorizationRequiredError()

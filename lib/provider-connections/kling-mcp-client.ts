@@ -26,6 +26,7 @@ import {
   isKlingMcpReadOnlyTool,
   type KlingMcpReadOnlyTool,
 } from './kling-mcp'
+import { normalizeKlingMcpVideoCapabilities } from './kling-mcp-video-capabilities'
 import {
   ProviderAuthorizationRequiredError,
   ProviderConnectionError,
@@ -51,7 +52,8 @@ export interface KlingMcpClientDependencies {
   createClient?: (accessToken: string) => { client: KlingMcpClientLike; transport: unknown }
 }
 
-function defaultCreateClient(accessToken: string) {
+/** Builds the SDK client + Streamable HTTP transport for one short-lived, per-call connection. */
+export function createKlingMcpClient(accessToken: string) {
   const client = new Client({ name: 'content-studio', version: '1.0.0' }) as unknown as KlingMcpClientLike
   const transport = new StreamableHTTPClientTransport(new URL(KLING_MCP_URL), {
     authProvider: { token: async () => accessToken },
@@ -75,7 +77,7 @@ export async function callReadOnlyTool(
   return parseToolJson(result)
 }
 
-function parseToolJson(result: CallToolResult): Record<string, unknown> {
+export function parseToolJson(result: CallToolResult): Record<string, unknown> {
   if (result.structuredContent && typeof result.structuredContent === 'object') {
     return result.structuredContent as Record<string, unknown>
   }
@@ -127,6 +129,7 @@ export function buildCapabilitySnapshot(params: {
     mcpServerVersion: typeof params.whoAmI.mcpVersion === 'string' ? params.whoAmI.mcpVersion : undefined,
     tools: [...params.toolNames].sort(),
     models,
+    video: normalizeKlingMcpVideoCapabilities(params.whoAmI),
     membership: {
       type: typeof params.membership.membershipType === 'string' ? params.membership.membershipType : undefined,
       label:
@@ -145,7 +148,7 @@ export async function runKlingReadOnlyCheck(
   accessToken: string,
   deps: KlingMcpClientDependencies = {},
 ): Promise<KlingReadOnlyCheckResult> {
-  const { client, transport } = (deps.createClient ?? defaultCreateClient)(accessToken)
+  const { client, transport } = (deps.createClient ?? createKlingMcpClient)(accessToken)
 
   try {
     await client.connect(transport)

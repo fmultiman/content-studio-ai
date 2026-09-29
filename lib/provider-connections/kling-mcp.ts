@@ -14,13 +14,28 @@ export const KLING_MCP_URL = 'https://kling.ai/mcp'
 
 /**
  * Minimum scopes for a READ-ONLY connection. `generation.create` is
- * deliberately NOT requested: this spike never generates. A future
- * "enable generation" step would require an explicit re-authorization with
- * the additional scope.
+ * deliberately NOT requested by the default connect action.
  */
 export const KLING_MCP_READ_ONLY_SCOPES = ['generation.read', 'account.credit.read'] as const
 
 export const KLING_MCP_SCOPE_STRING = KLING_MCP_READ_ONLY_SCOPES.join(' ')
+
+/**
+ * Scopes for a connection that may start generations. Requested ONLY by the
+ * explicit "Autorizar geração" action (connect intent `generation`) — never
+ * automatically, never as a side effect of opening /videos.
+ */
+export const KLING_MCP_GENERATION_CREATE_SCOPE = 'generation.create'
+
+export const KLING_MCP_GENERATION_SCOPES = [...KLING_MCP_READ_ONLY_SCOPES, KLING_MCP_GENERATION_CREATE_SCOPE] as const
+
+export const KLING_MCP_GENERATION_SCOPE_STRING = KLING_MCP_GENERATION_SCOPES.join(' ')
+
+export type KlingMcpConnectIntent = 'read_only' | 'generation'
+
+export function scopeStringForIntent(intent: KlingMcpConnectIntent): string {
+  return intent === 'generation' ? KLING_MCP_GENERATION_SCOPE_STRING : KLING_MCP_SCOPE_STRING
+}
 
 /**
  * The ONLY tools this integration is allowed to call. Anything that
@@ -34,6 +49,20 @@ export type KlingMcpReadOnlyTool = (typeof KLING_MCP_READ_ONLY_TOOLS)[number]
 
 export function isKlingMcpReadOnlyTool(name: string): name is KlingMcpReadOnlyTool {
   return (KLING_MCP_READ_ONLY_TOOLS as readonly string[]).includes(name)
+}
+
+/**
+ * The ONLY tools the video transport may call: the two operations Content
+ * Studio productizes and the task-status read. Everything else the server
+ * exposes (motion_control, images, omni, elements, upload, logout, ...) is
+ * refused before a request is sent.
+ */
+export const KLING_MCP_VIDEO_TOOLS = ['text_to_video', 'image_to_video', 'query_tasks'] as const
+
+export type KlingMcpVideoTool = (typeof KLING_MCP_VIDEO_TOOLS)[number]
+
+export function isKlingMcpVideoTool(name: string): name is KlingMcpVideoTool {
+  return (KLING_MCP_VIDEO_TOOLS as readonly string[]).includes(name)
 }
 
 /** Generation operations Content Studio cares about (asked of who_am_i as read-only discovery). */

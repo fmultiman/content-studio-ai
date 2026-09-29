@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { KlingAdapter } from '@/lib/providers/kling/adapter'
-import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
+import { createMcpTransportForGeneration, syncGenerationWithProvider } from '@/lib/video-generation/polling'
+import { KlingRestTransport, type KlingVideoTransport } from '@/lib/video-generation/transport'
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1
+//
+// Manual / recovery status sync for ONE of the authenticated user's
+// generations. It is transport-aware and calls the SAME status + completion
+// logic as the REST callback and the MCP poller (lib/video-generation), so
+// there is a single implementation of "provider status -> VideoGeneration".
+//
+// The transport comes from the STORED generation (server-owned provenance);
+// legacy rows without a transport are REST by definition.
+export const maxDuration = 300
+
+export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const supabase = await createClient()
@@ -30,60 +43,70 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (!generation.task_id) {
-       return NextResponse.json({ error: 'No task_id associated' }, { status: 400 })
+      return NextResponse.json({ error: 'No task_id associated' }, { status: 400 })
     }
 
-    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
+    const isMcp = generation.transport === 'mcp'
+    let transport: KlingVideoTransport | null
+    let writeDb = supabase
 
-    if (execution.status !== 'ready') {
+    if (isMcp) {
+      // Token material lives behind the service role; ownership of the
+      // connection is re-verified against the generation's own user id.
+      writeDb = createServiceRoleSupabase()
+      transport = await createMcpTransportForGeneration(writeDb, generation)
+      if (!transport) {
+        return NextResponse.json(
+          { error: 'A conexão com a conta Kling não está mais disponível.', code: 'CONNECTION_UNAVAILABLE', provider: 'kling' },
+          { status: 409 },
+        )
+      }
+    } else {
+      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
+
+      if (execution.status !== 'ready') {
+        return NextResponse.json(
+          {
+            error: execution.code,
+            code: execution.code,
+            provider: 'kling',
+            message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
+          },
+          { status: 422 },
+        )
+      }
+      transport = new KlingRestTransport(execution.secret)
+    }
+
+    // Manual sync is a plain check + completion. It never takes the poller's lease nor rewrites its
+    // schedule/attempt counters (the leased external poller owns those), so `schedule` is always off.
+    const result = await syncGenerationWithProvider(writeDb, generation, transport, { schedule: false })
+
+    if (result.outcome === 'authorization_required') {
       return NextResponse.json(
-        {
-          error: execution.code,
-          code: execution.code,
-          provider: 'kling',
-          message: 'Kling não configurado. Adicione sua chave de API em Configurações.',
-        },
-        { status: 422 },
+        { error: 'A conexão com a conta Kling precisa ser reautorizada.', code: 'AUTHORIZATION_REQUIRED', provider: 'kling' },
+        { status: 409 },
       )
     }
-    const apiKey = execution.secret
-
-    const klingAdapter = new KlingAdapter(apiKey)
-    const taskItem = await klingAdapter.getTaskStatus(generation.task_id)
-    
-    const taskStatus = taskItem.status
-    if (taskStatus === 'succeeded') {
-      const videoOutput = taskItem.outputs?.find(o => o.type === 'video')
-      const videoUrl = videoOutput?.url
-      if (!videoUrl) {
-         return NextResponse.json({ generation }) // wait for url?
-      }
-
-      const prefix = `${generation.user_id}/videos/ai/${generation.project_id}`
-      const { storagePath, publicUrl, mime, size } = await downloadAndStoreVideo(videoUrl, prefix)
-
-      const { data: updated, error: updateError } = await supabase.from('video_generations').update({
-        status: 'succeeded',
-        storage_path: storagePath,
-        public_url: publicUrl,
-        result_metadata: { mime, size, ...taskItem }
-      }).eq('id', generation.id).select().single()
-
-      if (updateError) throw updateError
-      return NextResponse.json({ generation: updated })
-
-    } else if (taskStatus === 'failed') {
-      const { data: updated, error: updateError } = await supabase.from('video_generations').update({
-        status: 'failed',
-        error_details: { message: taskItem.message || 'Provider failed', payload: taskItem }
-      }).eq('id', generation.id).select().single()
-      
-      if (updateError) throw updateError
-      return NextResponse.json({ generation: updated })
+    if (result.outcome === 'transient_error') {
+      return NextResponse.json(
+        { error: 'Não foi possível consultar a Kling agora. Tente novamente em instantes.', code: 'PROVIDER_UNAVAILABLE', provider: 'kling' },
+        { status: 502 },
+      )
     }
 
-    return NextResponse.json({ generation })
+    // Same contract as the history list: a finished video is served through a
+    // short-lived presigned URL, never the raw storage URL.
+    const current = result.generation ?? generation
+    let responseGeneration = current
+    if (current.status === 'succeeded' && current.storage_path) {
+      const presigned = await createPresignedReadUrl(current.storage_path)
+      if (presigned) responseGeneration = { ...current, public_url: presigned }
+    }
+
+    return NextResponse.json({ generation: responseGeneration, outcome: result.outcome })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    console.error('Video generation sync error:', err instanceof Error ? err.name : 'unknown')
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

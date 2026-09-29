@@ -37,6 +37,8 @@ interface KlingMcpConnectionCardProps {
   connectionsAvailable: boolean
   liveCredits: number | null
   onConnect: () => Promise<void>
+  /** Explicit user action that re-authorizes WITH the generation permission (never automatic). */
+  onAuthorizeGeneration?: () => Promise<void>
   onCheck: () => Promise<void>
   onDisconnect: () => Promise<void>
 }
@@ -54,10 +56,12 @@ export function KlingMcpConnectionCard({
   connectionsAvailable,
   liveCredits,
   onConnect,
+  onAuthorizeGeneration,
   onCheck,
   onDisconnect,
 }: KlingMcpConnectionCardProps) {
   const [isConnecting, setIsConnecting] = useState(false)
+  const [isAuthorizing, setIsAuthorizing] = useState(false)
   const [isChecking, setIsChecking] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
 
@@ -74,6 +78,8 @@ export function KlingMcpConnectionCard({
   // (e.g. the provider rejected our registration) where re-checking alone cannot help.
   const canReconnect = connection?.status === 'authorization_required' || connection?.status === 'error'
   const needsAuthorization = connection?.status === 'authorization_required'
+  const readOnly = connection?.status === 'connected' && !connection.generationAuthorized
+  const generationAuthorized = connection?.status === 'connected' && connection.generationAuthorized
   const modelCount = connection?.capabilities.models?.text_to_video?.length
 
   const run = async (setBusy: (value: boolean) => void, action: () => Promise<void>) => {
@@ -91,7 +97,10 @@ export function KlingMcpConnectionCard({
         <div>
           <h4 className="font-medium">Conta Kling</h4>
           <p className="text-xs text-muted-foreground">
-            Usa os créditos da sua conta Kling. Conexão somente leitura por enquanto: ainda não gera vídeos.
+            Usa os créditos da sua conta Kling.{' '}
+            {generationAuthorized
+              ? 'Geração de vídeos autorizada.'
+              : 'Conexão somente leitura: ainda não gera vídeos até você autorizar a geração.'}
           </p>
         </div>
         <StatusBadge label={badge.label} tone={badge.tone} />
@@ -167,6 +176,18 @@ export function KlingMcpConnectionCard({
           </Button>
         ) : null}
 
+        {readOnly && onAuthorizeGeneration ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={isAuthorizing || !connectionsAvailable}
+            onClick={() => void run(setIsAuthorizing, onAuthorizeGeneration)}
+          >
+            {isAuthorizing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="mr-2 h-3.5 w-3.5" />}
+            Autorizar geração
+          </Button>
+        ) : null}
+
         {connection && !needsAuthorization ? (
           <Button type="button" size="sm" variant="outline" disabled={isChecking} onClick={() => void run(setIsChecking, onCheck)}>
             {isChecking ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
@@ -186,7 +207,8 @@ export function KlingMcpConnectionCard({
                 <AlertDialogTitle>Desconectar a conta Kling?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Tentamos revogar a autorização na Kling e apagamos as credenciais guardadas aqui. Sua chave de API da
-                  Kling e seus vídeos já gerados não são afetados.
+                  Kling e seus vídeos já gerados não são afetados. Se houver vídeos ainda em geração com esta conta,
+                  a desconexão só é liberada quando terminarem.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

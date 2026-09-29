@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
+import { completeVideoGeneration, failVideoGeneration } from '@/lib/video-generation/completion'
 import * as crypto from 'crypto'
+
+// The shared completion downloads and re-uploads the video: give it the same headroom as the poller.
+export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   try {
@@ -97,13 +100,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, warning: 'Unknown task_id ignored' })
     }
 
+    // The webhook secret authenticates KLING'S REST webhooks only. A row that
+    // belongs to another transport (MCP has no callbacks) is never completed
+    // from here, even with a valid signature.
+    if ((generation.transport ?? 'rest') !== 'rest') {
+      return NextResponse.json({ success: true, warning: 'Ignored: not a REST generation' })
+    }
+
     if (generation.status === 'succeeded' || generation.status === 'failed') {
       return NextResponse.json({ success: true, warning: 'Already resolved' })
     }
 
+    // Signature is already verified above; from here on the shared, idempotent
+    // completion boundary does the work (identity check, app-owned storage,
+    // compare-and-swap terminal transition).
+    const identity = { generationId: generation.id, taskId: String(taskId), transport: 'rest' as const }
+
     if (status === 'succeeded') {
       let videoUrl = ''
-      
+
       const outputs = data.outputs || []
       const videoOutput = outputs.find((o: any) => o.type === 'video')
       if (videoOutput?.url) {
@@ -115,28 +130,21 @@ export async function POST(req: NextRequest) {
       }
 
       if (!videoUrl) {
-         await supabase.from('video_generations').update({
-           status: 'failed',
-           error_details: { message: 'Missing video URL in payload', payload: data }
-         }).eq('id', generation.id)
-         return NextResponse.json({ success: true })
+        await failVideoGeneration(supabase, {
+          ...identity,
+          code: 'PROVIDER_RESULT_MISSING',
+          message: 'Missing video URL in payload',
+        })
+        return NextResponse.json({ success: true })
       }
 
-      const prefix = `${generation.user_id}/videos/ai/${generation.project_id}`
-      const { storagePath, publicUrl, mime, size } = await downloadAndStoreVideo(videoUrl, prefix)
-
-      await supabase.from('video_generations').update({
-        status: 'succeeded',
-        storage_path: storagePath,
-        public_url: publicUrl,
-        result_metadata: { mime, size, ...data }
-      }).eq('id', generation.id)
-
+      await completeVideoGeneration(supabase, { ...identity, resultUrl: videoUrl, providerState: 'succeeded' })
     } else if (status === 'failed') {
-      await supabase.from('video_generations').update({
-        status: 'failed',
-        error_details: { message: data.error?.message || data.message || 'Provider reported failure', payload: data }
-      }).eq('id', generation.id)
+      await failVideoGeneration(supabase, {
+        ...identity,
+        code: 'PROVIDER_FAILED',
+        message: data.error?.message || data.message || 'Provider reported failure',
+      })
     }
 
     return NextResponse.json({ success: true })

@@ -8,6 +8,9 @@
 // MCP server. The existing Kling REST API key is NOT a ProviderConnection; it
 // remains in user_settings.kling_api_key.
 
+import { KLING_MCP_GENERATION_CREATE_SCOPE } from './kling-mcp'
+import type { KlingMcpVideoSnapshot } from './kling-mcp-video-capabilities'
+
 export type ProviderConnectionProvider = 'kling'
 
 export type ProviderConnectionMethod = 'mcp_oauth'
@@ -36,6 +39,12 @@ export interface KlingMcpCapabilitySnapshot {
   tools?: string[]
   models?: Record<string, string[]>
   membership?: { type?: string; label?: string }
+  /**
+   * Normalized video capabilities (VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1).
+   * Absent on snapshots taken before that version: those must be refreshed
+   * before the connection can drive the generation form.
+   */
+  video?: KlingMcpVideoSnapshot
 }
 
 /** The only shape ever sent to the browser. */
@@ -45,6 +54,8 @@ export interface PublicProviderConnection {
   connectionMethod: ProviderConnectionMethod
   status: ProviderConnectionStatus
   scopes: string[]
+  /** The user has explicitly authorized generation (the generation scope is granted). False = read-only. */
+  generationAuthorized: boolean
   /** Last 4 characters of the provider account id, for recognition only. */
   accountHint: string | null
   capabilities: KlingMcpCapabilitySnapshot
@@ -60,6 +71,7 @@ export function toPublicConnection(row: ProviderConnectionRow): PublicProviderCo
     connectionMethod: row.connection_method,
     status: row.status,
     scopes: row.scopes,
+    generationAuthorized: row.scopes.includes(KLING_MCP_GENERATION_CREATE_SCOPE),
     accountHint: account ? account.slice(-4) : null,
     capabilities: row.capabilities as KlingMcpCapabilitySnapshot,
     lastCheckedAt: row.last_checked_at,

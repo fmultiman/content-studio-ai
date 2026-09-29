@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
 
@@ -35,6 +35,19 @@ function buildSupabase(userId: string, klingApiKey: string | null) {
       }
       if (table === 'video_generations') {
         return {
+          // First provider status "processing" is recorded with a compare-and-swap update.
+          update: () => ({
+            eq: () => ({
+              in: () => ({
+                select: () => ({
+                  maybeSingle: async () => ({
+                    data: { id: 'gen-1', user_id: userId, project_id: 'p1', status: 'processing', task_id: 'kling-task-1' },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
           select: () => ({
             eq: () => ({
               eq: () => ({
@@ -58,6 +71,12 @@ async function callSync() {
     params: Promise.resolve({ id: 'gen-1' }),
   })
 }
+
+// The route pulls in the MCP SDK; warm the import once (generous, file-local budget) so the first
+// test measures behavior, not module loading.
+beforeAll(async () => {
+  await import('@/app/api/video-generations/[id]/sync/route')
+}, 60_000)
 
 describe('/api/video-generations/[id]/sync — user_byok', () => {
   beforeEach(() => {

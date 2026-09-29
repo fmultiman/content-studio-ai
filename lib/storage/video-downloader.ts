@@ -1,4 +1,6 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { pinnedFetch } from './pinned-fetch'
+import { assertPublicHost, isSafeResultUrl, type HostResolver } from './safe-result-url'
 
 export const getS3Client = () =>
   new S3Client({
@@ -36,19 +38,103 @@ export async function uploadApplicationVideo(
   return { storagePath, publicUrl, mime: contentType, size }
 }
 
-export async function downloadAndStoreVideo(url: string, prefix: string): Promise<{ storagePath: string, publicUrl: string, mime: string, size: number }> {
-  const res = await fetch(url)
-  
-  if (!res.ok) {
-    throw new Error(`Failed to fetch remote video. Status: ${res.status}`)
+export interface DownloadAndStoreOptions {
+  /**
+   * Deterministic object file name. Completion passes the generation id so a
+   * retried/duplicated/concurrent completion overwrites the SAME object instead
+   * of creating a second one (idempotent promotion to app-owned storage).
+   */
+  objectName?: string
+}
+
+/** Limits for fetching a provider-supplied result URL (external input). */
+export const MAX_VIDEO_BYTES = 300 * 1024 * 1024
+export const VIDEO_DOWNLOAD_TIMEOUT_MS = 120_000
+export const MAX_REDIRECTS = 3
+
+export interface FetchDependencies {
+  /** Default: a GET pinned to the vetted address (no second DNS resolution, no redirect following). */
+  fetchFn?: (url: string, init: { redirect: 'manual'; signal: AbortSignal; address: string }) => Promise<Response>
+  resolveHost?: HostResolver
+  upload?: typeof uploadApplicationVideo
+}
+
+const ACCEPTED_MIME = /^(video\/|application\/octet-stream|binary\/octet-stream)/i
+
+/**
+ * Fetches a provider result URL defensively: every hop (including redirects,
+ * which are followed MANUALLY and re-validated) must be https to a host that
+ * resolves to public addresses only; the request is time-bounded; the body is
+ * size-capped while streaming; and only video-like content types are accepted.
+ */
+async function fetchProviderVideo(url: string, deps: FetchDependencies): Promise<{ buffer: Buffer; mime: string }> {
+  const fetchFn = deps.fetchFn ?? ((target, init) => pinnedFetch(target, { address: init.address, signal: init.signal }))
+  const signal = AbortSignal.timeout(VIDEO_DOWNLOAD_TIMEOUT_MS)
+
+  let current = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    if (!isSafeResultUrl(current)) throw new Error('Result URL is not allowed.')
+    // Vet the DNS answer, then connect to THAT address (not to a fresh lookup).
+    const [address] = await assertPublicHost(new URL(current).hostname, deps.resolveHost)
+
+    const res = await fetchFn(current, { redirect: 'manual', signal, address })
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location')
+      if (!location) throw new Error('Redirect without a location.')
+      current = new URL(location, current).toString()
+      continue
+    }
+
+    if (!res.ok) throw new Error(`Failed to fetch remote video. Status: ${res.status}`)
+
+    const declared = res.headers.get('content-type')
+    if (declared && !ACCEPTED_MIME.test(declared)) throw new Error('Result is not a video.')
+    const mime = declared && declared.toLowerCase().startsWith('video/') ? declared : 'video/mp4'
+
+    const length = Number.parseInt(res.headers.get('content-length') || '0', 10)
+    if (length > MAX_VIDEO_BYTES) throw new Error('Result video is too large.')
+
+    if (!res.body) {
+      const buffer = Buffer.from(await res.arrayBuffer())
+      if (buffer.length > MAX_VIDEO_BYTES) throw new Error('Result video is too large.')
+      return { buffer, mime }
+    }
+
+    // With a declared length the body is written straight into ONE preallocated
+    // buffer (peak memory ~ the video size, not 2x); without one, chunks are
+    // collected and joined. Either way the cap is enforced while streaming.
+    const reader = res.body.getReader()
+    const preallocated = length > 0 ? Buffer.allocUnsafe(length) : null
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_VIDEO_BYTES || (preallocated && total > preallocated.length)) {
+        await reader.cancel().catch(() => undefined)
+        throw new Error('Result video is too large.')
+      }
+      if (preallocated) preallocated.set(value, total - value.byteLength)
+      else chunks.push(value)
+    }
+    return { buffer: preallocated ? preallocated.subarray(0, total) : Buffer.concat(chunks, total), mime }
   }
 
-  const mime = res.headers.get('content-type') || 'video/mp4'
-  const size = parseInt(res.headers.get('content-length') || '0', 10)
-  const buffer = Buffer.from(await res.arrayBuffer())
+  throw new Error('Too many redirects.')
+}
 
-  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`
+export async function downloadAndStoreVideo(
+  url: string,
+  prefix: string,
+  options: DownloadAndStoreOptions = {},
+  deps: FetchDependencies = {},
+): Promise<{ storagePath: string, publicUrl: string, mime: string, size: number }> {
+  const { buffer, mime } = await fetchProviderVideo(url, deps)
+
+  const fileName = options.objectName ?? `${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`
   const objectPath = `${prefix}/${fileName}`
 
-  return await uploadApplicationVideo(buffer, objectPath, mime, size)
+  return await (deps.upload ?? uploadApplicationVideo)(buffer, objectPath, mime, buffer.length)
 }

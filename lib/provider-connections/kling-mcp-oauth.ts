@@ -24,8 +24,9 @@ import {
 import {
   KLING_MCP_PROVIDER,
   KLING_MCP_METHOD,
-  KLING_MCP_SCOPE_STRING,
   KLING_MCP_URL,
+  scopeStringForIntent,
+  type KlingMcpConnectIntent,
   getAppBaseUrl,
   klingMcpRedirectUri,
 } from './kling-mcp'
@@ -45,7 +46,7 @@ export interface KlingOAuthDependencies extends RegisterDependencies {
 
 export async function startKlingMcpAuthorization(
   db: SupabaseClient,
-  params: { userId: string },
+  params: { userId: string; intent?: KlingMcpConnectIntent },
   deps: KlingOAuthDependencies = {},
 ): Promise<{ authorizationUrl: string }> {
   const discover = deps.discover ?? discoverOAuthServerInfo
@@ -58,6 +59,8 @@ export async function startKlingMcpAuthorization(
 
   const issuer = String(info.authorizationServerUrl)
   const redirectUri = klingMcpRedirectUri()
+  // Read-only unless the user explicitly asked to authorize generation.
+  const scope = scopeStringForIntent(params.intent ?? 'read_only')
 
   const client = await getOrRegisterOAuthClient(
     db,
@@ -65,7 +68,7 @@ export async function startKlingMcpAuthorization(
       provider: KLING_MCP_PROVIDER,
       issuer,
       redirectUri,
-      scope: KLING_MCP_SCOPE_STRING,
+      scope,
       appBaseUrl: getAppBaseUrl(),
       metadata,
     },
@@ -79,7 +82,7 @@ export async function startKlingMcpAuthorization(
     metadata,
     clientInformation: { client_id: client.clientId },
     redirectUrl: redirectUri,
-    scope: KLING_MCP_SCOPE_STRING,
+    scope,
     state,
     resource: KLING_MCP_URL,
   })
@@ -93,7 +96,7 @@ export async function startKlingMcpAuthorization(
       issuer,
       clientId: client.clientId,
       redirectUri,
-      scope: KLING_MCP_SCOPE_STRING,
+      scope,
       state,
       codeVerifier,
     },

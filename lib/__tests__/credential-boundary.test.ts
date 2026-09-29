@@ -199,14 +199,30 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
     expect(filesContaining('StreamableHTTPClientTransport')).toEqual(['lib/provider-connections/kling-mcp-client.ts'])
   })
 
-  it('a tool is invoked from exactly one place (the read-only gate)', () => {
-    expect(codeFilesContaining(/\.callTool\(/)).toEqual(['lib/provider-connections/kling-mcp-client.ts'])
+  it('a tool is invoked from exactly two places: the read-only gate and the video-tool gate', () => {
+    expect(codeFilesContaining(/\.callTool\(/)).toEqual([
+      'lib/provider-connections/kling-mcp-client.ts',
+      'lib/provider-connections/kling-mcp-generation.ts',
+    ])
   })
 
-  it('the service-role client is created only by the factory and the provider-connections routes', () => {
-    for (const path of filesContaining('createServiceRoleSupabase')) {
-      expect(path === 'lib/supabase/service-role.ts' || path.startsWith('app/api/provider-connections/')).toBe(true)
-    }
+  it('generation tools are named only by the allow-lists and the single video client', () => {
+    const generationTools = /['"](text_to_video|image_to_video)['"]/
+    // The product operation names also appear in the video-generation domain
+    // (they ARE the Content Studio operation vocabulary); a raw provider tool
+    // call is only ever built inside kling-mcp-generation.ts.
+    expect(codeFilesContaining(/callTool\(\{\s*name:\s*['"](text_to_video|image_to_video)['"]/)).toEqual([])
+    expect(generationTools.test(codeOnly(sourceFiles.find((f) => f.path === 'lib/provider-connections/kling-mcp-client.ts')!.text))).toBe(false)
+  })
+
+  it('the service-role client is created only by the factory, provider-connections routes and the server-side video routes', () => {
+    const allowed = (path: string) =>
+      path === 'lib/supabase/service-role.ts' ||
+      path.startsWith('app/api/provider-connections/') ||
+      path.startsWith('app/api/internal/video-generations/') ||
+      path === 'app/api/video-generations/route.ts' ||
+      path === 'app/api/video-generations/[id]/sync/route.ts'
+    for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
 
   it('client components import nothing from provider-connections except TYPES', () => {
@@ -228,17 +244,13 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
     expect(offenders).toEqual([])
   })
 
-  it('never requests the generation.create scope (read-only connection)', () => {
-    expect(codeFilesContaining(/['"]generation\.create['"]/)).toEqual([])
+  it('the generation scope literal is defined in exactly one place and never appears in client code', () => {
+    expect(codeFilesContaining(/['"]generation\.create['"]/)).toEqual(['lib/provider-connections/kling-mcp.ts'])
   })
 
-  it('the existing REST video pipeline does not depend on provider connections (REST unchanged)', () => {
+  it('the REST adapter and the REST webhook stay independent of provider connections (REST unchanged)', () => {
     const restFiles = sourceFiles.filter(
-      (file) =>
-        file.path.startsWith('app/api/video-generations/') ||
-        file.path.startsWith('app/api/kling/') ||
-        file.path.startsWith('lib/providers/kling/') ||
-        file.path.startsWith('components/videos/'),
+      (file) => file.path.startsWith('app/api/kling/') || file.path.startsWith('lib/providers/kling/'),
     )
     expect(restFiles.length).toBeGreaterThan(0)
     for (const file of restFiles) expect(file.text).not.toContain('provider-connections')
@@ -250,3 +262,87 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
     for (const route of routes) expect(route.text).not.toMatch(/NextResponse\.json\([^)]*(access_token|refresh_token|ciphertext)/)
   })
 })
+
+describe('video generation connection routing boundary — VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1', () => {
+  const videoServerFiles = sourceFiles.filter(
+    (file) =>
+      file.path.startsWith('lib/video-generation/') ||
+      file.path.startsWith('app/api/video-generations/') ||
+      file.path.startsWith('app/api/internal/video-generations/') ||
+      file.path.startsWith('lib/provider-connections/kling-mcp-generation') ||
+      file.path.startsWith('lib/provider-connections/kling-mcp-task'),
+  )
+
+  it('Content Studio Credits cannot be reached from the video routing code (no fallback, no platform credential)', () => {
+    expect(videoServerFiles.length).toBeGreaterThan(5)
+    for (const file of videoServerFiles) {
+      const code = codeOnly(file.text)
+      expect(code).not.toContain('content_studio_credits')
+      expect(code).not.toContain('resolvePlatformCredential')
+      expect(code).not.toContain('platform-credentials')
+      expect(code).not.toContain('KLING_API_KEY')
+    }
+  })
+
+  it('the client only imports the pure, client-safe video-generation modules (never connections/polling/transport/completion)', () => {
+    const allowed = new Set(['capabilities', 'connection-ref', 'form-selection'])
+    const offenders: string[] = []
+    for (const file of sourceFiles.filter((f) => isClientFile(f.text))) {
+      for (const match of file.text.matchAll(/from\s+['"]@\/lib\/video-generation\/([^'"]+)['"]/g)) {
+        if (!allowed.has(match[1])) offenders.push(`${file.path}: ${match[1]}`)
+      }
+    }
+    expect(offenders).toEqual([])
+    for (const name of allowed) {
+      const source = sourceFiles.find((f) => f.path === `lib/video-generation/${name}.ts`)!
+      expect(source.text).not.toMatch(/from\s+['"]@\/lib\/(supabase|provider-connections|credentials|storage)/)
+    }
+  })
+
+  it('the OAuth flow can only be started by the connect route (a user action), never as a side effect elsewhere', () => {
+    expect(codeFilesContaining('startKlingMcpAuthorization(')).toEqual([
+      'app/api/provider-connections/kling/mcp/connect/route.ts',
+      'lib/provider-connections/kling-mcp-oauth.ts',
+    ])
+  })
+
+  it('the poller has exactly one entry point: the authenticated internal route', () => {
+    expect(codeFilesContaining('pollDueMcpGenerations(')).toEqual([
+      'app/api/internal/video-generations/poll/route.ts',
+      'lib/video-generation/polling.ts',
+    ])
+    const route = sourceFiles.find((f) => f.path === 'app/api/internal/video-generations/poll/route.ts')!
+    expect(route.text).toContain('VIDEO_POLL_WORKER_SECRET')
+    expect(route.text).not.toMatch(/export (async function|const) (GET|PUT|PATCH|DELETE)/)
+    expect(route.text).toContain('timingSafeEqual')
+  })
+
+  it('every writer of a terminal generation state goes through the shared completion module', () => {
+    const writers = sourceFiles
+      .filter((file) => codeOnly(file.text).includes('video_generations') && /status:\s*['"]succeeded['"]/.test(codeOnly(file.text)))
+      .map((file) => file.path)
+    expect(writers).toEqual(['lib/video-generation/completion.ts'])
+  })
+
+  it('the REST webhook secret guards only the REST callback (completion is shared, security is not)', () => {
+    expect(codeFilesContaining('KLING_WEBHOOK_SECRET')).toEqual(['app/api/kling/callback/route.ts'])
+    const callback = sourceFiles.find((f) => f.path === 'app/api/kling/callback/route.ts')!.text
+    expect(callback.indexOf('timingSafeEqual')).toBeGreaterThan(-1)
+    expect(callback.indexOf('timingSafeEqual')).toBeLessThan(callback.indexOf('completeVideoGeneration('))
+  })
+
+  it('the video tools are named in exactly one allow-list and invoked from one gate', () => {
+    expect(codeFilesContaining('KLING_MCP_VIDEO_TOOLS')).toEqual(['lib/provider-connections/kling-mcp.ts'])
+    expect(codeFilesContaining('isKlingMcpVideoTool(')).toEqual([
+      'lib/provider-connections/kling-mcp-generation.ts',
+      'lib/provider-connections/kling-mcp.ts',
+    ])
+  })
+
+  it('output count is pinned to 1 in the only place that builds tool arguments', () => {
+    const source = sourceFiles.find((f) => f.path === 'lib/provider-connections/kling-mcp-generation.ts')!.text
+    expect(source).toMatch(/name:\s*'imageCount',\s*value:\s*'1'/)
+    expect(source).not.toMatch(/imageCount.*(request|selection|body)/)
+  })
+})
+
