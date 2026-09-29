@@ -1,18 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
+import { resolveAuthCallbackRedirect } from '@/lib/auth/callback'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl
-  const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const supabase = await createClient()
 
-  if (code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
-  }
+  const location = await resolveAuthCallbackRedirect({
+    origin,
+    code: searchParams.get('code'),
+    next: searchParams.get('next'),
+    exchangeCodeForSession: (code) => supabase.auth.exchangeCodeForSession(code),
+  })
 
-  return NextResponse.redirect(`${origin}/login?error=auth_failed`)
+  return NextResponse.redirect(location)
 }

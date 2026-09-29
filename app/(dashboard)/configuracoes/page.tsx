@@ -19,6 +19,8 @@ import { Switch } from '@/components/ui/switch'
 import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
 import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
 import { KlingMcpConnectionCard } from '@/components/settings/kling-mcp-connection-card'
+import { ChangePasswordForm } from '@/components/settings/change-password-form'
+import { Separator } from '@/components/ui/separator'
 import type { PublicProviderConnection } from '@/lib/provider-connections/types'
 import { Slider } from '@/components/ui/slider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -502,6 +504,8 @@ export default function SettingsPage() {
                       className="bg-background/50"
                     />
                   </div>
+                  <Separator />
+                  <ChangePasswordForm />
                 </CardContent>
               </Card>
             </TabsContent>
