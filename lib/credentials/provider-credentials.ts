@@ -95,3 +95,26 @@ export async function getProviderConfigurationStatuses(
 export function providerSecretColumn(provider: AiProvider): string {
   return PROVIDER_SECRET_COLUMN[provider]
 }
+
+export type ProviderConfigurationState = 'configured' | 'missing' | 'unavailable'
+
+/**
+ * Status of ONE provider credential that tells "the store could not be read"
+ * apart from "no credential": a database error is `unavailable`, never
+ * `missing`. Never returns the secret.
+ */
+export async function getProviderConfigurationState(
+  supabase: SupabaseClient,
+  params: { userId: string; provider: AiProvider },
+): Promise<ProviderConfigurationState> {
+  const column = PROVIDER_SECRET_COLUMN[params.provider]
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select(column)
+    .eq('user_id', params.userId)
+    .maybeSingle()
+
+  if (error) return 'unavailable'
+  const secret = (data as Record<string, unknown> | null)?.[column]
+  return typeof secret === 'string' && secret.trim().length > 0 ? 'configured' : 'missing'
+}
