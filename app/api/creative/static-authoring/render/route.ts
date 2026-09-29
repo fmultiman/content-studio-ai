@@ -43,6 +43,7 @@ import { normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/t
 import type { FrozenAssetOverrides, StaticRenderExecutionSnapshot } from '@/lib/render-execution/static-snapshot'
 import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
 import { buildStaticFreeRenderManifest } from '@/lib/creative/authoring/free-static'
+import { classifyTemplateManifestAssets } from '@/lib/creative/authoring/custom-image-assets'
 import { resolveStaticFreeRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import type { FreeSceneComposition } from '@/lib/types'
 import {
@@ -72,6 +73,27 @@ function createRenderExecutionWriteClient() {
 
 function fail(status: number, code: string, error: string) {
   return NextResponse.json({ error, code }, { status })
+}
+
+/**
+ * The single authority for "may this LibraryFile be painted into a static
+ * still": the authenticated user's own file, in THIS project, not trashed, an
+ * image, with a mime type the renderer supports. Used by the Free composition
+ * branch and by Template Custom Images so the two can never diverge.
+ */
+async function loadUsableProjectImageIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string,
+  libraryFileIds: string[],
+): Promise<Set<string>> {
+  const { data: files } = await supabase
+    .from('library_files')
+    .select('id, kind, mime_type, deleted_at')
+    .in('id', libraryFileIds)
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+  return new Set((files ?? []).filter((file) => !file.deleted_at && file.kind === 'image' && OVERRIDE_IMAGE_MIME_TYPES.has(file.mime_type ?? '')).map((file) => file.id))
 }
 
 export async function POST(request: Request) {
@@ -172,13 +194,7 @@ export async function POST(request: Request) {
       const composition = freeComposition as FreeSceneComposition
       const imageIds = [...new Set(composition.elements.filter((element) => element.kind === 'image').map((element) => (element as { library_file_id: string }).library_file_id))]
       if (imageIds.length > 0) {
-        const { data: files } = await supabase
-          .from('library_files')
-          .select('id, kind, mime_type, deleted_at')
-          .in('id', imageIds)
-          .eq('user_id', user.id)
-          .eq('project_id', project.id)
-        const usable = new Set((files ?? []).filter((file) => !file.deleted_at && file.kind === 'image' && OVERRIDE_IMAGE_MIME_TYPES.has(file.mime_type ?? '')).map((file) => file.id))
+        const usable = await loadUsableProjectImageIds(supabase, user.id, project.id, imageIds)
         if (imageIds.some((id) => !usable.has(id))) return fail(403, 'FREE_IMAGE_FORBIDDEN', 'Imagem livre invalida ou fora do Projeto.')
       }
       const identitySnapshot = adaptProjectIdentityToVisualTokens(project.id, projectIdentity)
@@ -202,10 +218,15 @@ export async function POST(request: Request) {
     if (input.manifest.canvas.width !== target.canvas.width || input.manifest.canvas.height !== target.canvas.height) {
       return fail(400, 'CANVAS_MISMATCH', 'Canvas nao corresponde ao alvo da peca.')
     }
-    // Only template fixture assets are renderable from the Creative Editor
-    // today (no hero picker yet) — never an arbitrary library_file/URL ref.
-    if (Object.values(input.manifest.assets).some((asset) => asset.type !== 'fixture')) {
-      return fail(400, 'UNSUPPORTED_ASSET_REF', 'Asset nao suportado para render estatico.')
+    // Template assets are fixtures — never an arbitrary library_file/URL ref.
+    // The ONE exception (STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1) is the backing
+    // asset of a Custom Image listed in manifest.elements, whose file must
+    // pass the same ownership authority as a Free image.
+    const templateAssets = classifyTemplateManifestAssets(input.manifest)
+    if (!templateAssets.ok) return fail(400, 'UNSUPPORTED_ASSET_REF', 'Asset nao suportado para render estatico.')
+    if (templateAssets.libraryFileIds.length > 0) {
+      const usable = await loadUsableProjectImageIds(supabase, user.id, project.id, templateAssets.libraryFileIds)
+      if (templateAssets.libraryFileIds.some((id) => !usable.has(id))) return fail(403, 'CUSTOM_IMAGE_FORBIDDEN', 'Imagem customizada invalida ou fora do Projeto.')
     }
 
     if (input.primitiveSelection) {
