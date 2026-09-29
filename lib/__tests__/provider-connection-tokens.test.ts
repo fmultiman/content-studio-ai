@@ -5,6 +5,7 @@ import {
   deleteConnectionTokens,
   forceRefreshAccessToken,
   getValidAccessToken,
+  INVALID_GRANT_RECHECK_DELAYS_MS,
   readTokensForRevocation,
   saveConnectionTokens,
   type TokenRefreshDependencies,
@@ -43,6 +44,8 @@ function seedDb() {
 function makeDeps(refresh: (...args: unknown[]) => unknown, now: Date = NOW): TokenRefreshDependencies {
   return {
     now: () => now,
+    // The invalid_grant re-check delays are real time in production; tests do not wait.
+    sleep: async () => undefined,
     discover: vi.fn(async () => ({
       authorizationServerUrl: new URL(ISSUER),
       authorizationServerMetadata: { issuer: ISSUER },
@@ -351,6 +354,48 @@ describe('access-token refresh', () => {
     const token = await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(2 * 3600_000)))
     expect(token).toBe('at-rotated-elsewhere')
     expect(db.tables.provider_connections[0].status).toBe('connected')
+  })
+
+  it('a concurrent refresh whose write lands DURING the re-check window is honored: the grant is NOT declared revoked', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    const refresh = vi.fn(async () => { throw new OAuthError(OAuthErrorCode.InvalidGrant, 'already used') })
+
+    // Nothing newer is stored at the first re-read; the winner's compare-and-swap lands while we wait.
+    let waits = 0
+    const sleep = vi.fn(async () => {
+      waits += 1
+      if (waits === 2) db.tables.provider_connection_secrets[0].secret_version += 1
+    })
+
+    const token = await getValidAccessToken(db as any, 'conn-1', { ...makeDeps(refresh, later(2 * 3600_000)), sleep })
+
+    expect(sleep).toHaveBeenCalledTimes(2)
+    expect(token).toBeTruthy()
+    expect(db.tables.provider_connections[0].status).toBe('connected')
+    expect(db.tables.provider_connection_secrets).toHaveLength(1)
+  })
+
+  it('invalid_grant is declared revoked only after the re-check delays elapse with no newer credentials', async () => {
+    const db = seedDb()
+    await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
+    const refresh = vi.fn(async () => { throw new OAuthError(OAuthErrorCode.InvalidGrant, 'revoked') })
+    const sleep = vi.fn(async (_ms: number) => undefined)
+
+    await expect(getValidAccessToken(db as any, 'conn-1', { ...makeDeps(refresh, later(2 * 3600_000)), sleep })).rejects.toBeInstanceOf(ProviderAuthorizationRequiredError)
+
+    expect(sleep.mock.calls.map((call) => call[0])).toEqual([...INVALID_GRANT_RECHECK_DELAYS_MS])
+    expect(db.tables.provider_connections[0].status).toBe('authorization_required')
+    expect(db.tables.provider_connection_secrets).toHaveLength(0)
+  })
+
+  it('a connection with NO stored credentials stops claiming to be connected (so the UI asks for reconnection)', async () => {
+    const db = seedDb()
+    const refresh = vi.fn()
+    await expect(getValidAccessToken(db as any, 'conn-1', makeDeps(refresh))).rejects.toBeInstanceOf(ProviderAuthorizationRequiredError)
+    expect(db.tables.provider_connections[0].status).toBe('authorization_required')
+    await expect(forceRefreshAccessToken(db as any, 'conn-1', makeDeps(refresh))).rejects.toBeInstanceOf(ProviderAuthorizationRequiredError)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('forceRefreshAccessToken refreshes even when the recorded expiry has not passed', async () => {

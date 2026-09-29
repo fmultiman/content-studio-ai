@@ -133,6 +133,13 @@ status, required scope (`generation.create` for MCP), a usable capability snapsh
 `validateVideoRequest` verifies operation, model, duration, resolution, aspect ratio, audio and
 multi-shot against **server-held** capabilities. Nothing echoed by the browser is trusted.
 
+The `projectId`/`productionId` the browser sends are **verified server-side** (an RLS-scoped read of the
+caller's own production *inside that project*) before any credential is read or record created; a foreign or
+mismatched production is `403 PRODUCTION_NOT_FOUND`. A REST submit failure is classified like MCP's: an HTTP
+error *answered* by Kling is definitive (`PROVIDER_SUBMISSION_FAILED`), while a network failure or a 2xx body
+without a task id may have created a billed job (`502 SUBMIT_OUTCOME_UNKNOWN`, `outcomeUnknown`, form locks).
+Unexpected pre-submission failures are `500 INTERNAL_ERROR` with a generic message (never the raw error).
+
 Server rejections (all return **before** any provider call or generation record): foreign/unknown
 connection (404), `authorization_required` (409), errored connection (409), read-only MCP (403
 `GENERATION_AUTHORIZATION_REQUIRED`), missing/expired capabilities (409), unsupported
@@ -359,7 +366,16 @@ URL, the raw state string is surfaced (bounded) as evidence, and a submit respon
 id is treated as possibly-billed. The first paid proof must capture the real payloads and tighten
 this parser and its tests.
 
-**Manual/recovery**: `POST /api/video-generations/[id]/sync` is now transport-aware (and returns the
+**Concurrent refresh safety**: two callers can refresh the same connection at once (parallel poller rows,
+the /videos ticks). When Kling answers `invalid_grant` — which is also what the *loser* of a rotation race
+gets — the stored row is re-read after 250 ms and again after 750 ms before the grant is declared revoked,
+so a winner's compare-and-swap that has not landed yet is honored instead of wiping a valid grant. A
+connection with no stored credentials at all is marked `authorization_required` (it never keeps claiming to
+be `connected`).
+
+**Manual/recovery**: `POST /api/video-generations/[id]/sync` is a plain check + completion: it **never takes
+the poller's lease nor rewrites `next_poll_at`/`poll_attempts`** (the leased external poller owns those), and
+it is transport-aware (and returns the
 same *presigned* URL contract as the history list for finished videos) and calls the
 **same** `syncGenerationWithProvider` — no second completion implementation. Legacy/REST rows
 (`transport` NULL/`rest`) sync via the user's Kling API key exactly as before.
@@ -465,7 +481,9 @@ job that can actually need the grant references the connection:** anything the p
 *interrupted* `queued` row (no provider task, past the orphan cutoff) can never be retrieved and does not
 block. The Settings toast and the
 disconnect dialog say so. It fails **closed** (503 if the check cannot run; nothing is revoked or
-deleted). Finished generations never block it, and history is untouched (FK `SET NULL`). The residual
+deleted). A connection that is not `connected` (revoked/expired) is exempt, because its dead tokens protect
+nothing; the connection **row is deleted first** (the FK cascade removes the secrets with it), so a partial
+failure can never leave a `connected` row without credentials. Finished generations never block it, and history is untouched (FK `SET NULL`). The residual
 window (a generation created in the instant between the check and the delete — the two are not one
 transaction) is handled by the poller,
 which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead of retrying forever.
@@ -501,7 +519,8 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 | Non-subscribers: one concurrent video task; 5 QPS; tasks cannot be canceled | OFFICIAL (discovery) |
 | Terms (§18) | AMBIGUOUS |
 | The external VPS scheduler + `POLL_WORKER_SECRET` are **not yet active** (owner action, §12): until they are, an away user's job is only retrieved when they reopen /videos | **Prerequisite for the paid proof** |
-| Pre-existing: RLS lets a user `UPDATE` their own `video_generations` rows (table policy from 039) — the poller therefore re-derives ownership of `connection_id` from the generation's `user_id` and never trusts the row alone | noted; column-level lockdown is a possible follow-up |
+| **Pre-existing (migration 039, not introduced here):** the owner-scoped RLS `UPDATE` policy on `video_generations` has no column restriction, so an authenticated user holding their own JWT can rewrite server-owned columns of their own rows (`status`, `storage_path`, `task_id`, and now `transport`/`connection_id`/`next_poll_at`/`poll_attempts`). The poller re-derives connection ownership from the generation's `user_id` and never trusts the row alone, but a forged `storage_path` could make the presign endpoints sign an object key the user does not own. **Recommended follow-up:** a migration that restricts client `UPDATE` to non-server columns (or a guard trigger) and moves the submit route's post-submit writes to the service role | **Open — follow-up task** |
+| **Pre-existing:** a REST callback that arrives before the submit route has stored `task_id` finds no row and is acknowledged/ignored; REST rows have no poller. Narrow (Kling needs a moment to call back) but real; a fix would poll REST rows too or match on `external_id` | **Open — follow-up task** |
 
 ## 18. Terms / policy
 

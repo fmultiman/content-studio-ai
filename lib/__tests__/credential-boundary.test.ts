@@ -221,6 +221,7 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path.startsWith('app/api/provider-connections/') ||
       path.startsWith('app/api/internal/video-generations/') ||
       path === 'app/api/video-generations/route.ts' ||
+      path === 'app/api/kling/callback/route.ts' ||
       path === 'app/api/video-generations/[id]/sync/route.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })

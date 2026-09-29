@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { completeVideoGeneration, failVideoGeneration } from '@/lib/video-generation/completion'
 import * as crypto from 'crypto'
+
+// The shared completion downloads and re-uploads the video: give it the same headroom as the poller.
+export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   try {
@@ -82,9 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Service role client to bypass RLS for external provider callback
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-    const supabase = createSupabaseClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createServiceRoleSupabase()
 
     const { data: generation, error: getError } = await supabase
       .from('video_generations')

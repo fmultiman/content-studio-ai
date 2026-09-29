@@ -73,9 +73,11 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     }
 
     const revocation = await revokeKlingMcpGrant(db, owned.id)
-    // Explicit token removal (the FK also cascades) so secrets never outlive the connection.
-    await deleteConnectionTokens(db, owned.id)
+    // Row first: the FK cascade removes the secrets with it, so a failure here leaves the connection
+    // AND its tokens exactly as they were (never a "connected" row with no credentials). The explicit
+    // token removal afterwards is belt and braces for the cascade.
     await deleteOwnedConnection(db, owned.id, user.id)
+    await deleteConnectionTokens(db, owned.id)
 
     return NextResponse.json({ disconnected: true, revocation }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {

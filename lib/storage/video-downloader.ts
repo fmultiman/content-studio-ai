@@ -49,7 +49,7 @@ export interface DownloadAndStoreOptions {
 
 /** Limits for fetching a provider-supplied result URL (external input). */
 export const MAX_VIDEO_BYTES = 300 * 1024 * 1024
-export const VIDEO_DOWNLOAD_TIMEOUT_MS = 50_000
+export const VIDEO_DOWNLOAD_TIMEOUT_MS = 120_000
 export const MAX_REDIRECTS = 3
 
 export interface FetchDependencies {

@@ -15,6 +15,8 @@ import { KlingRestTransport, type KlingVideoTransport } from '@/lib/video-genera
 //
 // The transport comes from the STORED generation (server-owned provenance);
 // legacy rows without a transport are REST by definition.
+export const maxDuration = 300
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -76,7 +78,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       transport = new KlingRestTransport(execution.secret)
     }
 
-    const result = await syncGenerationWithProvider(writeDb, generation, transport, { schedule: isMcp })
+    // Manual sync is a plain check + completion. It never takes the poller's lease nor rewrites its
+    // schedule/attempt counters (the leased external poller owns those), so `schedule` is always off.
+    const result = await syncGenerationWithProvider(writeDb, generation, transport, { schedule: false })
 
     if (result.outcome === 'authorization_required') {
       return NextResponse.json(

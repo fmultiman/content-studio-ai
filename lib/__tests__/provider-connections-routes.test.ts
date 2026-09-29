@@ -487,6 +487,28 @@ describe('DELETE /api/provider-connections/[id]', () => {
     expect(db.tables.provider_connections).toHaveLength(2)
   })
 
+  it('if deleting the connection row fails, the tokens are STILL there (never a "connected" row with no credentials)', async () => {
+    const db = seed()
+    signedIn('user-a')
+    serviceDb(db)
+    vi.mocked(oauthModule.revokeKlingMcpGrant).mockResolvedValue('succeeded')
+    const originalFrom = db.from
+    db.from = vi.fn((table: string) => {
+      const real = originalFrom.call(db, table)
+      if (table !== 'provider_connections') return real
+      // Reads (ownership) work; the DELETE fails.
+      const failing: any = { eq: () => failing, then: (resolve: any) => resolve({ error: { message: 'boom' } }) }
+      return { ...real, delete: () => failing }
+    }) as any
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const response = await call('conn-1')
+
+    expect(response.status).toBe(500)
+    expect(db.tables.provider_connection_secrets.map((row) => row.connection_id).sort()).toEqual(['conn-1', 'conn-2'])
+    expect(db.tables.provider_connections.map((row) => row.id).sort()).toEqual(['conn-1', 'conn-2'])
+  })
+
   it('returns 500 when DB deletion throws, without claiming disconnection', async () => {
     const db = seed()
     signedIn('user-a')

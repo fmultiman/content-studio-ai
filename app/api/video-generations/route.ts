@@ -16,6 +16,8 @@ import {
   type KlingVideoTransport,
 } from '@/lib/video-generation/transport'
 
+export const maxDuration = 60
+
 // VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1
 //
 // Fields a client must never supply: the SERVER decides the transport, the
@@ -115,6 +117,22 @@ export async function POST(req: NextRequest) {
       return jsonError(400, validation.code, validation.message)
     }
     const { request: videoRequest, model: modelCapability } = validation
+
+    // The production must belong to THIS user AND to the given project (RLS-scoped read): the
+    // browser-supplied ids are never trusted, and the storage prefix is derived from the project id.
+    const { data: ownedProduction, error: productionError } = await supabase
+      .from('productions')
+      .select('id')
+      .eq('id', productionId)
+      .eq('project_id', projectId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (productionError) {
+      return jsonError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar o projeto agora. Tente novamente.')
+    }
+    if (!ownedProduction) {
+      return jsonError(403, 'PRODUCTION_NOT_FOUND', 'Production não encontrada neste projeto.')
+    }
 
     // Secrets are resolved only after every check passed.
     let transport: KlingVideoTransport
@@ -239,13 +257,26 @@ export async function POST(req: NextRequest) {
         return jsonError(known.httpStatus, known.code, known.message, { outcomeUnknown: known.outcomeUnknown })
       }
 
+      // An HTTP error ANSWER from Kling is definitive (the job was refused). A network failure or a
+      // 2xx whose body we cannot read may have created (and billed) the job: that is an unknown outcome.
+      const definitive = typeof providerError?.message === 'string' && providerError.message.startsWith('Kling API HTTP error')
       await supabase
         .from('video_generations')
         .update({
           status: 'failed',
-          error_details: { message: providerError.message },
+          error_details: definitive
+            ? { message: providerError.message }
+            : { code: 'SUBMIT_OUTCOME_UNKNOWN', message: 'Não foi possível confirmar o envio à Kling.', outcome_unknown: true },
         })
         .eq('id', generation.id)
+      if (!definitive) {
+        return jsonError(
+          502,
+          'SUBMIT_OUTCOME_UNKNOWN',
+          'Não foi possível confirmar o envio à Kling. Verifique a sua conta Kling antes de tentar novamente.',
+          { outcomeUnknown: true },
+        )
+      }
       return NextResponse.json(
         { error: 'Provider submission failed', code: 'PROVIDER_SUBMISSION_FAILED', details: providerError.message },
         { status: 500 },
@@ -289,8 +320,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ generation: recorded.data })
   } catch (error: any) {
-    console.error('Create video generation route error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // Everything that reaches here happened BEFORE a provider call (the submit and the recording of its
+    // result have their own handling above): a definitive failure, with a code and a generic message.
+    console.error('Create video generation route error:', error instanceof Error ? error.name : 'unknown')
+    return jsonError(500, 'INTERNAL_ERROR', 'Erro interno ao criar a geração. Nada foi enviado à Kling.')
   }
 }
 

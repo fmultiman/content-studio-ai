@@ -25,14 +25,15 @@ vi.mock('@/lib/provider-connections/kling-mcp-client', async (importActual) => (
 }))
 
 const restCalls: Array<{ kind: string; args: unknown[] }> = []
+let restFailure: Error | null = null
 const constructedApiKeys: string[] = []
 vi.mock('@/lib/providers/kling/adapter', () => ({
   KlingAdapter: class {
     constructor(apiKey: string) {
       constructedApiKeys.push(apiKey)
     }
-    submitImageToVideo = async (...args: unknown[]) => { restCalls.push({ kind: 'i2v', args }); return { task_id: 'rest-task-1' } }
-    submitTextToVideo = async (...args: unknown[]) => { restCalls.push({ kind: 't2v', args }); return { task_id: 'rest-task-2' } }
+    submitImageToVideo = async (...args: unknown[]) => { restCalls.push({ kind: 'i2v', args }); if (restFailure) throw restFailure; return { task_id: 'rest-task-1' } }
+    submitTextToVideo = async (...args: unknown[]) => { restCalls.push({ kind: 't2v', args }); if (restFailure) throw restFailure; return { task_id: 'rest-task-2' } }
     getTaskStatus = async () => ({ id: 'rest-task-1', status: 'processing', created_at: 1, updated_at: 1 })
   },
 }))
@@ -72,12 +73,13 @@ function makeDb(rows: { connections?: any[]; klingKey?: string | null; generatio
       provider_connections: rows.connections ?? [],
       user_settings: rows.klingKey === undefined || rows.klingKey === null ? [] : [{ user_id: 'user-a', kling_api_key: rows.klingKey }],
       video_generations: rows.generations ?? [],
+      productions: [{ id: 'prod-1', project_id: 'proj-1', user_id: 'user-a' }],
       images: rows.images ?? [{ id: 'img-1', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/1.png', storage_path: 'a/1.png' }],
       library_files: [],
       video_drafts: [],
       channel_piece_media: [],
     },
-    unique: { images: [['id']], library_files: [['id']] },
+    unique: { images: [['id']], library_files: [['id']], productions: [['id']] },
   }) as any
 }
 
@@ -125,6 +127,7 @@ let consoleError: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   vi.clearAllMocks()
   restCalls.length = 0
+  restFailure = null
   constructedApiKeys.length = 0
   process.env.NEXT_PUBLIC_APP_URL = 'https://content.example.test'
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -469,6 +472,93 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
   })
 })
 
+describe('POST /api/video-generations — project/production ownership and generic errors', () => {
+  it.each([
+    ['a production of another user', [{ id: 'prod-1', project_id: 'proj-1', user_id: 'user-b' }]],
+    ['a production that belongs to a DIFFERENT project', [{ id: 'prod-1', project_id: 'proj-OTHER', user_id: 'user-a' }]],
+    ['a production that does not exist', []],
+  ])('rejects %s (403) before any credential, record or provider call', async (_name, productions) => {
+    const db = makeDb({ klingKey: 'user-rest-key', connections: [connectionRow()] })
+    db.tables.productions = productions as any[]
+    signIn(db)
+    const mcp = installFakeMcp()
+
+    for (const body of [{ ...base, mode: 'text_to_video' }, mcpBody()]) {
+      const response = await post(body)
+      expect(response.status).toBe(403)
+      expect((await response.json()).code).toBe('PRODUCTION_NOT_FOUND')
+    }
+    expect(mcp.calls).toEqual([])
+    expect(restCalls).toEqual([])
+    expect(constructedApiKeys).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it('a store failure while validating the production is a 503, not a "not found"', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    const original = db.from
+    vi.mocked(server.createClient).mockResolvedValue({
+      from: (table: string) => {
+        if (table !== 'productions') return original.call(db, table)
+        const chain: any = { select: () => chain, eq: () => chain, maybeSingle: () => Promise.resolve({ data: null, error: { message: 'down' } }) }
+        return chain
+      },
+      auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) },
+    } as any)
+    const response = await post({ ...base, mode: 'text_to_video' })
+    expect(response.status).toBe(503)
+    expect(restCalls).toEqual([])
+  })
+
+  it('an unexpected pre-submission failure is a 500 with a CODE and a generic message (never the raw error text)', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    const original = db.from
+    vi.mocked(server.createClient).mockResolvedValue({
+      from: (table: string) => {
+        const builder = original.call(db, table)
+        if (table === 'video_generations') builder.insert = () => { throw new Error('duplicate key value violates unique constraint "secret_internal_name"') }
+        return builder
+      },
+      auth: { getUser: async () => ({ data: { user: { id: 'user-a' } }, error: null }) },
+    } as any)
+
+    const response = await post({ ...base, mode: 'text_to_video' })
+    const body = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(body.code).toBe('INTERNAL_ERROR')
+    expect(JSON.stringify(body)).not.toMatch(/duplicate key|secret_internal_name/)
+    expect(body.outcomeUnknown).toBeUndefined()
+    expect(restCalls).toEqual([])
+  })
+})
+
+describe('POST /api/video-generations — REST submit outcome classification', () => {
+  it('an HTTP error answered by Kling is definitive (the job was refused)', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    signIn(db)
+    restFailure = new Error('Kling API HTTP error: Bad Request (code: 1201, message: invalid)')
+    const response = await post({ ...base, mode: 'text_to_video' })
+    expect(response.status).toBe(500)
+    expect((await response.json()).code).toBe('PROVIDER_SUBMISSION_FAILED')
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed' })
+  })
+
+  it.each([
+    ['a network failure', new TypeError('fetch failed')],
+    ['a 2xx whose body has no task id', new Error('Kling API structure error: {"data":{}}')],
+  ])('%s may have created a billed job: unknown outcome, flagged, never invites a retry', async (_name, error) => {
+    const db = makeDb({ klingKey: 'user-rest-key' })
+    signIn(db)
+    restFailure = error
+    const response = await post({ ...base, mode: 'text_to_video' })
+    const body = await response.json()
+    expect(response.status).toBe(502)
+    expect(body).toMatchObject({ code: 'SUBMIT_OUTCOME_UNKNOWN', outcomeUnknown: true })
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { outcome_unknown: true } })
+  })
+})
+
 describe('POST /api/video-generations — an ACCEPTED submission is never reported as failed', () => {
   /** A user client whose UPDATE of video_generations fails (RLS/network) after the row was inserted. */
   const breakUpdates = (db: any, options: { alsoServiceRole?: boolean } = {}) => {
@@ -632,6 +722,27 @@ describe('POST /api/video-generations/[id]/sync — transport-aware', () => {
 
     expect(body.generation.public_url).toBe('https://s3.example.test/signed-source.png?sig=1')
     expect(body.generation.public_url).not.toContain('/raw/')
+  })
+
+  it('manual sync NEVER takes the poller lease or rewrites its schedule/attempt counters', async () => {
+    const scheduled = new Date(Date.now() + 90_000).toISOString()
+    const db = makeDb({ connections: [connectionRow()], generations: [mcpGeneration({ next_poll_at: scheduled, poll_attempts: 3 })] })
+    signIn(db)
+    installFakeMcp(() => ({ content: [{ type: 'text', text: JSON.stringify({ status: 'processing' }) }] }))
+
+    const response = await sync()
+
+    expect(response.status).toBe(200)
+    expect(db.tables.video_generations[0]).toMatchObject({ status: 'processing', next_poll_at: scheduled, poll_attempts: 3 })
+  })
+
+  it('every route that downloads/uploads a video (or drives the poller) declares generous headroom', async () => {
+    const syncRoute = await import('@/app/api/video-generations/[id]/sync/route')
+    const callback = await import('@/app/api/kling/callback/route')
+    const poll = await import('@/app/api/internal/video-generations/poll/route')
+    expect(syncRoute.maxDuration).toBeGreaterThanOrEqual(120)
+    expect(callback.maxDuration).toBeGreaterThanOrEqual(120)
+    expect(poll.maxDuration).toBeGreaterThanOrEqual(120)
   })
 
   it('a second sync of the finished generation is a no-op (idempotent)', async () => {

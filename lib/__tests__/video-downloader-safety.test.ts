@@ -28,7 +28,7 @@ describe('provider result download hardening (external input)', () => {
     expect(upload).toHaveBeenCalledTimes(1)
     // Redirects are handled manually and the request is time-bounded.
     expect(fetchFn.mock.calls[0]).toEqual(['https://cdn.example.test/v.mp4', expect.objectContaining({ redirect: 'manual', signal: expect.any(AbortSignal) })])
-    expect(VIDEO_DOWNLOAD_TIMEOUT_MS).toBeLessThanOrEqual(55_000)
+    expect(VIDEO_DOWNLOAD_TIMEOUT_MS).toBeLessThanOrEqual(150_000)
   })
 
   it('follows a redirect only to another SAFE host, re-validating every hop', async () => {

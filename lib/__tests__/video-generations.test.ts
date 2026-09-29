@@ -41,6 +41,15 @@ function mockUserSettingsTable(klingApiKey: string | null) {
   }
 }
 
+/** The caller's own production inside the given project (the route verifies it before doing anything). */
+function mockProductionsTable(owned = true) {
+  return {
+    select: () => ({
+      eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: owned ? { id: 'p2' } : null, error: null }) }) }) }),
+    }),
+  }
+}
+
 describe('Video Generation API Domain & T2V Validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -131,6 +140,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') {
           return mockUserSettingsTable('user1-kling-key')
         }
@@ -212,6 +222,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') {
           return mockUserSettingsTable('user1-kling-key')
         }
@@ -252,6 +263,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') {
           return mockUserSettingsTable(null)
         }
@@ -289,6 +301,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') {
           return mockUserSettingsTable(null)
         }
@@ -326,6 +339,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
       const mockSupabase = {
         auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
         from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
           if (table === 'user_settings') return mockUserSettingsTable(null)
           if (table === 'video_generations') return { insert: insertSpy }
           return {}
@@ -353,6 +367,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') return mockUserSettingsTable(null)
         if (table === 'video_generations') return { insert: insertSpy }
         return {}
@@ -380,6 +395,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user1' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') return mockUserSettingsTable('secret-kling-key-123')
         if (table === 'video_generations') {
           return {
@@ -418,6 +434,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     const mockSupabase = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-b' } } }) },
       from: vi.fn((table) => {
+        if (table === 'productions') return mockProductionsTable()
         if (table === 'user_settings') {
           return {
             select: () => ({
