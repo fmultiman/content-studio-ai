@@ -1,0 +1,264 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  connectionName,
+  DEFAULT_USAGE_FILTERS,
+  filterUsageEvents,
+  formatUsageQuantity,
+  measurementSourceHelp,
+  measurementSourceLabel,
+  operationLabel,
+  providerLabel,
+  summarizeUsage,
+  transportLabel,
+  type UsageFilters,
+  type UsageHistoryResponse,
+  type UsagePeriod,
+} from '@/lib/usage/provider-usage'
+
+// AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1 — "Uso e custos" (Settings), read-only.
+//
+// Shows what each AI provider execution used, in the provider's OWN unit and with
+// how the number was obtained. It is usage observability, not billing: nothing
+// here is a price, and quantities in different units are never added together.
+
+type LoadState = 'loading' | 'ready' | 'failed'
+
+const PERIOD_LABEL: Record<UsagePeriod, string> = {
+  all: 'Todo o período',
+  '7d': 'Últimos 7 dias',
+  '30d': 'Últimos 30 dias',
+  '90d': 'Últimos 90 dias',
+}
+
+const dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+
+export function UsageHistory() {
+  const [state, setState] = useState<LoadState>('loading')
+  const [data, setData] = useState<UsageHistoryResponse | null>(null)
+  const [filters, setFilters] = useState<UsageFilters>(DEFAULT_USAGE_FILTERS)
+
+  const request = useCallback(async (): Promise<UsageHistoryResponse> => {
+    const response = await fetch('/api/settings/usage')
+    if (!response.ok) throw new Error(`status ${response.status}`)
+    return (await response.json()) as UsageHistoryResponse
+  }, [])
+
+  // Initial load (state already starts as 'loading').
+  useEffect(() => {
+    let cancelled = false
+    request()
+      .then((body) => {
+        if (cancelled) return
+        setData(body)
+        setState('ready')
+      })
+      .catch(() => {
+        // A failed load is NOT "no usage".
+        if (!cancelled) setState('failed')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [request])
+
+  const retry = () => {
+    setState('loading')
+    request()
+      .then((body) => {
+        setData(body)
+        setState('ready')
+      })
+      .catch(() => setState('failed'))
+  }
+
+  const events = useMemo(() => data?.events ?? [], [data])
+  const visible = useMemo(() => filterUsageEvents(events, filters), [events, filters])
+  const summary = useMemo(() => summarizeUsage(visible), [visible])
+
+  const providers = useMemo(() => [...new Set(events.map((event) => event.provider))].sort(), [events])
+  const transports = useMemo(() => [...new Set(events.map((event) => event.transport))].sort(), [events])
+  const projectOptions = useMemo(() => {
+    const ids = [...new Set(events.map((event) => event.project_id).filter((id): id is string => !!id))]
+    return ids.map((id) => ({ id, name: data?.projects[id] ?? 'Projeto removido ou indisponível' }))
+  }, [events, data])
+
+  const update = (patch: Partial<UsageFilters>) => setFilters((previous) => ({ ...previous, ...patch }))
+
+  return (
+    <section className="space-y-4" aria-labelledby="usage-history-title" data-testid="usage-history">
+      <div>
+        <h2 id="usage-history-title" className="text-lg font-semibold">Uso e custos</h2>
+        <p className="text-sm text-muted-foreground" data-testid="usage-disclaimer">
+          O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades…). São quantidades de uso —
+          não são valores em reais e não são convertidas entre si. O histórico começa quando este registro foi ativado.
+        </p>
+      </div>
+
+      {state === 'loading' && (
+        <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground" data-testid="usage-loading">
+          <Loader2 className="h-4 w-4 animate-spin" /> Carregando histórico de uso…
+        </div>
+      )}
+
+      {state === 'failed' && (
+        <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 p-4" role="alert" data-testid="usage-failed">
+          <p className="text-sm font-medium">Não foi possível carregar o histórico de uso.</p>
+          <p className="text-xs text-muted-foreground">Isso é uma falha temporária de carregamento — não significa que não houve uso.</p>
+          <Button size="sm" variant="outline" onClick={retry}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
+      {state === 'ready' && events.length === 0 && (
+        <div className="rounded-md border border-border/50 bg-card/30 p-6 text-sm" data-testid="usage-empty">
+          <p className="font-medium">Nenhum uso registrado ainda.</p>
+          <p className="mt-1 text-muted-foreground">
+            Cada vídeo gerado com IA passa a aparecer aqui quando fica pronto. Gerações feitas antes deste registro existir não são listadas.
+          </p>
+        </div>
+      )}
+
+      {state === 'ready' && events.length > 0 && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="usage-filters">
+            <div className="space-y-1.5">
+              <Label htmlFor="usage-filter-period">Período</Label>
+              <Select value={filters.period} onValueChange={(value) => update({ period: value as UsagePeriod })}>
+                <SelectTrigger id="usage-filter-period" data-testid="usage-filter-period">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PERIOD_LABEL) as UsagePeriod[]).map((period) => (
+                    <SelectItem key={period} value={period}>{PERIOD_LABEL[period]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="usage-filter-provider">Provedor</Label>
+              <Select value={filters.provider} onValueChange={(value) => update({ provider: value })}>
+                <SelectTrigger id="usage-filter-provider" data-testid="usage-filter-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os provedores</SelectItem>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider} value={provider}>{providerLabel(provider)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="usage-filter-transport">Conexão</Label>
+              <Select value={filters.transport} onValueChange={(value) => update({ transport: value })}>
+                <SelectTrigger id="usage-filter-transport" data-testid="usage-filter-transport">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">API e MCP</SelectItem>
+                  {transports.map((transport) => (
+                    <SelectItem key={transport} value={transport}>{transportLabel(transport)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="usage-filter-project">Projeto</Label>
+              <Select value={filters.projectId} onValueChange={(value) => update({ projectId: value })}>
+                <SelectTrigger id="usage-filter-project" data-testid="usage-filter-project">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os projetos</SelectItem>
+                  {projectOptions.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-md border border-border/50 bg-card/30 p-4" data-testid="usage-summary">
+            <p className="text-sm font-medium">Resumo por unidade</p>
+            {summary.groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="usage-summary-none">
+                Nenhum consumo medido nos registros exibidos.
+              </p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {summary.groups.map((group) => (
+                  <li key={`${group.provider}|${group.transport}|${group.unit}|${group.measurementSource}`} data-testid="usage-summary-group">
+                    <span className="font-medium">{providerLabel(group.provider)} · {transportLabel(group.transport)}:</span>{' '}
+                    {formatUsageQuantity({ quantity: group.quantity, unit: group.unit })}{' '}
+                    <span className="text-xs text-muted-foreground">
+                      ({measurementSourceLabel(group.measurementSource)}; {group.events} {group.events === 1 ? 'execução' : 'execuções'})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {summary.unknownEvents > 0 && (
+              <p className="text-xs text-muted-foreground" data-testid="usage-summary-unknown">
+                {summary.unknownEvents} {summary.unknownEvents === 1 ? 'execução' : 'execuções'} sem consumo informado pelo provedor — não entram em nenhum total.
+              </p>
+            )}
+          </div>
+
+          {visible.length === 0 ? (
+            <div className="rounded-md border border-border/50 bg-card/30 p-4 text-sm text-muted-foreground" data-testid="usage-no-match">
+              Nenhum registro corresponde aos filtros.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/50 rounded-md border border-border/50 bg-card/30" data-testid="usage-list">
+              {visible.map((event) => {
+                const connection = connectionName(event, data?.connections ?? {})
+                const project = event.project_id ? (data?.projects[event.project_id] ?? null) : null
+                return (
+                  <li key={event.id} className="grid gap-1 p-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start" data-testid="usage-row" data-transport={event.transport}>
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                        <span data-testid="usage-provider">{providerLabel(event.provider)}</span>
+                        <span className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide" data-testid="usage-transport">
+                          {transportLabel(event.transport)}
+                        </span>
+                        {connection && <span className="font-normal text-muted-foreground" data-testid="usage-connection">{connection}</span>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {event.model && <span data-testid="usage-model">{event.model}</span>}
+                        {event.model ? ' · ' : ''}
+                        <span data-testid="usage-operation">{operationLabel(event.operation)}</span>
+                        {project ? ` · ${project}` : ''}
+                      </p>
+                      <p className="text-xs text-muted-foreground" data-testid="usage-date">{dateFormat.format(new Date(event.occurred_at))}</p>
+                    </div>
+                    <div className="sm:text-right">
+                      <p className="font-medium" data-testid="usage-quantity" data-known={event.quantity !== null ? 'true' : 'false'}>
+                        {formatUsageQuantity(event)}
+                      </p>
+                      <p className="text-xs text-muted-foreground" data-testid="usage-source" title={measurementSourceHelp(event.measurement_source)}>
+                        {event.quantity === null ? measurementSourceLabel('unknown') : `Medição: ${measurementSourceLabel(event.measurement_source).toLowerCase()}`}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {data?.hasMore && (
+            <p className="text-xs text-muted-foreground" data-testid="usage-has-more">
+              Mostrando os 200 registros mais recentes.
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}

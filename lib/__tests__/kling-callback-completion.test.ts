@@ -157,7 +157,17 @@ describe('Kling REST callback → shared completion', () => {
     await send(succeeded())
     for (const table of ['video_drafts', 'library_files', 'channel_piece_media']) expect(db.tables[table]).toEqual([])
     const written = new Set(db.log.filter((entry: string) => /^(insert|upsert|update|delete):/.test(entry)).map((entry: string) => entry.split(':')[1]))
-    expect(written).toEqual(new Set(['video_generations']))
+    // The only other write is the usage-ledger event (AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1).
+    expect(written).toEqual(new Set(['video_generations', 'provider_usage_events']))
+  })
+
+  it('duplicate callbacks for one generation leave exactly ONE usage event, with unknown usage (the webhook reports no cost)', async () => {
+    seed({ user_id: 'user-a', project_id: 'proj-1' })
+    await send(succeeded())
+    await send(succeeded())
+    const ledger = db.tables.provider_usage_events ?? []
+    expect(ledger).toHaveLength(1)
+    expect(ledger[0]).toMatchObject({ transport: 'rest', quantity: null, unit: null, measurement_source: 'unknown', resource_id: 'gen-1' })
   })
 
   it('a storage failure surfaces as 500 so Kling retries the callback; the row stays non-terminal', async () => {

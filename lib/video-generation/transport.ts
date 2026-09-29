@@ -12,6 +12,7 @@
 // from a client-supplied value.
 
 import { KlingAdapter, type KlingSettings } from '@/lib/providers/kling/adapter'
+import type { UsageMeasurement } from '@/lib/usage/provider-usage'
 import {
   buildKlingMcpVideoCall,
   KlingMcpSubmitError,
@@ -49,7 +50,17 @@ export type VideoTaskStatus =
       /** A result URL seen alongside a state we do not recognise (accepted only after repeated observation). */
       unconfirmedResultUrl?: string | null
     }
-  | { state: 'succeeded'; resultUrl: string | null; rawState: string | null }
+  | {
+      state: 'succeeded'
+      resultUrl: string | null
+      rawState: string | null
+      /**
+       * Provider-native usage for THIS task — set ONLY when the provider's own response states it.
+       * Neither current Kling transport does (REST task items and MCP query_tasks carry no cost),
+       * so today the usage ledger records these executions with unknown usage.
+       */
+      usage?: UsageMeasurement | null
+    }
   | { state: 'failed'; message: string; code: string; rawState: string | null }
 
 export interface KlingVideoTransport {

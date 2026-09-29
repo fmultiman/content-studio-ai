@@ -16,9 +16,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { StateMessage } from '@/components/ui/state-message'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
-import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
+import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain, Gauge } from 'lucide-react'
 import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
 import { KlingMcpConnectionCard } from '@/components/settings/kling-mcp-connection-card'
+import { UsageHistory } from '@/components/settings/usage-history'
 import { ChangePasswordForm } from '@/components/settings/change-password-form'
 import { Separator } from '@/components/ui/separator'
 import type { PublicProviderConnection } from '@/lib/provider-connections/types'
@@ -468,6 +469,10 @@ export default function SettingsPage() {
               <TabsTrigger value="api" className="gap-2">
                 <Key className="h-4 w-4" />
                 <span>API</span>
+              </TabsTrigger>
+              <TabsTrigger value="usage" className="gap-2" data-testid="settings-tab-usage">
+                <Gauge className="h-4 w-4" />
+                <span>Uso e custos</span>
               </TabsTrigger>
               </TabsList>
             </div>
@@ -971,6 +976,11 @@ export default function SettingsPage() {
                   />
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Usage Tab — AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1 (read-only) */}
+            <TabsContent value="usage">
+              <UsageHistory />
             </TabsContent>
           </Tabs>
       </DashboardPageContent>
