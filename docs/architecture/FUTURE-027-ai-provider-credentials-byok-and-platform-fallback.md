@@ -15,8 +15,8 @@ execution. Detail lives in
 | **BYOK** (`user_byok`) | **IMPLEMENTED — ACTIVE — DEFAULT** |
 | **Content Studio Credits** (`content_studio_credits`) | **EXECUTION / CREDENTIAL BOUNDARY PREPARED — NOT USER-ENABLED — BILLING SYSTEM NOT IMPLEMENTED** |
 | Silent user → platform fallback | **Does not exist** (OpenAI's legacy fallback was removed) |
-| Application-level encryption at rest | **FUTURE HARDENING** |
-| MCP | **SEPARATE FUTURE TASK** — discovery complete, **not implemented**: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md) |
+| Application-level encryption at rest | **FUTURE HARDENING for user API keys.** Already implemented for OAuth connection secrets (AES-256-GCM) |
+| MCP | **Partially advanced, generation NOT implemented.** Discovery: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md). Read-only OAuth connection spike: [KLING_MCP_OAUTH_CONNECTION_SPIKE_V1](KLING_MCP_OAUTH_CONNECTION_SPIKE_V1.md). Next slice: `KLING_MCP_VIDEO_TRANSPORT_AND_POLLING_V1` (not started) |
 
 ## Implemented (BYOK) — CLOSED
 
@@ -77,7 +77,7 @@ Studio Credits" selector.
 - Execution provenance persistence (`execution_mode`, credential-source
   category on the execution record) — add in the same change that enables
   `content_studio_credits`; historical rows are unambiguously `user_byok`
-- Application-level encryption at rest for provider keys
+- Application-level encryption at rest for user provider **API keys** (OAuth connection secrets already have it)
 - MCP and other non-REST transports / connection methods (OAuth, MCP,
   Browser Bridge where justified) — separate future task
 - Settings evolution from per-provider cards to "AI Connections + Add

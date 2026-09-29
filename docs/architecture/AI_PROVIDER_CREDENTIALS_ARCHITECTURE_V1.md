@@ -10,8 +10,9 @@
 | `content_studio_credits` (Content Studio's provider account pays) | **Credential/execution boundary prepared — NOT user-enabled — fails closed** |
 | Billing / wallet / ledger / plans / pricing | **Not implemented** (deliberately) |
 | Silent user → platform credential fallback | **Does not exist, for any provider** |
-| Application-level encryption at rest | **Not implemented** (future hardening) |
-| MCP / OAuth / Browser Bridge connections | **Not implemented** (separate future work). Kling MCP discovery: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md) — MCP uses per-user OAuth and bills the user's Kling web credits, so it needs a connection/secret store before implementation |
+| Application-level encryption at rest | **Implemented for OAuth connection secrets only** (AES-256-GCM). **Not implemented for user API keys** in `user_settings` (future hardening) |
+| Kling MCP OAuth connection (read-only) | **Implemented as a spike** — [KLING_MCP_OAUTH_CONNECTION_SPIKE_V1](KLING_MCP_OAUTH_CONNECTION_SPIKE_V1.md); MCP *generation* is not implemented |
+| Browser Bridge / other OAuth providers | **Not implemented** (separate future work). Discovery: [KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1](KLING_MCP_CONNECTION_AND_TRANSPORT_DISCOVERY_V1.md) |
 
 ## Product decision
 
@@ -292,10 +293,36 @@ sharing.
 
 Provider keys remain plaintext `TEXT` columns on `user_settings`, protected by
 Supabase/Postgres infrastructure encryption, RLS, and server-only resolution.
-**Application-level encryption at rest is not implemented** and is not claimed.
+**Application-level encryption at rest is not implemented for these API keys** and is not claimed. (It *is* used for the separate OAuth connection secrets — see "Secret authorities" above.)
 It remains a legitimate future hardening step (new master-key secret, rotation,
 and migration of real credentials need their own design); it was not
 introduced here because no new critical vulnerability was found.
+
+## Secret authorities (four, deliberately separate)
+
+Adding a user OAuth connection means there are now **four** distinct places a secret can live. They
+are never merged into one generic settings object.
+
+| Authority | Example | Where | Who can read it |
+|---|---|---|---|
+| Infrastructure secret | `KLING_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` | server environment | server code only |
+| Platform execution credential | `OPENAI_API_KEY`, `KLING_API_KEY` | environment, read only in `platform-credentials.ts`, reachable only through the gated `content_studio_credits` mode | nobody today (mode is disabled) |
+| **User API-key credential** | `user_settings.openai_api_key`, `kling_api_key`, ... | plaintext columns, RLS, resolved by `resolveProviderExecution` | server resolver only; never selected by the browser |
+| **User OAuth connection** | Kling MCP account grant | `provider_connections` (safe metadata, owner-readable) + `provider_connection_secrets` (AES-256-GCM ciphertext, **no client access at all**) | server token store only |
+
+An OAuth grant is a stronger, longer-lived credential than an API key (a refresh token continues
+to work until revoked), so it does **not** reuse the API-key storage: it lives in its own tables,
+encrypted with a server-only key (`PROVIDER_CONNECTION_ENCRYPTION_KEY`), and the browser role has no
+privileges on the secret tables. The user API-key model above is unchanged, including its documented
+plaintext-at-rest limitation.
+
+**Execution mode stays independent of connection method.** A Kling REST API key and a Kling MCP
+OAuth connection are both "the user's own external account pays", so both are `user_byok` execution;
+what differs is the *connection method* (`api_key` vs `mcp_oauth`) and the *transport* (REST vs MCP).
+The word "BYOK" is now semantically narrow for OAuth (there is no key); a broader name such as
+`user_connection` is recorded as a future decision, to be made with the Browser Bridge research and
+not renamed casually. OAuth connections are **not** resolved by `resolveProviderExecution` yet: no
+generation path consumes them (see [KLING_MCP_OAUTH_CONNECTION_SPIKE_V1](KLING_MCP_OAUTH_CONNECTION_SPIKE_V1.md)).
 
 ## Settings UX
 
@@ -418,4 +445,4 @@ MCP, Kling MCP, Browser Bridge, OAuth connections, credit wallet/balance,
 ledger, reservations, settlement, refunds, quotas, subscriptions/plans, Stripe/
 checkout/top-ups, pricing engine, provider/model cost mapping, platform-paid
 fallback, a second video provider, LibraryFile promotion, video evaluator,
-Creative Editor changes, application-level encryption at rest.
+Creative Editor changes, application-level encryption of user API keys.

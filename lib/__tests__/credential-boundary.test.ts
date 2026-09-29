@@ -37,6 +37,15 @@ const filesContaining = (needle: string | RegExp) =>
     .map((file) => file.path)
     .sort()
 
+/** Source with comments removed, so guards reason about executable code only. */
+const codeOnly = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+const codeFilesContaining = (needle: string | RegExp) =>
+  sourceFiles
+    .filter((file) => (typeof needle === 'string' ? codeOnly(file.text).includes(needle) : needle.test(codeOnly(file.text))))
+    .map((file) => file.path)
+    .sort()
+
 const isClientFile = (text: string) => /^\s*['"]use client['"]/m.test(text)
 
 describe('platform credential boundary', () => {
@@ -63,7 +72,8 @@ describe('platform credential boundary', () => {
 
 describe('KLING_WEBHOOK_SECRET isolation', () => {
   it('is referenced only by the Kling webhook verification route', () => {
-    expect(filesContaining('KLING_WEBHOOK_SECRET')).toEqual(['app/api/kling/callback/route.ts'])
+    // Code references only: explanatory comments elsewhere may name it to document the separation.
+    expect(codeFilesContaining('KLING_WEBHOOK_SECRET')).toEqual(['app/api/kling/callback/route.ts'])
   })
 
   it('is never part of provider credential resolution or Settings', () => {
@@ -87,7 +97,9 @@ describe('no provider secret reaches client code', () => {
   it('secret columns are referenced only by server-side credential code, API routes and types', () => {
     const allowed = (path: string) =>
       path.startsWith('app/api/') || path.startsWith('lib/credentials/') || path === 'lib/types.ts'
-    const offenders = sourceFiles.filter((file) => SECRET_COLUMNS.test(file.text) && !allowed(file.path)).map((file) => file.path)
+    const offenders = sourceFiles
+      .filter((file) => SECRET_COLUMNS.test(codeOnly(file.text)) && !allowed(file.path))
+      .map((file) => file.path)
     expect(offenders).toEqual([])
   })
 
@@ -100,7 +112,7 @@ describe('no provider secret reaches client code', () => {
   })
 
   it('no client file calls a provider API directly (no browser → api.openai.com / Kling / NanoBanana)', () => {
-    const providerHosts = /api\.openai\.com|klingai\.com|nanobananaapi\.ai/
+    const providerHosts = /api\.openai\.com|klingai\.com|nanobananaapi\.ai|kling\.ai\/(mcp|auth)/
     // A URL shown only as an <Input placeholder="..."> hint is not a call.
     const withoutPlaceholders = (text: string) => text.replace(/placeholder=("[^"]*"|\{[^}]*\})/gi, '')
     const offenders = sourceFiles
@@ -166,5 +178,75 @@ describe('user_byok is the only execution mode wired into routes', () => {
         'app/api/videos/generate-scene-prompt/route.ts',
       ].sort(),
     )
+  })
+})
+
+describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SPIKE_V1', () => {
+  it('the connection-secret encryption key is read only inside crypto.ts', () => {
+    expect(codeFilesContaining('PROVIDER_CONNECTION_ENCRYPTION_KEY')).toEqual(['lib/provider-connections/crypto.ts'])
+  })
+
+  it('each server-only table is touched by exactly one module', () => {
+    expect(codeFilesContaining('provider_connection_secrets')).toEqual(['lib/provider-connections/token-store.ts'])
+    expect(codeFilesContaining('provider_oauth_authorizations')).toEqual(['lib/provider-connections/oauth-state.ts'])
+    expect(codeFilesContaining('provider_oauth_clients')).toEqual(['lib/provider-connections/oauth-client-registry.ts'])
+  })
+
+  it('the MCP SDK and transport are used only inside lib/provider-connections/', () => {
+    for (const path of filesContaining('@modelcontextprotocol/client')) {
+      expect(path.startsWith('lib/provider-connections/')).toBe(true)
+    }
+    expect(filesContaining('StreamableHTTPClientTransport')).toEqual(['lib/provider-connections/kling-mcp-client.ts'])
+  })
+
+  it('a tool is invoked from exactly one place (the read-only gate)', () => {
+    expect(codeFilesContaining(/\.callTool\(/)).toEqual(['lib/provider-connections/kling-mcp-client.ts'])
+  })
+
+  it('the service-role client is created only by the factory and the provider-connections routes', () => {
+    for (const path of filesContaining('createServiceRoleSupabase')) {
+      expect(path === 'lib/supabase/service-role.ts' || path.startsWith('app/api/provider-connections/')).toBe(true)
+    }
+  })
+
+  it('client components import nothing from provider-connections except TYPES', () => {
+    const offenders: string[] = []
+    for (const file of sourceFiles.filter((f) => isClientFile(f.text))) {
+      const imports = file.text.match(/import[^;\n]*from\s+['"]@\/lib\/provider-connections\/[^'"]+['"]/g) ?? []
+      for (const statement of imports) {
+        if (!/^import\s+type\s/.test(statement) || !statement.includes('/types')) offenders.push(`${file.path}: ${statement}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('client code never mentions token material', () => {
+    const offenders = sourceFiles
+      .filter((file) => isClientFile(file.text))
+      .filter((file) => /access_token|refresh_token|code_verifier|ciphertext|client_secret/.test(file.text))
+      .map((file) => file.path)
+    expect(offenders).toEqual([])
+  })
+
+  it('never requests the generation.create scope (read-only connection)', () => {
+    expect(codeFilesContaining(/['"]generation\.create['"]/)).toEqual([])
+  })
+
+  it('the existing REST video pipeline does not depend on provider connections (REST unchanged)', () => {
+    const restFiles = sourceFiles.filter(
+      (file) =>
+        file.path.startsWith('app/api/video-generations/') ||
+        file.path.startsWith('app/api/kling/') ||
+        file.path.startsWith('lib/providers/kling/') ||
+        file.path.startsWith('components/videos/'),
+    )
+    expect(restFiles.length).toBeGreaterThan(0)
+    for (const file of restFiles) expect(file.text).not.toContain('provider-connections')
+  })
+
+  it('no API route response includes token fields', () => {
+    const routes = sourceFiles.filter((file) => file.path.startsWith('app/api/provider-connections/'))
+    expect(routes.length).toBeGreaterThan(0)
+    for (const route of routes) expect(route.text).not.toMatch(/NextResponse\.json\([^)]*(access_token|refresh_token|ciphertext)/)
   })
 })

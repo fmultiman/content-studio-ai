@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
 import {
@@ -18,6 +18,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain } from 'lucide-react'
 import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
+import { KlingMcpConnectionCard } from '@/components/settings/kling-mcp-connection-card'
+import type { PublicProviderConnection } from '@/lib/provider-connections/types'
 import { Slider } from '@/components/ui/slider'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
@@ -68,6 +70,10 @@ export default function SettingsPage() {
     replicate: 'loading',
   })
   const [nanobananaBaseUrl, setNanobananaBaseUrl] = useState<string | null>(null)
+  const [klingMcpConnection, setKlingMcpConnection] = useState<PublicProviderConnection | null | undefined>(undefined)
+  const [connectionsAvailable, setConnectionsAvailable] = useState(true)
+  const [connectionsLoadFailed, setConnectionsLoadFailed] = useState(false)
+  const [liveKlingCredits, setLiveKlingCredits] = useState<number | null>(null)
   const isThemeReady = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -97,6 +103,101 @@ export default function SettingsPage() {
   const activeStudioIntensity = isStudioIntensityReady
     ? normalizeStudioIntensity(studioIntensity, DEFAULT_STUDIO_INTENSITY)
     : null
+
+  const announceKlingMcpResult = useCallback((result: string) => {
+    const messages: Record<string, { title: string; description: string; variant?: 'destructive' }> = {
+      connected: { title: 'Conta Kling conectada', description: 'Autorização somente leitura concluída. Verificando a conexão...' },
+      provider_denied: { title: 'Autorização cancelada', description: 'Você não autorizou o acesso à conta Kling.', variant: 'destructive' },
+      provider_error: { title: 'A Kling recusou a autorização', description: 'Tente conectar novamente.', variant: 'destructive' },
+      missing_parameters: { title: 'Retorno da Kling incompleto', description: 'Inicie a conexão novamente.', variant: 'destructive' },
+      invalid_state: { title: 'Autorização inválida ou já usada', description: 'Inicie a conexão novamente.', variant: 'destructive' },
+      expired_state: { title: 'Autorização expirada', description: 'Inicie a conexão novamente.', variant: 'destructive' },
+      state_mismatch: { title: 'Autorização de outra sessão', description: 'Inicie a conexão novamente com esta conta.', variant: 'destructive' },
+      exchange_failed: { title: 'Não foi possível concluir a conexão', description: 'Tente novamente em instantes.', variant: 'destructive' },
+      encryption_unavailable: { title: 'Conexões indisponíveis neste ambiente', description: 'O armazenamento seguro de credenciais não está configurado.', variant: 'destructive' },
+    }
+    toast(messages[result] ?? messages.exchange_failed)
+  }, [toast])
+
+  const handleConnectKlingMcp = async () => {
+    try {
+      const response = await fetch('/api/provider-connections/kling/mcp/connect', { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || typeof payload?.authorizationUrl !== 'string') {
+        toast({
+          title: 'Não foi possível iniciar a conexão',
+          description:
+            payload?.code === 'CONNECTION_ENCRYPTION_NOT_CONFIGURED'
+              ? 'As conexões de conta ainda não estão habilitadas neste ambiente.'
+              : 'A Kling não respondeu agora. Tente novamente.',
+          variant: 'destructive',
+        })
+        return
+      }
+      // Full-page redirect to Kling's own consent screen; tokens never pass through the browser.
+      window.location.assign(payload.authorizationUrl)
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível iniciar a conexão. Verifique sua conexão e tente novamente.', variant: 'destructive' })
+    }
+  }
+
+  const handleCheckKlingMcpConnection = useCallback(async (id: string) => {
+    let response: Response
+    try {
+      response = await fetch(`/api/provider-connections/${id}/check`, { method: 'POST' })
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível verificar a conexão agora.', variant: 'destructive' })
+      return
+    }
+    const payload = await response.json().catch(() => ({}))
+    if (response.ok) {
+      setKlingMcpConnection(payload.connection as PublicProviderConnection)
+      setLiveKlingCredits(typeof payload?.credits?.available === 'number' ? payload.credits.available : null)
+      toast({ title: 'Conexão verificada', description: 'A conta Kling respondeu com sucesso (somente leitura).' })
+      return
+    }
+    if (payload?.connectionStatus) {
+      setKlingMcpConnection((current) =>
+        current ? { ...current, status: payload.connectionStatus, lastErrorCode: payload.code ?? null } : current,
+      )
+    }
+    toast({
+      title: payload?.code === 'PROVIDER_AUTHORIZATION_REQUIRED' ? 'Reautorização necessária' : 'Não foi possível verificar a conexão',
+      description:
+        payload?.code === 'PROVIDER_AUTHORIZATION_REQUIRED'
+          ? 'A autorização com a Kling não é mais válida. Reconecte a conta.'
+          : payload?.code === 'PROVIDER_SCOPE_INSUFFICIENT'
+            ? 'A autorização concedida não cobre esta consulta.'
+            : 'Tente novamente em instantes.',
+      variant: 'destructive',
+    })
+  }, [toast])
+
+  const handleDisconnectKlingMcp = async () => {
+    if (!klingMcpConnection) return
+    let response: Response
+    try {
+      response = await fetch(`/api/provider-connections/${klingMcpConnection.id}`, { method: 'DELETE' })
+    } catch {
+      toast({ title: 'Falha de rede', description: 'Não foi possível desconectar agora. Tente novamente.', variant: 'destructive' })
+      return
+    }
+    if (!response.ok) {
+      toast({ title: 'Não foi possível desconectar', description: 'As credenciais ainda estão guardadas. Tente novamente.', variant: 'destructive' })
+      return
+    }
+    const payload = await response.json().catch(() => ({}))
+    setKlingMcpConnection(null)
+    setLiveKlingCredits(null)
+    if (payload?.revocation === 'succeeded') {
+      toast({ title: 'Conta Kling desconectada', description: 'A autorização foi revogada na Kling e as credenciais foram apagadas. Sua chave de API de Kling e seus vídeos não foram afetados.' })
+    } else {
+      toast({
+        title: 'Conta Kling desconectada',
+        description: 'Apagamos as credenciais guardadas, mas não conseguimos confirmar a revogação na Kling. Se quiser, remova o acesso do Content Studio nas configurações da sua conta Kling.'
+      })
+    }
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -143,6 +244,40 @@ export default function SettingsPage() {
           } catch (providerStatusError) {
             console.error('Erro ao carregar status dos providers:', providerStatusError)
           }
+
+          // Kling account (MCP / OAuth) connection: safe metadata only.
+          let loadedConnection: PublicProviderConnection | null = null
+          try {
+            const connectionsResponse = await fetch('/api/provider-connections')
+            if (connectionsResponse.ok) {
+              const connectionsPayload = await connectionsResponse.json()
+              loadedConnection =
+                (connectionsPayload?.connections as PublicProviderConnection[] | undefined)?.find(
+                  (connection) => connection.provider === 'kling' && connection.connectionMethod === 'mcp_oauth',
+                ) ?? null
+              setKlingMcpConnection(loadedConnection)
+              setConnectionsAvailable(connectionsPayload?.connectionsAvailable !== false)
+              setConnectionsLoadFailed(false)
+            } else {
+              setConnectionsLoadFailed(true)
+            }
+          } catch (connectionsError) {
+            console.error('Erro ao carregar conexões:', connectionsError)
+            setConnectionsLoadFailed(true)
+          }
+
+          // Result of the OAuth redirect: show it, open the API tab, then remove
+          // the query string so nothing lingers in the URL or history.
+          const redirectParams = new URLSearchParams(window.location.search)
+          if (redirectParams.get('connection') === 'kling_mcp') {
+            const result = redirectParams.get('result') ?? ''
+            window.history.replaceState(null, '', window.location.pathname)
+            setActiveTab('api')
+            announceKlingMcpResult(result)
+            if (result === 'connected' && loadedConnection) {
+              void handleCheckKlingMcpConnection(loadedConnection.id)
+            }
+          }
         }
       } catch {
         setLoadError('Não foi possível carregar as configurações agora.')
@@ -151,7 +286,7 @@ export default function SettingsPage() {
       }
     }
     fetchData()
-  }, [])
+  }, [announceKlingMcpResult, handleCheckKlingMcpConnection])
 
   const handleSaveProviderCredential = async (provider: string, apiKey: string, baseUrl?: string) => {
     const response = await fetch(`/api/settings/providers/${provider}`, {
@@ -785,13 +920,26 @@ export default function SettingsPage() {
 
                   <AiProviderCredentialCard
                     providerId="kling"
-                    title="Kling"
-                    description="Geração de vídeo por IA (texto→vídeo e imagem→vídeo) em /videos."
+                    title="Kling API (chave de API)"
+                    description="Geração de vídeo por IA (texto→vídeo e imagem→vídeo) em /videos, usando a API da Kling."
                     status={providerStatuses.kling}
                     placeholder="Chave de API do Kling..."
                     helpText="Sem uma chave configurada, a geração de vídeo IA fica indisponível em /videos."
                     onSave={(apiKey) => handleSaveProviderCredential('kling', apiKey)}
                     onRemove={() => handleRemoveProviderCredential('kling')}
+                  />
+
+                  <KlingMcpConnectionCard
+                    connection={klingMcpConnection}
+                    loadFailed={connectionsLoadFailed}
+                    onRetryLoad={() => window.location.reload()}
+                    connectionsAvailable={connectionsAvailable}
+                    liveCredits={liveKlingCredits}
+                    onConnect={handleConnectKlingMcp}
+                    onCheck={async () => {
+                      if (klingMcpConnection) await handleCheckKlingMcpConnection(klingMcpConnection.id)
+                    }}
+                    onDisconnect={handleDisconnectKlingMcp}
                   />
 
                   <AiProviderCredentialCard
