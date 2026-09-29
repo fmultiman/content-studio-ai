@@ -17,6 +17,8 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
+import type { VideoConnectionsResponse } from '@/lib/video-generation/capabilities'
 import {
   isInFlightGeneration,
   selectRecoverySyncs,
@@ -58,6 +60,7 @@ import {
 import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-routes'
 import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
 import { CreateVideoGenerationDialog } from '@/components/videos/create-video-generation-dialog'
+import { GenerationProvenance } from '@/components/videos/generation-provenance'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
 
 function VideosPageContent() {
@@ -90,6 +93,25 @@ function VideosPageContent() {
   
   const [showAiModal, setShowAiModal] = useState(false)
   const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
+
+  // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — names of the account connections, only so
+  // history can say WHICH connection an MCP generation used. Best effort: if it cannot be loaded (or the
+  // connection is gone) the card shows the transport alone and never invents a name.
+  const [connectionNames, setConnectionNames] = useState<ReadonlyMap<string, string>>(new Map())
+  const hasMcpConnectionRows = generations.some((item: any) => item.transport === 'mcp' && item.connection_id)
+  useEffect(() => {
+    if (!hasMcpConnectionRows) return
+    let cancelled = false
+    fetch('/api/video-generations/connections')
+      .then((response) => (response.ok ? (response.json() as Promise<VideoConnectionsResponse>) : null))
+      .then((payload) => {
+        if (!cancelled && payload) setConnectionNames(connectionNamesById(payload.connections))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [hasMcpConnectionRows])
 
   // VIDEO_GENERATION_POLLING_LATENCY_V1 — status refresh and provider polling are SEPARATE.
   // The background scheduler completes MCP generations (there is no callback); while any
@@ -582,6 +604,9 @@ function VideosPageContent() {
                                 </CardTitle>
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                              {item.kind === 'generation' && (
+                                <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
+                              )}
                             </div>
                             <ContextMetadata
                               dense
@@ -614,6 +639,9 @@ function VideosPageContent() {
                                 {item.title}
                               </CardTitle>
                               <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                              {item.kind === 'generation' && (
+                                <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
+                              )}
                             </div>
                           </div>
                           <ContextMetadata
