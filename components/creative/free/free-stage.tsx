@@ -33,7 +33,7 @@ function boxStyle(element: FreeStageElement, width: number, height: number, zInd
   return { position: 'absolute', left: x * width, top: y * height, width: w * width, height: h * height, overflow: 'hidden', zIndex }
 }
 
-export function FreeStage({ elements, width, height, tokens, imageUrl, ImageComponent, inactive, dataAttributes }: {
+export function FreeStage({ elements, width, height, tokens, imageUrl, ImageComponent, inactive, dataAttributes, overlay }: {
   elements: readonly FreeStageElement[]
   width: number
   height: number
@@ -45,12 +45,14 @@ export function FreeStage({ elements, width, height, tokens, imageUrl, ImageComp
   /** Elements not drawn at this instant (Video element timing); their paint slot is kept. */
   inactive?: ReadonlySet<string>
   dataAttributes?: Record<string, string>
+  /** STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1: draw as a transparent plane above a Template base instead of an opaque Free canvas. */
+  overlay?: boolean
 }) {
   const { colors, typography } = tokens
   const shortSide = Math.min(width, height)
   return (
     // isolation: the elements' z-index stays INSIDE this composition, so later tracks (root B-roll, lower thirds) still paint above it.
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', isolation: 'isolate', background: colors.background }} {...dataAttributes}>
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', isolation: 'isolate', background: overlay ? 'transparent' : colors.background }} {...dataAttributes}>
       {elements.map((element, index) => {
         if (inactive?.has(element.element_id)) return null
         if (element.kind === 'image') {

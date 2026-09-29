@@ -79,10 +79,11 @@ describe('shared Preview Surface viewport (Static authority)', () => {
       expect(page).not.toMatch(/const ZOOM_LEVELS|PREVIEW_ZOOM_LEVELS/)
     }
     // The same shared pan handlers (no second pan implementation); Video applies them in its Hand tool
-    // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1); Static too, except while its FREE canvas is in Selecionar
-    // (CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1) — a Template canvas always pans.
-    expect(staticPage).toContain('{...(freeSelecting ? {} : viewport.panHandlers)}')
-    expect(staticPage).toContain("const freeSelecting = mode === 'free' && interactionMode === 'select'")
+    // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1); Static uses customSelecting (select tool active in any
+    // mode — including Template with custom elements) to disable pan handlers so overlays work.
+    // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 updated this: select mode now also enables Template overlay.
+    expect(staticPage).toContain('{...(customSelecting ? {} : viewport.panHandlers)}')
+    expect(staticPage).toContain("const customSelecting = interactionMode === 'select'")
     expect(videoPage).toContain("{...(interactionMode === 'pan' ? viewport.panHandlers : {})}")
     expect(staticPage).toContain('data-testid="canvas-viewport"')
     expect(videoPage).toContain('data-testid="live-player-viewport"')

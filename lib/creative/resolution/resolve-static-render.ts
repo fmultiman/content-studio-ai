@@ -64,7 +64,13 @@ export function resolveStaticRenderManifest(
   const content = validateTemplateContent(template.value, manifest.content)
   if (!content.valid) errors.push(bindingDiagnostic(content.error))
 
-  const bindings = validateTemplateAssetBindings(template.value, manifest.assets)
+  const bindings = validateTemplateAssetBindings(template.value, Object.fromEntries(
+    // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1: custom element image assets use the
+    // 'library_file:' prefix convention and are NOT template slot bindings.
+    // Filter them out before schema validation so the existing strict
+    // per-variant asset schemas are not broken by custom element asset keys.
+    Object.entries(manifest.assets).filter(([key]) => !key.startsWith('library_file:')),
+  ))
   if (!bindings.valid) errors.push(bindingDiagnostic(bindings.error))
 
   const resolvedAssets: Record<string, ResolvedAsset> = {}

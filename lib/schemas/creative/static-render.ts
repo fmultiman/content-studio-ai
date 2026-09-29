@@ -97,6 +97,10 @@ export const StaticRenderManifestSchema = z
     content: ContentBindingsSchema,
     assets: z.record(z.string().trim().min(1), AssetRefSchema),
 
+    // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ??" Custom Text/Image elements added by author,
+    // rendered spatially above the Template base.
+    elements: FreeSegmentPayloadSchema.shape.elements.optional(),
+
     output: StaticRenderOutputSchema,
 
     metadata: StaticRenderMetadataSchema.optional(),

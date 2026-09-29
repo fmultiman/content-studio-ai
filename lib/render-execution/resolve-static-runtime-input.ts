@@ -134,6 +134,34 @@ export async function resolveStaticRuntimeInput(input: {
     }
   }
 
+  // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 — presign library_file assets for
+  // custom image elements in the manifest. The manifest.assets map already
+  // holds the library_file ref (put there by deriveFreeSegment/
+  // deriveManifestFromState at enqueue); all we need is a presigned URL.
+  // Same SSRF/ownership boundary: only DB-loaded, project-scoped rows are
+  // presigned; the asset ref (UUID) is looked up against those rows, never
+  // taken verbatim from the snapshot as a storage path.
+  const manifestElements = 'elements' in resolvedInput.manifest ? resolvedInput.manifest.elements : undefined
+  if (manifestElements && manifestElements.length > 0) {
+    const elementAssets = resolvedInput.manifest.assets
+    const presignedElementAssets: Record<string, ResolvedAsset> = {}
+    for (const [key, assetRef] of Object.entries(elementAssets)) {
+      // Only custom element image assets start with 'library_file:'; template
+      // slots (hero, logo, paper, tape…) are handled above.
+      if (!key.startsWith('library_file:') || assetRef.type !== 'library_file') continue
+      const file = input.libraryFiles.find((candidate) => candidate.id === assetRef.ref && !candidate.deleted_at)
+      if (!file?.storage_path) {
+        return { ok: false, code: 'CUSTOM_IMAGE_UNAVAILABLE', message: `LibraryFile for custom element image "${key}" is missing or not owned by this project.` }
+      }
+      const url = await input.createPresignedReadUrl(file.storage_path)
+      if (!url) return { ok: false, code: 'CUSTOM_IMAGE_PRESIGN_FAILED', message: `Could not presign custom element image "${key}".` }
+      presignedElementAssets[key] = { ref: assetRef.ref, source: 'library_file', path: file.storage_path, url, mime_type: 'image/*', ...(assetRef.fit ? { fit: assetRef.fit } : {}) }
+    }
+    if (Object.keys(presignedElementAssets).length > 0) {
+      resolvedInput = { ...resolvedInput, resolvedAssets: { ...resolvedInput.resolvedAssets, ...presignedElementAssets } }
+    }
+  }
+
   return {
     ok: true,
     warnings,
