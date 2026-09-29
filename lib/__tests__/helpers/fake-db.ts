@@ -21,9 +21,10 @@ const DEFAULT_UNIQUE: Record<string, string[][]> = {
   provider_oauth_clients: [['provider', 'issuer', 'redirect_uri']],
   provider_oauth_authorizations: [['state_hash']],
   user_settings: [['user_id']],
+  video_generations: [['id']],
 }
 
-const DEFAULT_GENERATED_ID = ['provider_connections', 'provider_oauth_clients']
+const DEFAULT_GENERATED_ID = ['provider_connections', 'provider_oauth_clients', 'video_generations']
 
 export interface FakeDb {
   from: (table: string) => any
@@ -45,6 +46,9 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     filters.every(([column, op, value]) => {
       if (op === 'eq') return row[column] === value
       if (op === 'lt') return row[column] < value
+      if (op === 'lte') return row[column] !== null && row[column] !== undefined && row[column] <= value
+      if (op === 'in') return (value as any[]).includes(row[column])
+      if (op === 'is') return (row[column] ?? null) === value
       return true
     })
 
@@ -132,7 +136,22 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
         filters.push([column, 'lt', value])
         return builder
       },
+      lte(column: string, value: any) {
+        filters.push([column, 'lte', value])
+        return builder
+      },
+      in(column: string, value: any[]) {
+        filters.push([column, 'in', value])
+        return builder
+      },
+      is(column: string, value: any) {
+        filters.push([column, 'is', value])
+        return builder
+      },
       order() {
+        return builder
+      },
+      limit() {
         return builder
       },
       maybeSingle() {

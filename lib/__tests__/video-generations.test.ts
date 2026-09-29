@@ -347,7 +347,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
     },
   )
 
-  it('a client-supplied executionMode / credentialSource cannot enable platform-funded Kling execution', async () => {
+  it('a client-supplied executionMode / credentialSource is REJECTED and cannot enable platform-funded Kling execution', async () => {
     process.env.KLING_API_KEY = 'platform-level-key'
     const insertSpy = vi.fn()
     const mockSupabase = {
@@ -369,8 +369,8 @@ describe('Video Generation API Domain & T2V Validation', () => {
     })
 
     const res = await createGeneration(req)
-    expect(res.status).toBe(422)
-    expect((await res.json()).code).toBe('PROVIDER_NOT_CONFIGURED')
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('UNSUPPORTED_FIELD')
     expect(constructedApiKeys).toEqual([])
     expect(insertSpy).not.toHaveBeenCalled()
   })

@@ -156,6 +156,8 @@ describe('capability snapshot', () => {
         image_to_video: ['kling-video-v3_0'],
       },
       membership: { type: 'SVIP', label: 'Pro' },
+      // Normalized video capabilities only (see kling-mcp-video-capabilities.test.ts); never the raw schema.
+      video: expect.objectContaining({ schemaVersion: 1 }),
     })
     expect(JSON.stringify(snapshot)).not.toContain('424242')
     expect(JSON.stringify(snapshot)).not.toContain('987654')

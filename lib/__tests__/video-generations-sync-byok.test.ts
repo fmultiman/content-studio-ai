@@ -35,6 +35,19 @@ function buildSupabase(userId: string, klingApiKey: string | null) {
       }
       if (table === 'video_generations') {
         return {
+          // First provider status "processing" is recorded with a compare-and-swap update.
+          update: () => ({
+            eq: () => ({
+              in: () => ({
+                select: () => ({
+                  maybeSingle: async () => ({
+                    data: { id: 'gen-1', user_id: userId, project_id: 'p1', status: 'processing', task_id: 'kling-task-1' },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
           select: () => ({
             eq: () => ({
               eq: () => ({
