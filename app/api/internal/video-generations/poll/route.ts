@@ -7,7 +7,9 @@ import { pollDueMcpGenerations } from '@/lib/video-generation/polling'
 //
 // Server-to-server trigger for the MCP status poller. The scheduler is an
 // EXTERNAL always-on host (the project's VPS) that calls this endpoint about
-// once a minute; this route only *executes* one bounded polling pass. There is
+// every 10 s (VIDEO_GENERATION_POLLING_LATENCY_V1; a wake with nothing due makes no
+// provider call — each job's own `next_poll_at` governs provider traffic); this route
+// only *executes* one bounded polling pass. There is
 // no user session here. Authentication is a dedicated shared secret,
 // `VIDEO_POLL_WORKER_SECRET`, supplied out-of-band to Vercel Production and to the
 // scheduler (never generated, logged or returned by the application):

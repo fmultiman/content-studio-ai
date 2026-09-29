@@ -18,6 +18,11 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
+  isInFlightGeneration,
+  selectRecoverySyncs,
+  STATUS_REFRESH_MS,
+} from '@/lib/video-generation/status-refresh'
+import {
   DashboardPage,
   DashboardPageBar,
   DashboardPageContent,
@@ -86,56 +91,51 @@ function VideosPageContent() {
   const [showAiModal, setShowAiModal] = useState(false)
   const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
 
-  // MCP generations have no callback: while /videos is open, ask the server to
-  // check the ones in flight. This is only a convenience — the scheduled
-  // server-side poller completes them even if nobody is watching. REST
-  // generations are unchanged (they complete through the Kling callback).
-  // One STABLE interval reads the latest list through a ref (so a state update
-  // never re-arms the timer) and checks the in-flight generations in parallel.
-  const generationsRef = useRef<any[]>([])
+  // VIDEO_GENERATION_POLLING_LATENCY_V1 — status refresh and provider polling are SEPARATE.
+  // The background scheduler completes MCP generations (there is no callback); while any
+  // generation is in flight this page only RE-READS its list from our own database every
+  // few seconds (no provider call), so a completion appears promptly. The browser is not the
+  // reliability mechanism: a provider sync (which bypasses the poller's lease) is requested
+  // only for a row whose scheduled check is long overdue, i.e. when the scheduler is not serving it.
+  const hasInFlightGeneration = generations.some(isInFlightGeneration)
+  const refreshInFlightRef = useRef(false)
+  const recoverySyncedAtRef = useRef<Map<string, number>>(new Map())
   useEffect(() => {
-    generationsRef.current = generations
-  }, [generations])
-
-  const hasActiveMcpGeneration = generations.some(
-    (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
-  )
-  const syncInFlightRef = useRef(false)
-  useEffect(() => {
-    if (!hasActiveMcpGeneration) return
-    const syncOne = async (item: any) => {
+    if (!hasInFlightGeneration) return
+    const recoverySync = async (item: any) => {
       try {
         const response = await fetch(`/api/video-generations/${item.id}/sync`, { method: 'POST' })
         if (!response.ok) return
         const payload = await response.json()
-        if (payload?.generation && payload.generation.status !== item.status) {
+        if (payload?.generation) {
           setGenerations((previous: any[]) =>
             previous.map((entry) => (entry.id === item.id ? { ...entry, ...payload.generation } : entry)),
           )
         }
       } catch {
-        // Next tick retries; the server poller does not depend on this.
+        // The scheduler does not depend on this; the next refresh retries.
       }
     }
     const tick = async () => {
-      // Never overlap ticks: a slow completion (download + upload) must not spawn a second one.
-      if (syncInFlightRef.current) return
-      syncInFlightRef.current = true
+      // Never overlap ticks, and do not poll our own API from a hidden tab.
+      if (refreshInFlightRef.current || document.visibilityState === 'hidden') return
+      refreshInFlightRef.current = true
       try {
-        const active = generationsRef.current.filter(
-          (item: any) => item.transport === 'mcp' && item.task_id && (item.status === 'submitted' || item.status === 'processing'),
-        )
-        await Promise.all(active.map(syncOne))
+        const response = await fetch('/api/video-generations')
+        if (!response.ok) return
+        const payload = await response.json()
+        const fresh: any[] = Array.isArray(payload?.generations) ? payload.generations : []
+        setGenerations(fresh)
+        await Promise.all(selectRecoverySyncs(fresh, Date.now(), recoverySyncedAtRef.current).map(recoverySync))
+      } catch {
+        // Transient network error: the next tick retries.
       } finally {
-        syncInFlightRef.current = false
+        refreshInFlightRef.current = false
       }
     }
-    // Check once right away (a job that finished while /videos was closed shows up
-    // immediately), then every 30 s.
-    void tick()
-    const timer = setInterval(() => void tick(), 30_000)
+    const timer = setInterval(() => void tick(), STATUS_REFRESH_MS)
     return () => clearInterval(timer)
-  }, [hasActiveMcpGeneration])
+  }, [hasInFlightGeneration])
 
   // Fallback for the proxy redirect (e.g. a client-side navigation to a legacy link).
   useEffect(() => {
