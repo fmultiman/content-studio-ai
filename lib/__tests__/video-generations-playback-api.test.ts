@@ -24,7 +24,7 @@ describe('GET /api/video-generations/[id]/playback-url', () => {
           eq: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               maybeSingle: vi.fn().mockResolvedValue({
-                data: { id: 'gen-1', user_id: 'user-1', status: 'succeeded', storage_path: 's3/path.mp4' },
+                data: { id: 'gen-1', user_id: 'user-1', project_id: 'proj-1', status: 'succeeded', storage_path: 'user-1/videos/ai/proj-1/gen-1.mp4' },
                 error: null
               })
             })
