@@ -43,8 +43,6 @@ function seed(row: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.KLING_WEBHOOK_SECRET = `whsec_${RAW_SECRET}`
-  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://db.example.test'
-  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-fixture-service-role-key'
   vi.mocked(downloadAndStoreVideo).mockResolvedValue({ storagePath: 'user-a/videos/ai/proj-1/gen-1.mp4', publicUrl: 'https://s3.example.test/gen-1.mp4', mime: 'video/mp4', size: 42 })
   seed()
 })

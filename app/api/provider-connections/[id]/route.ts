@@ -77,7 +77,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     // AND its tokens exactly as they were (never a "connected" row with no credentials). The explicit
     // token removal afterwards is belt and braces for the cascade.
     await deleteOwnedConnection(db, owned.id, user.id)
-    await deleteConnectionTokens(db, owned.id)
+    await deleteConnectionTokens(db, owned.id).catch(() => undefined)
 
     return NextResponse.json({ disconnected: true, revocation }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {

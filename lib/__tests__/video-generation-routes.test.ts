@@ -134,7 +134,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   consoleError.mockRestore()
-  delete process.env.POLL_WORKER_SECRET
+  delete process.env.VIDEO_POLL_WORKER_SECRET
 })
 
 const noSecretsIn = (value: unknown) => {
@@ -856,9 +856,9 @@ describe('/api/internal/video-generations/poll — authenticated trigger for the
   })
 
   it('rejects a too-short secret as not configured (a weak secret is treated as none)', async () => {
-    process.env.POLL_WORKER_SECRET = 'short'
+    process.env.VIDEO_POLL_WORKER_SECRET = 'short'
     expect((await call({ authorization: 'Bearer short' })).status).toBe(503)
-    process.env.POLL_WORKER_SECRET = 'x'.repeat(31)
+    process.env.VIDEO_POLL_WORKER_SECRET = 'x'.repeat(31)
     expect((await call({ authorization: `Bearer ${'x'.repeat(31)}` })).status).toBe(503)
   })
 
@@ -875,14 +875,14 @@ describe('/api/internal/video-generations/poll — authenticated trigger for the
     ['a prefix of the secret', { authorization: 'Bearer test-fixture-poll-worker-secret' }],
     ['a user session cookie', { cookie: 'sb-access-token=abc' }],
   ])('rejects %s (401) before touching the database', async (_name, headers) => {
-    process.env.POLL_WORKER_SECRET = SECRET
+    process.env.VIDEO_POLL_WORKER_SECRET = SECRET
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(makeDb())
     expect((await call(headers as any)).status).toBe(401)
     expect(vi.mocked(serviceRole.createServiceRoleSupabase)).not.toHaveBeenCalled()
   })
 
   it('with the right secret it polls due MCP generations and returns counts only', async () => {
-    process.env.POLL_WORKER_SECRET = SECRET
+    process.env.VIDEO_POLL_WORKER_SECRET = SECRET
     const due = { id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'submitted', task_id: 'mcp-gen-1', transport: 'mcp', connection_id: CONNECTION_ID, created_at: NOW_ISO, next_poll_at: new Date(Date.now() - 5000).toISOString(), poll_attempts: 0 }
     const db = makeDb({ connections: [connectionRow()], generations: [due] })
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db)
@@ -901,7 +901,7 @@ describe('/api/internal/video-generations/poll — authenticated trigger for the
   })
 
   it('overlapping passes (a slow tick plus the next one) never poll the same job twice: the lease serializes them', async () => {
-    process.env.POLL_WORKER_SECRET = SECRET
+    process.env.VIDEO_POLL_WORKER_SECRET = SECRET
     const due = { id: 'gen-1', user_id: 'user-a', project_id: 'proj-1', status: 'submitted', task_id: 'mcp-gen-1', transport: 'mcp', connection_id: CONNECTION_ID, created_at: NOW_ISO, next_poll_at: new Date(Date.now() - 5000).toISOString(), poll_attempts: 0 }
     const db = makeDb({ connections: [connectionRow()], generations: [due] })
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db)
@@ -915,7 +915,7 @@ describe('/api/internal/video-generations/poll — authenticated trigger for the
   })
 
   it('a store failure is a controlled 500 without detail', async () => {
-    process.env.POLL_WORKER_SECRET = SECRET
+    process.env.VIDEO_POLL_WORKER_SECRET = SECRET
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue({ from: () => { const chain: any = { update: () => chain, select: () => chain, eq: () => chain, in: () => chain, is: () => chain, lt: () => chain, lte: () => chain, order: () => chain, limit: () => chain, then: (r: any) => r({ data: null, error: { message: 'secret db detail' } }) }; return chain } } as any)
     const response = await call({ authorization: `Bearer ${SECRET}` })
     expect(response.status).toBe(500)

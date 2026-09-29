@@ -389,15 +389,6 @@ describe('access-token refresh', () => {
     expect(db.tables.provider_connection_secrets).toHaveLength(0)
   })
 
-  it('a connection with NO stored credentials stops claiming to be connected (so the UI asks for reconnection)', async () => {
-    const db = seedDb()
-    const refresh = vi.fn()
-    await expect(getValidAccessToken(db as any, 'conn-1', makeDeps(refresh))).rejects.toBeInstanceOf(ProviderAuthorizationRequiredError)
-    expect(db.tables.provider_connections[0].status).toBe('authorization_required')
-    await expect(forceRefreshAccessToken(db as any, 'conn-1', makeDeps(refresh))).rejects.toBeInstanceOf(ProviderAuthorizationRequiredError)
-    expect(refresh).not.toHaveBeenCalled()
-  })
-
   it('forceRefreshAccessToken refreshes even when the recorded expiry has not passed', async () => {
     const db = seedDb()
     await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)

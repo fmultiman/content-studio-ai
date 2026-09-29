@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
 
@@ -71,6 +71,12 @@ async function callSync() {
     params: Promise.resolve({ id: 'gen-1' }),
   })
 }
+
+// The route pulls in the MCP SDK; warm the import once (generous, file-local budget) so the first
+// test measures behavior, not module loading.
+beforeAll(async () => {
+  await import('@/app/api/video-generations/[id]/sync/route')
+}, 60_000)
 
 describe('/api/video-generations/[id]/sync — user_byok', () => {
   beforeEach(() => {

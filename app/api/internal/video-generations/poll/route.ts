@@ -9,11 +9,11 @@ import { pollDueMcpGenerations } from '@/lib/video-generation/polling'
 // EXTERNAL always-on host (the project's VPS) that calls this endpoint about
 // once a minute; this route only *executes* one bounded polling pass. There is
 // no user session here. Authentication is a dedicated shared secret,
-// `POLL_WORKER_SECRET`, supplied out-of-band to Vercel Production and to the
+// `VIDEO_POLL_WORKER_SECRET`, supplied out-of-band to Vercel Production and to the
 // scheduler (never generated, logged or returned by the application):
 //
 //     POST /api/internal/video-generations/poll
-//     Authorization: Bearer <POLL_WORKER_SECRET>
+//     Authorization: Bearer <VIDEO_POLL_WORKER_SECRET>
 //
 // It fails CLOSED: without a configured secret the route does nothing (503);
 // a wrong or missing header is rejected (401) before any database access; only
@@ -41,9 +41,9 @@ function isAuthorized(header: string | null, secret: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const secret = process.env.POLL_WORKER_SECRET
+  const secret = process.env.VIDEO_POLL_WORKER_SECRET
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
-    return NextResponse.json({ error: 'Polling trigger is not configured.', code: 'POLL_WORKER_NOT_CONFIGURED' }, { status: 503 })
+    return NextResponse.json({ error: 'Polling trigger is not configured.', code: 'VIDEO_POLL_WORKER_NOT_CONFIGURED' }, { status: 503 })
   }
 
   if (!isAuthorized(request.headers.get('authorization'), secret)) {

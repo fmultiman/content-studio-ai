@@ -221,7 +221,6 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path.startsWith('app/api/provider-connections/') ||
       path.startsWith('app/api/internal/video-generations/') ||
       path === 'app/api/video-generations/route.ts' ||
-      path === 'app/api/kling/callback/route.ts' ||
       path === 'app/api/video-generations/[id]/sync/route.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
@@ -313,7 +312,7 @@ describe('video generation connection routing boundary — VIDEO_GENERATION_CONN
       'lib/video-generation/polling.ts',
     ])
     const route = sourceFiles.find((f) => f.path === 'app/api/internal/video-generations/poll/route.ts')!
-    expect(route.text).toContain('POLL_WORKER_SECRET')
+    expect(route.text).toContain('VIDEO_POLL_WORKER_SECRET')
     expect(route.text).not.toMatch(/export (async function|const) (GET|PUT|PATCH|DELETE)/)
     expect(route.text).toContain('timingSafeEqual')
   })

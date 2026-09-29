@@ -170,11 +170,7 @@ export async function getValidAccessToken(
 ): Promise<string> {
   const now = (deps.now ?? (() => new Date()))()
   const row = await readSecretRow(db, connectionId)
-  if (!row) {
-    // No credentials at all: the connection must not keep claiming to be "connected".
-    await markAuthorizationRequired(db, connectionId)
-    throw new ProviderAuthorizationRequiredError()
-  }
+  if (!row) throw new ProviderAuthorizationRequiredError()
 
   const tokens = readPayload(row, connectionId)
 
@@ -193,10 +189,7 @@ export async function forceRefreshAccessToken(
 ): Promise<string> {
   const now = (deps.now ?? (() => new Date()))()
   const row = await readSecretRow(db, connectionId)
-  if (!row) {
-    await markAuthorizationRequired(db, connectionId)
-    throw new ProviderAuthorizationRequiredError()
-  }
+  if (!row) throw new ProviderAuthorizationRequiredError()
   return refreshAccessToken(db, connectionId, row, readPayload(row, connectionId), deps, now)
 }
 

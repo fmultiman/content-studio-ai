@@ -323,7 +323,7 @@ schedule is rejected on Hobby), `pg_cron`/`pg_net`, an unauthenticated endpoint,
 traffic. The /videos 30 s sync remains only an **opportunistic** recovery path.
 
 - `app/api/internal/video-generations/poll` — **POST only** (no GET), authenticated with a dedicated
-  shared secret **`POLL_WORKER_SECRET`** (`Authorization: Bearer …`, constant-time digest compare,
+  shared secret **`VIDEO_POLL_WORKER_SECRET`** (`Authorization: Bearer …`, constant-time digest compare,
   minimum 32 characters; the old shared-cron variable is not accepted). **Fails closed**: no/short
   secret → 503, wrong/missing header → 401, both before any DB access. Returns **counts only**. Runs
   with server credentials, **no user session**. Overlapping/repeated calls are safe (leases).
@@ -369,9 +369,7 @@ this parser and its tests.
 **Concurrent refresh safety**: two callers can refresh the same connection at once (parallel poller rows,
 the /videos ticks). When Kling answers `invalid_grant` — which is also what the *loser* of a rotation race
 gets — the stored row is re-read after 250 ms and again after 750 ms before the grant is declared revoked,
-so a winner's compare-and-swap that has not landed yet is honored instead of wiping a valid grant. A
-connection with no stored credentials at all is marked `authorization_required` (it never keeps claiming to
-be `connected`).
+so a winner's compare-and-swap that has not landed yet is honored instead of wiping a valid grant.
 
 **Manual/recovery**: `POST /api/video-generations/[id]/sync` is a plain check + completion: it **never takes
 the poller's lease nor rewrites `next_poll_at`/`poll_attempts`** (the leased external poller owns those), and
@@ -388,15 +386,15 @@ task never created it (Production env writes are also not possible from the agen
 
 1. Generate a long random value **locally** (e.g. `openssl rand -base64 48`), keep it in the owner's
    password manager, and set it as a **Sensitive Production** environment variable named
-   `POLL_WORKER_SECRET` in Vercel (then redeploy so it applies).
+   `VIDEO_POLL_WORKER_SECRET` in Vercel (then redeploy so it applies).
 2. Store the same value on the VPS in a root-only file (e.g. `/etc/content-studio/poll-worker.env`,
-   mode `0600`, containing `POLL_WORKER_SECRET=…`).
+   mode `0600`, containing `VIDEO_POLL_WORKER_SECRET=…`).
 3. Schedule one call per minute on the VPS (cron shown; a systemd timer is equivalent). `flock` avoids
    stacking runs on the VPS side; the server-side leases make overlap harmless anyway:
 
 ```
 * * * * * . /etc/content-studio/poll-worker.env && flock -n /run/content-studio-poll.lock \
-  curl -fsS -m 310 -X POST -H "Authorization: Bearer $POLL_WORKER_SECRET" \
+  curl -fsS -m 310 -X POST -H "Authorization: Bearer $VIDEO_POLL_WORKER_SECRET" \
   https://content.multihuman.com.br/api/internal/video-generations/poll >/dev/null
 ```
 
@@ -494,7 +492,7 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 
 1. Owner presses **Autorizar geração** (Settings or /videos) and approves the Kling consent screen →
    `generation.create` granted; then **Verificar conexão** so the snapshot is fresh.
-2. Owner supplies `POLL_WORKER_SECRET` out-of-band to Vercel Production and to the VPS, and the
+2. Owner supplies `VIDEO_POLL_WORKER_SECRET` out-of-band to Vercel Production and to the VPS, and the
    VPS calls the poll endpoint every minute (§12) — the paid proof must not depend on the page being open.
 3. Owner explicitly authorizes **one** paid generation and its parameters (suggested minimum:
    text-to-video, `kling-video-v3_0`, 3 s, 720p, 16:9, audio off, multi-shot off).
@@ -518,9 +516,24 @@ which fails such a row with an explicit `CONNECTION_UNAVAILABLE` message instead
 | Watermark: prefer `urlWithoutWatermark` when offered, else `url` | **UNVERIFIED** policy choice; confirm in the proof |
 | Non-subscribers: one concurrent video task; 5 QPS; tasks cannot be canceled | OFFICIAL (discovery) |
 | Terms (§18) | AMBIGUOUS |
-| The external VPS scheduler + `POLL_WORKER_SECRET` are **not yet active** (owner action, §12): until they are, an away user's job is only retrieved when they reopen /videos | **Prerequisite for the paid proof** |
-| **Pre-existing (migration 039, not introduced here):** the owner-scoped RLS `UPDATE` policy on `video_generations` has no column restriction, so an authenticated user holding their own JWT can rewrite server-owned columns of their own rows (`status`, `storage_path`, `task_id`, and now `transport`/`connection_id`/`next_poll_at`/`poll_attempts`). The poller re-derives connection ownership from the generation's `user_id` and never trusts the row alone, but a forged `storage_path` could make the presign endpoints sign an object key the user does not own. **Recommended follow-up:** a migration that restricts client `UPDATE` to non-server columns (or a guard trigger) and moves the submit route's post-submit writes to the service role | **Open — follow-up task** |
-| **Pre-existing:** a REST callback that arrives before the submit route has stored `task_id` finds no row and is acknowledged/ignored; REST rows have no poller. Narrow (Kling needs a moment to call back) but real; a fix would poll REST rows too or match on `external_id` | **Open — follow-up task** |
+| The external VPS scheduler + `VIDEO_POLL_WORKER_SECRET` are **not yet active** (owner action, §12): until they are, an away user's job is only retrieved when they reopen /videos | **Prerequisite for the paid proof** |
+
+### Follow-ups recorded (deliberately NOT fixed in this task)
+
+Scope was frozen to what MCP generation/polling needs. The following were found by independent review;
+none is introduced by this feature, and none is fixed here.
+
+| # | Follow-up | Priority |
+|---|---|---|
+| 1 | **SECURITY FOLLOW-UP — HIGH PRIORITY.** `video_generations` (migration 039) has an owner-scoped RLS policy with **no column restriction** for `INSERT`/`UPDATE`. An authenticated user holding their own JWT can rewrite server-owned columns of their own rows (`status`, `task_id`, `storage_path`, `public_url`, `result_metadata`, and now `transport`/`connection_id`/`next_poll_at`/`poll_attempts`). Because `GET /api/video-generations` and the playback-url route presign `storage_path` without checking its prefix, a forged `storage_path` may yield a **presigned URL for another tenant's object (possible cross-tenant read)**. Needs a separate, immediate task: restrict client writes to non-server columns (or revoke and use the service role), validate that `storage_path` starts with `<user_id>/videos/ai/`, and verify no existing row is already forged. This feature only limits the blast radius for its own columns (the poller re-derives connection ownership from the generation's `user_id`) | **HIGH — separate immediate task** |
+| 2 | REST callback that arrives before the submit route stored `task_id` is acknowledged and ignored; REST rows have no poller/orphan sweep (historical behavior, unchanged) | Follow-up |
+| 3 | Any non-2xx from the Kling REST adapter (including 5xx/gateway errors) is classified "definitive"; a typed error carrying the HTTP status would let 5xx be an unknown outcome | Follow-up |
+| 4 | Permanent download errors (non-public host, non-video, over the size cap) are retried by the poller until the 23 h hard cap instead of failing fast with their real cause | Follow-up |
+| 5 | REST `callbackUrl` is built from `NEXT_PUBLIC_APP_URL` without validation; the webhook timestamp check does not reject a non-numeric timestamp; the callback lookup by `task_id` collapses "several rows" into "unknown" | Follow-up |
+| 6 | An unrecognised provider state that carries a result URL is accepted after 4 observations; whether such a URL can be a preview/partial is **UNVERIFIED** — the first paid proof must record the real vocabulary and tighten `kling-mcp-task.ts` | Verify in the proof |
+| 7 | Duplicated S3-client code in `lib/storage/video-downloader.ts` vs `s3.ts`; ad-hoc service-role client in the REST callback; other unrelated hardening | Cleanup, not scheduled |
+| 8 | Disconnect's active-generation check and delete are not one transaction (a submit racing the delete ends as `CONNECTION_UNAVAILABLE`, handled explicitly by the poller) | Accepted residual |
+
 
 ## 18. Terms / policy
 
@@ -547,7 +560,7 @@ snapshot; browser echo never trusted; mapping hints stripped) · scope authoriza
 (`generation.create` required server-side) · transport selection (from the resolved connection) · OAuth
 token secrecy (encrypted at rest, never in responses/logs/`request_config`) · polling without a user
 session (secret-authenticated, fail-closed; owner-scoped grant lookup) · service-role usage (allow-list
-scan test) · internal poll-trigger authentication (`POLL_WORKER_SECRET`, POST only) · completion idempotency (DB CAS + deterministic key) · S3 /
+scan test) · internal poll-trigger authentication (`VIDEO_POLL_WORKER_SECRET`, POST only) · completion idempotency (DB CAS + deterministic key) · S3 /
 result-URL safety (https + public host; URL never persisted) · Content Studio Credits fallback
 impossibility (scan test).
 
