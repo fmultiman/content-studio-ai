@@ -168,9 +168,15 @@ export const PersistedAuthoredSlideSchema = z
     // Authoring Usability Completion V1 — Project LibraryFile per slot
     // (identity only). Absent = Project primitive / Template default.
     assetOverrides: AssetOverridesSchema.optional(),
-    // Static Detail Polish V1 — hidden template element ids (Camadas eye).
+    // Static Detail Polish V1 ??" hidden template element ids (Camadas eye).
     // Absent = every element visible; unknown ids are normalized away on read.
     hiddenElements: z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH).optional(),
+    // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ??" Custom Text/Image elements added by author.
+    elements: z.custom<FreeSceneComposition['elements']>((value) => {
+      if (value === undefined) return true
+      if (!Array.isArray(value)) return false
+      return validateFreeCompositionShape({ kind: 'free', elements: value }).ok
+    }, { message: 'invalid free elements' }).optional(),
   })
   .strict()
 
@@ -265,6 +271,7 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
     ...(state.assetOverrides && Object.keys(state.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(state.assetOverrides) } : {}),
     ...hiddenEntry(layout, state.hiddenElements),
+    ...(state.elements && state.elements.length > 0 ? { elements: [...state.elements] } : {}),
   }
 }
 
@@ -309,6 +316,7 @@ export function persistedSlideToAuthoringState(
     ...(slide.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, slide.elementOrder) } : {}),
     ...(slide.assetOverrides && Object.keys(slide.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(slide.assetOverrides) } : {}),
     ...hiddenEntry(layout, slide.hiddenElements),
+    ...(slide.elements && slide.elements.length > 0 ? { elements: [...slide.elements] } : {}),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
     // adjustment, identical to how those slides always rendered. `source`

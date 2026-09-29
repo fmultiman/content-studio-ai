@@ -313,12 +313,18 @@ export interface AuthoringState {
   assetOverrides?: AuthoringAssetOverrides
 
   /**
-   * Static Detail Polish V1 — template element ids this slide hides (Camadas
+   * Static Detail Polish V1 ?" template element ids this slide hides (Camadas
    * eye). Authored state: persisted, rendered, frozen in render snapshots.
    * A hidden element keeps its stack place, transform and tuning. Absent or
    * empty = every element visible (the Template default).
    */
   hiddenElements?: string[]
+
+  /**
+   * STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ?" Custom Text/Image elements added by
+   * the author, rendered spatially above the Template base.
+   */
+  elements?: import('@/lib/types').FreeSceneElement[]
 
   /** UI-only: which debug panel tabs are open */
   debugPanelOpen: boolean

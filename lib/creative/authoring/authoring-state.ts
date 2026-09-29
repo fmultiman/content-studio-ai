@@ -15,6 +15,7 @@ import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import { DEFAULT_TEMPLATE_ID, TITLE_LINE_HEIGHT_BOUNDS, getTemplateDefinition, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
 import { normalizeHiddenElements, resolveElementStack } from '@/lib/creative/templates/element-stack'
+import { deriveFreeSegment } from '@/lib/creative/video-editor/free-composition'
 import {
   CLOSING_EXAMPLE_CONTENT, GRID_EXAMPLE_CONTENT, LIST_EXAMPLE_CONTENT, MAP_EXAMPLE_CONTENT, NETWORK_EXAMPLE_CONTENT, QUOTE_EXAMPLE_CONTENT, cloneExample,
 } from '@/lib/creative/templates/layout-examples'
@@ -179,6 +180,8 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
     canvas: canvasSpec,
   })
 
+  const customElements = state.elements && state.elements.length > 0 ? deriveFreeSegment({ kind: 'free', elements: state.elements }) : null
+
   // Apply content overrides: replace manifest content with authoring edits.
   // This keeps the resolution layer in place — we patch the manifest's content
   // field rather than bypassing the resolver entirely.
@@ -197,6 +200,8 @@ export function resolvePreviewInput(state: AuthoringState): ResolvedStaticRender
         template: { ...base.manifest.template, variant: state.variant, appearance: state.appearance },
         identity: { snapshot_ref: state.productContext.identitySnapshot.snapshot_ref, token_profile: 'default' },
         content: state.contentOverride as unknown as Record<string, unknown>,
+        ...(customElements ? { assets: { ...base.manifest.assets, ...customElements.assets } } : {}),
+        ...(customElements && customElements.payload.elements.length > 0 ? { elements: customElements.payload.elements } : {}),
         metadata: { source_verification_required_before_publication: true, locale: 'pt-BR', notes: 'contextual static authoring draft' },
       },
     } as ResolvedStaticRenderInput
@@ -245,11 +250,16 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
         }
       : undefined
 
+  const customElements = state.elements && state.elements.length > 0 
+    ? deriveFreeSegment({ kind: 'free', elements: state.elements })
+    : null
+
   const assets = {
     ...(heroAsset ? { hero: heroAsset } : {}),
     ...(state.identity !== 'b'
       ? { logo: { type: 'fixture' as const, ref: 'fixture:asset:comunidades-alternativas:logo-v1', fit: 'contain' as const } }
       : {}),
+    ...(customElements ? customElements.assets : {}),
   }
 
   if (state.productContext) {
@@ -267,6 +277,7 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
       sequence: sequenceOverride ?? { index: 1, total: 1 },
       content: state.contentOverride as unknown as Record<string, unknown>,
       assets,
+      ...(customElements && customElements.payload.elements.length > 0 ? { elements: customElements.payload.elements } : {}),
       output: { format: 'png', role: 'channel_piece' },
       metadata: { source_verification_required_before_publication: true, locale: 'pt-BR', notes: 'contextual static authoring draft' },
     }
@@ -286,6 +297,7 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
     sequence: sequenceOverride ?? { index: 1, total: 10 },
     content: state.contentOverride as unknown as Record<string, unknown>,
     assets,
+    ...(customElements && customElements.payload.elements.length > 0 ? { elements: customElements.payload.elements } : {}),
     output: { format: 'png' as const, role: 'fixture' as const },
     metadata: { fixture: true, not_a_database_record: true, notes: 'authoring-draft: visual overrides excluded' },
   }

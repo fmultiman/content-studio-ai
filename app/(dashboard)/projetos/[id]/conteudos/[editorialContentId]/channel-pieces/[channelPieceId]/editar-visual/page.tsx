@@ -55,7 +55,8 @@ import { CompositionModePanel } from '@/components/creative/authoring/compositio
 import { FreeSceneElements, freeElementLabel } from '@/components/creative/video/free-scene-panels'
 import { FreeElementsOverlay } from '@/components/creative/video/free-scene-overlay'
 import { FreeStage } from '@/components/creative/free/free-stage'
-import { addFreeImageElement, addFreeTextElement, deriveFreeSegment, freeElements, setFreeElementBox, updateFreeElement } from '@/lib/creative/video-editor/free-composition'
+import { addFreeImageElement, addFreeTextElement, deriveFreeSegment, freeElements, setFreeElementBox, updateFreeElement, type FreeHost } from '@/lib/creative/video-editor/free-composition'
+import type { FreeSceneComposition } from '@/lib/types'
 import { DEFAULT_PREVIEW_INTERACTION_MODE, type PreviewInteractionMode } from '@/lib/creative/video-editor/free-manipulation'
 import { createFreeStaticSlide, freeCompositionHasContent, type FreeStaticSlide, type StaticCompositionMode } from '@/lib/creative/authoring/free-static'
 import { isPersistedFreeSlide, type PersistedStaticSlide } from '@/lib/creative/authoring/carousel-state'
@@ -358,6 +359,16 @@ export default function StaticAuthoringProductPage() {
   /** One free-slide edit (the shared free-composition helpers), applied to the current free unit only. */
   function editCurrentFree(edit: (slide: FreeStaticSlide) => FreeStaticSlide) {
     setFreeSlides((current) => current ? current.map((slide, index) => (index === currentSlideIndex ? edit(slide) : slide)) : current)
+  }
+
+  /** STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1: wrapper to edit the template's custom elements array using the free composition helpers. */
+  function editCurrentCustomElements(edit: (scene: FreeHost & { id: string }) => FreeHost & { id: string }) {
+    if (!state) return
+    const host: FreeHost & { id: string } = { id: 'custom', composition: { kind: 'free' as const, elements: state.elements ?? [] } }
+    const next = edit(host)
+    if (next.composition && typeof next.composition === 'object' && 'kind' in next.composition && next.composition.kind === 'free') {
+      dispatch({ type: 'SET_CUSTOM_ELEMENTS', elements: (next.composition as FreeSceneComposition).elements })
+    }
   }
 
   /** A fresh slide id, never one used before in this session (removed, switched away from, or with renders). */
@@ -749,7 +760,9 @@ export default function StaticAuthoringProductPage() {
   const templateChoices = listTemplateDefinitions().map((definition) => ({ id: definition.id, name: definition.name, description: definition.description }))
   const compositionScope = isCarousel ? 'desta peça (todos os slides)' : 'desta peça'
   const freeWording = { unit: isCarousel ? 'slide' as const : 'arte' as const, stage: 'do formato da peça' }
-  const freeUnitElements = currentFreeSlide ? freeElements(currentFreeSlide) : []
+  const freeUnitElements = mode === 'free' && currentFreeSlide 
+    ? freeElements(currentFreeSlide) 
+    : state?.elements ?? []
 
   const freeInspector = currentFreeSlide ? (
     <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
@@ -859,6 +872,21 @@ export default function StaticAuthoringProductPage() {
           hidden={new Set(state.hiddenElements ?? [])}
           onToggleVisibility={(id) => dispatch({ type: 'TOGGLE_ELEMENT_VISIBILITY', id })}
         />
+        <div className="mt-4 border-t border-border/60 pt-4">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</div>
+          <FreeSceneElements
+            scene={{ id: 'custom', composition: { kind: 'free', elements: state.elements ?? [] } }}
+            fileNames={new Map([...projectImages.values()].map((file) => [file.id, file.name]))}
+            openId={openElementId}
+            onOpen={setOpenElementId}
+            onEdit={editCurrentCustomElements}
+            onAddText={() => { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeTextElement(host, id)); setOpenElementId(id) }}
+            onAddImage={() => setFreeImagePicker({ mode: 'add' })}
+            onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
+            onRemoved={(elementId) => setOpenElementId((current) => (current === elementId ? null : current))}
+            wording={freeWording}
+          />
+        </div>
       </TabsContent>
     </Tabs>
   ) : null
@@ -866,16 +894,20 @@ export default function StaticAuthoringProductPage() {
   const inspector = mode === 'free' ? freeInspector : templateInspector
 
   // Free canvas: the SAME drawing the still render uses (FreeStage), with the Library display URLs.
-  const freeSelecting = mode === 'free' && interactionMode === 'select'
-  const freeStage = currentFreeSlide && freeTokens ? deriveFreeSegment(currentFreeSlide.composition) : null
+  const customSelecting = interactionMode === 'select'
+  const freeStage = currentFreeSlide && freeTokens 
+    ? deriveFreeSegment(currentFreeSlide.composition) 
+    : mode === 'template' && state?.elements && state.elements.length > 0 && freeTokens
+      ? deriveFreeSegment({ kind: 'free', elements: state.elements })
+      : null
   const canvas = (
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
       <div
         ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
-        style={{ cursor: freeSelecting ? 'default' : viewport.panning ? 'grabbing' : 'grab', touchAction: floating || freeSelecting ? 'none' : 'pan-y' }}
-        {...(freeSelecting ? {} : viewport.panHandlers)}
-        data-interaction-mode={mode === 'free' ? interactionMode : 'pan'}
+        style={{ cursor: customSelecting ? 'default' : viewport.panning ? 'grabbing' : 'grab', touchAction: floating || customSelecting ? 'none' : 'pan-y' }}
+        {...(customSelecting ? {} : viewport.panHandlers)}
+        data-interaction-mode={interactionMode}
         aria-label="Canvas (arraste para mover a visualização)"
         data-testid="canvas-viewport"
         data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
@@ -900,7 +932,7 @@ export default function StaticAuthoringProductPage() {
         {currentFreeSlide && freeUnitElements.length === 0 ? (
           <p className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded bg-black/60 px-2 py-1 text-[11px] text-white" data-testid="free-static-empty-hint">Composição livre em branco · adicione texto ou imagem em Elementos, ou escolha um template na aba Template</p>
         ) : null}
-        {freeSelecting && currentFreeSlide ? (
+        {customSelecting && freeUnitElements.length > 0 ? (
           <FreeElementsOverlay
             left={viewport.origin.left}
             top={viewport.origin.top}
@@ -910,9 +942,9 @@ export default function StaticAuthoringProductPage() {
             editable
             selectedElementId={openElementId}
             onSelect={(elementId) => { setOpenElementId(elementId); if (elementId) setActiveTab('element') }}
-            onBoxChange={(elementId, box) => editCurrentFree((slide) => setFreeElementBox(slide, elementId, box))}
+            onBoxChange={(elementId, box) => mode === 'template' ? editCurrentCustomElements((host) => setFreeElementBox(host, elementId, box)) : editCurrentFree((slide) => setFreeElementBox(slide, elementId, box))}
             onInteractionStart={() => undefined}
-            hostId={currentFreeSlide.id}
+            hostId={mode === 'template' ? 'custom' : currentFreeSlide?.id ?? 'free'}
           />
         ) : null}
       </div>
@@ -924,12 +956,10 @@ export default function StaticAuthoringProductPage() {
           <Button size="icon-sm" variant="outline" className="ml-1" onClick={openAddSlide} disabled={slideTotal >= MAX_CAROUSEL_SLIDES} aria-label="Adicionar slide" title={slideTotal >= MAX_CAROUSEL_SLIDES ? `Limite de ${MAX_CAROUSEL_SLIDES} slides` : 'Adicionar slide'} data-testid="add-slide"><Plus className="h-3.5 w-3.5" /></Button>
           <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setRemoveDialogOpen(true)} disabled={slideTotal <= 1} aria-label={`Remover slide ${currentSlideIndex + 1}`} title={slideTotal <= 1 ? 'O carrossel precisa de pelo menos um slide' : 'Remover slide'} data-testid="remove-slide"><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>}
-        {mode === 'free' ? (
-          <div className="flex shrink-0 items-center rounded-md border border-border/60 p-0.5" role="radiogroup" aria-label="Ferramenta do canvas" data-testid="preview-tool">
-            <Button size="icon-sm" variant={interactionMode === 'select' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'select'} onClick={() => setInteractionMode('select')} aria-label="Selecionar e editar" title="Selecionar e editar (mover e redimensionar elementos livres)" data-testid="preview-tool-select"><MousePointer2 className="h-3.5 w-3.5" /></Button>
-            <Button size="icon-sm" variant={interactionMode === 'pan' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'pan'} onClick={() => setInteractionMode('pan')} aria-label="Mão (mover a visualização)" title="Mão: arrastar move a visualização" data-testid="preview-tool-pan"><Hand className="h-3.5 w-3.5" /></Button>
-          </div>
-        ) : null}
+        <div className="flex shrink-0 items-center rounded-md border border-border/60 p-0.5" role="radiogroup" aria-label="Ferramenta do canvas" data-testid="preview-tool">
+          <Button size="icon-sm" variant={interactionMode === 'select' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'select'} onClick={() => setInteractionMode('select')} aria-label="Selecionar e editar" title="Selecionar e editar (mover e redimensionar elementos livres)" data-testid="preview-tool-select"><MousePointer2 className="h-3.5 w-3.5" /></Button>
+          <Button size="icon-sm" variant={interactionMode === 'pan' ? 'secondary' : 'ghost'} role="radio" aria-checked={interactionMode === 'pan'} onClick={() => setInteractionMode('pan')} aria-label="Mão (mover a visualização)" title="Mão: arrastar move a visualização" data-testid="preview-tool-pan"><Hand className="h-3.5 w-3.5" /></Button>
+        </div>
         <ViewportZoomControls
           zoom={viewport.zoom}
           fitScale={viewport.fitScale}
@@ -1027,8 +1057,13 @@ export default function StaticAuthoringProductPage() {
       onSelect={(file) => {
         setProjectImages((current) => new Map(current).set(file.id, file))
         const picker = freeImagePicker
-        if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
-        else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setOpenElementId(id) }
+        if (mode === 'template') {
+          if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
+          else { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id)); setOpenElementId(id) }
+        } else {
+          if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
+          else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setOpenElementId(id) }
+        }
         setFreeImagePicker(null)
       }}
     />

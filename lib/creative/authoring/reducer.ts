@@ -71,8 +71,10 @@ export type AuthoringAction =
   | { type: 'TOGGLE_ELEMENT_VISIBILITY'; id: string }
   /** Assets "Trocar": a Project LibraryFile fills this slot. */
   | { type: 'SET_ASSET_OVERRIDE'; slot: AuthoringAssetSlotId; libraryFileId: string }
-  /** Assets "Usar padrão": drop the slot's Project resource (override AND catalog primitive) -> Template default. */
+  /** Assets "Usar padrào": drop the slot's Project resource (override AND catalog primitive) -> Template default. */
   | { type: 'USE_TEMPLATE_DEFAULT_ASSET'; slot: AuthoringAssetSlotId }
+  /** STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ?" Custom Text/Image elements authoring. */
+  | { type: 'SET_CUSTOM_ELEMENTS'; elements: import('@/lib/types').FreeSceneElement[] }
 
 /** The bounded structured-content actions (the ones LayoutContentForm dispatches). */
 export type ContentAction = Extract<AuthoringAction, { type: 'SET_CONTENT_VALUE' | 'ADD_CONTENT_ITEM' | 'REMOVE_CONTENT_ITEM' }>
@@ -150,6 +152,7 @@ export function authoringReducer(state: AuthoringState, action: AuthoringAction)
         : state.primitiveSelection
       return { ...state, primitiveSelection, assetOverrides: Object.keys(rest).length > 0 ? rest : undefined }
     }
+    case 'SET_CUSTOM_ELEMENTS': return { ...state, elements: action.elements }
     default: return state
   }
 }
