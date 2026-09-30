@@ -15,7 +15,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
-import { ElementLayers } from '@/components/creative/authoring/element-layers'
+import { TemplateElementsTab } from '@/components/creative/authoring/template-elements-tab'
+import { resolveLayoutSections } from '@/lib/creative/templates/template-anatomy'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { LAYOUT_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { AssetSlotCard, StyleSourcePanel, TemplateReference } from '@/components/creative/authoring/inspector-panels'
@@ -737,6 +738,8 @@ export default function StaticAuthoringProductPage() {
   const stack = state ? resolveElementStack(template.id, state.variant, state.elementOrder) : { order: [] as string[] }
   const stackIsDefault = layout ? isDefaultElementOrder(layout, stack.order) : true
   const slotsInUse = layout ? layoutAssetSlots(template, layout) : []
+  // STATIC_TEMPLATE_ANATOMY_TREE_V1: derived Sections of this Layout's Elements (registry metadata, never persisted).
+  const anatomySections = layout ? resolveLayoutSections(template, layout) : []
   const pickerSlot = assetPickerSlot ? slotsInUse.find(({ slot }) => slot.id === assetPickerSlot)?.slot ?? null : null
 
   /** The open element's own controls — exactly what its Template control contract supports. */
@@ -860,33 +863,34 @@ export default function StaticAuthoringProductPage() {
         <StyleSourcePanel tokens={state.productContext?.identitySnapshot} />
       </TabsContent>
       <TabsContent value="element" className="pt-3">
-        <ElementLayers
-          order={stack.order}
-          labels={elementLabels}
-          openId={openElement}
-          isDefault={stackIsDefault}
-          onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
-          onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })}
-          onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })}
-          renderPanel={renderElementPanel}
-          hidden={new Set(state.hiddenElements ?? [])}
-          onToggleVisibility={(id) => dispatch({ type: 'TOGGLE_ELEMENT_VISIBILITY', id })}
-        />
-        <div className="mt-4 border-t border-border/60 pt-4">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</div>
-          <FreeSceneElements
-            scene={{ id: 'custom', composition: { kind: 'free', elements: state.elements ?? [] } }}
-            fileNames={new Map([...projectImages.values()].map((file) => [file.id, file.name]))}
-            openId={openElementId}
-            onOpen={setOpenElementId}
-            onEdit={editCurrentCustomElements}
-            onAddText={() => { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeTextElement(host, id)); setOpenElementId(id) }}
-            onAddImage={() => setFreeImagePicker({ mode: 'add' })}
-            onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
-            onRemoved={(elementId) => setOpenElementId((current) => (current === elementId ? null : current))}
-            wording={freeWording}
+        {layout ? (
+          <TemplateElementsTab
+            layoutLabel={layout.label}
+            sections={anatomySections}
+            order={stack.order}
+            labels={elementLabels}
+            openId={openElement}
+            isDefaultOrder={stackIsDefault}
+            hidden={new Set(state.hiddenElements ?? [])}
+            onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
+            onToggleVisibility={(id) => dispatch({ type: 'TOGGLE_ELEMENT_VISIBILITY', id })}
+            onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })}
+            onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })}
+            renderPanel={renderElementPanel}
+            custom={{
+              scene: { id: 'custom', composition: { kind: 'free', elements: state.elements ?? [] } },
+              fileNames: new Map([...projectImages.values()].map((file) => [file.id, file.name])),
+              openId: openElementId,
+              onOpen: setOpenElementId,
+              onEdit: editCurrentCustomElements,
+              onAddText: () => { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeTextElement(host, id)); setOpenElementId(id) },
+              onAddImage: () => setFreeImagePicker({ mode: 'add' }),
+              onReplaceImage: (elementId) => setFreeImagePicker({ mode: 'replace', elementId }),
+              onRemoved: (elementId) => setOpenElementId((current) => (current === elementId ? null : current)),
+              wording: freeWording,
+            }}
           />
-        </div>
+        ) : null}
       </TabsContent>
     </Tabs>
   ) : null
