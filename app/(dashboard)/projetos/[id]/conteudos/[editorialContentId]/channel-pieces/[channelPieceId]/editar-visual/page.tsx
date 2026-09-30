@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
 import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { LayoutSwitchDialog } from '@/components/creative/authoring/layout-switch-dialog'
 import { TemplateElementsTab } from '@/components/creative/authoring/template-elements-tab'
 import { resolveLayoutSections } from '@/lib/creative/templates/template-anatomy'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
@@ -36,7 +37,7 @@ import {
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
-  variantUsesContentImage,
+  variantUsesContentImage, hasLayoutOwnedAuthoredWork,
 } from '@/lib/creative/authoring'
 import { contextualContentForChannelPiece } from '@/lib/creative/context/static-authoring'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -172,6 +173,8 @@ export default function StaticAuthoringProductPage() {
   // WORKSPACE UI state: the floating Inspector's open/closed state (never authoring state).
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
+  // STATIC_TEMPLATE_LAYOUT_SWITCH_STATE_TRUTH_V1: the Layout a destructive switch is waiting to confirm (UI-only; never authored state).
+  const [pendingLayoutId, setPendingLayoutId] = useState<string | null>(null)
   // Slide ids never to reuse in this session: removed slides and slides with render history.
   const reservedSlideIdsRef = useRef(new Set<string>())
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
@@ -428,6 +431,19 @@ export default function StaticAuthoringProductPage() {
   const dispatch = (action: AuthoringAction) => setSlides((current) => current
     ? current.map((slide, index) => index === currentSlideIndex ? { ...slide, state: authoringReducer(slide.state, action) } : slide)
     : current)
+
+  /** Template Layout A → B: ONE deterministic replacement (Layout-owned state resets, Custom Elements stay). */
+  function applyLayoutSwitch(layoutId: string) {
+    const customIds = new Set((state?.elements ?? []).map((element) => element.id))
+    dispatch({ type: 'SET_VARIANT', variant: layoutId as AuthoringState['variant'], templateId: template.id })
+    // A Template element disclosure of the old Layout is closed; a selected Custom Element is kept.
+    setOpenElementId((current) => (current && customIds.has(current) ? current : null))
+  }
+  /** Confirm only when meaningful Layout-owned authored work would be discarded. */
+  function requestLayoutSwitch(layoutId: string) {
+    if (state && hasLayoutOwnedAuthoredWork(state, template.id)) setPendingLayoutId(layoutId)
+    else applyLayoutSwitch(layoutId)
+  }
 
   function setTuningField(group: 'hero' | 'title' | 'source', field: string, value: number) {
     if (!state) return
@@ -829,7 +845,7 @@ export default function StaticAuthoringProductPage() {
         {templateFallback ? <p className="text-xs text-destructive" role="alert">Template salvo não reconhecido; usando {template.name}.</p> : null}
         <div className="space-y-1">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-layout-label">Estrutura</span>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-layout-label">{template.layouts.map((option) => { const checked = state.variant === option.id; return <Button key={option.id} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked) dispatch({ type: 'SET_VARIANT', variant: option.id as AuthoringState['variant'] }) }} data-testid="static-layout-option" data-value={option.id}>{option.label}</Button> })}</div>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-layout-label">{template.layouts.map((option) => { const checked = state.variant === option.id; return <Button key={option.id} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked) requestLayoutSwitch(option.id) }} data-testid="static-layout-option" data-value={option.id}>{option.label}</Button> })}</div>
         </div>
         <div className="space-y-1">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-appearance-label">Aparência</span>
@@ -1032,7 +1048,9 @@ export default function StaticAuthoringProductPage() {
   )
 
   const removeDialog = <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}><AlertDialogContent data-testid="remove-slide-dialog"><AlertDialogHeader><AlertDialogTitle>Remover slide {currentSlideIndex + 1}?</AlertDialogTitle><AlertDialogDescription>Este slide será removido do estado de autoria (clique em Salvar para persistir). Arquivos e renders já salvos na peça não serão excluídos automaticamente.{currentHasSavedOutput ? ' Este slide tem um PNG salvo nesta peça: ele continua anexado à peça e na Galeria.' : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={removeCurrentSlide}>Remover slide</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-  const restoreDialog = <>{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados {isCarousel ? 'ao slide atual' : 'à arte'}. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  const pendingLayoutLabel = pendingLayoutId ? getTemplateLayout(template, pendingLayoutId)?.label : undefined
+  const layoutSwitchDialog = <LayoutSwitchDialog layoutLabel={pendingLayoutLabel ?? null} onCancel={() => setPendingLayoutId(null)} onConfirm={() => { if (pendingLayoutId) applyLayoutSwitch(pendingLayoutId); setPendingLayoutId(null) }} />
+  const restoreDialog = <>{layoutSwitchDialog}{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados {isCarousel ? 'ao slide atual' : 'à arte'}. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     <ProjectLibraryAssetPicker
       open={Boolean(pickerSlot)}
       onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}

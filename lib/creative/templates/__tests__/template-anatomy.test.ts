@@ -26,9 +26,9 @@ describe('Documentary layouts expose their factual semantic Sections', () => {
     expect(sectionsOf('info')).toEqual([
       ['Bloco de título', ['title', 'paperStrip', 'paperDark']],
       ['Cartão 1', ['card1', 'pin']],
-      ['Cartão 2', ['paper', 'pin2', 'tape3']],
+      ['Cartão 2', ['paper', 'pin2']],
       ['Fonte e crédito', ['source']],
-      ['Decoração', ['botanicalLeaf', 'botanical', 'tape1', 'tape2', 'archival']],
+      ['Decoração', ['botanicalLeaf', 'botanical', 'tape1', 'tape2', 'tape3', 'archival']],
     ])
   })
   it('Lista', () => {

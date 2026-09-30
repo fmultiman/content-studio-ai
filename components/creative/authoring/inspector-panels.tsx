@@ -135,27 +135,28 @@ export function AssetSlotCard({
 }
 
 /**
- * Estilo tab — FACTUAL source of the tokens the renderer uses. Today the
- * product adapter (lib/creative/integration/project-identity-adapter.ts)
- * does not read typography or colors from Project Identity: it always
- * returns the Studio's CREATIVE_IDENTITY_DEFAULTS, and each layout's
- * appearance (Light/Dark) sets its own palette. Read-only; no overrides.
+ * Estilo tab — FACTUAL source of the tokens the renderer uses. The product
+ * adapter (lib/creative/integration/project-identity-adapter.ts) resolves
+ * typography and colors from the Project Identity visual tokens when the
+ * Project defines them (each token independently), else the Studio defaults;
+ * each layout's appearance (Light/Dark) then sets its own palette. Read-only;
+ * no per-element overrides yet.
  */
 export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena'; free?: boolean }) {
   return (
     <div className="space-y-2" data-testid="style-source" data-free={free}>
       <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Padrão do Studio.</span> A Identidade do Projeto ainda não define tipografia nem cores visuais; estes valores não vêm dela.{' '}
+        <span className="font-medium text-foreground">Identidade do Projeto.</span> A tipografia e as cores abaixo vêm da Identidade do Projeto quando ela as define; o que ela não define usa o padrão do Studio.{' '}
         {/* CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a free composition has no Appearance — its roles read these tokens directly. */}
         {free
           ? 'Na composição livre, o fundo e os papéis de cor e fonte dos textos usam estes valores diretamente.'
-          : `As cores de fundo e texto de cada ${unitLabel} seguem a Aparência (Light/Dark) do Template.`}
+          : `As fontes seguem estes valores; as cores de fundo e texto de cada ${unitLabel} seguem a Aparência (Light/Dark) do Template.`}
       </p>
       <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Títulos</dt><dd className="truncate">{tokens?.typography.display.family ?? '—'}</dd>
         <dt className="text-muted-foreground">Texto</dt><dd className="truncate">{tokens?.typography.body.family ?? '—'}</dd>
       </dl>
-      <div className="flex flex-wrap gap-1.5" aria-label="Cores padrão do Studio">
+      <div className="flex flex-wrap gap-1.5" aria-label="Cores do estilo do projeto">
         {Object.entries(tokens?.colors ?? {}).map(([name, value]) => <span key={name} title={`${name}: ${value}`} className="h-5 w-5 rounded border border-border/60" style={{ background: value }} />)}
       </div>
       <p className="text-[11px] text-muted-foreground">Somente leitura nesta versão.</p>
