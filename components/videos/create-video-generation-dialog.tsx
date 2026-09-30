@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import {
   audioAllowedAt,
@@ -30,6 +29,8 @@ import {
   type VideoOperation,
   type VideoResolution,
 } from '@/lib/video-generation/capabilities'
+import { I2vSourcePicker } from '@/components/videos/i2v-source-picker'
+import { i2vSourceFields, reconcileI2vSource, type I2vSource } from '@/lib/video-generation/i2v-source'
 import { parseConnectionRef } from '@/lib/video-generation/connection-ref'
 import { connectionDisplayName, spendingSourceCopy, transportBadge } from '@/lib/video-generation/connection-presentation'
 import {
@@ -155,7 +156,8 @@ export function CreateVideoGenerationDialog({
   const [selection, setSelection] = useState<VideoFormSelection>(EMPTY_SELECTION)
 
   const [prompt, setPrompt] = useState('')
-  const [sourceImageId, setSourceImageId] = useState('')
+  // Exactly one source class (generated image OR Arquivos file); never both.
+  const [source, setSource] = useState<I2vSource | null>(null)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — a submission is paid, so it can only start ONCE
@@ -171,7 +173,6 @@ export function CreateVideoGenerationDialog({
   // locked — until the page is reloaded after checking — so it cannot be resubmitted by mistake.
   const [unconfirmedSubmission, setUnconfirmedSubmission] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState<'refresh' | 'authorize' | null>(null)
-  const [projectImages, setProjectImages] = useState<any[]>([])
 
   const applyConnections = useCallback((list: VideoGenerationConnectionDescriptor[]) => {
     setConnections(list)
@@ -213,24 +214,8 @@ export function CreateVideoGenerationDialog({
     submitLockRef.current = false
     setAccepted(false)
     setPrompt('')
-    setSourceImageId('')
+    setSource(null)
   }, [open])
-
-  // Load images when dialog opens for I2V
-  useEffect(() => {
-    if (open && projectId) {
-      createClient()
-        .from('images')
-        .select('id, image_url, user_input, created_at')
-        .eq('project_id', projectId)
-        .neq('image_url', null)
-        .order('created_at', { ascending: false })
-        .limit(30)
-        .then(({ data }) => {
-          if (data) setProjectImages(data)
-        })
-    }
-  }, [open, projectId])
 
   const connection = useMemo(() => selectedConnection(connections, selection), [connections, selection])
   const model = useMemo(() => selectedModel(connections, selection), [connections, selection])
@@ -246,8 +231,13 @@ export function CreateVideoGenerationDialog({
 
   // Every change goes through the SAME reconciliation: a value survives only
   // if the new context still allows it, otherwise it resets to an explicit default.
-  const change = (patch: Partial<VideoFormSelection>) =>
-    setSelection((prev) => reconcileSelection(connections, { ...prev, ...patch }))
+  const change = (patch: Partial<VideoFormSelection>) => {
+    const next = reconcileSelection(connections, { ...selection, ...patch })
+    setSelection(next)
+    // Any path that leaves image_to_video (tab, or a connection switch that drops the
+    // operation) also drops the source: a stale selection never rides along.
+    setSource((prev) => reconcileI2vSource(next.operation, prev))
+  }
 
   const blocked = connection && !connection.canGenerate ? connection.blockedReason : undefined
   const blockedCopy = blocked ? BLOCKED_COPY[blocked] : null
@@ -330,7 +320,7 @@ export function CreateVideoGenerationDialog({
       return
     }
 
-    if (selection.operation === 'image_to_video' && !sourceImageId) {
+    if (selection.operation === 'image_to_video' && !source) {
       toast({ title: 'Selecione uma imagem', variant: 'destructive' })
       return
     }
@@ -356,7 +346,8 @@ export function CreateVideoGenerationDialog({
             projectId,
             productionId,
             prompt,
-            sourceImageId: selection.operation === 'image_to_video' ? sourceImageId : undefined,
+            // Exactly one of sourceImageId / sourceLibraryFileId for image_to_video, none otherwise.
+            ...i2vSourceFields(selection.operation, source),
             // Visible controls only: nothing hidden or stale is ever submitted.
             ...toSubmitControls(selection),
           }),
@@ -509,7 +500,6 @@ export function CreateVideoGenerationDialog({
                 value={selection.operation}
                 onValueChange={(value) => {
                   change({ operation: value as VideoOperation })
-                  if (value === 'text_to_video') setSourceImageId('')
                 }}
                 className="w-full"
               >
@@ -580,24 +570,7 @@ export function CreateVideoGenerationDialog({
                 </div>
 
                 <TabsContent value="image_to_video" className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label>Imagem de Origem</Label>
-                    <Select value={sourceImageId} onValueChange={setSourceImageId}>
-                      <SelectTrigger className="h-14 w-full">
-                        <SelectValue placeholder="Escolha uma imagem gerada neste Projeto..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projectImages.map((img) => (
-                          <SelectItem key={img.id} value={img.id} className="py-2">
-                            <div className="flex items-center gap-3">
-                              <img src={img.image_url} alt="thumbnail" className="h-10 w-10 rounded-md object-cover" />
-                              <span className="w-56 truncate text-sm">{img.user_input}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <I2vSourcePicker key={projectId} projectId={projectId} value={source} onChange={setSource} />
 
                   <div className="space-y-2">
                     <Label>Motion Prompt (Dicas de animação)</Label>

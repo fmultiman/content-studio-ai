@@ -8,6 +8,7 @@ import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/l
 import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
+import { checkLibrarySourceFile, LIBRARY_SOURCE_REJECTION_MESSAGE } from '@/lib/video-generation/i2v-source'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
 import {
@@ -192,6 +193,11 @@ export async function POST(req: NextRequest) {
 
         if (fileError || !file) {
           return NextResponse.json({ error: 'Source library file not found or not owned by user in this project' }, { status: 403 })
+        }
+        // Owner + project are proven above; the row itself must also be a live image.
+        const rejection = checkLibrarySourceFile(file)
+        if (rejection) {
+          return jsonError(422, rejection, LIBRARY_SOURCE_REJECTION_MESSAGE[rejection])
         }
         if (file.storage_path) {
           const presigned = await createPresignedReadUrl(file.storage_path)
