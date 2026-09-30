@@ -1,5 +1,6 @@
 import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { ownedProductionIdOrNull } from '@/lib/library/production-scope'
 import { createClient } from '@/lib/supabase/server'
 import { copyS3ObjectToLibrary, deleteS3Object } from '@/lib/storage/s3'
 import { validateVideoRenderLibrarySource, videoRenderLibraryFilename, type VideoRenderLibrarySource } from '@/lib/render-execution/video-render-library'
@@ -141,11 +142,19 @@ export async function POST(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'O objeto armazenado nao corresponde ao output concluido.', code: 'OUTPUT_METADATA_MISMATCH' }, { status: 409 })
     }
 
+    // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: render execution -> video draft -> Production (server chain, never the browser).
+    let renderProductionId: string | null = null
+    if (execution.video_draft_id) {
+      const { data: draft } = await supabase.from('video_drafts').select('production_id').eq('id', execution.video_draft_id).eq('user_id', user.id).maybeSingle()
+      renderProductionId = await ownedProductionIdOrNull(supabase, { userId: user.id, projectId: execution.project_id, productionId: draft?.production_id ?? null })
+    }
+
     const { data: libraryFile, error: insertError } = await supabase
       .from('library_files')
       .insert({
         user_id: user.id,
         project_id: execution.project_id,
+        production_id: renderProductionId,
         folder: projectRoot?.path || '/',
         name: filename,
         kind: 'video',

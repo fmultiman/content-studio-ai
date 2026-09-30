@@ -192,6 +192,8 @@ export interface LibraryFile {
   source_render_execution_id?: string | null
   /** Generated image this file was explicitly saved from (migration 045). */
   source_image_id?: string | null
+  /** Optional editorial context (migration 048). Independent of `folder`; NULL = unscoped. */
+  production_id?: string | null
   deleted_at: string | null
   created_at: string
   updated_at: string

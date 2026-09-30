@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildStoragePublicUrl, headS3Object, moveLibraryS3Object } from '@/lib/storage/s3'
 import { checkLibraryStoragePath, isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 import { deleteLibraryObject, presignLibraryRead } from '@/lib/storage/library-storage'
+import { resolveOwnedProductionContext } from '@/lib/library/production-scope'
 import type { LibraryFileKind } from '@/lib/types'
 
 // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1
@@ -36,6 +37,8 @@ function kindFromMime(mimeType: string | null | undefined): LibraryFileKind {
 type LibraryFileBody = {
   ids?: string[]
   projectId?: string | null
+  /** Optional Production context for an upload (verified server-side against the Project). */
+  productionId?: string | null
   folder?: string
   name?: string
   kind?: string
@@ -210,6 +213,9 @@ export async function PATCH(request: Request) {
 
         if (targetProjectId !== undefined) {
           updatePayload.project_id = targetProjectId
+          // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: folder organization is independent of Production, so a move inside
+          // the SAME Project keeps it; a move to ANOTHER Project cannot keep a Production of the old one.
+          if (targetProjectId !== file.project_id) updatePayload.production_id = null
         }
 
         const { data: updated, error: updateError } = await supabase
@@ -258,6 +264,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Projeto não encontrado.', code: 'PROJECT_NOT_FOUND' }, { status: 404 })
     }
 
+    // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: a Production is optional context. When the browser names one it must be
+    // the user's own AND belong to this Project; otherwise the file is simply unscoped (NULL).
+    let productionId: string | null = null
+    if (body.productionId) {
+      const context = await resolveOwnedProductionContext(supabase, { userId: user.id, projectId: body.projectId ?? null, productionId: body.productionId })
+      if (!context.ok) return NextResponse.json({ error: 'Production não encontrada neste Projeto.', code: 'PRODUCTION_NOT_FOUND' }, { status: 404 })
+      productionId = context.productionId
+    }
+
     // The object must really exist; its size is what S3 reports, not what the browser says.
     let stored: Awaited<ReturnType<typeof headS3Object>>
     try {
@@ -275,6 +290,7 @@ export async function POST(request: Request) {
       .insert({
         user_id: user.id,
         project_id: body.projectId || null,
+        production_id: productionId,
         folder: normalizeFolder(body.folder),
         name: body.name.trim().slice(0, 255),
         // kind, size and the durable URL are derived here, never trusted from the browser.

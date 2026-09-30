@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { ownedProductionIdOrNull } from '@/lib/library/production-scope'
 import { deleteS3Object, uploadLibraryFile } from '@/lib/storage/s3'
 import type { LibraryFileKind } from '@/lib/types'
 import { UUID_RE, mapPgError, resolveMediaSource } from '../_helpers'
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
 
     const { data: ec, error: ecError } = await supabase
       .from('editorial_contents')
-      .select('project_id')
+      .select('project_id, production_id')
       .eq('id', cp.editorial_content_id)
       .eq('user_id', user.id)
       .single()
@@ -257,6 +258,8 @@ export async function POST(request: Request) {
       .insert({
         user_id: user.id,
         project_id: projectId,
+        // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: the ChannelPiece's own Production (EditorialContent), never the browser.
+        production_id: await ownedProductionIdOrNull(supabase, { userId: user.id, projectId, productionId: ec.production_id as string | null }),
         folder: '/',
         name: safeName,
         kind,

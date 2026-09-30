@@ -126,13 +126,35 @@ export default function ArquivosPage() {
   const [renameFolderName, setRenameFolderName] = useState('')
   const [isRenamingFolder, setIsRenamingFolder] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: with a Project selected the list comes from the bounded browse endpoint
+  // (server-side Production filter + name search + keyset pagination). "Todos os projetos" keeps the legacy list.
+  const [productions, setProductions] = useState<Array<{ id: string; title: string }>>([])
+  const [selectedProduction, setSelectedProduction] = useState('all')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   const imageFiles = useMemo(() => files.filter((file) => file.kind === 'image'), [files])
   const previewFile = previewIndex === null ? null : imageFiles[previewIndex] || null
 
+  // Browse mode (Project selected): server-side filters + cursor pagination. Null when not applicable.
+  const browseParams = (cursor?: string | null) => {
+    if (selectedProject === 'all') return null
+    const query = new URLSearchParams({ projectId: selectedProject, scope: 'arquivos' })
+    if (selectedKind !== 'all') query.set('kind', selectedKind)
+    if (selectedProduction !== 'all') query.set('production', selectedProduction)
+    if (search.trim()) query.set('q', search.trim())
+    if (showTrash) query.set('trash', 'true')
+    else if (folder.trim() && folder.trim() !== '/') query.set('folder', folder.trim())
+    if (cursor) query.set('cursor', cursor)
+    return query
+  }
+
   const loadFiles = async () => {
     setIsLoading(true)
     setLoadError(null)
+    const browse = browseParams()
     const params = new URLSearchParams()
     if (selectedProject !== 'all') params.set('projectId', selectedProject)
     if (selectedKind !== 'all') params.set('kind', selectedKind)
@@ -151,8 +173,9 @@ export default function ArquivosPage() {
       ? `?projectId=${encodeURIComponent(selectedProject)}`
       : ''
     }`
+    const filesUrl = browse ? `/api/library-files/browse?${browse.toString()}` : `/api/library-files?${params.toString()}`
     const [filesResponse, foldersResponse, projectsResult] = await Promise.all([
-      fetch(`/api/library-files?${params.toString()}`),
+      fetch(filesUrl),
       fetch(foldersUrl),
       createClient().from('projects').select('*').order('created_at', { ascending: false }),
     ])
@@ -160,10 +183,16 @@ export default function ArquivosPage() {
     const foldersPayload = await foldersResponse.json()
 
     if (filesResponse.ok) {
-      const visibleFiles = ((filesPayload.files || []) as LibraryFile[])
-        .filter((file) => file.origin !== 'studio_render' || file.kind === 'video')
-        .filter((file) => !projectRootSelected || file.folder === folder || (file.origin === 'studio_render' && file.kind === 'video' && file.folder === '/'))
-      setFiles(visibleFiles)
+      if (browse) {
+        setFiles((filesPayload.files || []) as LibraryFile[])
+        setNextCursor(filesPayload.nextCursor ?? null)
+      } else {
+        const visibleFiles = ((filesPayload.files || []) as LibraryFile[])
+          .filter((file) => file.origin !== 'studio_render' || file.kind === 'video')
+          .filter((file) => !projectRootSelected || file.folder === folder || (file.origin === 'studio_render' && file.kind === 'video' && file.folder === '/'))
+        setFiles(visibleFiles)
+        setNextCursor(null)
+      }
     } else {
       console.error('[v0] Library files load error:', filesPayload)
       setLoadError('Não foi possível carregar os arquivos da biblioteca.')
@@ -183,9 +212,52 @@ export default function ArquivosPage() {
     setIsLoading(false)
   }
 
+  const loadMore = async () => {
+    const browse = browseParams(nextCursor)
+    if (!browse || !nextCursor || isLoadingMore) return
+    setIsLoadingMore(true)
+    try {
+      const response = await fetch(`/api/library-files/browse?${browse.toString()}`)
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Erro')
+      setFiles((current) => {
+        const seen = new Set(current.map((file) => file.id))
+        return [...current, ...((payload.files || []) as LibraryFile[]).filter((file) => !seen.has(file.id))]
+      })
+      setNextCursor(payload.nextCursor ?? null)
+    } catch {
+      toast({ title: 'Não foi possível carregar mais arquivos', variant: 'destructive' })
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
+
+  // Search is applied after a short pause, server-side.
+  useEffect(() => {
+    const handle = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(handle)
+  }, [searchInput])
+
+  // The Productions of the selected Project only (never a cross-Project list).
+  useEffect(() => {
+    if (selectedProject === 'all') return // the Production filter is only rendered for a selected Project
+    let cancelled = false
+    createClient()
+      .from('productions')
+      .select('id, title')
+      .eq('project_id', selectedProject)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (!cancelled) setProductions((data || []) as Array<{ id: string; title: string }>)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProject])
+
   useEffect(() => {
     loadFiles()
-  }, [selectedProject, selectedKind, folder, showTrash])
+  }, [selectedProject, selectedKind, folder, showTrash, selectedProduction, search])
 
   const availableFolders = useMemo(() => {
     return Array.from(new Set(['/', ...folders.map((item) => item.path), ...files.map((file) => file.folder)])).sort((a, b) =>
@@ -557,6 +629,7 @@ export default function ArquivosPage() {
 
   const handleProjectChange = (value: string) => {
     setSelectedProject(value)
+    setSelectedProduction('all')
     setFolder('/')
     setSelectedIds([])
     setShowFolderInput(false)
@@ -674,6 +747,39 @@ export default function ArquivosPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {selectedProject !== 'all' && (
+                  <div className="min-w-[200px] space-y-2" data-testid="arquivos-production-filter">
+                    <Label>Production</Label>
+                    <Select value={selectedProduction} onValueChange={setSelectedProduction}>
+                      <SelectTrigger aria-label="Filtrar por Production">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Productions</SelectItem>
+                        {productions.map((production) => (
+                          <SelectItem key={production.id} value={production.id}>
+                            {production.title}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="unscoped">Sem Production</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {selectedProject !== 'all' && (
+                  <div className="min-w-[200px] flex-1 space-y-2" data-testid="arquivos-search">
+                    <Label htmlFor="arquivos-search-input">Buscar</Label>
+                    <Input
+                      id="arquivos-search-input"
+                      value={searchInput}
+                      onChange={(event) => setSearchInput(event.target.value)}
+                      placeholder="Nome do arquivo"
+                      maxLength={100}
+                    />
+                  </div>
+                )}
 
                 <Button
                   type="button"
@@ -848,33 +954,36 @@ export default function ArquivosPage() {
               title={
                 showTrash
                   ? 'Lixeira vazia'
-                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/'
+                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/' || selectedProduction !== 'all' || search !== ''
                     ? 'Nenhum resultado encontrado'
                     : 'Nenhum arquivo encontrado'
               }
               description={
                 showTrash
                   ? 'Arquivos excluídos aparecerão aqui até serem restaurados ou removidos permanentemente.'
-                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/'
+                  : selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/' || selectedProduction !== 'all' || search !== ''
                     ? 'Ajuste os filtros ou volte para outra pasta para localizar seus uploads.'
                     : 'Envie arquivos para começar a biblioteca de inputs e referências.'
               }
               actionLabel={
-                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/')
+                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/' || selectedProduction !== 'all' || search !== '')
                   ? 'Limpar filtros'
                   : undefined
               }
               onAction={
-                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/')
+                !showTrash && (selectedProject !== 'all' || selectedKind !== 'all' || folder !== '/' || selectedProduction !== 'all' || search !== '')
                   ? () => {
                       setSelectedProject('all')
                       setSelectedKind('all')
+                      setSelectedProduction('all')
+                      setSearchInput('')
                       setFolder('/')
                     }
                   : undefined
               }
             />
           ) : (
+            <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {files.map((file) => (
                 <Card key={file.id} className="overflow-hidden border-border/50 bg-card/30 backdrop-blur-sm">
@@ -998,6 +1107,14 @@ export default function ArquivosPage() {
                 </Card>
               ))}
             </div>
+            {nextCursor && (
+              <div className="flex justify-center pt-2">
+                <Button type="button" variant="outline" disabled={isLoadingMore} onClick={() => void loadMore()} data-testid="arquivos-load-more">
+                  {isLoadingMore ? 'Carregando...' : 'Carregar mais'}
+                </Button>
+              </div>
+            )}
+            </>
           )}
         </DashboardPageContent>
       </DashboardPage>
