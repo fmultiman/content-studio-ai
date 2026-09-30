@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 import {
   audioAllowedAt,
   findOperation,
@@ -468,45 +469,6 @@ export function CreateVideoGenerationDialog({
 
         {!accepted && loadState === 'ready' && connections.length > 0 && connection && (
           <div className="space-y-5">
-            {/* CONNECTION */}
-            <div className="space-y-2">
-              <Label htmlFor="video-connection">Conexão</Label>
-              <Select value={selection.connectionRef ?? undefined} onValueChange={(ref) => change({ connectionRef: ref })}>
-                <SelectTrigger id="video-connection" className="w-full" data-testid="video-connection-select">
-                  <SelectValue placeholder="Escolha uma conexão" />
-                </SelectTrigger>
-                <SelectContent>
-                  {connections.map((entry) => (
-                    <SelectItem key={entry.ref} value={entry.ref}>
-                      <span className="flex items-center gap-2">
-                        <span>
-                          {connectionDisplayName(entry)}
-                          {!entry.canGenerate && entry.status !== 'connected' ? ' (indisponível)' : ''}
-                        </span>
-                        <span
-                          className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
-                          data-transport-badge={transportBadge(entry.transport)}
-                        >
-                          {transportBadge(entry.transport)}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex items-start gap-2" data-testid="video-connection-summary" data-transport={transportBadge(connection.transport)}>
-                <span
-                  className="mt-0.5 rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
-                  data-testid="video-connection-badge"
-                >
-                  {transportBadge(connection.transport)}
-                </span>
-                <p className="text-xs text-muted-foreground" data-testid="video-connection-detail">
-                  {spendingSourceCopy(connection.funding)}
-                </p>
-              </div>
-            </div>
-
             {blockedCopy && (
               <div className="space-y-2 rounded-md border border-amber-400/40 bg-amber-400/5 p-3" role="status" data-testid="video-connection-blocked" data-reason={blocked}>
                 <p className="flex items-center gap-2 text-sm font-medium">
@@ -563,7 +525,43 @@ export function CreateVideoGenerationDialog({
 
                 {/* MODEL */}
                 <div className="mt-4 space-y-2">
-                  <Label htmlFor="video-model">Modelo</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="video-model">Modelo</Label>
+                    {connections.length > 0 && (
+                      <div
+                        className="flex items-center gap-1"
+                        role="radiogroup"
+                        aria-label="Conexão de geração"
+                        data-testid="video-connection-toggle"
+                      >
+                        {connections.map((entry) => {
+                          const badge = transportBadge(entry.transport)
+                          const isSelected = entry.ref === connection.ref
+                          return (
+                            <button
+                              key={entry.ref}
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              aria-label={`${connectionDisplayName(entry)} (${badge})`}
+                              data-testid={`video-connection-option-${badge.toLowerCase()}`}
+                              data-selected={isSelected}
+                              onClick={() => change({ connectionRef: entry.ref })}
+                              className={cn(
+                                'rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide outline-none transition-colors',
+                                'focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color:var(--control-focus)]',
+                                isSelected
+                                  ? 'border-transparent bg-[var(--action-primary)] text-[var(--action-primary-foreground)]'
+                                  : 'border-[var(--control-border)] bg-transparent text-muted-foreground hover:bg-[var(--control-background-hover)]',
+                              )}
+                            >
+                              {badge}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <Select value={selection.modelId ?? undefined} onValueChange={(modelId) => change({ modelId })}>
                     <SelectTrigger id="video-model" className="w-full" data-testid="video-model-select">
                       <SelectValue placeholder="Escolha um modelo" />
@@ -576,6 +574,9 @@ export function CreateVideoGenerationDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground" data-testid="video-connection-detail" data-transport={transportBadge(connection.transport)}>
+                    {spendingSourceCopy(connection.funding)}
+                  </p>
                 </div>
 
                 <TabsContent value="image_to_video" className="space-y-4 pt-4">
