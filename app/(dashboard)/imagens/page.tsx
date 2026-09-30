@@ -1829,6 +1829,7 @@ function ImagesPageContent() {
                     isRegenerating={isRegenerating}
                     isApproving={isApproving}
                     imageName={userInput.slice(0, 50)}
+                    imageId={currentImage?.id ?? null}
                     evaluatorEnabled={evaluatorEnabled}
                     evaluation={currentEvaluation}
                     onEvaluate={handleEvaluateImage}

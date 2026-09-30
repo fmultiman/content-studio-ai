@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, Check, Download, Loader2, Brain, Sparkles } from 'lucide-react'
 import type { ImageEvaluation } from '@/lib/types'
+import { SaveImageToLibrary } from '@/components/images/save-image-to-library'
 
 interface ImageResultProps {
   imageUrl: string
@@ -14,6 +15,8 @@ interface ImageResultProps {
   isRegenerating: boolean
   isApproving: boolean
   imageName?: string
+  /** Persisted `images` row id: enables the explicit "Salvar em Arquivos" action. */
+  imageId?: string | null
   // Evaluator props
   evaluatorEnabled?: boolean
   evaluation?: ImageEvaluation | null
@@ -30,6 +33,7 @@ export function ImageResult({
   isRegenerating,
   isApproving,
   imageName,
+  imageId = null,
   evaluatorEnabled = false,
   evaluation = null,
   onEvaluate,
@@ -213,6 +217,8 @@ export function ImageResult({
             <Download className="mr-2 h-4 w-4" />
             Download
           </Button>
+
+          {status !== 'generating' && <SaveImageToLibrary imageId={imageId} />}
 
           {status !== 'approved' && (
             <Button
