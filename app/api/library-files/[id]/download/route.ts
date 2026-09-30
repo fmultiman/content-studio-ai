@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { presignLibraryRead } from '@/lib/storage/library-storage'
+import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -30,11 +31,16 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 })
     }
 
+    // The row's storage_path is a claim: only the owner's own Library key is ever signed.
+    if (file.storage_path && !isTrustedLibraryStoragePath(file.user_id, file.storage_path)) {
+      return NextResponse.json({ error: 'Arquivo não encontrado', code: 'LIBRARY_FILE_NOT_FOUND' }, { status: 404 })
+    }
+
     if (!file.storage_path) {
       return NextResponse.redirect(file.public_url)
     }
 
-    const downloadUrl = await createPresignedReadUrl(file.storage_path, {
+    const downloadUrl = await presignLibraryRead(file, {
       filename: file.name,
       disposition: 'attachment',
     })

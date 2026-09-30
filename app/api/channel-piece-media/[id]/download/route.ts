@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { presignLibraryRead } from '@/lib/storage/library-storage'
 import { UUID_RE } from '../../_helpers'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -34,14 +35,16 @@ export async function GET(_request: Request, context: RouteContext) {
 
     let storagePath: string | null = null
     let filename: string | null = null
+    let libraryRow: { user_id: string; storage_path: string | null } | null = null
 
     if (cpm.library_file_id) {
       const { data: lf } = await supabase
         .from('library_files')
-        .select('storage_path, name')
+        .select('user_id, storage_path, name')
         .eq('id', cpm.library_file_id)
         .single()
       storagePath = (lf?.storage_path as string | null) ?? null
+      libraryRow = lf ? { user_id: lf.user_id as string, storage_path: storagePath } : null
       filename = (lf?.name as string | null) ?? null
     } else if (cpm.image_id) {
       const { data: img } = await supabase
@@ -57,7 +60,10 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Arquivo nao encontrado' }, { status: 404 })
     }
 
-    const url = await createPresignedReadUrl(storagePath, { filename, disposition: 'attachment' })
+    // A LibraryFile key is signed only when it is provably the owner's own Library object.
+    const url = libraryRow
+      ? await presignLibraryRead(libraryRow, { filename, disposition: 'attachment' })
+      : await createPresignedReadUrl(storagePath, { filename, disposition: 'attachment' })
     if (!url) {
       return NextResponse.json({ error: 'Armazenamento nao configurado' }, { status: 503 })
     }

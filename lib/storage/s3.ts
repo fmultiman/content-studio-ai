@@ -97,6 +97,9 @@ function safePathSegment(value: string | null | undefined, fallback: string) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 96)
 
+  // A dot-only segment ('.', '..') is a path traversal element, never a name.
+  if (safe && /^\.+$/.test(safe)) return fallback
+
   return safe || fallback
 }
 
@@ -183,6 +186,21 @@ export async function deleteS3FolderPlaceholder(input: {
   if (!prefix) return false
 
   return deleteS3Object(`users/${input.userId}/${input.folder}/${prefix}.keep`)
+}
+
+/** The durable, non-signed URL recorded for an object key this server generated or validated. */
+export function buildStoragePublicUrl(path: string): string | null {
+  const config = getS3Config()
+  return config ? publicUrl(config.publicBaseUrl, path) : null
+}
+
+/** HEAD an object: proves it exists and returns the size/type S3 itself reports. Null = S3 not configured. */
+export async function headS3Object(path: string): Promise<{ size: number; contentType: string | null } | null> {
+  const config = getS3Config()
+  if (!config) return null
+  const client = createS3Client(config)
+  const head = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: path }))
+  return { size: head.ContentLength ?? 0, contentType: head.ContentType ?? null }
 }
 
 export async function deleteS3Object(path: string) {

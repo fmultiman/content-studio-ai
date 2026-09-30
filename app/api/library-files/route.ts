@@ -1,7 +1,37 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createPresignedReadUrl, deleteS3Object, moveLibraryS3Object } from '@/lib/storage/s3'
+import { buildStoragePublicUrl, headS3Object, moveLibraryS3Object } from '@/lib/storage/s3'
+import { checkLibraryStoragePath, isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
+import { deleteLibraryObject, presignLibraryRead } from '@/lib/storage/library-storage'
 import type { LibraryFileKind } from '@/lib/types'
+
+// LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1
+//
+// A LibraryFile row is user-writable, so neither the row's storage_path nor any
+// browser-supplied Project/kind/url is an authority. Every write here re-derives
+// or validates them server-side, and every S3 operation proves the key is the
+// OWNER's own Library key first (lib/storage/library-path.ts). The same rule is
+// enforced in the database (scripts/046) so the PostgREST path cannot bypass it.
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type SupabaseServer = Awaited<ReturnType<typeof createClient>>
+
+/** True only for a Project that exists AND belongs to this user. A browser-supplied uuid is not proof. */
+async function userOwnsProject(supabase: SupabaseServer, userId: string, projectId: unknown): Promise<boolean> {
+  if (typeof projectId !== 'string' || !UUID_RE.test(projectId)) return false
+  const { data, error } = await supabase.from('projects').select('id').eq('id', projectId).eq('user_id', userId).maybeSingle()
+  return !error && !!data
+}
+
+function kindFromMime(mimeType: string | null | undefined): LibraryFileKind {
+  const mime = (mimeType || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('text/') || mime === 'application/pdf' || mime.includes('document') || mime.includes('spreadsheet') || mime.includes('presentation')) return 'document'
+  return 'other'
+}
 
 type LibraryFileBody = {
   ids?: string[]
@@ -81,9 +111,8 @@ export async function GET(request: Request) {
 
     const files = await Promise.all(
       (data || []).map(async (file) => {
-        const signedUrl = file.storage_path
-          ? await createPresignedReadUrl(file.storage_path)
-          : null
+        // Sign only a key that is provably this owner's Library object.
+        const signedUrl = await presignLibraryRead(file).catch(() => null)
 
         return {
           ...file,
@@ -129,6 +158,14 @@ export async function PATCH(request: Request) {
       let targetFolder = normalizeFolder(body.targetFolder)
       let targetProjectId: string | null | undefined = body.targetProjectId
 
+      // A Project id that came straight from the browser must be the user's own.
+      // `null` (no Project) and a folder's own Project (resolved below, owner-scoped) are fine.
+      if (!body.targetFolderId && targetProjectId !== undefined && targetProjectId !== null) {
+        if (!(await userOwnsProject(supabase, user.id, targetProjectId))) {
+          return NextResponse.json({ error: 'Projeto não encontrado.', code: 'PROJECT_NOT_FOUND' }, { status: 404 })
+        }
+      }
+
       if (body.targetFolderId) {
         const { data: folder, error: folderError } = await supabase
           .from('library_folders')
@@ -156,7 +193,8 @@ export async function PATCH(request: Request) {
 
       const movedFiles = []
       for (const file of files || []) {
-        const moved = file.storage_path
+        // Only the owner's own Library key is ever re-keyed in S3.
+        const moved = file.storage_path && isTrustedLibraryStoragePath(user.id, file.storage_path)
           ? await moveLibraryS3Object({
               userId: user.id,
               currentPath: file.storage_path,
@@ -205,9 +243,32 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
     const body = (await request.json()) as LibraryFileBody
-    if (!body.name || !body.storagePath || !body.publicUrl) {
+    if (typeof body.name !== 'string' || !body.name.trim() || typeof body.storagePath !== 'string') {
       return NextResponse.json({ error: 'Dados do arquivo obrigatórios' }, { status: 400 })
     }
+
+    // The key must be one of THIS user's own Library keys. Another tenant's namespace,
+    // a URL, a traversal-like or malformed key is refused without saying why.
+    const pathCheck = checkLibraryStoragePath(user.id, body.storagePath)
+    if (!pathCheck.ok) {
+      return NextResponse.json({ error: 'Caminho de armazenamento inválido.', code: 'INVALID_STORAGE_PATH' }, { status: 400 })
+    }
+
+    if (body.projectId && !(await userOwnsProject(supabase, user.id, body.projectId))) {
+      return NextResponse.json({ error: 'Projeto não encontrado.', code: 'PROJECT_NOT_FOUND' }, { status: 404 })
+    }
+
+    // The object must really exist; its size is what S3 reports, not what the browser says.
+    let stored: Awaited<ReturnType<typeof headS3Object>>
+    try {
+      stored = await headS3Object(pathCheck.path)
+    } catch {
+      return NextResponse.json({ error: 'O arquivo enviado não foi encontrado.', code: 'UPLOAD_NOT_FOUND' }, { status: 400 })
+    }
+    if (!stored) return NextResponse.json({ error: 'Storage não configurado.', code: 'STORAGE_UNAVAILABLE' }, { status: 503 })
+    if (stored.size <= 0) return NextResponse.json({ error: 'O arquivo enviado está vazio.', code: 'UPLOAD_NOT_FOUND' }, { status: 400 })
+
+    const mimeType = (typeof body.mimeType === 'string' && body.mimeType.trim()) || stored.contentType || null
 
     const { data, error } = await supabase
       .from('library_files')
@@ -215,14 +276,15 @@ export async function POST(request: Request) {
         user_id: user.id,
         project_id: body.projectId || null,
         folder: normalizeFolder(body.folder),
-        name: body.name,
-        kind: normalizeKind(body.kind),
-        mime_type: body.mimeType || null,
-        file_size: body.fileSize || null,
-        storage_provider: body.storageProvider || 's3',
-        storage_path: body.storagePath,
-        public_url: body.publicUrl,
-        thumbnail_url: body.thumbnailUrl || null,
+        name: body.name.trim().slice(0, 255),
+        // kind, size and the durable URL are derived here, never trusted from the browser.
+        kind: kindFromMime(mimeType),
+        mime_type: mimeType,
+        file_size: stored.size,
+        storage_provider: 's3',
+        storage_path: pathCheck.path,
+        public_url: buildStoragePublicUrl(pathCheck.path) ?? '',
+        thumbnail_url: null,
       })
       .select()
       .single()
@@ -252,18 +314,15 @@ export async function DELETE(request: Request) {
     if (body.permanent) {
       const { data: files, error: fetchError } = await supabase
         .from('library_files')
-        .select('id, storage_path')
+        .select('id, user_id, storage_path')
         .in('id', ids)
         .eq('user_id', user.id)
 
       if (fetchError) return NextResponse.json({ error: fetchError.message, details: fetchError }, { status: 400 })
 
-      await Promise.all(
-        (files || [])
-          .map((file) => file.storage_path)
-          .filter(Boolean)
-          .map((path) => deleteS3Object(path)),
-      )
+      // An object is deleted only when the key is provably this owner's Library key;
+      // a forged storage_path never becomes a delete primitive (the row is still removed).
+      await Promise.all((files || []).map((file) => deleteLibraryObject(file)))
 
       const { error } = await supabase
         .from('library_files')
