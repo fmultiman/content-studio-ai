@@ -307,6 +307,24 @@ describe('Image-to-Video source field — form state rules', () => {
   })
 })
 
+describe('390px: the compact summary can never widen the dialog', () => {
+  it('the source field and every ancestor up to the DialogContent grid can shrink (min-w-0), so a long nowrap name truncates instead of widening the form', async () => {
+    state.ai = [aiRow('img-1', { name: 'um-nome-muito-longo-'.repeat(12) })]
+    await openPicker()
+    await pickAi()
+    const picker = screen.getByTestId('i2v-source-picker')
+    expect(picker.className).toMatch(/\bmin-w-0\b/)
+    // the dialog form wrapper is a direct child of the DialogContent grid: without min-w-0 the grid track grows to its widest nowrap content
+    const wrapper = picker.closest('.space-y-5') as HTMLElement
+    expect(wrapper.className).toMatch(/\bmin-w-0\b/)
+    expect(wrapper.parentElement?.className).toMatch(/\bgrid\b/)
+    for (const id of ['i2v-source-summary', 'i2v-source-summary-name']) {
+      expect(screen.getByTestId(id).className).toMatch(/min-w-0|truncate/)
+    }
+    expect(screen.getByTestId('i2v-source-summary-name').parentElement?.className).toMatch(/min-w-0/)
+  })
+})
+
 describe('the old flat picker is gone', () => {
   it('no permanent two-tab "Geradas | Arquivos" grid and no unbounded Library query from the new chooser', async () => {
     await openPicker()

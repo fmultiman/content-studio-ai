@@ -40,7 +40,7 @@ export function I2vSourcePicker({ projectId, productionId, value, onChange }: I2
   const context = summary ? [summary.productionName ?? null, summary.folder ? `Arquivos / ${summary.folder}` : null].filter(Boolean).join(' · ') : ''
 
   return (
-    <div className="space-y-2" data-testid="i2v-source-picker">
+    <div className="min-w-0 max-w-full space-y-2" data-testid="i2v-source-picker">
       <Label id="i2v-source-label">Imagem de Origem</Label>
 
       {!summary ? (

@@ -468,7 +468,7 @@ export function CreateVideoGenerationDialog({
         )}
 
         {!accepted && loadState === 'ready' && connections.length > 0 && connection && (
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             {blockedCopy && (
               <div className="space-y-2 rounded-md border border-amber-400/40 bg-amber-400/5 p-3" role="status" data-testid="video-connection-blocked" data-reason={blocked}>
                 <p className="flex items-center gap-2 text-sm font-medium">
