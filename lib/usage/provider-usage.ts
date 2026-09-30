@@ -51,6 +51,8 @@ export interface UsageEventView {
   measurement_source: MeasurementSource
   project_id: string | null
   connection_id: string | null
+  /** True for an event imported from a verified historical proof (inserted after the fact, measured as stated). */
+  historical_import?: boolean
 }
 
 export interface UsageHistoryResponse {

@@ -10,15 +10,15 @@ import type { UsageEventView, UsageHistoryResponse } from '@/lib/usage/provider-
 // Read-only usage history for the signed-in user. It reads with the USER's
 // session, so the database (RLS SELECT policy on provider_usage_events) is the
 // tenant boundary — there is no service-role read here and no write path at all.
-// Only safe, display-ready columns are returned: no provider metadata, no task
-// ids, no idempotency keys.
+// Only safe, display-ready columns are returned: no raw provider metadata, no task
+// ids, no idempotency keys. `historical_import` is the one flag derived from provider_metadata.
 
 export const dynamic = 'force-dynamic'
 
 const WINDOW = 200
 
 const COLUMNS =
-  'id, occurred_at, provider, transport, operation, model, quantity, unit, measurement_source, project_id, connection_id'
+  'id, occurred_at, provider, transport, operation, model, quantity, unit, measurement_source, project_id, connection_id, provider_metadata'
 
 export async function GET() {
   try {
@@ -58,6 +58,7 @@ export async function GET() {
       measurement_source: row.measurement_source,
       project_id: row.project_id ?? null,
       connection_id: row.connection_id ?? null,
+      historical_import: row.provider_metadata?.historical_import === true,
     }))
 
     // Names are decoration: if they cannot be loaded the rows still render, and never with an invented name.
