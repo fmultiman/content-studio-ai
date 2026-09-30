@@ -219,7 +219,7 @@ export function I2vSourcePicker({ projectId, value, onChange }: I2vSourcePickerP
           Este Projeto ainda não tem imagens. Gere uma imagem ou envie/salve uma em Arquivos para animar.
         </p>
       ) : (
-        <p className="truncate text-xs text-muted-foreground" data-testid="i2v-source-summary">
+        <p className="line-clamp-2 break-words text-xs text-muted-foreground" data-testid="i2v-source-summary">
           {value ? `Selecionada: ${selectedLabel || 'imagem'} (${GROUP_LABEL[value.type]})` : 'Escolha uma imagem gerada ou um arquivo deste Projeto.'}
         </p>
       )}
