@@ -16,10 +16,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { StateMessage } from '@/components/ui/state-message'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
-import { User, Bell, Palette, Key, Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Zap, Brain, Gauge } from 'lucide-react'
+import { Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Brain } from 'lucide-react'
 import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
 import { KlingMcpConnectionCard } from '@/components/settings/kling-mcp-connection-card'
 import { UsageHistory } from '@/components/settings/usage-history'
+import { SettingsTabsList } from '@/components/settings/settings-tabs'
 import { ChangePasswordForm } from '@/components/settings/change-password-form'
 import { Separator } from '@/components/ui/separator'
 import type { PublicProviderConnection } from '@/lib/provider-connections/types'
@@ -448,34 +449,7 @@ export default function SettingsPage() {
             />
           ) : null}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="inline-flex min-w-full gap-2">
-              <TabsTrigger value="profile" className="gap-2">
-                <User className="h-4 w-4" />
-                <span>Perfil</span>
-              </TabsTrigger>
-              <TabsTrigger value="appearance" className="gap-2">
-                <Palette className="h-4 w-4" />
-                <span>Aparência</span>
-              </TabsTrigger>
-              <TabsTrigger value="automation" className="gap-2">
-                <Zap className="h-4 w-4" />
-                <span>Automação</span>
-              </TabsTrigger>
-              <TabsTrigger value="notifications" className="gap-2">
-                <Bell className="h-4 w-4" />
-                <span>Notificações</span>
-              </TabsTrigger>
-              <TabsTrigger value="api" className="gap-2">
-                <Key className="h-4 w-4" />
-                <span>API</span>
-              </TabsTrigger>
-              <TabsTrigger value="usage" className="gap-2" data-testid="settings-tab-usage">
-                <Gauge className="h-4 w-4" />
-                <span>Uso e custos</span>
-              </TabsTrigger>
-              </TabsList>
-            </div>
+            <SettingsTabsList />
 
             {/* Profile Tab */}
             <TabsContent value="profile">

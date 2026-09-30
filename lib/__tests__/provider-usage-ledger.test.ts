@@ -294,11 +294,17 @@ describe('no application code writes the ledger except the server recorder', () 
   }
   for (const dir of ['app', 'lib', 'components']) walk(join(ROOT, dir))
 
-  it('only the recorder and the read-only settings route reference the table', () => {
+  it('only the recorder, the admin-only historical importer and the read-only settings route reference the table', () => {
     expect(files.filter((file) => file.text.includes('provider_usage_events')).map((file) => file.path).sort()).toEqual([
       'app/api/settings/usage/route.ts',
+      'lib/usage/historical-proofs.ts',
       'lib/usage/provider-usage-recorder.ts',
     ])
+  })
+
+  it('the historical importer is admin-only: no route, page or component imports it', () => {
+    const importers = files.filter((file) => /^(app|components)\//.test(file.path) && file.text.includes('historical-proofs'))
+    expect(importers.map((file) => file.path)).toEqual([])
   })
 
   it('the settings route only reads: no insert/upsert/update/delete', () => {
@@ -372,10 +378,29 @@ describe('GET /api/settings/usage — tenant-private read', () => {
     signIn(db)
     const body = await (await get()).json()
     expect(Object.keys(body.events[0]).sort()).toEqual(
-      ['connection_id', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit'].sort(),
+      ['connection_id', 'historical_import', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit'].sort(),
     )
     expect(JSON.stringify(body)).not.toMatch(/SECRET-TASK-ID|idempotency|provider_metadata/)
     expect(body.projects).toEqual({ 'proj-1': 'Projeto A' })
+  })
+
+  it('exposes only a boolean "historical_import" derived from provider_metadata — the metadata itself never leaves the server', async () => {
+    const db = createFakeDb({
+      seed: {
+        provider_usage_events: [
+          eventRow({ id: 'imported', provider_metadata: { historical_import: true, historical_evidence: 'verified_real_provider_proof', provider_billing: { charge_type: 'unit' } } }),
+          eventRow({ id: 'live', provider_metadata: { request: { duration: 3 } } }),
+        ],
+        projects: [],
+        provider_connections: [],
+      },
+    }) as any
+    signIn(db)
+    const raw = await (await get()).json()
+    const byId = Object.fromEntries(raw.events.map((event: any) => [event.id, event]))
+    expect(byId.imported.historical_import).toBe(true)
+    expect(byId.live.historical_import).toBe(false)
+    expect(JSON.stringify(raw)).not.toMatch(/verified_real_provider_proof|charge_type|provider_billing/)
   })
 
   it('keeps unknown usage as null (not 0) and normalises a NUMERIC that arrives as a string', async () => {

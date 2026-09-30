@@ -96,7 +96,7 @@ export function UsageHistory() {
         <h2 id="usage-history-title" className="text-lg font-semibold">Uso e custos</h2>
         <p className="text-sm text-muted-foreground" data-testid="usage-disclaimer">
           O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades…). São quantidades de uso —
-          não são valores em reais e não são convertidas entre si. O histórico começa quando este registro foi ativado.
+          não são valores em reais e não são convertidas entre si. Execuções anteriores a este registro só aparecem quando foram importadas com evidência verificada.
         </p>
       </div>
 
@@ -120,7 +120,7 @@ export function UsageHistory() {
         <div className="rounded-md border border-border/50 bg-card/30 p-6 text-sm" data-testid="usage-empty">
           <p className="font-medium">Nenhum uso registrado ainda.</p>
           <p className="mt-1 text-muted-foreground">
-            Cada vídeo gerado com IA passa a aparecer aqui quando fica pronto. Gerações feitas antes deste registro existir não são listadas.
+            Cada vídeo gerado com IA passa a aparecer aqui quando fica pronto.
           </p>
         </div>
       )}
@@ -237,6 +237,9 @@ export function UsageHistory() {
                         {project ? ` · ${project}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground" data-testid="usage-date">{dateFormat.format(new Date(event.occurred_at))}</p>
+                      {event.historical_import && (
+                        <p className="text-xs text-muted-foreground" data-testid="usage-historical">Importado de prova histórica verificada</p>
+                      )}
                     </div>
                     <div className="sm:text-right">
                       <p className="font-medium" data-testid="usage-quantity" data-known={event.quantity !== null ? 'true' : 'false'}>

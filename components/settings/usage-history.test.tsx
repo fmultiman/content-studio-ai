@@ -207,6 +207,41 @@ describe('summary — never one universal total', () => {
   })
 })
 
+describe('verified historical imports', () => {
+  const importedRest: UsageEventView = { ...restEvent, id: 'h-rest-1', historical_import: true }
+  const importedRest2: UsageEventView = { ...restEvent, id: 'h-rest-2', operation: 'text_to_video', occurred_at: '2026-09-28T20:58:46.000Z', historical_import: true }
+  const importedMcp: UsageEventView = { ...mcpEvent, id: 'h-mcp', historical_import: true }
+
+  it('an imported event says so, and keeps its own measurement wording (units provider-reported, credits by balance difference)', async () => {
+    respond(payload([importedRest, importedMcp]))
+    await ready()
+    const rows = screen.getAllByTestId('usage-row')
+    expect(rows).toHaveLength(2)
+    for (const row of rows) expect(within(row).getByTestId('usage-historical').textContent).toBe('Importado de prova histórica verificada')
+    const rest = rows.find((row) => row.getAttribute('data-transport') === 'rest')!
+    const mcp = rows.find((row) => row.getAttribute('data-transport') === 'mcp')!
+    expect(within(rest).getByTestId('usage-source').textContent).toBe('Medição: informado pelo provedor')
+    expect(within(mcp).getByTestId('usage-source').textContent).toBe('Medição: diferença de saldo')
+  })
+
+  it('a live (non-imported) event carries no historical marker', async () => {
+    respond(payload([mcpEvent]))
+    await ready()
+    expect(screen.queryByTestId('usage-historical')).toBeNull()
+  })
+
+  it('the two REST proofs are separate executions that share one API total; credits stay apart — never a combined 24', async () => {
+    respond(payload([importedRest, importedRest2, importedMcp]))
+    await ready()
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(3)
+    const groups = screen.getAllByTestId('usage-summary-group').map((node) => node.textContent ?? '')
+    expect(groups).toHaveLength(2)
+    expect(groups.some((text) => text.includes('Kling · API') && text.includes('6 unidades') && text.includes('2 execuções'))).toBe(true)
+    expect(groups.some((text) => text.includes('Kling · MCP') && text.includes('18 créditos') && text.includes('1 execução'))).toBe(true)
+    expect(screen.getByTestId('usage-summary').textContent).not.toMatch(/24/)
+  })
+})
+
 describe('filters', () => {
   it('filtering by connection type narrows both the rows and the summary', async () => {
     respond(payload([mcpEvent, restEvent, unknownEvent]))
@@ -256,7 +291,8 @@ describe('states', () => {
     await ready()
     const empty = screen.getByTestId('usage-empty')
     expect(empty.textContent).toMatch(/Nenhum uso registrado ainda/)
-    expect(empty.textContent).toMatch(/antes deste registro existir não são listadas/)
+    // Valid for an account with no events AND for one whose earlier usage was imported with verified evidence.
+    expect(empty.textContent).not.toMatch(/começa quando|antes deste registro existir/i)
     expect(screen.queryByTestId('usage-failed')).toBeNull()
     expect(screen.queryByTestId('usage-filters')).toBeNull()
   })
@@ -326,8 +362,10 @@ describe('presentation vocabulary', () => {
 describe('Settings navigation', () => {
   const page = readFileSync(join(process.cwd(), 'app/(dashboard)/configuracoes/page.tsx'), 'utf8')
 
-  it('exposes a "Uso e custos" tab that renders the usage history', () => {
-    expect(page).toMatch(/<TabsTrigger value="usage"[^>]*>[\s\S]*?<span>Uso e custos<\/span>/)
+  it('exposes a "Uso e custos" tab (via the shared Settings tab list) that renders the usage history', () => {
+    const tabs = readFileSync(join(process.cwd(), 'components/settings/settings-tabs.tsx'), 'utf8')
+    expect(tabs).toMatch(/value: 'usage', label: 'Uso e custos'/)
+    expect(page).toMatch(/<SettingsTabsList \/>/)
     expect(page).toMatch(/<TabsContent value="usage">\s*<UsageHistory \/>\s*<\/TabsContent>/)
     expect(page).toMatch(/import \{ UsageHistory \} from '@\/components\/settings\/usage-history'/)
   })
