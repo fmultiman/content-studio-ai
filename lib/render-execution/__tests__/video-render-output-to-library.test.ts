@@ -123,7 +123,8 @@ describe('durable bytes and consumption boundaries', () => {
   })
 
   it('keeps both normal Library download and original render output signing valid', () => {
-    expect(libraryDownload).toMatch(/createPresignedReadUrl\(file\.storage_path/)
+    // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1: the Library download signs through the owner-proving wrapper.
+    expect(libraryDownload).toMatch(/presignLibraryRead\(file/)
     expect(outputUrl).toMatch(/createPresignedReadUrl\(execution\.output_storage_path/)
   })
 })

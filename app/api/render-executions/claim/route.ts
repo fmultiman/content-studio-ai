@@ -34,6 +34,7 @@ import { createWorkerApiDbClient } from '@/lib/render-execution/worker-db-client
 import { resolveRuntimeInput } from '@/lib/render-execution/resolve-runtime-input'
 import { resolveStaticRuntimeInput } from '@/lib/render-execution/resolve-static-runtime-input'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { withTrustedStoragePaths } from '@/lib/storage/library-path'
 import type { LibraryFile } from '@/lib/types'
 
 const DEFAULT_LEASE_SECONDS = 300
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
   // ── 4a. Load LibraryFiles scoped to the execution's project ───────────────
   // These are loaded from the DB with project-scoped ownership — no path
   // comes from the browser-authored snapshot. This is the SSRF boundary.
-  const { data: libraryFiles, error: lfError } = await db
+  const { data: rawLibraryFiles, error: lfError } = await db
     .from('library_files')
     .select('id, user_id, project_id, name, storage_path, mime_type, kind, file_size, deleted_at, created_at, updated_at')
     .eq('project_id', execution.project_id)
@@ -128,6 +129,11 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     )
   }
+
+  // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1: a row's storage_path is a claim, not proof. A row whose
+  // key is not provably the EXECUTION OWNER's own Library key loses its path here, so the resolvers
+  // below treat it as a missing file and fail closed instead of presigning another tenant's object.
+  const libraryFiles = withTrustedStoragePaths((rawLibraryFiles ?? []) as Array<{ user_id: string; storage_path: string | null }>)
 
   const kind = execution.kind ?? 'video'
   console.log(`[render-executions/claim] claimed ${execution.id} kind=${kind} attempt=${execution.attempt}`)

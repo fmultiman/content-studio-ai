@@ -46,6 +46,7 @@ import { createPresignedReadUrl } from '@/lib/storage/s3'
 
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111'
 const FOREIGN_ID = '22222222-2222-4222-8222-222222222222'
+const LIB_BLOB = '99999999-9999-4999-8999-999999999999'
 const SECRET_TOKENS = ['MCP-ACCESS-TOKEN-SECRET', 'MCP-REFRESHED-TOKEN-SECRET']
 const NOW_ISO = new Date().toISOString()
 
@@ -481,7 +482,7 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     kind: 'image',
     mime_type: 'image/png',
     name: 'capa.png',
-    storage_path: 'users/user-a/library/xyz/capa.png',
+    storage_path: `users/user-a/library/${LIB_BLOB}/capa.png`,
     public_url: 'https://cdn.example.test/capa.png',
     deleted_at: null,
     origin: 'upload',
@@ -529,7 +530,7 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     const response = await post(mcpI2v({ sourceLibraryFileId: 'lib-1', storage_path: 'users/victim/secret.png', sourceUrl: 'https://evil.example.test/x.png', publicUrl: 'https://evil.example.test/y.png' }))
 
     expect(response.status).toBe(200)
-    expect(vi.mocked(createPresignedReadUrl).mock.calls.map((call) => call[0])).toEqual(['users/user-a/library/xyz/capa.png'])
+    expect(vi.mocked(createPresignedReadUrl).mock.calls.map((call) => call[0])).toEqual([`users/user-a/library/${LIB_BLOB}/capa.png`])
     expect(JSON.stringify(db.tables.video_generations[0])).not.toContain('evil.example.test')
   })
 
@@ -559,6 +560,27 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
       expect(response.status).toBe(status)
       if (code) expect((await response.json()).code).toBe(code)
     }
+    expect(mcp.calls).toEqual([])
+    expect(restCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it('a forged Library row pointing at ANOTHER tenant’s object is never signed or sent to a provider (422)', async () => {
+    const db = makeDb({
+      connections: [connectionRow()],
+      klingKey: 'user-rest-key',
+      libraryFiles: [libFile({ id: 'lib-forged', storage_path: `users/victim-user/library/${LIB_BLOB}/secret.png` })],
+    })
+    signIn(db)
+    const mcp = installFakeMcp()
+    vi.mocked(createPresignedReadUrl).mockClear()
+
+    for (const body of [mcpI2v({ sourceLibraryFileId: 'lib-forged' }), { ...base, mode: 'image_to_video', sourceLibraryFileId: 'lib-forged', connectionRef: 'kling:api' }]) {
+      const response = await post(body)
+      expect(response.status).toBe(422)
+      expect((await response.json()).code).toBe('SOURCE_MEDIA_UNAVAILABLE')
+    }
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
     expect(mcp.calls).toEqual([])
     expect(restCalls).toEqual([])
     expect(db.tables.video_generations).toHaveLength(0)

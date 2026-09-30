@@ -1,4 +1,6 @@
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
+import { presignLibraryRead } from '@/lib/storage/library-storage'
 import type { createClient } from '@/lib/supabase/server'
 import type { ChannelPieceMediaResolved, LibraryFileKind, LibraryFileOrigin } from '@/lib/types'
 
@@ -49,7 +51,7 @@ export async function resolveMediaSource(
   if (row.library_file_id) {
     const { data: lf } = await supabase
       .from('library_files')
-      .select('kind, name, file_size, mime_type, storage_path, public_url, thumbnail_url, deleted_at, origin')
+      .select('user_id, kind, name, file_size, mime_type, storage_path, public_url, thumbnail_url, deleted_at, origin')
       .eq('id', row.library_file_id)
       .single()
 
@@ -57,10 +59,11 @@ export async function resolveMediaSource(
       return { media_kind: 'other', image_url: null, thumbnail_url: null, file_size: null, mime_type: null, name: null, source_deleted: false }
     }
 
-    const presignedLf = lf.storage_path
-      ? await createPresignedReadUrl(lf.storage_path as string).catch(() => null)
-      : null
-    const resolvedUrl = presignedLf ?? (lf.public_url as string | null)
+    // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1: a row's storage_path is a claim. Sign (and fall
+    // back to the recorded URL) only for a key that is provably the owner's own Library object.
+    const libraryRow = { user_id: lf.user_id as string, storage_path: lf.storage_path as string | null }
+    const presignedLf = await presignLibraryRead(libraryRow).catch(() => null)
+    const resolvedUrl = presignedLf ?? (isTrustedLibraryStoragePath(libraryRow.user_id, libraryRow.storage_path) ? (lf.public_url as string | null) : null)
 
     return {
       media_kind: lf.kind as LibraryFileKind,

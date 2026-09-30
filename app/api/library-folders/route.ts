@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 import { createS3FolderPlaceholder, deleteS3FolderPlaceholder, moveLibraryS3Object } from '@/lib/storage/s3'
 
 type LibraryFolderBody = {
@@ -329,7 +330,8 @@ export async function PATCH(request: Request) {
         : file.folder.replace(`${folder.path}/`, `${nextPath}/`)
       let moved: Awaited<ReturnType<typeof moveLibraryS3Object>> | null = null
 
-      if (file.storage_path) {
+      // Only the owner's own Library key is ever re-keyed in S3.
+      if (file.storage_path && isTrustedLibraryStoragePath(user.id, file.storage_path)) {
         moved = await moveLibraryS3Object({
           userId: user.id,
           currentPath: file.storage_path,

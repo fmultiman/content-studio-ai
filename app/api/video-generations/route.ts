@@ -8,6 +8,8 @@ import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/l
 import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
+import { presignLibraryRead } from '@/lib/storage/library-storage'
+import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 import { checkLibrarySourceFile, LIBRARY_SOURCE_REJECTION_MESSAGE } from '@/lib/video-generation/i2v-source'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
@@ -199,8 +201,14 @@ export async function POST(req: NextRequest) {
         if (rejection) {
           return jsonError(422, rejection, LIBRARY_SOURCE_REJECTION_MESSAGE[rejection])
         }
+        // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1: the row's storage_path is a claim. Only the
+        // owner's own Library key is signed, and the recorded public_url (also user-writable) is
+        // never a fallback for a key that failed that proof.
         if (file.storage_path) {
-          const presigned = await createPresignedReadUrl(file.storage_path)
+          if (!isTrustedLibraryStoragePath(file.user_id, file.storage_path)) {
+            return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
+          }
+          const presigned = await presignLibraryRead(file)
           resolvedSourceUrl = presigned || file.public_url || ''
         } else {
           resolvedSourceUrl = file.public_url || ''
