@@ -46,6 +46,8 @@ export function ElementLayers({
   onToggleVisibility,
   readOnly = false,
   note,
+  orderOnly = false,
+  title = 'Camadas',
 }: {
   /** Normalized paint order, back -> front. */
   order: readonly string[]
@@ -71,6 +73,13 @@ export function ElementLayers({
   readOnly?: boolean
   /** Replaces the interaction hint (e.g. why the stack is read-only). */
   note?: ReactNode
+  /**
+   * STATIC_TEMPLATE_ANATOMY_TREE_V1: the paint-order editor alone. Rows keep the grip (drag /
+   * ArrowUp / ArrowDown) but drop the eye and the disclosure, because the anatomy tree already
+   * owns visibility and the element panels. Order semantics are unchanged.
+   */
+  orderOnly?: boolean
+  title?: string
 }) {
   const listRef = useRef<HTMLOListElement>(null)
   const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
@@ -134,9 +143,9 @@ export function ElementLayers({
   }
 
   return (
-    <section className="space-y-1.5" aria-label="Camadas" data-testid="element-layers">
+    <section className="space-y-1.5" aria-label={title} data-testid="element-layers">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Camadas</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</span>
         {readOnly
           ? <span className="text-[10px] text-muted-foreground">somente leitura</span>
           : <button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline disabled:opacity-50 disabled:no-underline" disabled={isDefault} onClick={onRestoreDefault} title="Restaurar ordem de camadas do Template">Ordem padrão</button>}
@@ -154,6 +163,29 @@ export function ElementLayers({
             return (
               <li key={id} data-layer-id={id} data-read-only="true" className="min-w-0 rounded-md border border-border/60 px-2 py-1.5 text-xs">
                 <span className="block min-w-0 truncate">{label}</span>
+              </li>
+            )
+          }
+          if (orderOnly) {
+            return (
+              <li key={id} data-layer-id={id} data-order-only="true" data-hidden={isHidden ? 'true' : undefined} className={`min-w-0 rounded-md border border-border/60 text-xs ${dragging ? 'opacity-70 ring-1 ring-primary' : ''}`}>
+                <div className="flex min-w-0 items-center gap-1">
+                  <button
+                    type="button"
+                    data-layer-grip
+                    aria-label={`Mover ${label} (setas para cima/baixo)`}
+                    title="Arraste para reordenar"
+                    className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+                    onPointerDown={(event) => onPointerDown(event, id, index)}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={() => setDrag(null)}
+                    onKeyDown={(event) => onGripKeyDown(event, index)}
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </button>
+                  <span className={`min-w-0 flex-1 truncate py-1 pr-2 ${isHidden ? 'italic text-muted-foreground' : ''}`}>{label}</span>
+                </div>
               </li>
             )
           }

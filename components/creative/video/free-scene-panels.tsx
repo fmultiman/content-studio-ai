@@ -53,22 +53,36 @@ type ElementsProps<T extends FreeHost & { id: string }> = {
   onTiming?: (elementId: string) => void
   /** CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: after a removal, so the host drops any stale selection of that id. */
   onRemoved?: (elementId: string) => void
+  /**
+   * STATIC_TEMPLATE_ANATOMY_TREE_V1: a Template slide's custom-element list renders the add actions
+   * under their own heading (see `FreeElementAddActions`) and names its own empty state. Absent =
+   * the unchanged Free/Video panel (actions above the list, "em branco" orientation).
+   */
+  hideAddActions?: boolean
+  emptyMessage?: string
+}
+
+/** The bounded author actions of a free host (Texto / Imagem da Biblioteca) — Text and Image only. */
+export function FreeElementAddActions({ full, onAddText, onAddImage }: { full: boolean; onAddText: () => void; onAddImage: () => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddText} disabled={full} data-testid="free-add-text"><Type className="h-3.5 w-3.5" />Texto</Button>
+      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />Imagem da Biblioteca</Button>
+    </div>
+  )
 }
 
 /** Elementos tab of a free composition: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, wording = VIDEO_WORDING }: ElementsProps<T>) {
+export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, hideAddActions = false, emptyMessage, wording = VIDEO_WORDING }: ElementsProps<T>) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
   const listed = [...elements].reverse()
   return (
     <div className="space-y-2" data-testid="free-scene-elements">
-      <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddText} disabled={full} data-testid="free-add-text"><Type className="h-3.5 w-3.5" />Texto</Button>
-        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />Imagem da Biblioteca</Button>
-      </div>
+      {hideAddActions ? null : <FreeElementAddActions full={full} onAddText={onAddText} onAddImage={onAddImage} />}
       {elements.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.</p>
+        <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{emptyMessage ?? `${wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.`}</p>
       ) : (
         <ol className="space-y-1" aria-label={`Elementos ${wording.unit === 'slide' ? 'do slide' : `da ${wording.unit}`} (frente no topo)`}>
           {listed.map((element) => {
@@ -104,7 +118,7 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
           })}
         </ol>
       )}
-      <p className="text-[11px] text-muted-foreground" data-testid="free-scene-elements-note">A lista mostra a frente no topo; a prévia e o render desenham na mesma ordem. Posição e tamanho são em % {wording.stage}.</p>
+      {elements.length === 0 && emptyMessage ? null : <p className="text-[11px] text-muted-foreground" data-testid="free-scene-elements-note">A lista mostra a frente no topo; a prévia e o render desenham na mesma ordem. Posição e tamanho são em % {wording.stage}.</p>}
     </div>
   )
 }
