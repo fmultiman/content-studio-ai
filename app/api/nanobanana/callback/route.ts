@@ -1,120 +1,123 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { z } from 'zod'
+import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { queryNanoBananaTask } from '@/lib/providers/nanobanana/task-details'
+import { NANOBANANA_RESULT_IMAGE_POLICY, RemoteImageError, parseRemoteImageUrl } from '@/lib/security/safe-remote-image'
 
-// Usar service role para atualizar sem RLS (callback vem de fora)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+// NANOBANANA_CALLBACK_AUTHENTICATION_V1
+//
+// This endpoint is PUBLIC and the official Nano Banana callback is UNSIGNED: there is no signature,
+// secret or header to verify (docs.nanobananaapi.ai). So nothing in the request body is trusted.
+//
+//   untrusted callback  ->  only `data.taskId` is read (to find a task that is STILL `processing`)
+//                       ->  the provider is asked directly (Get Task Details, with the task OWNER's
+//                           own BYOK credential, resolved server-side)
+//                       ->  the provider's answer, bound to that exact task id, is the only authority
+//                           for status / image_url / failure text.
+//
+// What the body claims (status code, resultImageUrl, errors, user_id, project_id, ...) is ignored. A
+// forged callback therefore cannot set image_url or flip a status; at worst it makes the server ask
+// the provider a read-only question about a real, unfinished task. Terminal tasks are never touched
+// again (no provider call, no overwrite), which also makes provider retries and replays idempotent.
+
+const MAX_CALLBACK_BYTES = 64 * 1024
+
+// Only the task identity is taken from the body (documented on every callback shape, v1/v2/pro).
+const CallbackSchema = z.object({
+  data: z.object({ taskId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/) }).passthrough(),
+})
+
+const ACK = () => NextResponse.json({ success: true })
 
 export async function POST(request: NextRequest) {
-  console.log('[NanoBanana Callback] Recebendo...')
-  
+  // Bounded read: never buffer an arbitrary body.
+  const declared = Number(request.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_CALLBACK_BYTES) {
+    return NextResponse.json({ error: 'Invalid callback' }, { status: 413 })
+  }
+
+  let body: unknown
   try {
-    const body = await request.json()
-    console.log('[NanoBanana Callback] Body:', JSON.stringify(body))
+    const text = await request.text()
+    if (text.length > MAX_CALLBACK_BYTES) return NextResponse.json({ error: 'Invalid callback' }, { status: 413 })
+    body = JSON.parse(text)
+  } catch {
+    return NextResponse.json({ error: 'Invalid callback' }, { status: 400 })
+  }
 
-    // Extrair dados - múltiplos formatos possíveis
-    let taskId: string | null = null
-    let imageUrl: string | null = null
-    let status: string = 'completed'
-    let errorMessage: string | null = null
+  const parsed = CallbackSchema.safeParse(body)
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid callback' }, { status: 400 })
+  const providerTaskId = parsed.data.data.taskId
 
-    // Extrair taskId
-    taskId = body.taskId || body.task_id || body.id || 
-             body.data?.taskId || body.data?.task_id || body.data?.id
+  try {
+    const db = createServiceRoleSupabase()
 
-    // Extrair imageUrl - formato correto: body.data.info.resultImageUrl
-    const possibleUrls = [
-      body.data?.info?.resultImageUrl,  // Formato correto da NanoBanana
-      body.data?.resultImageUrl,
-      body.data?.imageUrl,
-      body.data?.image_url,
-      body.data?.url,
-      body.imageUrl,
-      body.image_url,
-      body.url,
-      body.result?.url,
-      body.result?.imageUrl,
-      Array.isArray(body.images) ? body.images[0] : null,
-      Array.isArray(body.data?.images) ? body.data.images[0] : null,
-      Array.isArray(body.output) ? body.output[0] : null,
-    ]
-    
-    // Encontrar primeira URL válida (deve ser string)
-    for (const url of possibleUrls) {
-      if (typeof url === 'string' && url.length > 0) {
-        imageUrl = url
-        break
+    // Binding: an existing Nano Banana task, found by the provider's id. Owner, project and every other
+    // field come from OUR row, never from the request. An unknown id is acknowledged like any other
+    // (no hint to an unauthenticated caller about what exists).
+    const { data: task } = await db
+      .from('generation_tasks')
+      .select('id, user_id, status')
+      .eq('provider', 'nanobanana')
+      .eq('task_id', providerTaskId)
+      .maybeSingle()
+
+    // Terminal (or unknown) tasks are never re-opened or overwritten: replay and duplicate-safe.
+    if (!task || task.status !== 'processing') return ACK()
+
+    // The owner's own credential, through the existing boundary: no platform fallback.
+    const credential = await resolveProviderExecution(db, { userId: task.user_id, provider: 'nano_banana' })
+    if (credential.status !== 'ready') {
+      console.warn('[NanoBanana Callback] no owner credential; task left untouched')
+      return ACK()
+    }
+
+    const answer = await queryNanoBananaTask(credential.secret, providerTaskId)
+    if (!answer.ok) {
+      // Nothing is mutated. A transient provider problem is retryable (the provider retries non-2xx).
+      console.warn('[NanoBanana Callback] provider query not usable:', answer.reason)
+      return answer.reason === 'TASK_MISMATCH' ? ACK() : NextResponse.json({ error: 'Retry later' }, { status: 503 })
+    }
+
+    const state = answer.task
+    if (state.state === 'generating') {
+      // The callback raced the provider's own record: nothing to apply yet, ask the provider to call again.
+      return NextResponse.json({ error: 'Retry later' }, { status: 503 })
+    }
+
+    let update: Record<string, unknown>
+    if (state.state === 'succeeded') {
+      // The provider's answer is authoritative, but the stored URL must still be the provider's own result
+      // host (the same allowlist the image ingestion enforces): anything else is treated as a failed result.
+      try {
+        parseRemoteImageUrl(state.resultImageUrl, NANOBANANA_RESULT_IMAGE_POLICY)
+        update = { status: 'completed', image_url: state.resultImageUrl }
+      } catch (error) {
+        if (!(error instanceof RemoteImageError)) throw error
+        console.warn('[NanoBanana Callback] provider result URL refused by policy:', error.code)
+        update = { status: 'failed', error_message: 'Resultado do provedor indisponível.' }
       }
+    } else if (state.state === 'failed') {
+      update = { status: 'failed', error_message: state.message }
+    } else {
+      console.warn('[NanoBanana Callback] provider answer unusable:', state.reason)
+      update = { status: 'failed', error_message: 'Resposta do provedor inválida.' }
     }
 
-    // Verificar se é erro
-    if (body.status === 'failed' || body.status === 'error' || body.error || body.code !== 200) {
-      status = 'failed'
-      errorMessage = body.error || body.message || body.msg || body.data?.error || 'Erro desconhecido'
-    }
-
-    console.log('[NanoBanana Callback] TaskId:', taskId)
-    console.log('[NanoBanana Callback] ImageUrl:', typeof imageUrl === 'string' ? imageUrl.substring(0, 100) + '...' : imageUrl)
-    console.log('[NanoBanana Callback] Status:', status)
-
-    if (!taskId) {
-      console.log('[NanoBanana Callback] TaskId não encontrado')
-      return NextResponse.json({ error: 'TaskId não encontrado' }, { status: 400 })
-    }
-
-    // Validar imageUrl se status for completed
-    if (status === 'completed' && typeof imageUrl !== 'string') {
-      console.log('[NanoBanana Callback] resultImageUrl inválido ou ausente')
-      status = 'failed'
-      errorMessage = 'resultImageUrl inválido ou ausente'
-    }
-
-    // Cliente com service role (bypass RLS)
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Buscar task
-    const { data: task, error: findError } = await supabase
+    // processing -> terminal only, atomically: a concurrent/duplicate delivery finds no `processing` row.
+    const { error: updateError } = await db
       .from('generation_tasks')
-      .select('id, user_id')
-      .eq('task_id', taskId)
-      .single()
-
-    if (findError || !task) {
-      console.log('[NanoBanana Callback] Task não encontrada:', taskId)
-      return NextResponse.json({ error: 'Task não encontrada' }, { status: 404 })
-    }
-
-    console.log('[NanoBanana Callback] Task encontrada:', task.id)
-
-    // Atualizar
-    const updateData: Record<string, unknown> = {
-      status,
-      callback_received_at: new Date().toISOString(),
-      raw_response: body,
-    }
-
-    if (imageUrl) updateData.image_url = imageUrl
-    if (errorMessage) updateData.error_message = errorMessage
-
-    const { error: updateError } = await supabase
-      .from('generation_tasks')
-      .update(updateData)
+      .update({ ...update, callback_received_at: new Date().toISOString() })
       .eq('id', task.id)
+      .eq('status', 'processing')
+    if (updateError) return NextResponse.json({ error: 'Retry later' }, { status: 503 })
 
-    if (updateError) {
-      console.log('[NanoBanana Callback] Erro update:', updateError)
-      return NextResponse.json({ error: 'Erro ao atualizar' }, { status: 500 })
-    }
-
-    console.log('[NanoBanana Callback] Atualizado com sucesso')
-    return NextResponse.json({ success: true })
-
+    return ACK()
   } catch (error) {
-    console.error('[NanoBanana Callback] Erro:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro interno' },
-      { status: 500 }
-    )
+    // Class only: messages/URLs/keys are never logged.
+    console.error('[NanoBanana Callback] failed:', error instanceof Error ? error.name : 'unknown')
+    return NextResponse.json({ error: 'Retry later' }, { status: 503 })
   }
 }
 

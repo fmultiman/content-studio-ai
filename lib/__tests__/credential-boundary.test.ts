@@ -168,6 +168,8 @@ describe('user_byok is the only execution mode wired into routes', () => {
       [
         'app/api/channel-pieces/generate-body/route.ts',
         'app/api/evaluate-image/route.ts',
+        // NANOBANANA_CALLBACK_AUTHENTICATION_V1: reads the task OWNER's own credential to query the provider.
+        'app/api/nanobanana/callback/route.ts',
         'app/api/nanobanana/generate/route.ts',
         'app/api/openai/generate-image/route.ts',
         'app/api/posts/generate-feed-text/route.ts',
@@ -223,7 +225,11 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path === 'app/api/video-generations/route.ts' ||
       path === 'app/api/video-generations/[id]/sync/route.ts' ||
       // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
-      path === 'app/api/video-generations/[id]/save-to-library/route.ts'
+      path === 'app/api/video-generations/[id]/save-to-library/route.ts' ||
+      // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
+      // the OWNER's own credential and updates only that owner's still-`processing` task, from the provider's
+      // authenticated answer (never from the request body).
+      path === 'app/api/nanobanana/callback/route.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
 
