@@ -78,7 +78,7 @@ Expected sha256 of the changed worker-served files (export tree byte-identical t
 | `lib/creative/templates/template-definitions.ts` | `e84d2f9a725edb79a42f4b03ce4be7f6313ff2503c7ca19aae25fc29debde869` |
 | `lib/creative/templates/element-stack.ts` | `41d5569168056e1a47403972b546473adbb54c87a0b68ba1e83b2ab61d282137` |
 
-**Worker parity procedure (operator, VPS — this session has no VPS access).** After the production merge: `node infra/render-worker-runtime/export.mjs`; copy `infra/render-worker-runtime/dist/` to `/opt/content-studio/render-worker` (bound read-only to `/app/content-studio`); `docker service update --force content-studio-execution_render-worker` (the Remotion bundle is built once at process start, so a copy without a restart keeps serving the old code); confirm in the **new** active container that the three hashes above match, that startup finished the bundle build, then run a real render. No `docker cp` into a running container. **Worker parity is NOT claimed from the export tree** (see *Worker parity status* below for what was and was not established).
+**Worker parity procedure (operator, VPS — this session has no VPS access).** After the production merge: `node infra/render-worker-runtime/export.mjs`; copy `infra/render-worker-runtime/dist/` to `/opt/content-studio/render-worker` (bound read-only to `/app/content-studio`); `docker service update --force content-studio-execution_render-worker` (the Remotion bundle is built once at process start, so a copy without a restart keeps serving the old code); confirm in the **new** active container that the three hashes above match, that startup finished the bundle build, then run a real render. No `docker cp` into a running container. **Worker parity is NOT claimed from the export tree**; it is established from the active container's hashes and its render log (see *Worker parity status*).
 
 ## Tests and validation
 
@@ -98,18 +98,21 @@ A temporary, uncommitted `/dev/*` harness (deleted) rendered the real `LayoutCon
 - Authored Cover (frame off, intro moved, note text hidden, Custom Text) → Info: dialog, Cancel left state identical, confirm reset every new field (no frame/kicker/intro/brand/hidden), the Custom Text stayed; back to Cover: clean and framed.
 - Limitation: DOM/state verification (no pixel screenshot of the harness) and not inside the authenticated editor.
 
-## Worker parity status (production)
+## Worker parity status (production) — CONFIRMED
 
-The operator reported the worker updated and restarted (`docker service update --force content-studio-execution_render-worker`). **This session has no VPS access and did not receive the container's output**, so:
+The operator updated the worker (`export.mjs` output copied to `/opt/content-studio/render-worker`, then `docker service update --force content-studio-execution_render-worker`) and pasted the evidence below from the VPS. This session has no VPS access; the values are the operator's output, compared here against the expected hashes.
 
-| Item | Status |
-| :--- | :--- |
-| `CoverVariant.tsx` served by the active worker | **Proven behaviourally, not by hash**: production PNGs show output that only the new file can produce (hero frame off, separate note text, moved kicker/intro/brand — renders 2–7 below). The legacy default render is unchanged. |
-| `template-definitions.ts`, `element-stack.ts` served by the active worker | **NOT confirmed.** Nothing in the renders can distinguish them from the previous versions (the frozen `hiddenElements`/`elementOrder` are normalised on Vercel before the worker sees them). |
-| sha256 of the three files inside the active container | **NOT provided to this session — pending operator output** (expected values in the table above). |
-| Remotion bundle finished at service start | **NOT observed by this session.** Indirect signal only: the first render after the restart took 20 s (claimed 06:53:48 → completed 06:54:08), every later render 1–3 s, i.e. a cold-then-warm pattern. |
+| File inside the active container (`/app/content-studio/…`) | sha256 reported by the operator | Expected | Match |
+| :--- | :--- | :--- | :--- |
+| `components/creative/documentary-card/CoverVariant.tsx` | `3fed0838064d13855205e052b17245aa70626d86bb6b38e0ed445d94313e3921` | `3fed0838…13e3921` | **yes** |
+| `lib/creative/templates/template-definitions.ts` | `e84d2f9a725edb79a42f4b03ce4be7f6313ff2503c7ca19aae25fc29debde869` | `e84d2f9a…de869` | **yes** |
+| `lib/creative/templates/element-stack.ts` | `41d5569168056e1a47403972b546473adbb54c87a0b68ba1e83b2ab61d282137` | `41d55691…82137` | **yes** |
 
-To close this row set, run on the VPS: `docker exec <active render-worker container> sha256sum /app/content-studio/components/creative/documentary-card/CoverVariant.tsx /app/content-studio/lib/creative/templates/template-definitions.ts /app/content-studio/lib/creative/templates/element-stack.ts` and `docker service logs content-studio-execution_render-worker --since <restart time>` (look for the bundle-ready line).
+- **Active service task:** `content-studio-execution_render-worker.1.ze3iibzaiqmf` (a single replica `.1` in the log; no second/old replica answered).
+- **Render execution seen by the worker:** the supplied `docker service logs … --since 22m` shows this task claiming and completing **all seven** smoke executions (`static_still`, attempt 1) with `Render succeeded`, `Uploaded … renders/scratch/<id>/output.png`, `Completion recorded`. Uploaded byte counts equal the sizes the API reported: 1,905,276 / 1,954,459 / 1,897,937 / 1,889,275 / 1,828,204 / 1,574,567 / 1,352,203.
+- **Durations:** the first execution after the restart took 19,709 ms because the fresh container downloaded Chrome Headless Shell (86.6 MB) on its first claim; the next six took 1,666–2,572 ms.
+- **Bundle startup:** the supplied window starts after the service startup, so the literal "bundle ready" line was **not captured**. It is confirmed **functionally**: the worker rendered seven executions from this container, the PNGs exhibit behaviour only the new `CoverVariant.tsx` produces, and the mounted files are byte-identical to the expected sources (the bundle is built from them at process start). The explicit log line remains unobserved.
+- **Operational note (not caused by this change):** every Remotion render logs a "Detected differing memory amounts" warning (cgroup reports ~8.8 PB vs 14.4 GB from `/proc/meminfo`); harmless (Remotion uses the lower value).
 
 ## Production render smoke (real worker, legitimate operator session)
 
@@ -129,7 +132,7 @@ All seven executions: `static_still`, attempt 1, `completed`, output **1080 × 1
 
 Editor ↔ output agreement: the editor's preview nodes (`data-hero-frame`, per-element transforms, hidden state) matched the PNGs for every render. Introdução, Fonte editorial, Chamada and Assinatura in the output correspond to the Content fields and Element positions authored (#3); the Assinatura's name is the Project name (derived), its logo the Template default.
 
-Limitations observed: (a) worker sha256/startup not observable from here (above); (b) the render API does not expose which worker claimed an execution; (c) hero replacement was checked with a transparent-cornered project asset, so the frame/backing difference is clearly visible — an opaque photo shows only the cream border.
+Limitations observed: (a) the literal bundle-ready startup line is outside the supplied log window (functionally confirmed); (b) the render API does not expose which worker claimed an execution, but the operator's worker log shows this container did (Worker parity status); (c) hero replacement was checked with a transparent-cornered project asset, so the frame/backing difference is clearly visible — an opaque photo shows only the cream border.
 
 ## Local render proof (frozen snapshot, before merge)
 
