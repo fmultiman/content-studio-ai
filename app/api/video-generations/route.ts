@@ -399,8 +399,18 @@ export async function GET(req: NextRequest) {
       throw error
     }
 
+    // "Saved in Arquivos" is durable server state: the promotion pointer counts only while its LibraryFile
+    // is live. A trashed file reads as not saved (matching render -> Arquivos), so saving again is offered.
+    const pointerIds = [...new Set((generations || []).map((gen) => gen.library_file_id).filter((id): id is string => !!id))]
+    const liveFileIds = new Set<string>()
+    if (pointerIds.length > 0) {
+      const { data: liveFiles } = await supabase.from('library_files').select('id').in('id', pointerIds).eq('user_id', user.id).is('deleted_at', null)
+      for (const file of (liveFiles ?? []) as Array<{ id: string }>) liveFileIds.add(file.id)
+    }
+
     const signedGenerations = await Promise.all(
-      (generations || []).map(async (gen) => {
+      (generations || []).map(async (rawGen) => {
+        const gen = rawGen.library_file_id && !liveFileIds.has(rawGen.library_file_id) ? { ...rawGen, library_file_id: null } : rawGen
         if (gen.status === 'succeeded' && gen.storage_path) {
           // Never sign (or echo the stored URL of) a path outside the owner's own namespace.
           if (!isTenantVideoStoragePath(gen.storage_path, gen)) {

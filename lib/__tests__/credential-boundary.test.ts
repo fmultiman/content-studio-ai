@@ -221,7 +221,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path.startsWith('app/api/provider-connections/') ||
       path.startsWith('app/api/internal/video-generations/') ||
       path === 'app/api/video-generations/route.ts' ||
-      path === 'app/api/video-generations/[id]/sync/route.ts'
+      path === 'app/api/video-generations/[id]/sync/route.ts' ||
+      // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
+      path === 'app/api/video-generations/[id]/save-to-library/route.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
 
