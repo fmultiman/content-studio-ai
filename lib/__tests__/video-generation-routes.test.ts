@@ -67,7 +67,7 @@ function connectionRow(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function makeDb(rows: { connections?: any[]; klingKey?: string | null; generations?: any[]; images?: any[] } = {}) {
+function makeDb(rows: { connections?: any[]; klingKey?: string | null; generations?: any[]; images?: any[]; libraryFiles?: any[] } = {}) {
   return createFakeDb({
     seed: {
       provider_connections: rows.connections ?? [],
@@ -75,7 +75,7 @@ function makeDb(rows: { connections?: any[]; klingKey?: string | null; generatio
       video_generations: rows.generations ?? [],
       productions: [{ id: 'prod-1', project_id: 'proj-1', user_id: 'user-a' }],
       images: rows.images ?? [{ id: 'img-1', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/1.png', storage_path: 'a/1.png' }],
-      library_files: [],
+      library_files: rows.libraryFiles ?? [],
       video_drafts: [],
       channel_piece_media: [],
     },
@@ -469,6 +469,121 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
     expect((await response.json()).code).toBe('PROVIDER_NOT_CONFIGURED')
     expect(mcp.calls).toEqual([])
     expect(db.tables.video_generations).toHaveLength(0)
+  })
+})
+
+// VIDEO_I2V_LIBRARY_SOURCE_PICKER_V1 — Arquivos as an Image-to-Video source
+describe('POST /api/video-generations — image_to_video from a LibraryFile (Arquivos)', () => {
+  const libFile = (overrides: Record<string, unknown> = {}) => ({
+    id: 'lib-1',
+    user_id: 'user-a',
+    project_id: 'proj-1',
+    kind: 'image',
+    mime_type: 'image/png',
+    name: 'capa.png',
+    storage_path: 'users/user-a/library/xyz/capa.png',
+    public_url: 'https://cdn.example.test/capa.png',
+    deleted_at: null,
+    origin: 'upload',
+    ...overrides,
+  })
+  const mcpI2v = (extra: Record<string, unknown> = {}) => ({ ...base, mode: 'image_to_video', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0', ...extra })
+  const SIGNED = 'https://s3.example.test/signed-source.png?sig=1'
+
+  it('MCP: a valid image LibraryFile is normalized to the provider first_image URL; the row records only source_library_file_id', async () => {
+    const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+    signIn(db)
+    const mcp = installFakeMcp()
+
+    const response = await post(mcpI2v({ sourceLibraryFileId: 'lib-1' }))
+
+    expect(response.status).toBe(200)
+    expect(mcp.calls[0].name).toBe('image_to_video')
+    expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: SIGNED }])
+    // The LibraryFile id itself never reaches the provider.
+    expect(JSON.stringify(mcp.calls)).not.toContain('lib-1')
+    expect(db.tables.video_generations[0]).toMatchObject({ mode: 'image_to_video', source_image_id: null, source_library_file_id: 'lib-1', transport: 'mcp' })
+  })
+
+  it('REST: a valid image LibraryFile is normalized to the same presigned URL the REST adapter receives', async () => {
+    const db = makeDb({ klingKey: 'user-rest-key', libraryFiles: [libFile()] })
+    signIn(db)
+    installFakeMcp()
+
+    const response = await post({ ...base, mode: 'image_to_video', sourceLibraryFileId: 'lib-1', connectionRef: 'kling:api' })
+
+    expect(response.status).toBe(200)
+    expect(restCalls).toHaveLength(1)
+    expect(restCalls[0].kind).toBe('i2v')
+    expect(restCalls[0].args[1]).toBe(SIGNED)
+    expect(JSON.stringify(restCalls[0].args)).not.toContain('lib-1')
+    expect(db.tables.video_generations[0]).toMatchObject({ source_image_id: null, source_library_file_id: 'lib-1', transport: 'rest' })
+  })
+
+  it('the storage path comes from the stored row, never from the client; client-supplied paths/urls are not an authority', async () => {
+    const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+    signIn(db)
+    installFakeMcp()
+    vi.mocked(createPresignedReadUrl).mockClear()
+
+    const response = await post(mcpI2v({ sourceLibraryFileId: 'lib-1', storage_path: 'users/victim/secret.png', sourceUrl: 'https://evil.example.test/x.png', publicUrl: 'https://evil.example.test/y.png' }))
+
+    expect(response.status).toBe(200)
+    expect(vi.mocked(createPresignedReadUrl).mock.calls.map((call) => call[0])).toEqual(['users/user-a/library/xyz/capa.png'])
+    expect(JSON.stringify(db.tables.video_generations[0])).not.toContain('evil.example.test')
+  })
+
+  it('the origin of the LibraryFile is irrelevant: a render saved from Creative Editor is as valid as an upload (no Gallery dependency)', async () => {
+    const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile({ id: 'lib-render', origin: 'studio_render' })] })
+    signIn(db)
+    installFakeMcp()
+    expect((await post(mcpI2v({ sourceLibraryFileId: 'lib-render' }))).status).toBe(200)
+    expect(db.tables.video_generations[0]).toMatchObject({ source_library_file_id: 'lib-render' })
+  })
+
+  it.each([
+    ['another user’s file', { user_id: 'user-b' }, 403, undefined],
+    ['a file of another Project', { project_id: 'proj-other' }, 403, undefined],
+    ['a trashed (deleted) file', { deleted_at: '2026-09-01T00:00:00.000Z' }, 422, 'SOURCE_LIBRARY_FILE_DELETED'],
+    ['a video file', { kind: 'video', mime_type: 'video/mp4' }, 422, 'SOURCE_LIBRARY_FILE_NOT_IMAGE'],
+    ['a document file', { kind: 'document', mime_type: 'application/pdf' }, 422, 'SOURCE_LIBRARY_FILE_NOT_IMAGE'],
+  ])('%s is refused BEFORE any record or provider call', async (_name, overrides, status, code) => {
+    const db = makeDb({ connections: [connectionRow()], klingKey: 'user-rest-key', libraryFiles: [libFile(overrides)] })
+    signIn(db)
+    const mcp = installFakeMcp()
+
+    const viaMcp = await post(mcpI2v({ sourceLibraryFileId: 'lib-1' }))
+    const viaRest = await post({ ...base, mode: 'image_to_video', sourceLibraryFileId: 'lib-1', connectionRef: 'kling:api' })
+
+    for (const response of [viaMcp, viaRest]) {
+      expect(response.status).toBe(status)
+      if (code) expect((await response.json()).code).toBe(code)
+    }
+    expect(mcp.calls).toEqual([])
+    expect(restCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it('a generated image of another user is refused (403) and never reaches a provider', async () => {
+    const db = makeDb({ connections: [connectionRow()], images: [{ id: 'img-x', user_id: 'user-b', project_id: 'proj-1', image_url: 'https://img.example.test/x.png', storage_path: 'b/x.png' }] })
+    signIn(db)
+    const mcp = installFakeMcp()
+    expect((await post(mcpI2v({ sourceImageId: 'img-x' }))).status).toBe(403)
+    expect(mcp.calls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it('XOR: both sources and neither source are refused for image_to_video; any source is refused for text_to_video', async () => {
+    const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+    signIn(db)
+    const mcp = installFakeMcp()
+    expect((await post(mcpI2v({ sourceImageId: 'img-1', sourceLibraryFileId: 'lib-1' }))).status).toBe(400)
+    expect((await post(mcpI2v())).status).toBe(400)
+    expect((await post({ ...mcpBody(), sourceLibraryFileId: 'lib-1' })).status).toBe(400)
+    expect((await post({ ...mcpBody(), sourceImageId: 'img-1' })).status).toBe(400)
+    expect(mcp.calls).toEqual([])
+    // text_to_video with neither source is accepted.
+    expect((await post(mcpBody())).status).toBe(200)
   })
 })
 
