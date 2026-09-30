@@ -169,7 +169,7 @@ describe('Video Generation API Domain & T2V Validation', () => {
           }
         }
         if (table === 'images') {
-           return { select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ single: vi.fn().mockResolvedValue({ data: { image_url: 'x', storage_path: 'y' } }) }) }) }) }) }
+           return { select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ single: vi.fn().mockResolvedValue({ data: { user_id: 'user1', image_url: 'x', storage_path: 'users/user1/images/77777777-7777-4777-8777-777777777777/original.png' } }) }) }) }) }) }
         }
         return {}
       })

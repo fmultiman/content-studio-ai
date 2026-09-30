@@ -89,6 +89,16 @@ function extensionForMimeType(mimeType: string) {
   return 'png'
 }
 
+/**
+ * The extension is the one part of a generated key that can come straight from a browser filename.
+ * Only a short lowercase alphanumeric extension survives; anything else (separators, dots, query/hash
+ * text, traversal) falls back to the extension implied by the MIME type, so it can never shape the key.
+ */
+export function safeKeyExtension(filename: string | null | undefined, mimeType: string): string {
+  const requested = filename?.includes('.') ? (filename.split('.').pop() ?? '').toLowerCase() : ''
+  return /^[a-z0-9]{1,8}$/.test(requested) ? requested : extensionForMimeType(mimeType)
+}
+
 function safePathSegment(value: string | null | undefined, fallback: string) {
   const safe = value
     ?.normalize('NFD')
@@ -119,9 +129,7 @@ export async function createPresignedImageUpload(input: PresignedUploadInput) {
 
   if (!config) return null
 
-  const extension = input.filename?.includes('.')
-    ? input.filename.split('.').pop() || extensionForMimeType(input.mimeType)
-    : extensionForMimeType(input.mimeType)
+  const extension = safeKeyExtension(input.filename, input.mimeType)
   const id = randomUUID()
   const safeName = safePathSegment(input.filename?.replace(/\.[^/.]+$/, ''), 'file')
   const prefix = storagePrefix(input.prefix)
@@ -382,9 +390,7 @@ export async function copyS3ObjectToLibrary(input: {
   const fileSize = source.ContentLength ?? 0
   if (fileSize <= 0) throw new Error('Source object is empty or has no readable size.')
 
-  const ext = input.filename.includes('.')
-    ? (input.filename.split('.').pop() ?? extensionForMimeType(input.mimeType))
-    : extensionForMimeType(input.mimeType)
+  const ext = safeKeyExtension(input.filename, input.mimeType)
   const id = randomUUID()
   const baseName = safePathSegment(input.filename.replace(/\.[^/.]+$/, ''), 'file')
   const path = `users/${input.userId}/library/${id}/${baseName}.${ext}`
@@ -418,9 +424,7 @@ export async function uploadLibraryFile(input: {
   const config = getS3Config()
   if (!config) return null
 
-  const ext = input.filename.includes('.')
-    ? (input.filename.split('.').pop() ?? extensionForMimeType(input.mimeType))
-    : extensionForMimeType(input.mimeType)
+  const ext = safeKeyExtension(input.filename, input.mimeType)
   const id = randomUUID()
   const baseName = safePathSegment(input.filename.replace(/\.[^/.]+$/, ''), 'file')
   const path = `users/${input.userId}/library/${id}/${baseName}.${ext}`

@@ -1,4 +1,6 @@
 import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
+import { presignImageObject } from '@/lib/storage/image-storage'
 import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 import { presignLibraryRead } from '@/lib/storage/library-storage'
 import type { createClient } from '@/lib/supabase/server'
@@ -18,7 +20,7 @@ export async function resolveMediaSource(
   if (row.image_id) {
     const { data: img } = await supabase
       .from('images')
-      .select('image_url, thumbnail_url, storage_path, thumbnail_path, file_size, mime_type')
+      .select('user_id, image_url, thumbnail_url, storage_path, thumbnail_path, file_size, mime_type')
       .eq('id', row.image_id)
       .single()
 
@@ -26,14 +28,24 @@ export async function resolveMediaSource(
       return { media_kind: 'image', image_url: null, thumbnail_url: null, file_size: null, mime_type: null, name: null, source_deleted: false }
     }
 
-    // createPresignedReadUrl returns null (not throws) when S3 is unconfigured,
-    // so ?? is needed to fall back to the stored public URL.
+    // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: images rows are browser-written, so a stored key is
+    // a claim. A row carrying a key that is not the OWNER's own image key resolves to nothing: nothing is
+    // signed and the user-writable URL fields are not used as a fallback.
+    const imageOwner = img.user_id as string
+    const keysTrusted =
+      (!img.storage_path || isTrustedImageStoragePath(imageOwner, img.storage_path, 'original')) &&
+      (!img.thumbnail_path || isTrustedImageStoragePath(imageOwner, img.thumbnail_path, 'thumbnail'))
+    if (!keysTrusted) {
+      return { media_kind: 'image', image_url: null, thumbnail_url: null, file_size: null, mime_type: null, name: null, source_deleted: false }
+    }
+
+    // presign returns null (not throws) when S3 is unconfigured, so ?? is needed to fall back to the stored public URL.
     const presignedImage = img.storage_path
-      ? await createPresignedReadUrl(img.storage_path).catch(() => null)
+      ? await presignImageObject(imageOwner, img.storage_path as string, 'original').catch(() => null)
       : null
     const imageUrl = presignedImage ?? (img.image_url as string | null)
     const presignedThumb = img.thumbnail_path
-      ? await createPresignedReadUrl(img.thumbnail_path).catch(() => null)
+      ? await presignImageObject(imageOwner, img.thumbnail_path as string, 'thumbnail').catch(() => null)
       : null
     const thumbUrl = presignedThumb ?? (img.thumbnail_url as string | null)
 

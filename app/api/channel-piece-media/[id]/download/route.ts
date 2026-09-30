@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { presignLibraryRead } from '@/lib/storage/library-storage'
+import { presignImageObject } from '@/lib/storage/image-storage'
 import { UUID_RE } from '../../_helpers'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -36,6 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
     let storagePath: string | null = null
     let filename: string | null = null
     let libraryRow: { user_id: string; storage_path: string | null } | null = null
+    let imageRow: { user_id: string; storage_path: string | null } | null = null
 
     if (cpm.library_file_id) {
       const { data: lf } = await supabase
@@ -49,10 +51,11 @@ export async function GET(_request: Request, context: RouteContext) {
     } else if (cpm.image_id) {
       const { data: img } = await supabase
         .from('images')
-        .select('storage_path, user_input')
+        .select('user_id, storage_path, user_input')
         .eq('id', cpm.image_id)
         .single()
       storagePath = (img?.storage_path as string | null) ?? null
+      imageRow = img ? { user_id: img.user_id as string, storage_path: storagePath } : null
       filename = (img?.user_input as string | null) ?? 'imagem'
     }
 
@@ -61,9 +64,12 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     // A LibraryFile key is signed only when it is provably the owner's own Library object.
+    // An `images` key is a claim too (browser-written row): only the owner's own image key is signed.
     const url = libraryRow
       ? await presignLibraryRead(libraryRow, { filename, disposition: 'attachment' })
-      : await createPresignedReadUrl(storagePath, { filename, disposition: 'attachment' })
+      : imageRow
+        ? await presignImageObject(imageRow.user_id, imageRow.storage_path, 'original', { filename, disposition: 'attachment' })
+        : await createPresignedReadUrl(storagePath, { filename, disposition: 'attachment' })
     if (!url) {
       return NextResponse.json({ error: 'Armazenamento nao configurado' }, { status: 503 })
     }

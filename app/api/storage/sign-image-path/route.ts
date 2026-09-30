@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { checkImageStoragePath } from '@/lib/storage/image-path'
+import { presignImageObject } from '@/lib/storage/image-storage'
 
 function normalizeStoragePath(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) return null
@@ -37,19 +38,24 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const storagePath = normalizeStoragePath(body.storagePath || body.imageUrl)
-    const allowedPrefix = `users/${user.id}/images/`
 
-    if (!storagePath || !storagePath.startsWith(allowedPrefix)) {
-      return NextResponse.json({ error: 'Caminho de imagem invalido' }, { status: 400 })
+    // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: this route exists to re-sign the stored display URL
+    // of an image that may not (yet) have a row (draft attempts keep only the URL), so it cannot resolve by
+    // image id. The authority is therefore the canonical key itself: the authenticated user's own
+    // `users/{me}/images/{uuid}/(original.ext|thumb.webp)` and nothing else. A prefix test is not enough:
+    // `users/{me}/images/../{other}/...` starts with the prefix.
+    const check = storagePath ? checkImageStoragePath(user.id, storagePath) : null
+    if (!check || !check.ok) {
+      return NextResponse.json({ error: 'Caminho de imagem invalido', code: 'INVALID_STORAGE_PATH' }, { status: 400 })
     }
 
-    const imageUrl = await createPresignedReadUrl(storagePath)
+    const imageUrl = await presignImageObject(user.id, check.path, check.kind)
 
     if (!imageUrl) {
       return NextResponse.json({ error: 'Storage nao configurado' }, { status: 400 })
     }
 
-    return NextResponse.json({ imageUrl, storagePath })
+    return NextResponse.json({ imageUrl, storagePath: check.path })
   } catch (error) {
     console.error('[Sign Image Path] Error:', error)
     return NextResponse.json(

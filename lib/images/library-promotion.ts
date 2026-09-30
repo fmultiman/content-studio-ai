@@ -10,7 +10,7 @@
 //
 // and the MIME type is derived from the extension, never from the row.
 
-const KEY_TAIL = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/original\.(png|jpg|webp)$/i
+import { checkImageStoragePath } from '@/lib/storage/image-path'
 
 const MIME_BY_EXTENSION = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' } as const
 
@@ -36,13 +36,10 @@ export function isTenantImageStoragePath(storagePath: unknown, userId: unknown):
 }
 
 function parseTenantImagePath(storagePath: unknown, userId: unknown): { extension: 'png' | 'jpg' | 'webp' } | null {
-  if (typeof storagePath !== 'string' || typeof userId !== 'string' || !userId) return null
-  if (/[\\/]/.test(userId)) return null
-  const prefix = `users/${userId}/images/`
-  if (!storagePath.startsWith(prefix)) return null
-  const match = KEY_TAIL.exec(storagePath.slice(prefix.length))
-  if (!match) return null
-  return { extension: match[2].toLowerCase() as 'png' | 'jpg' | 'webp' }
+  if (typeof userId !== 'string') return null
+  // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: one shared, segment-based parser (lib/storage/image-path.ts).
+  const check = checkImageStoragePath(userId, storagePath, 'original')
+  return check.ok ? { extension: check.extension } : null
 }
 
 /** Ownership is established by the caller's session; this only judges what the row claims. */

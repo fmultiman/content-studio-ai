@@ -22,7 +22,8 @@ export async function POST(request: Request) {
 
     const signed = await createPresignedImageUpload({
       userId: user.id,
-      folder: folder === 'images' || folder === 'library' ? folder : 'posts',
+      // 'images' is written only by the server-side generators (uploadImageToS3); no caller presigns into it.
+      folder: folder === 'library' ? folder : 'posts',
       mimeType,
       filename,
       prefix,
