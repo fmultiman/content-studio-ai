@@ -78,7 +78,7 @@ Expected sha256 of the changed worker-served files (export tree byte-identical t
 | `lib/creative/templates/template-definitions.ts` | `e84d2f9a725edb79a42f4b03ce4be7f6313ff2503c7ca19aae25fc29debde869` |
 | `lib/creative/templates/element-stack.ts` | `41d5569168056e1a47403972b546473adbb54c87a0b68ba1e83b2ab61d282137` |
 
-**Worker parity procedure (operator, VPS — this session has no VPS access).** After the production merge: `node infra/render-worker-runtime/export.mjs`; copy `infra/render-worker-runtime/dist/` to `/opt/content-studio/render-worker` (bound read-only to `/app/content-studio`); `docker service update --force content-studio-execution_render-worker` (the Remotion bundle is built once at process start, so a copy without a restart keeps serving the old code); confirm in the **new** active container that the three hashes above match, that startup finished the bundle build, then run a real render. No `docker cp` into a running container. **Worker parity is NOT claimed from the export tree.**
+**Worker parity procedure (operator, VPS — this session has no VPS access).** After the production merge: `node infra/render-worker-runtime/export.mjs`; copy `infra/render-worker-runtime/dist/` to `/opt/content-studio/render-worker` (bound read-only to `/app/content-studio`); `docker service update --force content-studio-execution_render-worker` (the Remotion bundle is built once at process start, so a copy without a restart keeps serving the old code); confirm in the **new** active container that the three hashes above match, that startup finished the bundle build, then run a real render. No `docker cp` into a running container. **Worker parity is NOT claimed from the export tree** (see *Worker parity status* below for what was and was not established).
 
 ## Tests and validation
 
@@ -98,7 +98,40 @@ A temporary, uncommitted `/dev/*` harness (deleted) rendered the real `LayoutCon
 - Authored Cover (frame off, intro moved, note text hidden, Custom Text) → Info: dialog, Cancel left state identical, confirm reset every new field (no frame/kicker/intro/brand/hidden), the Custom Text stayed; back to Cover: clean and framed.
 - Limitation: DOM/state verification (no pixel screenshot of the harness) and not inside the authenticated editor.
 
-## Render proof (local frozen snapshot; production render NOT performed)
+## Worker parity status (production)
+
+The operator reported the worker updated and restarted (`docker service update --force content-studio-execution_render-worker`). **This session has no VPS access and did not receive the container's output**, so:
+
+| Item | Status |
+| :--- | :--- |
+| `CoverVariant.tsx` served by the active worker | **Proven behaviourally, not by hash**: production PNGs show output that only the new file can produce (hero frame off, separate note text, moved kicker/intro/brand — renders 2–7 below). The legacy default render is unchanged. |
+| `template-definitions.ts`, `element-stack.ts` served by the active worker | **NOT confirmed.** Nothing in the renders can distinguish them from the previous versions (the frozen `hiddenElements`/`elementOrder` are normalised on Vercel before the worker sees them). |
+| sha256 of the three files inside the active container | **NOT provided to this session — pending operator output** (expected values in the table above). |
+| Remotion bundle finished at service start | **NOT observed by this session.** Indirect signal only: the first render after the restart took 20 s (claimed 06:53:48 → completed 06:54:08), every later render 1–3 s, i.e. a cold-then-warm pattern. |
+
+To close this row set, run on the VPS: `docker exec <active render-worker container> sha256sum /app/content-studio/components/creative/documentary-card/CoverVariant.tsx /app/content-studio/lib/creative/templates/template-definitions.ts /app/content-studio/lib/creative/templates/element-stack.ts` and `docker service logs content-studio-execution_render-worker --since <restart time>` (look for the bundle-ready line).
+
+## Production render smoke (real worker, legitimate operator session)
+
+Environment: `content.multihuman.com.br`, Vercel production `29c4e97`, the operator's own logged-in session; project *Portal Comunidades Alternativas*, channel piece `1247e54b-8f55-492e-825d-ed9b927f2e63` ("Carrossel 01 Instagram", 10-slide Template carousel), **Slide 1 (Cover)**. Every change was made through the editor UI; **nothing was saved** ("Salvar" never used, autosave off by default), the editor was reloaded afterwards and showed the saved state (`Salvo`, original texts, frame on). No Auth, service-role or DB shortcut. Side effects: 7 `render_executions` rows and their scratch PNGs (normal "Gerar PNG" behaviour).
+
+All seven executions: `static_still`, attempt 1, `completed`, output **1080 × 1350 PNG**.
+
+| # | Execution id | Authored state | Bytes | Result (inspected PNG) |
+| :-- | :--- | :--- | :--- | :--- |
+| 1 | `db4193af-0eac-4ed1-99c1-2666510b90a0` | untouched saved Cover (legacy/default) | 1,905,276 | Original Cover: cream frame around the book, note text on its paper, kicker, intro, source line, brand. |
+| 2 | `0e34bf32-4244-41e7-8b77-b89b56461f0a` | *Moldura e fundo da imagem* **off**, image unchanged | 1,954,459 | The cream frame and its shadow are gone; the book image alone in the same box; everything else identical to #1. |
+| 3 | `be66accf-238b-4a5f-8a4c-cf89c5b396d7` | frame back on; **Chamada** → "KICKER DE PROVA · 30/09" (+20 px X); **Introdução** → "INTRODUÇÃO DE PROVA: …" (+30 px Y); **Fonte editorial** → "Fonte editorial de prova, 2026."; **Nota da edição** → "Nota de prova: texto da nota editado, independente do papel."; **Assinatura** +40 px X | 1,897,937 | Every string appears exactly as authored, kicker shifted right, intro lower, brand block shifted right, the note's bold label/body split preserved, frame back. |
+| 4 | `958f158b-6417-4e43-8d43-0603f856baac` | #3 + **Nota da edição** (text) hidden | 1,889,275 | The paper stays, text gone (paper region 97.7 % paper-coloured, ink 0.08 % vs 2.9 % in #3). |
+| 5 | `3786b02d-0e97-4b9f-88cf-e781f55e624e` | text visible, **Papel da nota** hidden | 1,828,204 | Paper **and its text** are both absent (navy background); *Fita da nota* still drawn. This is the intended, documented current behaviour: hiding the owner hides its text child. |
+| 6 | `beaaa221-a1d5-4180-9a51-e161bcfe9d33` | hero **replaced** via Assets (`ornament-celestial-gold-01.png`), frame **off** | 1,574,567 | Only the replacement image over the background — no frame, no backing. The toggle stayed *off* after the replacement (editor and render agree). |
+| 7 | `6ab8b277-cb85-4705-9969-3c10a07e58b0` | same replaced hero, frame **on** | 1,352,203 | Same image on the cream frame and paper backing. Only the frame differs from #6, so replacing the image and toggling the frame are independent. |
+
+Editor ↔ output agreement: the editor's preview nodes (`data-hero-frame`, per-element transforms, hidden state) matched the PNGs for every render. Introdução, Fonte editorial, Chamada and Assinatura in the output correspond to the Content fields and Element positions authored (#3); the Assinatura's name is the Project name (derived), its logo the Template default.
+
+Limitations observed: (a) worker sha256/startup not observable from here (above); (b) the render API does not expose which worker claimed an execution; (c) hero replacement was checked with a transparent-cornered project asset, so the frame/backing difference is clearly visible — an opaque photo shows only the cream border.
+
+## Local render proof (frozen snapshot, before merge)
 
 Real Remotion `renderStill` (Chromium) of frozen snapshots resolved through the real claim-time `resolveStaticRuntimeInput`, no production, no Auth:
 
@@ -106,8 +139,6 @@ Real Remotion `renderStill` (Chromium) of frozen snapshots resolved through the 
 2. Replaced hero (alpha-cornered image) with frame on vs off: on = cream frame and paper backing visible; off = only the image, same box.
 3. Introdução, Fonte editorial, Nota da edição and Chamada edited in Content (+ intro/kicker offset): the PNG shows exactly the authored text and positions; the note paper is unchanged.
 4. Note text and brand hidden: paper stays, text and signature absent.
-
-The three production renders (legacy, frame off, semantic text) require the worker parity step and a legitimate operator session; **not performed** by this session.
 
 ## Known limitations
 
