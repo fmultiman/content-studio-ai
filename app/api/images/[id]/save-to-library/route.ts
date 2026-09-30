@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { deriveImageProduction } from '@/lib/library/production-scope'
 import { createClient } from '@/lib/supabase/server'
 import { copyS3ObjectToLibrary, deleteS3Object } from '@/lib/storage/s3'
 import {
@@ -141,11 +142,17 @@ export async function POST(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'O objeto armazenado não é uma imagem válida.', code: 'INVALID_IMAGE_OBJECT' }, { status: 422 })
     }
 
+    // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: an image has no Production of its own. Only a uniquely derivable draft
+    // Production is written; none or several (ambiguous) leave the file unscoped rather than guessing one.
+    const derived = await deriveImageProduction(supabase, { userId: user.id, projectId: image.project_id, imageId: image.id })
+    if (derived.kind === 'ambiguous') console.warn('[Image save-to-library] ambiguous Production; file left unscoped:', derived.productionIds.length)
+
     const { data: libraryFile, error: insertError } = await supabase
       .from('library_files')
       .insert({
         user_id: user.id,
         project_id: image.project_id,
+        production_id: derived.kind === 'resolved' ? derived.productionId : null,
         folder: projectRoot?.path || '/',
         name: filename,
         kind: 'image',

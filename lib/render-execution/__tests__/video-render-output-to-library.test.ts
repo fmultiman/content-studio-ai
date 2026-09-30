@@ -74,7 +74,10 @@ describe('POST /api/render-executions/:id/save-to-library authority', () => {
     expect(route).toMatch(/\.from\('render_executions'\)[\s\S]*\.eq\('id', id\)[\s\S]*\.eq\('user_id', user\.id\)/)
     expect(route).toMatch(/\.from\('projects'\)[\s\S]*\.eq\('id', execution\.project_id\)[\s\S]*\.eq\('user_id', user\.id\)/)
     expect(route).toMatch(/\.from\('video_drafts'\)[\s\S]*\.eq\('id', execution\.video_draft_id\)[\s\S]*\.eq\('user_id', user\.id\)/)
-    expect(route).not.toMatch(/request\.json|projectId|storagePath: body|outputUrl/)
+    // `projectId:` may appear only as the server-derived key of the Production ownership check (execution.project_id).
+    expect(route).not.toMatch(/request\.json|body\.projectId|searchParams|storagePath: body|outputUrl/)
+    expect(route.match(/projectId/g)?.length ?? 0).toBe(1)
+    expect(route).toMatch(/projectId: execution\.project_id/)
   })
 
   it('checks provenance idempotency before copying any bytes', () => {

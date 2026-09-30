@@ -53,6 +53,12 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       if (op === 'lte') return row[column] !== null && row[column] !== undefined && row[column] <= value
       if (op === 'in') return (value as any[]).includes(row[column])
       if (op === 'is') return (row[column] ?? null) === value
+      if (op === 'notnull') return row[column] !== null && row[column] !== undefined
+      if (op === 'contains') {
+        // jsonb @> for an array of objects: every wanted element is matched by some stored element.
+        const stored = row[column]
+        return Array.isArray(stored) && (value as any[]).every((wanted) => stored.some((entry: any) => entry && typeof entry === 'object' && Object.entries(wanted).every(([k, v]) => entry[k] === v)))
+      }
       return true
     })
 
@@ -163,6 +169,21 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       },
       is(column: string, value: any) {
         filters.push([column, 'is', value])
+        return builder
+      },
+      /** `.not(col, 'is', null)` only. */
+      not(column: string, operator: string, value: any) {
+        if (operator === 'is' && value === null) filters.push([column, 'notnull', null])
+        return builder
+      },
+      contains(column: string, value: any) {
+        // Mirrors postgrest-js serialization: a JS array becomes a Postgres ARRAY literal `{a,b}` (wrong for jsonb
+        // objects), so a jsonb containment must be handed over as a JSON string (`cs.[...]`).
+        if (typeof value === 'string') return filters.push([column, 'contains', JSON.parse(value)]), builder
+        if (Array.isArray(value) && value.some((entry) => entry !== null && typeof entry === 'object')) {
+          throw new Error('contains(): an array of objects is serialized as a Postgres array literal; pass JSON.stringify(...) for jsonb')
+        }
+        filters.push([column, 'contains', value])
         return builder
       },
       order() {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { ownedProductionIdOrNull } from '@/lib/library/production-scope'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceRoleSupabase, ServiceRoleNotConfiguredError } from '@/lib/supabase/service-role'
 import { copyS3ObjectToLibrary, deleteS3Object } from '@/lib/storage/s3'
@@ -63,7 +64,7 @@ export async function POST(_request: Request, context: RouteContext) {
     // The user session can only read its own rows (RLS + explicit owner filter).
     const { data: generation, error: generationError } = await supabase
       .from('video_generations')
-      .select('id, user_id, project_id, status, storage_path, library_file_id, result_metadata')
+      .select('id, user_id, project_id, production_id, status, storage_path, library_file_id, result_metadata')
       .eq('id', id)
       .eq('user_id', user.id)
       .maybeSingle()
@@ -155,6 +156,9 @@ export async function POST(_request: Request, context: RouteContext) {
       .insert({
         user_id: user.id,
         project_id: generation.project_id,
+        // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1: the generation's own Production (server row, never the browser);
+        // NULL if it is not valid for this owner/Project.
+        production_id: await ownedProductionIdOrNull(supabase, { userId: user.id, projectId: generation.project_id, productionId: generation.production_id }),
         folder: projectRoot?.path || '/',
         name: filename,
         kind: 'video',
