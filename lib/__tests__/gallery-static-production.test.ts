@@ -173,10 +173,11 @@ describe('query strategy (no N+1) and untouched neighbours', () => {
     expect(lib).not.toMatch(/channel_piece|editorial_content|ChannelPiece|EditorialContent/)
   })
 
-  it('16/17. the Library browse route and the I2V picker neither import nor depend on the Gallery builder', () => {
+  it('16/17. the Library browse route does not depend on the Gallery builder; the I2V chooser shares only the title helper, never the builder or its data', () => {
     const browse = readFileSync(join(process.cwd(), 'app/api/library-files/browse/route.ts'), 'utf8')
-    const picker = readFileSync(join(process.cwd(), 'components/videos/i2v-source-picker.tsx'), 'utf8')
-    expect(browse).not.toMatch(/gallery/i)
-    expect(picker).not.toMatch(/gallery-output-library|buildGalleryOutputs/)
+    const browser = readFileSync(join(process.cwd(), 'components/videos/i2v-source-browser.tsx'), 'utf8')
+    expect(browse).not.toMatch(/gallery-output-library|buildGalleryOutputs/)
+    expect(browser).not.toMatch(/buildGalleryOutputs|\/api\/images\/[^b]/)
+    expect([...browser.matchAll(/import \{([^}]+)\} from '@\/lib\/gallery-output-library'/g)].map((match) => match[1].trim())).toEqual(['galleryStudioRenderTitle'])
   })
 })

@@ -293,7 +293,7 @@ describe('video generation connection routing boundary — VIDEO_GENERATION_CONN
   })
 
   it('the client only imports the pure, client-safe video-generation modules (never connections/polling/transport/completion)', () => {
-    const allowed = new Set(['capabilities', 'connection-ref', 'form-selection', 'status-refresh', 'connection-presentation', 'i2v-source'])
+    const allowed = new Set(['capabilities', 'connection-ref', 'form-selection', 'status-refresh', 'connection-presentation', 'i2v-source', 'i2v-source-browse'])
     const offenders: string[] = []
     for (const file of sourceFiles.filter((f) => isClientFile(f.text))) {
       for (const match of file.text.matchAll(/from\s+['"]@\/lib\/video-generation\/([^'"]+)['"]/g)) {

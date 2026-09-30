@@ -10,8 +10,10 @@ import {
   escapeLike,
   keysetFilter,
   normalizeSearch,
+  parseFormat,
   parseKind,
   parseProductionFilter,
+  parseScope,
 } from '@/lib/library/browse-query'
 
 // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1
@@ -20,7 +22,8 @@ import {
 // GET /api/library-files still returns everything for its existing callers; this one never does:
 //   - projectId is REQUIRED and must be the caller's own Project
 //   - production: all (default) | unscoped | <uuid of a Production of THAT Project>
-//   - folder (exact path, independent of Production), kind, q (name search), trash, scope
+//   - folder (exact path, independent of Production), kind, q (name search), trash,
+//     scope (arquivos | gallery), format (i2v-image: PNG/JPEG only)
 //   - order: created_at DESC, id DESC; keyset cursor; default 48, max 100 per page
 // Signed URLs are created only for the rows of the returned page (<= 100), never for the whole Library.
 
@@ -55,6 +58,11 @@ export async function GET(request: Request) {
     const kind = parseKind(params.get('kind'))
     if (!kind) return NextResponse.json({ error: 'Tipo inválido.', code: 'INVALID_KIND' }, { status: 400 })
 
+    const scope = parseScope(params.get('scope'))
+    if (!scope) return NextResponse.json({ error: 'Escopo inválido.', code: 'INVALID_SCOPE' }, { status: 400 })
+    const mimeAllowList = parseFormat(params.get('format'))
+    if (!mimeAllowList) return NextResponse.json({ error: 'Formato inválido.', code: 'INVALID_FORMAT' }, { status: 400 })
+
     const cursor = decodeCursor(params.get('cursor'))
     if (cursor === null) return NextResponse.json({ error: 'Cursor inválido.', code: 'INVALID_CURSOR' }, { status: 400 })
 
@@ -63,7 +71,7 @@ export async function GET(request: Request) {
     const folder = normalizeFolder(params.get('folder'))
     const trash = params.get('trash') === 'true'
     // "Arquivos" semantics: Creative Editor still renders saved to a piece live in Galeria, not in Arquivos.
-    const hideStudioImages = params.get('scope') === 'arquivos'
+    const hideStudioImages = scope === 'arquivos'
 
     let query = supabase
       .from('library_files')
@@ -75,7 +83,13 @@ export async function GET(request: Request) {
     if (production.mode === 'one') query = query.eq('production_id', production.productionId)
     if (production.mode === 'unscoped') query = query.is('production_id', null)
     if (folder) query = query.eq('folder', folder)
-    if (kind !== 'all') query = query.eq('kind', kind)
+    if (scope === 'gallery') {
+      // Galeria = Creative Editor image outputs. Fixed server-side; the browser cannot widen it.
+      query = query.eq('origin', 'studio_render').eq('kind', 'image')
+    } else if (kind !== 'all') {
+      query = query.eq('kind', kind)
+    }
+    if (mimeAllowList !== 'none') query = query.in('mime_type', [...mimeAllowList])
     if (search) query = query.ilike('name', `%${escapeLike(search)}%`)
 
     const orGroups: string[] = []

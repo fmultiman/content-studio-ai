@@ -104,9 +104,15 @@ describe('I2V Arquivos picker stays compatible', () => {
     vi.mocked(server.createClient).mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) }, from: db.from } as any)
   })
 
-  it('still loads from the unchanged GET /api/library-files?projectId&kind=image endpoint', () => {
-    expect(picker).toMatch(/fetch\(`\/api\/library-files\?\$\{new URLSearchParams\(\{ projectId, kind: 'image' \}\)\}`/)
-    expect(picker).not.toContain('/api/library-files/browse')
+  it('VIDEO_I2V_SOURCE_BROWSER_V1: the chooser no longer uses the flat, unbounded list — it reads only bounded, cursor-paged endpoints', () => {
+    const browser = read('components/videos/i2v-source-browser.tsx')
+    const browse = read('lib/video-generation/i2v-source-browse.ts')
+    expect(picker).not.toMatch(/fetch\(/)
+    expect(browser).not.toMatch(/\/api\/library-files\?/)
+    expect(browse).toContain('/api/library-files/browse?')
+    expect(browse).toContain('/api/images/browse?')
+    // the legacy endpoint is unchanged for its other callers (Arquivos "Todos os projetos", asset pickers)
+    expect(read('app/api/library-files/route.ts')).toMatch(/return NextResponse\.json\(\{ files \}\)/)
   })
 
   it('the legacy endpoint keeps its response shape ({ files }, no pagination envelope) and the Project/kind filters', async () => {
@@ -127,7 +133,9 @@ describe('I2V Arquivos picker stays compatible', () => {
   it('the source is still identified by the LibraryFile id alone — a Production never enters the request', () => {
     expect(i2vSourceFields('image_to_video', { type: 'library', id: 'img-2' })).toEqual({ sourceLibraryFileId: 'img-2' })
     expect(i2vSourceFields('image_to_video', { type: 'generated', id: 'gen-1' })).toEqual({ sourceImageId: 'gen-1' })
-    expect(picker).not.toMatch(/production/i)
+    // Production is only a browse FILTER in the chooser; it is never part of the generation request identity.
+    expect(Object.keys(i2vSourceFields('image_to_video', { type: 'library', id: 'img-2' }))).toEqual(['sourceLibraryFileId'])
+    expect(picker).not.toMatch(/sourceProduction|source_production/i)
   })
 
   it('server-side source checks are independent of production_id (scoped and unscoped files are both valid sources)', () => {

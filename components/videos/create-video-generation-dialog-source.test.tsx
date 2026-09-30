@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// VIDEO_I2V_LIBRARY_SOURCE_PICKER_V1
+// VIDEO_I2V_LIBRARY_SOURCE_PICKER_V1 + VIDEO_I2V_SOURCE_BROWSER_V1 — form-level behavior of the compact source field.
+// (The chooser itself — categories, lists, filters, folders, upload, async safety — is covered in i2v-source-picker.test.tsx.)
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { normalizeKlingMcpVideoCapabilities } from '@/lib/provider-connections/kling-mcp-video-capabilities'
@@ -7,20 +8,20 @@ import { whoAmIFixture } from '@/lib/__tests__/helpers/kling-who-am-i-fixture'
 import { describeMcpConnection, describeRestConnection } from '@/lib/video-generation/connections'
 import type { VideoGenerationConnectionDescriptor } from '@/lib/video-generation/capabilities'
 import type { ProviderConnectionRow } from '@/lib/provider-connections/types'
+import { PROD_CURRENT, PROD_OTHER, PROJECT, OTHER_PROJECT, aiRow, freshState, installI2vFetch, libraryRow, type I2vFixtureState } from '@/lib/__tests__/helpers/i2v-source-fixtures'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 
-let generatedRows: Array<{ id: string; image_url: string; user_input: string }> = []
+let state: I2vFixtureState
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     from: () => {
       const chain: any = {
         select: () => chain,
         eq: () => chain,
-        neq: () => chain,
         order: () => chain,
-        limit: () => Promise.resolve({ data: generatedRows }),
+        then: (resolve: (value: unknown) => void) => resolve({ data: state.productions }),
       }
       return chain
     },
@@ -50,21 +51,11 @@ function mcpDescriptor(): VideoGenerationConnectionDescriptor {
   return describeMcpConnection(row, NOW)
 }
 
-const libFile = (overrides: Record<string, unknown> = {}) => ({
-  id: 'lib-1',
-  project_id: 'proj-1',
-  kind: 'image',
-  name: 'capa-do-lancamento.png',
-  deleted_at: null,
-  thumbnail_url: 'https://s3.example.test/lib-1.png?sig=1',
-  public_url: null,
-  ...overrides,
-})
+const studio = (id: string, overrides: Record<string, unknown> = {}) =>
+  libraryRow(id, { origin: 'studio_render', folder: '/', production_id: PROD_CURRENT, name: 'slide-1-de-2-x.png', ...overrides })
 
-let libraryStatus = 200
-let libraryFiles: any[] = []
-const fetchMock = vi.fn()
-const libraryRequests: string[] = []
+let fetchMock: ReturnType<typeof installI2vFetch>
+const dialogFetch = vi.fn()
 
 beforeAll(() => {
   const proto = window.HTMLElement.prototype as any
@@ -77,41 +68,53 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  libraryRequests.length = 0
-  libraryStatus = 200
-  generatedRows = [{ id: 'img-1', image_url: 'https://img.example.test/a.png', user_input: 'Uma raposa' }]
-  libraryFiles = [libFile()]
-  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+  state = freshState()
+  state.ai = [aiRow('img-1', { name: 'Uma raposa' })]
+  state.library = [libraryRow('lib-1', { name: 'capa-do-lancamento.png', production_id: PROD_CURRENT }), studio('gal-1')]
+  fetchMock = installI2vFetch(state)
+  state.extra = (url, init) => {
     if (url === '/api/video-generations/connections') {
       return new Response(JSON.stringify({ connections: [describeRestConnection('configured'), mcpDescriptor()] }), { status: 200 })
     }
-    if (url.startsWith('/api/library-files?')) {
-      libraryRequests.push(url)
-      return new Response(JSON.stringify({ files: libraryFiles }), { status: libraryStatus })
-    }
     if (url === '/api/video-generations' && init?.method === 'POST') return new Response(JSON.stringify({ generation: { id: 'g1' } }), { status: 200 })
-    return new Response('{}', { status: 200 })
-  })
-  vi.stubGlobal('fetch', fetchMock)
+    return null
+  }
+  dialogFetch.mockImplementation((...args: [any, any]) => fetchMock(...args))
+  vi.stubGlobal('fetch', dialogFetch)
 })
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
 
-const renderDialog = () =>
-  render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" />)
+const renderDialog = (projectId = PROJECT, productionId = PROD_CURRENT) =>
+  render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId={projectId} productionId={productionId} />)
 
 const submittedBody = () => {
-  const call = fetchMock.mock.calls.find(([url, init]) => url === '/api/video-generations' && init?.method === 'POST')
+  const call = dialogFetch.mock.calls.find(([url, init]) => url === '/api/video-generations' && init?.method === 'POST')
   return call ? JSON.parse(call[1].body as string) : null
 }
 
-const tab = (group: 'generated' | 'library') => fireEvent.click(screen.getByTestId(`i2v-source-tab-${group}`))
-const pickGenerated = async (id = 'img-1') => fireEvent.click(await screen.findByTestId(`i2v-source-option-generated-${id}`))
+const tab = (group: 'ai' | 'gallery' | 'library' | 'upload') => fireEvent.click(screen.getByTestId(`i2v-source-tab-${group}`))
+const openBrowser = async () => {
+  const trigger = screen.queryByTestId('i2v-source-choose') ?? screen.getByTestId('i2v-source-change')
+  fireEvent.click(trigger)
+  await screen.findByTestId('i2v-source-browser')
+}
+const pickAi = async (id = 'img-1') => {
+  await openBrowser()
+  tab('ai')
+  fireEvent.click(await screen.findByTestId(`i2v-ai-option-${id}`))
+}
+const pickGallery = async (id = 'gal-1') => {
+  await openBrowser()
+  tab('gallery')
+  fireEvent.click(await screen.findByTestId(`i2v-gallery-option-${id}`))
+}
 const pickLibrary = async (id = 'lib-1') => {
+  await openBrowser()
   tab('library')
-  fireEvent.click(await screen.findByTestId(`i2v-source-option-library-${id}`))
+  fireEvent.click(await screen.findByTestId(`i2v-library-option-${id}`))
 }
 const typePrompt = () => fireEvent.change(screen.getByPlaceholderText(/Como esta imagem/), { target: { value: 'a câmera se aproxima' } })
 const generate = async () => {
@@ -124,94 +127,132 @@ const openPicker = async () => {
   renderDialog()
   await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
 }
+const summaryText = () => screen.queryByTestId('i2v-source-summary')?.textContent ?? ''
 
-describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
-  it('shows "Imagem de Origem" with generated and Arquivos groups, and no longer says generated-only', async () => {
+describe('Image-to-Video source field (compact) — source identity', () => {
+  it('starts compact: "Imagem de Origem" with one "Escolher uma imagem" action and no expanded browser', async () => {
     await openPicker()
     expect(screen.getByText('Imagem de Origem')).toBeTruthy()
-    expect(screen.getByTestId('i2v-source-tab-generated').textContent).toBe('Geradas')
-    expect(screen.getByTestId('i2v-source-tab-library').textContent).toBe('Arquivos')
-    expect(document.body.textContent).not.toMatch(/imagem gerada neste Projeto/i)
+    expect(screen.getByTestId('i2v-source-choose').textContent).toContain('Escolher uma imagem')
+    expect(screen.queryByTestId('i2v-source-browser')).toBeNull()
     expect(document.body.textContent).not.toMatch(/source_(image|library)|storage_path/i)
   })
 
-  it('generated images stay visible and selectable (existing behavior)', async () => {
+  it('9. Geradas por IA submits source_image_id only', async () => {
     await openPicker()
-    const option = await screen.findByTestId('i2v-source-option-generated-img-1')
-    expect(option.textContent).toContain('Uma raposa')
-    fireEvent.click(option)
-    expect(screen.getByTestId('i2v-source-option-generated-img-1').getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('Uma raposa (Geradas)')
-  })
-
-  it('Library images are visible and selectable; the Library is queried by Project and kind image only', async () => {
-    await openPicker()
-    tab('library')
-    const option = await screen.findByTestId('i2v-source-option-library-lib-1')
-    expect(option.textContent).toContain('capa-do-lancamento.png')
-    expect(libraryRequests).toEqual(['/api/library-files?projectId=proj-1&kind=image'])
-    fireEvent.click(option)
-    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('capa-do-lancamento.png (Arquivos)')
-  })
-
-  it('video, deleted and other-Project files are never offered, even if the list contained them', async () => {
-    libraryFiles = [
-      libFile(),
-      libFile({ id: 'lib-video', kind: 'video', name: 'clipe.mp4' }),
-      libFile({ id: 'lib-trash', deleted_at: '2026-09-01T00:00:00Z', name: 'lixeira.png' }),
-      libFile({ id: 'lib-other', project_id: 'proj-other', name: 'outro.png' }),
-    ]
-    await openPicker()
-    tab('library')
-    await screen.findByTestId('i2v-source-option-library-lib-1')
-    for (const id of ['lib-video', 'lib-trash', 'lib-other']) expect(screen.queryByTestId(`i2v-source-option-library-${id}`)).toBeNull()
-  })
-
-  it('a generated selection submits source_image_id only', async () => {
-    await openPicker()
-    await pickGenerated()
+    await pickAi()
     const body = await generate()
     expect(body.sourceImageId).toBe('img-1')
     expect('sourceLibraryFileId' in body).toBe(false)
   })
 
-  it('a Library selection submits source_library_file_id only (never converted to an image id)', async () => {
+  it('10. Galeria submits source_library_file_id only (no copy, no promotion)', async () => {
+    await openPicker()
+    await pickGallery()
+    const body = await generate()
+    expect(body.sourceLibraryFileId).toBe('gal-1')
+    expect('sourceImageId' in body).toBe(false)
+    expect(dialogFetch.mock.calls.filter(([url]) => /save-to-library|presign/.test(String(url)))).toEqual([])
+  })
+
+  it('11/14. Arquivos submits source_library_file_id only, and never a URL, path or thumbnail', async () => {
     await openPicker()
     await pickLibrary()
     const body = await generate()
     expect(body.sourceLibraryFileId).toBe('lib-1')
     expect('sourceImageId' in body).toBe(false)
-    expect(JSON.stringify(body)).not.toMatch(/storage|signed|thumbnail|s3\.example/)
+    expect(JSON.stringify(body)).not.toMatch(/storage|signed|thumbnail|s3\.example|sig=/)
   })
 
-  it('switching generated → Library leaves no stale image id, and Library → generated leaves no stale file id', async () => {
+  it('12. Enviar creates a LibraryFile and submits ONLY its id (current Project + Production)', async () => {
     await openPicker()
-    await pickGenerated()
-    await pickLibrary()
-    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('(Arquivos)')
-    tab('generated')
-    expect((await screen.findByTestId('i2v-source-option-generated-img-1')).getAttribute('aria-pressed')).toBe('false')
-    const toLibrary = await generate()
-    expect(toLibrary.sourceLibraryFileId).toBe('lib-1')
-    expect('sourceImageId' in toLibrary).toBe(false)
+    await openBrowser()
+    tab('upload')
+    await waitFor(() => expect(screen.getByTestId('i2v-upload-destination').textContent).toContain('Maitê'))
+    fireEvent.change(screen.getByTestId('i2v-upload-input'), { target: { files: [new File([new Uint8Array([1, 2])], 'minha.png', { type: 'image/png' })] } })
+    await waitFor(() => expect(screen.queryByTestId('i2v-source-browser')).toBeNull())
+    expect(state.uploads.save).toMatchObject({ projectId: PROJECT, productionId: PROD_CURRENT })
+    const body = await generate()
+    expect(body.sourceLibraryFileId).toBe('lib-uploaded')
+    expect('sourceImageId' in body).toBe(false)
   })
 
-  it('switching Library → generated leaves only the image id', async () => {
+  it('13. strict XOR through every transition: AI -> Galeria -> Arquivos -> AI leaves exactly one identity each time', async () => {
     await openPicker()
+    await pickAi()
+    expect(summaryText()).toContain('Gerada por IA')
+    await pickGallery()
+    expect(summaryText()).toContain('Galeria')
     await pickLibrary()
-    tab('generated')
-    await pickGenerated()
+    expect(summaryText()).toContain('Arquivos')
+    await pickAi()
     const body = await generate()
     expect(body.sourceImageId).toBe('img-1')
     expect('sourceLibraryFileId' in body).toBe(false)
   })
 
-  it('changing the connection (API ↔ MCP) does not corrupt the selected source', async () => {
+  it('without a source image_to_video is not submitted', async () => {
+    await openPicker()
+    typePrompt()
+    fireEvent.click(screen.getByTestId('generate-video'))
+    await Promise.resolve()
+    expect(submittedBody()).toBeNull()
+  })
+
+  it('opening and using the chooser never starts a generation by itself', async () => {
+    await openPicker()
+    await pickLibrary()
+    await openBrowser()
+    tab('upload')
+    tab('gallery')
+    await Promise.resolve()
+    expect(submittedBody()).toBeNull()
+  })
+})
+
+describe('Image-to-Video source field — form state rules', () => {
+  it('30. a source chosen for one Project never survives a change of Project behind the open dialog, and the new Project starts clean', async () => {
+    state.folders.push({ id: 'f-root-2', project_id: OTHER_PROJECT, name: 'Outro', path: '/Outro', parent_path: '/', is_project_root: true })
+    state.library.push(libraryRow('lib-2', { project_id: OTHER_PROJECT, name: 'outro-projeto.png', production_id: PROD_CURRENT, folder: '/Outro' }))
+    const view = renderDialog()
+    await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
+    await pickLibrary()
+    expect(summaryText()).toContain('capa-do-lancamento.png')
+
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId={OTHER_PROJECT} productionId={PROD_CURRENT} />)
+    expect(screen.getByTestId('i2v-source-choose')).toBeTruthy()
+    expect(screen.queryByTestId('i2v-source-summary')).toBeNull()
+    await openBrowser()
+    tab('library')
+    await screen.findByTestId('i2v-library-option-lib-2')
+    expect(screen.queryByTestId('i2v-library-option-lib-1')).toBeNull()
+    typePrompt()
+    fireEvent.click(screen.getByTestId('generate-video'))
+    await Promise.resolve()
+    expect(submittedBody()).toBeNull()
+  })
+
+  it('31. a Production change WITHIN the same Project keeps a valid selected source; the default filter follows the new Production', async () => {
+    const view = renderDialog()
+    await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
+    await pickLibrary()
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId={PROJECT} productionId={PROD_OTHER} />)
+    expect(summaryText()).toContain('capa-do-lancamento.png')
+    await openBrowser()
+    tab('gallery')
+    await waitFor(() => expect(state.requests.some((url) => url.startsWith('/api/library-files/browse') && url.includes(`production=${PROD_OTHER}`))).toBe(true))
+    fireEvent.click(screen.getByTestId('i2v-source-close'))
+    const body = await generate()
+    expect(body.sourceLibraryFileId).toBe('lib-1')
+    expect(body.productionId).toBe(PROD_OTHER)
+  })
+
+  it('33. changing the connection (API <-> MCP) does not corrupt the selected source', async () => {
     await openPicker()
     await pickLibrary()
     fireEvent.click(screen.getByTestId('video-connection-option-mcp'))
     await waitFor(() => expect(screen.getByTestId('video-connection-option-mcp').getAttribute('aria-checked')).toBe('true'))
-    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('capa-do-lancamento.png (Arquivos)')
+    expect(summaryText()).toContain('capa-do-lancamento.png')
     const body = await generate()
     expect(body.connectionRef).toMatch(/^kling:/)
     expect(body.connectionRef).not.toBe('kling:api')
@@ -219,7 +260,7 @@ describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
     expect('sourceImageId' in body).toBe(false)
   })
 
-  it('leaving image_to_video drops the source: text_to_video submits neither, and coming back starts empty', async () => {
+  it('32. leaving image_to_video drops the source: text_to_video submits neither', async () => {
     await openPicker()
     await pickLibrary()
     fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
@@ -233,7 +274,7 @@ describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
     expect('sourceLibraryFileId' in body).toBe(false)
   })
 
-  it('returning to image_to_video after a text_to_video detour shows no stale selection', async () => {
+  it('32. returning to image_to_video after a text_to_video detour shows no stale selection', async () => {
     await openPicker()
     await pickLibrary()
     fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
@@ -242,28 +283,23 @@ describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
     fireEvent.mouseDown(screen.getByTestId('operation-image_to_video'))
     fireEvent.click(screen.getByTestId('operation-image_to_video'))
     await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
-    expect(screen.getByTestId('i2v-source-summary').textContent).toMatch(/Escolha uma imagem/)
+    expect(screen.getByTestId('i2v-source-choose')).toBeTruthy()
+    expect(screen.queryByTestId('i2v-source-summary')).toBeNull()
   })
 
-  it('a source chosen for one Project never survives a change of Project behind the open dialog', async () => {
-    const view = render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" />)
-    await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
-    await pickLibrary()
-    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('(Arquivos)')
-
-    libraryFiles = [libFile({ id: 'lib-2', project_id: 'proj-2', name: 'outro-projeto.png' })]
-    view.rerender(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-2" productionId="prod-2" />)
-    tab('library')
-    await screen.findByTestId('i2v-source-option-library-lib-2')
-    expect(screen.getByTestId('i2v-source-summary').textContent).toMatch(/Escolha uma imagem/)
-    typePrompt()
-    fireEvent.click(screen.getByTestId('generate-video'))
-    await Promise.resolve()
-    expect(submittedBody()).toBeNull()
-  })
-
-  it('without a source image_to_video is not submitted', async () => {
+  it('"Trocar" replaces the choice without leaving a stale identity', async () => {
     await openPicker()
+    await pickAi()
+    await pickLibrary()
+    const body = await generate()
+    expect(body.sourceLibraryFileId).toBe('lib-1')
+    expect('sourceImageId' in body).toBe(false)
+  })
+
+  it('"Remover" clears the source, so image_to_video is not submitted', async () => {
+    await openPicker()
+    await pickAi()
+    fireEvent.click(screen.getByTestId('i2v-source-clear'))
     typePrompt()
     fireEvent.click(screen.getByTestId('generate-video'))
     await Promise.resolve()
@@ -271,43 +307,11 @@ describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
   })
 })
 
-describe('Image-to-Video source picker — empty and failure states', () => {
-  it('no generated images: explains how to get one and points at Arquivos; Library stays usable', async () => {
-    generatedRows = []
+describe('the old flat picker is gone', () => {
+  it('no permanent two-tab "Geradas | Arquivos" grid and no unbounded Library query from the new chooser', async () => {
     await openPicker()
-    // With nothing generated but files in Arquivos, the chooser opens on Arquivos.
-    await screen.findByTestId('i2v-source-option-library-lib-1')
-    tab('generated')
-    expect((await screen.findByTestId('i2v-source-empty-generated')).textContent).toMatch(/Gere uma imagem/)
-    expect(screen.queryByTestId('i2v-source-empty-all')).toBeNull()
-  })
-
-  it('no Library images: explains how to upload/save into Arquivos; generated stays usable', async () => {
-    libraryFiles = []
-    await openPicker()
-    await screen.findByTestId('i2v-source-option-generated-img-1')
-    tab('library')
-    expect((await screen.findByTestId('i2v-source-empty-library')).textContent).toMatch(/Envie ou salve uma imagem em Arquivos/)
-  })
-
-  it('neither available: one clear message (no Gallery path is suggested)', async () => {
-    generatedRows = []
-    libraryFiles = []
-    await openPicker()
-    const message = await screen.findByTestId('i2v-source-empty-all')
-    expect(message.textContent).toMatch(/Gere uma imagem ou envie\/salve uma em Arquivos/)
-    expect(document.body.textContent).not.toMatch(/Galeria/)
-  })
-
-  it('a Library load failure is not "empty": it offers a retry, and generated images still work', async () => {
-    libraryStatus = 500
-    await openPicker()
-    await pickGenerated()
-    tab('library')
-    expect(await screen.findByTestId('i2v-source-library-failed')).toBeTruthy()
-    expect(screen.queryByTestId('i2v-source-empty-library')).toBeNull()
-    libraryStatus = 200
-    fireEvent.click(screen.getByText('Tentar novamente'))
-    await screen.findByTestId('i2v-source-option-library-lib-1')
+    expect(screen.queryByTestId('i2v-source-tab-generated')).toBeNull()
+    await pickLibrary()
+    expect(dialogFetch.mock.calls.some(([url]) => /^\/api\/library-files\?/.test(String(url)))).toBe(false)
   })
 })

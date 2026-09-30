@@ -54,3 +54,65 @@ export const LIBRARY_SOURCE_REJECTION_MESSAGE: Record<LibrarySourceRejection, st
   SOURCE_LIBRARY_FILE_DELETED: 'Este arquivo está na lixeira. Escolha outra imagem.',
   SOURCE_LIBRARY_FILE_NOT_IMAGE: 'O arquivo escolhido não é uma imagem. Escolha uma imagem.',
 }
+
+// VIDEO_I2V_SOURCE_BROWSER_V1
+//
+// Four source categories, two request identities (strict XOR, unchanged):
+//   Geradas por IA  -> `images`                              -> source_image_id
+//   Galeria         -> LibraryFile origin=studio_render      -> source_library_file_id (no copy, no promotion)
+//   Arquivos        -> LibraryFile (scope=arquivos)           -> source_library_file_id
+//   Enviar          -> NEW LibraryFile (canonical upload)     -> source_library_file_id
+// The category is DISPLAY metadata only; it never reaches a request.
+
+export type I2vSourceCategory = 'ai' | 'gallery' | 'library' | 'upload'
+
+export const I2V_CATEGORY_LABEL: Record<I2vSourceCategory, string> = {
+  ai: 'Geradas por IA',
+  gallery: 'Galeria',
+  library: 'Arquivos',
+  upload: 'Enviar',
+}
+
+/** Singular label used in the compact summary of the chosen source. */
+export const I2V_CATEGORY_SUMMARY_LABEL: Record<I2vSourceCategory, string> = {
+  ai: 'Gerada por IA',
+  gallery: 'Galeria',
+  library: 'Arquivos',
+  upload: 'Upload',
+}
+
+/** What the compact field shows after a choice. In-memory display data; never persisted or sent. */
+export interface I2vSourceSummary {
+  category: I2vSourceCategory
+  label: string
+  thumbnailUrl: string | null
+  productionName: string | null
+  folder: string | null
+}
+
+export interface I2vSourceSelection {
+  source: I2vSource
+  summary: I2vSourceSummary
+}
+
+/**
+ * Conservative COMMON source-format rule for Image -> Video (cross-transport support is only verified for
+ * PNG and JPEG). This is source eligibility for THIS chooser, not a Library-wide format policy.
+ */
+export const I2V_SOURCE_MIME_TYPES = ['image/png', 'image/jpeg'] as const
+
+export function isI2vSourceMime(mime: string | null | undefined): boolean {
+  return typeof mime === 'string' && (I2V_SOURCE_MIME_TYPES as readonly string[]).includes(mime.toLowerCase())
+}
+
+/** The MIME a local file will be stored as, or null when it is not an eligible I2V source. `.jpg` is JPEG. */
+export function i2vMimeFromFile(file: { name: string; type: string }): (typeof I2V_SOURCE_MIME_TYPES)[number] | null {
+  const type = file.type.toLowerCase()
+  if (type === 'image/png') return 'image/png'
+  if (type === 'image/jpeg' || type === 'image/jpg') return 'image/jpeg'
+  if (type) return null
+  const extension = file.name.toLowerCase().split('.').pop()
+  if (extension === 'png') return 'image/png'
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg'
+  return null
+}

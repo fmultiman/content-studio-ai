@@ -106,6 +106,12 @@ const STATUS_LABELS: Record<GalleryOutputStatus, string> = {
   generating: 'Gerando',
 }
 
+/** Gallery title of a saved Creative Editor render ("Creative Editor · Slide 2/5"). Shared with the I2V source chooser. */
+export function galleryStudioRenderTitle(fileName: string): string {
+  const slide = /^slide-(\d+)-de-(\d+)-/.exec(fileName)
+  return slide ? `Creative Editor · Slide ${slide[1]}/${slide[2]}` : 'Creative Editor · Render'
+}
+
 export function isGeneratedVisualOutput(image: ImageSource): boolean {
   return Boolean(
     image.image_url ||
@@ -277,8 +283,7 @@ export function buildGalleryOutputs({
           projectName: project?.name,
         }).title
         : null
-      const slide = /^slide-(\d+)-de-(\d+)-/.exec(file.name)
-      const title = slide ? `Creative Editor · Slide ${slide[1]}/${slide[2]}` : 'Creative Editor · Render'
+      const title = galleryStudioRenderTitle(file.name)
       const status = 'generated'
       return {
         id: file.id,
