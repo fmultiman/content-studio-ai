@@ -95,7 +95,7 @@ type ImageSource = Pick<
 >
 
 /** A LibraryFile with origin='studio_render' (already carrying a display URL). */
-export type StudioRenderSource = Pick<LibraryFile, 'id' | 'project_id' | 'name' | 'public_url' | 'thumbnail_url' | 'created_at' | 'updated_at'> & Partial<Pick<LibraryFile, 'origin' | 'kind' | 'deleted_at'>>
+export type StudioRenderSource = Pick<LibraryFile, 'id' | 'project_id' | 'name' | 'public_url' | 'thumbnail_url' | 'created_at' | 'updated_at'> & Partial<Pick<LibraryFile, 'origin' | 'kind' | 'deleted_at' | 'production_id'>>
 
 type ExecutionSource = Pick<RenderExecutionSummary, 'id' | 'video_draft_id' | 'status' | 'completed_at' | 'queued_at'> & Partial<Pick<RenderExecutionSummary, 'kind'>>
 
@@ -263,6 +263,20 @@ export function buildGalleryOutputs({
     .filter((file) => file.origin === 'studio_render' && !file.deleted_at && (file.kind ?? 'image') === 'image')
     .map((file): GalleryOutputItem => {
       const project = file.project_id ? projectById.get(file.project_id) || null : null
+      // MEDIA_LIBRARY_PRODUCTION_SCOPING_V1 follow-up: the LibraryFile's own stable `production_id` (migration 048) is
+      // the canonical Production of a saved render. NULL stays unscoped. It is surfaced only when that Production is
+      // loaded AND belongs to the file's Project (fail closed) — never re-derived from a ChannelPiece, folder, name or
+      // "the Project's only Production".
+      const linkedProduction = file.production_id ? productionById.get(file.production_id) || null : null
+      const production = linkedProduction && file.project_id && linkedProduction.project_id === file.project_id ? linkedProduction : null
+      const productionId = production ? production.id : null
+      const displayProductionTitle = production
+        ? resolveProductionDisplay({
+          title: production.title,
+          intention: production.intention,
+          projectName: project?.name,
+        }).title
+        : null
       const slide = /^slide-(\d+)-de-(\d+)-/.exec(file.name)
       const title = slide ? `Creative Editor · Slide ${slide[1]}/${slide[2]}` : 'Creative Editor · Render'
       const status = 'generated'
@@ -273,8 +287,8 @@ export function buildGalleryOutputs({
         prompt: 'Render estático do Creative Editor, salvo na peça',
         projectId: file.project_id,
         projectName: project?.name || null,
-        productionId: null,
-        productionName: null,
+        productionId,
+        productionName: displayProductionTitle,
         draftId: null,
         status,
         statusLabel: galleryOutputStatusLabel(status),
@@ -284,8 +298,8 @@ export function buildGalleryOutputs({
         thumbnailUrl: file.thumbnail_url || file.public_url || null,
         downloadUrl: file.public_url || null,
         canDownload: Boolean(file.public_url),
-        previewAlt: buildGalleryOutputAlt(title, project?.name || null, null),
-        productionHref: null,
+        previewAlt: buildGalleryOutputAlt(title, project?.name || null, displayProductionTitle),
+        productionHref: file.project_id && productionId ? productionHref(file.project_id, productionId) : null,
         sourceHref: null,
         videoPreviewEndpoint: null,
         source: 'studio_render',
