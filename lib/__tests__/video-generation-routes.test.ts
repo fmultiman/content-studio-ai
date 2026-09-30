@@ -47,6 +47,7 @@ import { createPresignedReadUrl } from '@/lib/storage/s3'
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111'
 const FOREIGN_ID = '22222222-2222-4222-8222-222222222222'
 const LIB_BLOB = '99999999-9999-4999-8999-999999999999'
+const IMG_BLOB = '88888888-8888-4888-8888-888888888888'
 const SECRET_TOKENS = ['MCP-ACCESS-TOKEN-SECRET', 'MCP-REFRESHED-TOKEN-SECRET']
 const NOW_ISO = new Date().toISOString()
 
@@ -75,7 +76,7 @@ function makeDb(rows: { connections?: any[]; klingKey?: string | null; generatio
       user_settings: rows.klingKey === undefined || rows.klingKey === null ? [] : [{ user_id: 'user-a', kling_api_key: rows.klingKey }],
       video_generations: rows.generations ?? [],
       productions: [{ id: 'prod-1', project_id: 'proj-1', user_id: 'user-a' }],
-      images: rows.images ?? [{ id: 'img-1', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/1.png', storage_path: 'a/1.png' }],
+      images: rows.images ?? [{ id: 'img-1', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/1.png', storage_path: `users/user-a/images/${IMG_BLOB}/original.png` }],
       library_files: rows.libraryFiles ?? [],
       video_drafts: [],
       channel_piece_media: [],
@@ -584,6 +585,47 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     expect(mcp.calls).toEqual([])
     expect(restCalls).toEqual([])
     expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it.each([
+    ['a foreign tenant key', `users/victim-user/images/${IMG_BLOB}/original.png`],
+    ['a traversal key', `users/user-a/images/../victim-user/images/${IMG_BLOB}/original.png`],
+    ['a lookalike owner prefix', `users/user-a-evil/images/${IMG_BLOB}/original.png`],
+    ['a Library key used as an image key', `users/user-a/library/${IMG_BLOB}/original.png`],
+    ['a URL instead of a key', `https://s3.example.test/users/user-a/images/${IMG_BLOB}/original.png`],
+  ])('an OWNED generated-image row forged with %s is never signed or sent to a provider (422)', async (_name, storage_path) => {
+    const db = makeDb({
+      connections: [connectionRow()],
+      klingKey: 'user-rest-key',
+      images: [{ id: 'img-forged', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://attacker.example.test/x.png', storage_path }],
+    })
+    signIn(db)
+    const mcp = installFakeMcp()
+    vi.mocked(createPresignedReadUrl).mockClear()
+
+    for (const body of [mcpI2v({ sourceImageId: 'img-forged' }), { ...base, mode: 'image_to_video', sourceImageId: 'img-forged', connectionRef: 'kling:api' }]) {
+      const response = await post(body)
+      expect(response.status).toBe(422)
+      expect((await response.json()).code).toBe('SOURCE_MEDIA_UNAVAILABLE')
+    }
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
+    expect(mcp.calls).toEqual([])
+    expect(restCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+  })
+
+  it('a legacy image with NO stored key (provider URL representation) keeps its existing behavior', async () => {
+    const db = makeDb({
+      connections: [connectionRow()],
+      images: [{ id: 'img-legacy', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/legacy.png', storage_path: null }],
+    })
+    signIn(db)
+    const mcp = installFakeMcp()
+    vi.mocked(createPresignedReadUrl).mockClear()
+    const response = await post(mcpI2v({ sourceImageId: 'img-legacy' }))
+    expect(response.status).toBe(200)
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
+    expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: 'https://img.example.test/legacy.png' }])
   })
 
   it('a generated image of another user is refused (403) and never reaches a provider', async () => {

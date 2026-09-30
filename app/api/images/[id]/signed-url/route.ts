@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
+import { presignImageObject } from '@/lib/storage/image-storage'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -21,7 +22,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const { data: image, error } = await supabase
       .from('images')
-      .select('id, image_url, thumbnail_url, storage_path, thumbnail_path')
+      .select('id, user_id, image_url, thumbnail_url, storage_path, thumbnail_path')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -30,11 +31,22 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Imagem não encontrada' }, { status: 404 })
     }
 
+    // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: `images` rows are browser-written, so a stored
+    // key is a claim. A row that carries a key must carry the OWNER's own image key, or nothing is
+    // signed. A NULL key (legacy provider/data URL representation) keeps its existing behavior.
+    const claimed = [
+      [image.storage_path, 'original'],
+      [image.thumbnail_path, 'thumbnail'],
+    ] as const
+    if (claimed.some(([path, kind]) => path && !isTrustedImageStoragePath(image.user_id, path, kind))) {
+      return NextResponse.json({ error: 'Imagem não encontrada', code: 'IMAGE_NOT_FOUND' }, { status: 404 })
+    }
+
     const signedImageUrl = image.storage_path
-      ? await createPresignedReadUrl(image.storage_path)
+      ? await presignImageObject(image.user_id, image.storage_path, 'original')
       : null
     const signedThumbnailUrl = image.thumbnail_path
-      ? await createPresignedReadUrl(image.thumbnail_path)
+      ? await presignImageObject(image.user_id, image.thumbnail_path, 'thumbnail')
       : null
 
     return NextResponse.json({

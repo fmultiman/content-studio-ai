@@ -9,6 +9,8 @@ import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-ge
 import { initialNextPollAt } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 import { presignLibraryRead } from '@/lib/storage/library-storage'
+import { presignImageObject } from '@/lib/storage/image-storage'
+import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
 import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
 import { checkLibrarySourceFile, LIBRARY_SOURCE_REJECTION_MESSAGE } from '@/lib/video-generation/i2v-source'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
@@ -178,8 +180,14 @@ export async function POST(req: NextRequest) {
         if (imageError || !image) {
           return NextResponse.json({ error: 'Source image not found or not owned by user in this project' }, { status: 403 })
         }
+        // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: `images` rows are browser-written, so the stored
+        // key is a claim. Only the owner's own image key is signed; a forged key is refused before any
+        // provider call. A NULL key (legacy provider/data URL representation) keeps its existing behavior.
         if (image.storage_path) {
-          const presigned = await createPresignedReadUrl(image.storage_path)
+          const presigned = await presignImageObject(image.user_id, image.storage_path, 'original')
+          if (!presigned && !isTrustedImageStoragePath(image.user_id, image.storage_path, 'original')) {
+            return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
+          }
           resolvedSourceUrl = presigned || image.image_url
         } else {
           resolvedSourceUrl = image.image_url
