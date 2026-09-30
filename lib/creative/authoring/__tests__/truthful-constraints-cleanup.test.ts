@@ -100,12 +100,13 @@ describe('4. Constraints are stated as constraints; nothing claims what the code
     expect(STATIC).toContain('Trocar aqui usa a mesma imagem do elemento')
   })
 
-  it('Estilo never claims Project Identity resolves typography or colours (the adapter returns Studio defaults)', () => {
+  it('Estilo states the real Identity precedence and never claims Identity lacks typography or colours', () => {
     for (const free of [false, true]) {
       const html = renderToStaticMarkup(createElement(StyleSourcePanel, { tokens, free }))
-      expect(html).toContain('Padrão do Studio.')
-      expect(html).toContain('estes valores não vêm dela')
-      expect(html).not.toMatch(/vêm da Identidade|definidos pela Identidade/)
+      expect(html).toContain('vêm da Identidade do Projeto quando ela as define')
+      expect(html).toContain('o que ela não define usa o padrão do Studio')
+      expect(html).not.toContain('estes valores não vêm dela')
+      expect(html).not.toContain('ainda não define tipografia')
     }
     expect(PANELS).not.toMatch(/Fonte da Identidade|Cor da Identidade|cores e fontes da Identidade/)
     expect(MODE).toContain('hoje, o padrão do Studio')

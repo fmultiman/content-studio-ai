@@ -53,9 +53,9 @@ const EDITORIAL_DOCUMENTARY_COLLAGE_SECTIONS: Readonly<Record<string, readonly T
   info: [
     section(TITLE_BLOCK, 'Bloco de título', 'title', 'paperStrip', 'paperDark'),
     section('card-1', 'Cartão 1', 'card1', 'pin'),
-    section('card-2', 'Cartão 2', 'paper', 'pin2', 'tape3'),
+    section('card-2', 'Cartão 2', 'paper', 'pin2'),
     section('source-credit', 'Fonte e crédito', 'source'),
-    section(DECORATION, 'Decoração', 'botanicalLeaf', 'botanical', 'tape1', 'tape2', 'archival'),
+    section(DECORATION, 'Decoração', 'botanicalLeaf', 'botanical', 'tape1', 'tape2', 'tape3', 'archival'),
   ],
   list: [
     section(TITLE_BLOCK, 'Bloco de título', 'title', 'paperStrip'),

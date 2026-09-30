@@ -305,18 +305,22 @@ describe('Save / restore / render semantics', () => {
 })
 
 describe('Estilo — honest source of truth', () => {
-  it('the adapter ignores Project Identity for typography/colors today (Studio defaults)', () => {
+  it('free-text identity expression does not change tokens; explicit visual tokens do', () => {
     const a = adaptProjectIdentityToVisualTokens('p1', { schema_version: 1, expression: { visual_identity: 'A' } } as never)
     const b = adaptProjectIdentityToVisualTokens('p1', { schema_version: 1, expression: { visual_identity: 'totally different' } } as never)
     expect(a.typography).toEqual(b.typography)
     expect(a.colors).toEqual(b.colors)
+    const styled = adaptProjectIdentityToVisualTokens('p1', { schema_version: 1, visuals: { typography: { display_font: 'Space Grotesk' }, colors: { accent: '#112233' } } } as never)
+    expect(styled.typography.display.family).toBe('Space Grotesk')
+    expect(styled.colors.accent).toBe('#112233')
   })
 
-  it('the Estilo panel says so and never claims Project Identity inheritance', () => {
+  it('the Estilo panel states the real precedence and no longer claims Identity lacks typography/colors', () => {
     const panels = read('components', 'creative', 'authoring', 'inspector-panels.tsx')
     const style = panels.slice(panels.indexOf('export function StyleSourcePanel'))
-    expect(style).toMatch(/Padrão do Studio\./)
-    expect(style).toMatch(/A Identidade do Projeto ainda não define tipografia nem cores visuais; estes valores não vêm dela\./)
-    expect(PAGE).not.toMatch(/Tipografia e cores vêm da Identidade do Projeto/)
+    expect(style).toMatch(/Identidade do Projeto\./)
+    expect(style).toMatch(/vêm da Identidade do Projeto quando ela as define; o que ela não define usa o padrão do Studio/)
+    expect(style).not.toMatch(/ainda não define tipografia nem cores visuais/)
+    expect(style).not.toMatch(/estes valores não vêm dela/)
   })
 })

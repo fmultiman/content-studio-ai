@@ -1,4 +1,5 @@
 import { defaultContentForVariant } from './authoring-state'
+import { replaceTemplateLayout } from './layout-switch'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAULT_TUNING } from './types'
 import type { AuthoringAppearance, AuthoringCanvas, AuthoringContent, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
 import type { PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
@@ -36,7 +37,8 @@ export function getContentAt(value: unknown, path: ContentPath): unknown {
 }
 
 export type AuthoringAction =
-  | { type: 'SET_VARIANT'; variant: AuthoringVariant }
+  /** Template Layout A → B: replaces the Layout-owned state, keeps the Custom overlay (see layout-switch.ts). */
+  | { type: 'SET_VARIANT'; variant: AuthoringVariant; templateId?: string }
   | { type: 'SET_APPEARANCE'; appearance: AuthoringAppearance }
   | { type: 'SET_IDENTITY'; identity: AuthoringIdentity }
   | { type: 'SET_CANVAS'; canvas: AuthoringCanvas }
@@ -110,8 +112,8 @@ export function applyContentAction(content: unknown, action: ContentAction): unk
 
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
-    // A layout switch changes the element set, so an authored stack for the old layout no longer applies.
-    case 'SET_VARIANT': return { ...state, variant: action.variant, heroRef: undefined, contentOverride: defaultContentForVariant(action.variant, state.identity), elementOrder: undefined }
+    // STATIC_TEMPLATE_LAYOUT_SWITCH_STATE_TRUTH_V1: one explicit Layout replacement; nothing Layout-owned survives.
+    case 'SET_VARIANT': return replaceTemplateLayout(state, action.variant, action.templateId)
     // Slice 1 — Portal Carousel V1: appearance is independent of variant, so
     // switching variant deliberately does NOT touch it here.
     case 'SET_APPEARANCE': return { ...state, appearance: action.appearance }

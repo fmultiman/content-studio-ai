@@ -3,6 +3,7 @@ export { AUTHORING_VARIANTS, DEFAULT_TUNING, AUTHORING_HERO_ASSETS, DEFAULT_PRIM
 export { createInitialAuthoringState, createContextualAuthoringState, resolvePreviewInput, deriveManifestFromState, canvasSpecFromAuthoring, defaultContentForVariant, defaultAppearanceForVariant, variantUsesContentImage, variantHasBrandLabel, TUNING_BOUNDS, clampTuningValue, derivePrimitiveSelectionRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, projectRefForIdentity } from './authoring-state'
 export { authoringRenderRequestSchema, authoringRenderOverridesSchema, documentaryCardPreviewTuningSchema, parseAuthoringRenderRequest, primitiveSelectionSchema, primitiveTransformsBySlotSchema, templateIdSchema, elementOrderSchema } from './render-request'
 export type { AuthoringRenderRequest, AuthoringRenderOverrides, PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
+export { replaceTemplateLayout, hasLayoutOwnedAuthoredWork } from './layout-switch'
 export { authoringReducer, applyContentAction, isContentAction, getContentAt, LIST_ITEMS_MIN, LIST_ITEMS_MAX } from './reducer'
 export type { AuthoringAction, ContentAction, ContentPath } from './reducer'
 export { dataUrlToFile, renderOutputFilename } from './render-output'
