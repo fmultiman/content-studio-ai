@@ -143,7 +143,8 @@ describe('Template registry — Completion V1 layouts', () => {
     expect(getTemplateLayout(TEMPLATE, 'grid')!.elements.map((element) => element.id)).toContain('tiles')
     expect(getTemplateLayout(TEMPLATE, 'map')!.elements.map((element) => element.id)).toContain('map')
     expect(getTemplateLayout(TEMPLATE, 'network')!.elements.map((element) => element.id)).toContain('cards')
-    for (const layout of TEMPLATE.layouts) expect(layout.elements.length).toBeLessThanOrEqual(14)
+    // Cover (15, COVER_ELEMENT_COMPLETENESS_V1) is the largest: still a bounded set, never one Element per item.
+    for (const layout of TEMPLATE.layouts) expect(layout.elements.length).toBeLessThanOrEqual(15)
   })
 })
 

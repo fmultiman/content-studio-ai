@@ -52,12 +52,13 @@ describe('labels', () => {
 })
 
 describe('elementsForVariant', () => {
-  // Final Authoring Polish V2.1: Fonte (source/credit) only exists as an
-  // independently authored element on Info — Cover's source_line has no
-  // tuning slot, so exposing it there would offer a control that does nothing.
-  it('exposes Fonte only on the Info variant', () => {
+  // Final Authoring Polish V2.1: Fonte (source/credit) is an independently authored element only where the
+  // renderer reads a tuning slot for it. COVER_ELEMENT_COMPLETENESS_V1 gave Cover's source_line that slot
+  // (the same `source` group as Info), so it is exposed there too; the layouts that draw no source line still do not.
+  it('exposes the source line only on the layouts whose renderer positions it (Info, Cover)', () => {
     expect(elementsForVariant('info').map((element) => element.key)).toContain('source')
-    expect(elementsForVariant('cover').map((element) => element.key)).not.toContain('source')
+    expect(elementsForVariant('cover').map((element) => element.key)).toContain('source')
+    for (const variant of ['list', 'grid', 'map', 'network', 'quote', 'closing'] as const) expect(elementsForVariant(variant).map((element) => element.key)).not.toContain('source')
   })
 
   it('labels the Info Fonte element correctly', () => {

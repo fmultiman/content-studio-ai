@@ -137,6 +137,11 @@ export interface HeroTuning {
   rotation: number
   /** dimensionless, clamped to 0.9–1.15 */
   scale: number
+  /**
+   * COVER_ELEMENT_COMPLETENESS_V1 — the Hero's frame and paper-coloured backing. Absent = shown
+   * (the legacy look); only `false` is ever stored. Offered by layouts whose Hero declares `presentation.frame`.
+   */
+  frame?: boolean
 }
 
 export interface TitleTuning {
@@ -153,6 +158,15 @@ export interface TitleTuning {
   lineHeight?: number
 }
 
+/** COVER_ELEMENT_COMPLETENESS_V1 — bounded X/Y/rotation of a text/brand Element (TitleTuning without line-height). */
+export interface PositionTuning {
+  offsetX: number
+  offsetY: number
+  rotation: number
+}
+
+export const DEFAULT_POSITION_TUNING: PositionTuning = { offsetX: 0, offsetY: 0, rotation: 0 }
+
 export interface DocumentaryCardPreviewTuning {
   hero: HeroTuning
   title: TitleTuning
@@ -163,6 +177,13 @@ export interface DocumentaryCardPreviewTuning {
    * spread the Title's own style object into this element too).
    */
   source: TitleTuning
+  /**
+   * COVER_ELEMENT_COMPLETENESS_V1 — Cover's Chamada / Introdução / Assinatura. OPTIONAL: absent
+   * (every slide authored before) means the Template position; a reset removes the key.
+   */
+  kicker?: PositionTuning
+  intro?: PositionTuning
+  brand?: PositionTuning
 }
 
 export const DEFAULT_TUNING: DocumentaryCardPreviewTuning = {

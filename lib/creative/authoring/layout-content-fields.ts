@@ -16,7 +16,7 @@ export type ItemFieldDescriptor =
   | { kind: 'text'; key: string; label: string; rows?: number; optional?: boolean }
 
 export type ContentFieldDescriptor =
-  | { kind: 'text'; key: string; label: string; rows?: number; optional?: boolean; hint?: string }
+  | { kind: 'text'; key: string; label: string; rows?: number; optional?: boolean; hint?: string; maxLength?: number }
   /** A list of plain strings (one Textarea each). */
   | { kind: 'strings'; key: string; label: string; itemLabel: string; min: number; max: number; optional?: boolean; newItem: string }
   /** A list of small records (icon + text, name + UF…). */
@@ -97,6 +97,19 @@ export const COVER_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
   { kind: 'text', key: 'source_line', label: 'Linha de fonte', rows: 1, optional: true },
   { kind: 'text', key: 'detail_note', label: 'Nota da edição', rows: 2, optional: true, hint: 'Use "Rótulo: texto" para destacar o rótulo.' },
   { kind: 'text', key: 'brand_label', label: 'Nome da marca', rows: 1, optional: true },
+]
+
+/**
+ * COVER_ELEMENT_COMPLETENESS_V1 — the Static Cover Content tab: every authored Cover string, named by its role
+ * (bounds = DocumentaryCardCoverContentSchema). `brand_label` is deliberately absent: it is derived from the live
+ * Project name (variantHasBrandLabel), not per-slide authored content. Video keeps COVER_CONTENT_FIELDS.
+ */
+export const STATIC_COVER_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
+  { kind: 'text', key: 'eyebrow', label: 'Chamada (kicker)', rows: 1, optional: true, maxLength: 48 },
+  { kind: 'text', key: 'title', label: 'Título', rows: 2, maxLength: 120 },
+  { kind: 'text', key: 'subtitle', label: 'Introdução', rows: 3, optional: true, maxLength: 220 },
+  { kind: 'text', key: 'source_line', label: 'Fonte editorial', rows: 1, optional: true, maxLength: 160 },
+  { kind: 'text', key: 'detail_note', label: 'Nota da edição', rows: 2, optional: true, maxLength: 240, hint: 'Use "Rótulo: texto" para destacar o rótulo.' },
 ]
 
 export const INFO_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [

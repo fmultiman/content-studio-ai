@@ -33,6 +33,7 @@ import {
   type DocumentaryCardPreviewTuning,
   type PrimitiveTransforms,
   DEFAULT_TUNING,
+  DEFAULT_POSITION_TUNING,
   DEFAULT_PRIMITIVE_TRANSFORMS,
   DEFAULT_PRIMITIVE_TRANSFORMS_STATE,
 } from './types'
@@ -408,10 +409,56 @@ export const TUNING_BOUNDS = {
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
   },
+  // COVER_ELEMENT_COMPLETENESS_V1 — same bounded position as the title/source: no parallel positioning system.
+  kicker: {
+    offsetX: { min: -60, max: 60 },
+    offsetY: { min: -60, max: 60 },
+    rotation: { min: -2, max: 2 },
+  },
+  intro: {
+    offsetX: { min: -60, max: 60 },
+    offsetY: { min: -60, max: 60 },
+    rotation: { min: -2, max: 2 },
+  },
+  brand: {
+    offsetX: { min: -60, max: 60 },
+    offsetY: { min: -60, max: 60 },
+    rotation: { min: -2, max: 2 },
+  },
 } as const
 
+/** Groups a Template Element can be positioned by (its `control: { type: 'tuning', group }`). */
+export type TuningGroup = 'hero' | 'title' | 'source' | 'kicker' | 'intro' | 'brand'
+const OPTIONAL_TUNING_GROUPS: readonly TuningGroup[] = ['kicker', 'intro', 'brand']
+
+/** One bounded value of a group. An optional group (Cover's Chamada/Introdução/Assinatura) starts from the neutral position. */
+export function setTuningField(tuning: DocumentaryCardPreviewTuning, group: TuningGroup, field: string, value: number): DocumentaryCardPreviewTuning {
+  const current = (tuning[group] ?? DEFAULT_POSITION_TUNING) as unknown as Record<string, number>
+  return { ...tuning, [group]: { ...current, [field]: value } }
+}
+
+/**
+ * Back to the Template position. An optional group is REMOVED (absent = default), so a reset slide
+ * serializes exactly like one never adjusted; the Hero reset also restores its frame.
+ */
+export function resetTuningGroup(tuning: DocumentaryCardPreviewTuning, group: TuningGroup): DocumentaryCardPreviewTuning {
+  if (OPTIONAL_TUNING_GROUPS.includes(group)) {
+    const { [group as 'kicker' | 'intro' | 'brand']: _removed, ...rest } = tuning
+    void _removed
+    return rest as DocumentaryCardPreviewTuning
+  }
+  return { ...tuning, [group]: { ...DEFAULT_TUNING[group as 'hero' | 'title' | 'source'] } }
+}
+
+/** Hero frame + backing on/off. Only `false` is ever stored; showing it again removes the key (the legacy look). */
+export function setHeroFrame(tuning: DocumentaryCardPreviewTuning, framed: boolean): DocumentaryCardPreviewTuning {
+  const { frame: _frame, ...hero } = tuning.hero
+  void _frame
+  return { ...tuning, hero: framed ? hero : { ...hero, frame: false } }
+}
+
 export function clampTuningValue(
-  group: 'hero' | 'title' | 'source',
+  group: TuningGroup,
   field: string,
   value: number,
 ): number {

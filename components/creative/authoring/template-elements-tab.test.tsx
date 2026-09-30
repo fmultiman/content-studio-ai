@@ -61,10 +61,10 @@ describe('anatomy tree per Layout', () => {
     })
   }
 
-  it('Cover reads as Bloco de título / Hero / Nota editorial / Decoração', () => {
+  it('Cover reads as Cabeçalho / Bloco de título / Introdução / Fonte editorial / Hero / Nota editorial / Assinatura / Decoração', () => {
     setup('cover')
     const labels = screen.getAllByTestId('anatomy-section-toggle').map((button) => button.textContent)
-    expect(labels).toEqual(['Bloco de título2', 'Hero2', 'Nota editorial2', 'Decoração4'])
+    expect(labels).toEqual(['Cabeçalho1', 'Bloco de título2', 'Introdução1', 'Fonte editorial1', 'Hero2', 'Nota editorial3', 'Assinatura1', 'Decoração4'])
   })
 
   it('does not expose internal chrome as Elements (only registered Element ids appear)', () => {

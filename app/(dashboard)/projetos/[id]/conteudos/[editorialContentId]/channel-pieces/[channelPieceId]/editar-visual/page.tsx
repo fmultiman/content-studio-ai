@@ -14,12 +14,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/components/creative/documentary-card'
-import { PrimitiveTransformControls, HeroTuningControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { TemplateElementPanel } from '@/components/creative/authoring/template-element-panel'
 import { LayoutSwitchDialog } from '@/components/creative/authoring/layout-switch-dialog'
 import { TemplateElementsTab } from '@/components/creative/authoring/template-elements-tab'
 import { resolveLayoutSections } from '@/lib/creative/templates/template-anatomy'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
-import { LAYOUT_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
+import { LAYOUT_CONTENT_FIELDS, STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { AssetSlotCard, StyleSourcePanel, TemplateReference } from '@/components/creative/authoring/inspector-panels'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
@@ -33,11 +33,11 @@ import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templ
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
-  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_TUNING,
+  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_POSITION_TUNING,
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
-  variantUsesContentImage, hasLayoutOwnedAuthoredWork,
+  variantUsesContentImage, hasLayoutOwnedAuthoredWork, setTuningField as applyTuningField, resetTuningGroup, setHeroFrame, type TuningGroup,
 } from '@/lib/creative/authoring'
 import { contextualContentForChannelPiece } from '@/lib/creative/context/static-authoring'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -445,13 +445,13 @@ export default function StaticAuthoringProductPage() {
     else applyLayoutSwitch(layoutId)
   }
 
-  function setTuningField(group: 'hero' | 'title' | 'source', field: string, value: number) {
+  function setTuningField(group: TuningGroup, field: string, value: number) {
     if (!state) return
-    dispatch({ type: 'SET_TUNING', tuning: { ...state.tuning, [group]: { ...state.tuning[group], [field]: value } } })
+    dispatch({ type: 'SET_TUNING', tuning: applyTuningField(state.tuning, group, field, value) })
   }
-  function resetTuningField(group: 'hero' | 'title' | 'source') {
+  function resetTuningField(group: TuningGroup) {
     if (!state) return
-    dispatch({ type: 'SET_TUNING', tuning: { ...state.tuning, [group]: { ...DEFAULT_TUNING[group] } } })
+    dispatch({ type: 'SET_TUNING', tuning: resetTuningGroup(state.tuning, group) })
   }
 
   function revert() {
@@ -760,21 +760,13 @@ export default function StaticAuthoringProductPage() {
 
   /** The open element's own controls — exactly what its Template control contract supports. */
   function renderElementPanel(id: string) {
-    const control = elements.find((element) => element.key === id)?.control
-    if (!control || !state) return null
-    if (control.type === 'tuning' && control.group === 'hero') return <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => setTuningField('hero', field, value)} onReset={() => resetTuningField('hero')} />
-    if (control.type === 'tuning') {
-      const group = control.group
-      const typography = layout ? getLayoutElement(layout, id)?.typography : undefined
-      const lineHeight = group === 'title' && typography ? { defaultValue: typography.lineHeight, min: TITLE_LINE_HEIGHT_BOUNDS.min, max: TITLE_LINE_HEIGHT_BOUNDS.max } : undefined
-      return <TitleTuningControls tuning={state.tuning[group]} lineHeight={lineHeight} onChange={(field, value) => setTuningField(group, field, value)} onReset={() => resetTuningField(group)} />
-    }
-    const key = control.key
-    return <PrimitiveTransformControls slot={key} transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS} onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })} onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })} />
+    if (!state) return null
+    return <TemplateElementPanel elementId={id} state={state} layout={layout} elements={elements} dispatch={dispatch} />
   }
 
   // Structured layouts (Lista, Grade, Mapa, Rede, Citação, Encerramento) edit through their field descriptors.
-  const structuredFields = state ? LAYOUT_CONTENT_FIELDS[state.variant] : undefined
+  // COVER_ELEMENT_COMPLETENESS_V1: Cover joins them with its own role-named descriptors (Info still edits inline).
+  const structuredFields = state ? (state.variant === 'cover' ? STATIC_COVER_CONTENT_FIELDS : LAYOUT_CONTENT_FIELDS[state.variant]) : undefined
 
   const templateChoices = listTemplateDefinitions().map((definition) => ({ id: definition.id, name: definition.name, description: definition.description }))
   const compositionScope = isCarousel ? 'desta peça (todos os slides)' : 'desta peça'

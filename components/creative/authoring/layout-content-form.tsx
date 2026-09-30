@@ -18,11 +18,11 @@ type Dispatch = (action: AuthoringAction) => void
 
 const fieldId = (path: ContentPath) => `content-${path.join('-')}`
 
-function TextField({ path, label, rows = 2, optional, hint, value, dispatch }: { path: ContentPath; label: string; rows?: number; optional?: boolean; hint?: string; value: unknown; dispatch: Dispatch }) {
+function TextField({ path, label, rows = 2, optional, hint, maxLength, value, dispatch }: { path: ContentPath; label: string; rows?: number; optional?: boolean; hint?: string; maxLength?: number; value: unknown; dispatch: Dispatch }) {
   return (
     <div className="space-y-1">
       <Label htmlFor={fieldId(path)}>{label}{optional ? <span className="ml-1 text-[11px] font-normal text-muted-foreground">(opcional)</span> : null}</Label>
-      <Textarea id={fieldId(path)} value={typeof value === 'string' ? value : ''} rows={rows} onChange={(event) => dispatch({ type: 'SET_CONTENT_VALUE', path, value: event.target.value, optional })} />
+      <Textarea id={fieldId(path)} value={typeof value === 'string' ? value : ''} rows={rows} maxLength={maxLength} onChange={(event) => dispatch({ type: 'SET_CONTENT_VALUE', path, value: event.target.value, optional })} />
       {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
   )
@@ -48,7 +48,7 @@ function ListHeader({ label, count, max }: { label: string; count: number; max: 
 function Field({ field, base, content, dispatch }: { field: ContentFieldDescriptor; base: ContentPath; content: unknown; dispatch: Dispatch }) {
   const path = [...base, field.key]
   const value = getContentAt(content, path)
-  if (field.kind === 'text') return <TextField path={path} label={field.label} rows={field.rows} optional={field.optional} hint={field.hint} value={value} dispatch={dispatch} />
+  if (field.kind === 'text') return <TextField path={path} label={field.label} rows={field.rows} optional={field.optional} hint={field.hint} maxLength={field.maxLength} value={value} dispatch={dispatch} />
 
   if (field.kind === 'group') {
     const present = value !== undefined && value !== null

@@ -45,9 +45,13 @@ const DECORATION = 'decoration'
 /** editorial-documentary-collage-v1 — Section registry, layout id → sections (display order, top to bottom). */
 const EDITORIAL_DOCUMENTARY_COLLAGE_SECTIONS: Readonly<Record<string, readonly TemplateSectionDefinition[]>> = {
   cover: [
+    section('header', 'Cabeçalho', 'kicker'),
     section(TITLE_BLOCK, 'Bloco de título', 'title', 'paper'),
+    section('intro', 'Introdução', 'intro'),
+    section('source-editorial', 'Fonte editorial', 'source'),
     section('hero', 'Hero', 'hero', 'tape1'),
-    section('editorial-note', 'Nota editorial', 'note', 'tape2'),
+    section('editorial-note', 'Nota editorial', 'note', 'noteText', 'tape2'),
+    section('signature', 'Assinatura', 'brand'),
     section(DECORATION, 'Decoração', 'botanical', 'botanicalLeaf', 'archival', 'ornament'),
   ],
   info: [

@@ -106,6 +106,8 @@ const heroTuningSchema = z
     offsetY: z.number().finite().min(TUNING_BOUNDS.hero.offsetY.min).max(TUNING_BOUNDS.hero.offsetY.max),
     rotation: z.number().finite().min(TUNING_BOUNDS.hero.rotation.min).max(TUNING_BOUNDS.hero.rotation.max),
     scale: z.number().finite().min(TUNING_BOUNDS.hero.scale.min).max(TUNING_BOUNDS.hero.scale.max),
+    // COVER_ELEMENT_COMPLETENESS_V1: Hero frame/backing; absent = shown (the legacy look), only `false` is stored.
+    frame: z.boolean().optional(),
   })
   .strict()
 
@@ -131,6 +133,10 @@ const tuningSchema = z
     // V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source` at all.
     // Absence means "template default", read back as DEFAULT_TUNING.source.
     source: positionTuningSchema.optional(),
+    // COVER_ELEMENT_COMPLETENESS_V1: Cover's Chamada / Introdução / Assinatura positions. Absent = Template position.
+    kicker: positionTuningSchema.optional(),
+    intro: positionTuningSchema.optional(),
+    brand: positionTuningSchema.optional(),
   })
   .strict()
 
@@ -266,7 +272,13 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     primitiveSelection: { ...state.primitiveSelection },
     primitiveTransforms: completeTransforms(state.primitiveTransforms),
     ...(state.heroRef ? { heroRef: state.heroRef } : {}),
-    tuning: { hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source } },
+    tuning: {
+      hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source },
+      // Only an authored optional group is persisted; absence keeps following the Template position.
+      ...(state.tuning.kicker ? { kicker: { ...state.tuning.kicker } } : {}),
+      ...(state.tuning.intro ? { intro: { ...state.tuning.intro } } : {}),
+      ...(state.tuning.brand ? { brand: { ...state.tuning.brand } } : {}),
+    },
     // Only an authored override is persisted; absence keeps following the template default.
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
     ...(state.assetOverrides && Object.keys(state.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(state.assetOverrides) } : {}),
@@ -323,7 +335,12 @@ export function persistedSlideToAuthoringState(
     // is independently defaulted: rows persisted before Final Authoring
     // Polish V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source`.
     tuning: slide.tuning
-      ? { hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) } }
+      ? {
+        hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) },
+        ...(slide.tuning.kicker ? { kicker: { ...slide.tuning.kicker } } : {}),
+        ...(slide.tuning.intro ? { intro: { ...slide.tuning.intro } } : {}),
+        ...(slide.tuning.brand ? { brand: { ...slide.tuning.brand } } : {}),
+      }
       : { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title }, source: { ...DEFAULT_TUNING.source } },
     debugPanelOpen: false,
   }

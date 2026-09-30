@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import type { DocumentaryCardCoverContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, elementTransform, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -35,6 +35,16 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
   const fixedText: CSSProperties = { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z }
   const [noteLabel, ...noteRest] = (content.detail_note ?? '').split(':')
   const noteBody = noteRest.join(':').trim()
+  // COVER_ELEMENT_COMPLETENESS_V1 — Chamada / Introdução / Fonte editorial / Assinatura are Template Elements: painted from the
+  // stack (on top by default), hideable, and positioned by their bounded tuning. Absent tuning = the Template position.
+  const positioned = (id: string, tuning: { offsetX: number; offsetY: number; rotation: number } | undefined, base = ''): CSSProperties => ({
+    zIndex: z(id, STACK_TOP_Z),
+    ...hideStyle(id),
+    transform: `${base ? `${base} ` : ''}translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${tuning?.rotation ?? 0}deg)`,
+    transformOrigin: 'top left',
+  })
+  // Hero frame: the CSS frame AND its paper-coloured backing are ONE presentation option (the backing only exists inside the frame).
+  const heroFramed = heroTuning?.frame !== false
 
   return (
     <>
@@ -53,12 +63,13 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       {/* Hero ("Imagem principal"): the content image in a pale photo border, tilted like the Pack B book. */}
       <div
         aria-label="Imagem principal"
+        data-hero-frame={heroFramed ? 'on' : 'off'}
         style={{
-          background: '#e8dcc3',
-          boxShadow: '0 22px 40px rgba(0, 0, 0, .45)',
+          background: heroFramed ? '#e8dcc3' : 'transparent',
+          boxShadow: heroFramed ? '0 22px 40px rgba(0, 0, 0, .45)' : 'none',
           height: y(676),
           left: x(566),
-          padding: x(14),
+          padding: heroFramed ? x(14) : 0,
           position: 'absolute',
           top: y(214),
           width: x(468),
@@ -68,21 +79,28 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         }}
       >
         <div style={{ height: '100%', overflow: 'hidden', position: 'relative', width: '100%' }}>
-          <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
+          <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: heroFramed ? palette.paper : 'transparent', backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
         </div>
       </div>
 
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(498), width: x(190) }} rotation={14} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
       <AssetLayer label="Fita da imagem" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(176), width: x(158) }} rotation={6} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 16)} hidden={isHidden('tape1')} filter="saturate(.85)" />
 
-      {/* Nota da edição: detail_note on its own paper scrap. */}
-      <AssetLayer label="Nota da edição" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('note', 17)} hidden={isHidden('note')} shadow>
-        {content.detail_note ? (
-          <div style={{ color: titleInk, fontFamily: context.tokens.typography.body.family, fontSize: x(21), left: '11%', lineHeight: 1.34, position: 'absolute', right: '9%', top: '25%' }}>
-            {noteBody ? <><div style={{ fontWeight: 700 }}>{noteLabel}:</div><div>{noteBody}</div></> : content.detail_note}
+      {/* Papel da nota (spatial owner) + Nota da edição (its text child): siblings, so each owns its visibility and paint layer. The text takes the paper's box and transform, and hiding the paper hides it too. */}
+      <AssetLayer label="Papel da nota" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('note', 17)} hidden={isHidden('note')} shadow />
+      {content.detail_note && !isHidden('note') && !isHidden('noteText') ? (
+        <div
+          aria-label="Nota da edição"
+          data-element="Nota da edição"
+          style={{ height: (x(408) * materialMetrics('paperScrap').visible.height) / materialMetrics('paperScrap').visible.width, left: x(598), position: 'absolute', top: y(906), width: x(408), zIndex: z('noteText', 17), ...elementTransform(-1.5, transforms?.note) }}
+        >
+          <div style={{ inset: 0, position: 'absolute' }}>
+            <div style={{ color: titleInk, fontFamily: context.tokens.typography.body.family, fontSize: x(21), left: '11%', lineHeight: 1.34, position: 'absolute', right: '9%', top: '25%' }}>
+              {noteBody ? <><div style={{ fontWeight: 700 }}>{noteLabel}:</div><div>{noteBody}</div></> : content.detail_note}
+            </div>
           </div>
-        ) : null}
-      </AssetLayer>
+        </div>
+      ) : null}
       <AssetLayer label="Fita da nota" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(694), top: y(880), width: x(138) }} rotation={-3} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 18)} hidden={isHidden('tape2')} filter="saturate(.85)" />
 
       {/* Papel do título + Título: siblings, so each owns its own layer. */}
@@ -113,18 +131,18 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         {context.sequence?.index}
       </div>
       {content.eyebrow ? (
-        <div style={{ ...fixedText, borderBottom: `1.5px solid ${gold}`, color: gold, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: x(21), fontWeight: 600, left: x(58), letterSpacing: '.2em', paddingBottom: y(10), textTransform: 'uppercase', top: y(180) }}>{content.eyebrow}</div>
+        <div data-element="Chamada" style={{ ...fixedText, borderBottom: `1.5px solid ${gold}`, color: gold, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: x(21), fontWeight: 600, left: x(58), letterSpacing: '.2em', paddingBottom: y(10), textTransform: 'uppercase', top: y(180), ...positioned('kicker', context.previewTuning?.kicker) }}>{content.eyebrow}</div>
       ) : null}
       {content.subtitle ? (
-        <div style={{ ...fixedText, color: text, fontFamily: context.tokens.typography.body.family, fontSize: x(30), left: x(74), lineHeight: 1.3, maxWidth: x(470), top: y(608), transform: `translateY(${context.contentTranslateY}px)` }}>{content.subtitle}</div>
+        <div data-element="Introdução" style={{ ...fixedText, color: text, fontFamily: context.tokens.typography.body.family, fontSize: x(30), left: x(74), lineHeight: 1.3, maxWidth: x(470), top: y(608), ...positioned('intro', context.previewTuning?.intro, `translateY(${context.contentTranslateY}px)`) }}>{content.subtitle}</div>
       ) : null}
       {content.source_line ? (
-        <div style={{ ...fixedText, alignItems: 'center', color: text, display: 'flex', fontFamily: context.tokens.typography.body.family, fontSize: x(19), fontStyle: 'italic', gap: x(16), left: x(62), top: y(798) }}>
+        <div data-element="Fonte editorial" style={{ ...fixedText, alignItems: 'center', color: text, display: 'flex', fontFamily: context.tokens.typography.body.family, fontSize: x(19), fontStyle: 'italic', gap: x(16), left: x(62), top: y(798), ...positioned('source', context.previewTuning?.source) }}>
           <span aria-hidden="true" style={{ background: gold, display: 'inline-block', height: 1.5, width: x(52) }} />
           {content.source_line}
         </div>
       ) : null}
-      <BrandMark asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110) }} />
+      <BrandMark asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brand', context.previewTuning?.brand) }} />
     </>
   )
 }

@@ -28,7 +28,8 @@ export const MAX_ELEMENT_ORDER_LENGTH = 64
  *  - duplicates → first occurrence wins;
  *  - an element the template gained later (absent from the persisted order)
  *    → inserted right after its nearest preceding default-order neighbour
- *    that is present (or at the back when none is), deterministically.
+ *    that is present (or at the back when none is), deterministically; an
+ *    Element declared `stackPlacement: 'front'` goes on top instead.
  * Known persisted relative order is always preserved.
  */
 export function normalizeElementOrder(layout: TemplateLayoutDefinition, raw: unknown): string[] {
@@ -43,6 +44,8 @@ export function normalizeElementOrder(layout: TemplateLayoutDefinition, raw: unk
   for (let index = 0; index < defaults.length; index++) {
     const id = defaults[index]
     if (result.includes(id)) continue
+    // An Element that always painted above the whole stack keeps doing so for an order authored before the Template gained it.
+    if (layout.elements.find((element) => element.id === id)?.stackPlacement === 'front') { result.push(id); continue }
     let insertAt = 0
     for (let back = index - 1; back >= 0; back--) {
       const anchor = result.indexOf(defaults[back])
