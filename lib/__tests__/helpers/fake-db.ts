@@ -13,6 +13,8 @@ export interface FakeDbOptions {
   unique?: Record<string, string[][]>
   /** Tables whose rows get a generated `id` when missing. */
   generatedId?: string[]
+  /** UNIQUE ... WHERE partial indexes: a row only counts toward (and is checked against) the index when `where` holds. */
+  uniquePartial?: Record<string, Array<{ columns: string[]; where: (row: Record<string, any>) => boolean }>>
 }
 
 const DEFAULT_UNIQUE: Record<string, string[][]> = {
@@ -59,6 +61,11 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       rowsOf(table).some(
         (existing) => existing !== ignore && cols.every((col) => candidate[col] !== undefined && existing[col] === candidate[col]),
       ),
+    ) ||
+    (options.uniquePartial?.[table] ?? []).some(
+      ({ columns, where }) =>
+        where(candidate) &&
+        rowsOf(table).some((existing) => existing !== ignore && where(existing) && columns.every((col) => existing[col] === candidate[col])),
     )
 
   function from(table: string) {

@@ -190,6 +190,8 @@ export interface LibraryFile {
    */
   origin?: LibraryFileOrigin
   source_render_execution_id?: string | null
+  /** Generated image this file was explicitly saved from (migration 045). */
+  source_image_id?: string | null
   deleted_at: string | null
   created_at: string
   updated_at: string
