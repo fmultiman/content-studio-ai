@@ -245,6 +245,23 @@ describe('Image-to-Video source picker (Geradas + Arquivos)', () => {
     expect(screen.getByTestId('i2v-source-summary').textContent).toMatch(/Escolha uma imagem/)
   })
 
+  it('a source chosen for one Project never survives a change of Project behind the open dialog', async () => {
+    const view = render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" />)
+    await waitFor(() => expect(screen.getByTestId('i2v-source-picker')).toBeTruthy())
+    await pickLibrary()
+    expect(screen.getByTestId('i2v-source-summary').textContent).toContain('(Arquivos)')
+
+    libraryFiles = [libFile({ id: 'lib-2', project_id: 'proj-2', name: 'outro-projeto.png' })]
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-2" productionId="prod-2" />)
+    tab('library')
+    await screen.findByTestId('i2v-source-option-library-lib-2')
+    expect(screen.getByTestId('i2v-source-summary').textContent).toMatch(/Escolha uma imagem/)
+    typePrompt()
+    fireEvent.click(screen.getByTestId('generate-video'))
+    await Promise.resolve()
+    expect(submittedBody()).toBeNull()
+  })
+
   it('without a source image_to_video is not submitted', async () => {
     await openPicker()
     typePrompt()

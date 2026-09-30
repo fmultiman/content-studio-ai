@@ -156,8 +156,15 @@ export function CreateVideoGenerationDialog({
   const [selection, setSelection] = useState<VideoFormSelection>(EMPTY_SELECTION)
 
   const [prompt, setPrompt] = useState('')
-  // Exactly one source class (generated image OR Arquivos file); never both.
-  const [source, setSource] = useState<I2vSource | null>(null)
+  // Exactly one source class (generated image OR Arquivos file); never both. The choice is
+  // remembered WITH the Project it was made for, so changing the Project on the page behind
+  // this dialog can never carry a file/image of another Project into the form.
+  const [chosenSource, setChosenSource] = useState<{ projectId: string; source: I2vSource } | null>(null)
+  const source = chosenSource && chosenSource.projectId === projectId ? chosenSource.source : null
+  const setSource = useCallback(
+    (next: I2vSource | null) => setChosenSource(next ? { projectId, source: next } : null),
+    [projectId],
+  )
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — a submission is paid, so it can only start ONCE
@@ -214,7 +221,7 @@ export function CreateVideoGenerationDialog({
     submitLockRef.current = false
     setAccepted(false)
     setPrompt('')
-    setSource(null)
+    setChosenSource(null)
   }, [open])
 
   const connection = useMemo(() => selectedConnection(connections, selection), [connections, selection])
@@ -236,7 +243,7 @@ export function CreateVideoGenerationDialog({
     setSelection(next)
     // Any path that leaves image_to_video (tab, or a connection switch that drops the
     // operation) also drops the source: a stale selection never rides along.
-    setSource((prev) => reconcileI2vSource(next.operation, prev))
+    setChosenSource((prev) => (prev && reconcileI2vSource(next.operation, prev.source) ? prev : null))
   }
 
   const blocked = connection && !connection.canGenerate ? connection.blockedReason : undefined
