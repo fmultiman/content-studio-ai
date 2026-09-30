@@ -231,7 +231,8 @@ describe('Live Player and final render derive from the same authored values', ()
     const layout = resolveSceneComposition(legacyScene('s', 1)).layout
     const authored = render(toggleSceneElementVisibility(setSceneElementOrder(setSceneAppearance(legacyScene('s', 1), 'light'), [...layout.defaultStackOrder.filter((id) => id !== 'ornament'), 'ornament']), 'botanical'))
     expect(authored).not.toContain('radial-gradient(120% 90% at 20% 10%, #16203a')
-    expect(authored).toMatch(/data-element="Ornamento celeste" style="[^"]*z-index:28/)
+    // Ornamento is authored to the FRONT of the whole stack: its layer is the last of the layout's paint order.
+    expect(authored).toMatch(new RegExp(`data-element="Ornamento celeste" style="[^"]*z-index:${10 + 2 * (layout.defaultStackOrder.length - 1)}`))
     expect(authored).not.toContain('data-element="Botânica seca"')
     expect(legacy).toContain('data-element="Botânica seca"')
   })

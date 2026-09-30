@@ -16,9 +16,13 @@ const sectionsOf = (layoutId: string) => {
 describe('Documentary layouts expose their factual semantic Sections', () => {
   it('Cover', () => {
     expect(sectionsOf('cover')).toEqual([
+      ['Cabeçalho', ['kicker']],
       ['Bloco de título', ['title', 'paper']],
+      ['Introdução', ['intro']],
+      ['Fonte editorial', ['source']],
       ['Hero', ['hero', 'tape1']],
-      ['Nota editorial', ['note', 'tape2']],
+      ['Nota editorial', ['note', 'noteText', 'tape2']],
+      ['Assinatura', ['brand']],
       ['Decoração', ['botanical', 'botanicalLeaf', 'archival', 'ornament']],
     ])
   })

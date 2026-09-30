@@ -94,9 +94,18 @@ export type ElementTransformKey =
   | 'note'
   | 'card1'
 
+/** `tuning` groups an Element can be positioned by (DocumentaryCardPreviewTuning keys). */
+export type TemplateTuningGroup = 'hero' | 'title' | 'source' | 'intro' | 'kicker' | 'brand'
+
 export type TemplateElementControl =
   | { type: 'transform'; key: ElementTransformKey }
-  | { type: 'tuning'; group: 'hero' | 'title' | 'source' }
+  | { type: 'tuning'; group: TemplateTuningGroup }
+  /**
+   * COVER_ELEMENT_COMPLETENESS_V1 — a semantic child of a spatial owner: it takes its
+   * owner's position/rotation/scale, so it has no spatial control of its own (only
+   * visibility and paint order). Hiding the owner also hides the child.
+   */
+  | { type: 'follows'; parent: string }
 
 /**
  * Static Detail Polish V1 — bounded typographic capability of a text element.
@@ -119,6 +128,18 @@ export type TemplateElementDefinition = {
   /** Authorable typography (Entrelinha). Absent = not exposed. */
   typography?: TemplateElementTypography
   /**
+   * COVER_ELEMENT_COMPLETENESS_V1 — bounded presentation options of this Element (not a frame
+   * builder). `frame`: its frame/backing can be turned off (`tuning.hero.frame`); absent = not offered.
+   */
+  presentation?: TemplateElementPresentation
+  /**
+   * COVER_ELEMENT_COMPLETENESS_V1 — where an Element the Template GAINED after a slide's paint order
+   * was authored is placed when that order lacks it. Absent = right after its nearest preceding
+   * default neighbour (the existing rule); 'front' = on top, so a unit that always painted above the
+   * whole stack (fixed text) keeps doing so for saved slides.
+   */
+  stackPlacement?: 'front'
+  /**
    * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1 — the element may take Scene-local
    * timing in Video (when it participates inside its Scene). Absent = it stays
    * full-Scene spatial composition. `companions` are elements drawn as part of
@@ -129,6 +150,8 @@ export type TemplateElementDefinition = {
 }
 
 export type TemplateElementTiming = { companions?: readonly string[] }
+
+export type TemplateElementPresentation = { frame: true }
 
 export type TemplateLayoutDefinition = {
   id: string
@@ -233,16 +256,24 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02 } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
-    { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
+    // COVER_ELEMENT_COMPLETENESS_V1: the Hero's frame/backing is bounded presentation of this Element.
+    { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' }, presentation: { frame: true } },
     { id: 'tape1', label: 'Fita da imagem', kind: 'material', assetSlot: 'tape', control: t('tape1') },
-    { id: 'note', label: 'Nota da edição', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    // The editorial note: `note` is the paper (spatial owner); `noteText` (content `detail_note`) is its semantic child.
+    { id: 'note', label: 'Papel da nota', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'noteText', label: 'Nota da edição', kind: 'text', control: { type: 'follows', parent: 'note' } },
     { id: 'tape2', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape2') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'archival', label: 'Fragmento de mapa', kind: 'material', assetSlot: 'archival', control: t('archival') },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
+    // Text/brand units that used to be drawn on the fixed top layer without identity; they keep painting on top by default.
+    { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front' },
+    { id: 'source', label: 'Fonte editorial', kind: 'text', control: { type: 'tuning', group: 'source' }, stackPlacement: 'front' },
+    { id: 'brand', label: 'Assinatura', kind: 'image', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'tape2', 'paper', 'title'],
+  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brand'],
 }
 
 /** Pack B Slide 2 — reconstructed from docs/discovery/creative-rendering/visual-reference-pack/pack-b/02.png. */

@@ -24,6 +24,8 @@ const heroTuningSchema = z.object({
   offsetY: z.number().finite().min(-120).max(120),
   rotation: z.number().finite().min(-4).max(4),
   scale: z.number().finite().min(0.9).max(1.15),
+  // COVER_ELEMENT_COMPLETENESS_V1 — Hero frame/backing; absent = shown (legacy look).
+  frame: z.boolean().optional(),
 }).strict()
 
 const titleTuningSchema = z.object({
@@ -45,6 +47,10 @@ export const documentaryCardPreviewTuningSchema = z.object({
   hero: heroTuningSchema,
   title: titleTuningSchema,
   source: sourceTuningSchema,
+  // COVER_ELEMENT_COMPLETENESS_V1 — optional bounded positions of Cover's Chamada / Introdução / Assinatura.
+  kicker: sourceTuningSchema.optional(),
+  intro: sourceTuningSchema.optional(),
+  brand: sourceTuningSchema.optional(),
 }).strict()
 
 export const authoringRenderOverridesSchema = z.object({
