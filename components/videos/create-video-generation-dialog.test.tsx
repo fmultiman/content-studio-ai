@@ -93,6 +93,10 @@ async function selectOption(triggerTestId: string, optionName: RegExp | string) 
   fireEvent.click(option)
 }
 
+const chooseConnection = (transport: 'api' | 'mcp') => {
+  fireEvent.click(screen.getByTestId(`video-connection-option-${transport}`))
+}
+
 const renderDialog = () =>
   render(<CreateVideoGenerationDialog open onOpenChange={() => undefined} projectId="proj-1" productionId="prod-1" />)
 
@@ -107,10 +111,10 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
     renderDialog()
 
     expect(screen.getByTestId('video-connections-loading')).toBeTruthy()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
 
-    expect(screen.getByTestId('video-connection-select').textContent).toContain('Kling API')
-    // Connection first; transport is secondary detail; funding is truthful.
+    expect(screen.getByTestId('video-connection-option-api').getAttribute('aria-checked')).toBe('true')
+    // The standalone "Conexão" dropdown is gone; funding is truthful.
     expect(screen.getByTestId('video-connection-detail').textContent).toMatch(/pacote de recursos da sua API Kling/)
     expect(screen.queryByTestId('video-connection-blocked')).toBeNull()
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(false)
@@ -139,9 +143,9 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
   it('switching to the MCP account updates models and controls from ITS capabilities; unsupported controls disappear', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     renderDialog()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
 
-    await selectOption('video-connection-select', /Minha conta Kling/)
+    chooseConnection('mcp')
 
     await waitFor(() => expect(screen.getByTestId('video-connection-detail').textContent).toMatch(/créditos da sua conta Kling/))
     await waitFor(() => expect(screen.getByTestId('video-model-select').textContent).toContain('Kling 3.0'))
@@ -171,8 +175,8 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
   it('submits ONLY the visible controls, with explicit values and the selected connection reference', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     renderDialog()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
-    await selectOption('video-connection-select', /Minha conta Kling/)
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
+    chooseConnection('mcp')
     await waitFor(() => expect(screen.getByTestId('video-connection-detail').textContent).toMatch(/créditos/))
 
     fireEvent.mouseDown(screen.getByTestId('operation-text_to_video'))
@@ -224,9 +228,9 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
       return new Response('{}', { status: 200 })
     })
     renderDialog()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
 
-    await selectOption('video-connection-select', /Minha conta Kling/)
+    chooseConnection('mcp')
     await waitFor(() => expect(screen.getByTestId('authorize-generation')).toBeTruthy())
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/provider-connections/kling/mcp/connect')).toBe(false)
     expect(assign).not.toHaveBeenCalled()
@@ -240,7 +244,7 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
   it('REST generation stays enabled when configured, even if the account connection is read-only', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(READ_ONLY_SCOPES)] }
     renderDialog()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(false)
     expect(screen.queryByTestId('video-connection-blocked')).toBeNull()
   })
@@ -368,7 +372,7 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
   it('never renders provider secrets, raw schema keys or account identifiers', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     const { container } = renderDialog()
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
     const html = container.ownerDocument.body.innerHTML
     for (const forbidden of ['allowedValues', 'enable_audio', 'prefer_multi_shots', 'imageCount', 'access_token', 'refresh_token']) expect(html).not.toContain(forbidden)
   })

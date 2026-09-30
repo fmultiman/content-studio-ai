@@ -230,6 +230,36 @@ describe('verified historical imports', () => {
     expect(screen.queryByTestId('usage-historical')).toBeNull()
   })
 
+  it('an imported row and a live row are rendered by the same row component: they differ ONLY by the provenance line', async () => {
+    respond(payload([{ ...mcpEvent, id: 'live' }, importedMcp]))
+    await ready()
+    const rows = screen.getAllByTestId('usage-row')
+    const imported = rows.find((row) => row.querySelector('[data-testid="usage-historical"]'))!
+    const live = rows.find((row) => !row.querySelector('[data-testid="usage-historical"]'))!
+    const structure = (row: HTMLElement) => {
+      const clone = row.cloneNode(true) as HTMLElement
+      clone.querySelector('[data-testid="usage-historical"]')?.remove()
+      return clone.innerHTML
+    }
+    expect(rows).toHaveLength(2)
+    expect(structure(imported)).toBe(structure(live))
+  })
+
+  it('imported events take part in the same filters and summaries as live ones', async () => {
+    respond(payload([importedRest, importedMcp, { ...mcpEvent, id: 'live-mcp' }]))
+    await ready()
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(3)
+
+    await selectOption('usage-filter-transport', 'MCP')
+    await waitFor(() => expect(screen.getAllByTestId('usage-row')).toHaveLength(2))
+    expect(screen.getAllByTestId('usage-row').every((row) => row.getAttribute('data-transport') === 'mcp')).toBe(true)
+    // imported + live credits share one MCP total; the provenance stays visible on the imported row only.
+    const groups = screen.getAllByTestId('usage-summary-group').map((node) => node.textContent ?? '')
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toContain('36 créditos')
+    expect(screen.getAllByTestId('usage-historical')).toHaveLength(1)
+  })
+
   it('the two REST proofs are separate executions that share one API total; credits stay apart — never a combined 24', async () => {
     respond(payload([importedRest, importedRest2, importedMcp]))
     await ready()

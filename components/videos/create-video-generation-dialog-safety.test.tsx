@@ -97,6 +97,12 @@ async function selectOption(triggerTestId: string, optionName: RegExp | string) 
   fireEvent.click(option)
 }
 
+const selected = () => screen.getByTestId('video-connection-toggle').querySelector('[aria-checked="true"]')?.textContent
+
+const chooseConnection = (transport: 'api' | 'mcp') => {
+  fireEvent.click(screen.getByTestId(`video-connection-option-${transport}`))
+}
+
 const props = { projectId: 'proj-1', productionId: 'prod-1' }
 
 async function renderReady(overrides: Partial<React.ComponentProps<typeof CreateVideoGenerationDialog>> = {}) {
@@ -245,40 +251,80 @@ describe('paid-submission safety', () => {
 describe('connection clarity: API vs MCP', () => {
   it('API is the default and is visibly an API connection that spends the Kling API package', async () => {
     await renderReady()
-    const trigger = screen.getByTestId('video-connection-select')
-    expect(trigger.textContent).toContain('Kling API')
-    expect(within(trigger).getByText('API')).toBeTruthy()
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('API')
-    expect(screen.getByTestId('video-connection-summary').getAttribute('data-transport')).toBe('API')
+    expect(selected()).toBe('API')
+    expect(screen.getByTestId('video-connection-detail').getAttribute('data-transport')).toBe('API')
     expect(screen.getByTestId('video-connection-detail').textContent).toBe('Usa o pacote de recursos da sua API Kling.')
   })
 
   it('the account connection is visibly MCP and spends the credits of the connected Kling account', async () => {
     await renderReady()
-    await selectOption('video-connection-select', /Minha conta Kling/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP'))
+    chooseConnection('mcp')
+    await waitFor(() => expect(selected()).toBe('MCP'))
 
-    const trigger = screen.getByTestId('video-connection-select')
-    expect(trigger.textContent).toContain('Minha conta Kling — Pro')
-    expect(within(trigger).getByText('MCP')).toBeTruthy()
-    expect(screen.getByTestId('video-connection-summary').getAttribute('data-transport')).toBe('MCP')
+    expect(screen.getByTestId('video-connection-option-mcp').getAttribute('aria-label')).toContain('Minha conta Kling')
+    expect(screen.getByTestId('video-connection-detail').getAttribute('data-transport')).toBe('MCP')
     expect(screen.getByTestId('video-connection-detail').textContent).toBe('Usa os créditos da sua conta Kling (web).')
   })
 
-  it('every option in the list carries its own API / MCP badge', async () => {
+  it('the standalone Conexão block is gone: no dropdown, no duplicate heading', async () => {
     await renderReady()
-    fireEvent.pointerDown(screen.getByTestId('video-connection-select'), { button: 0, ctrlKey: false, pointerType: 'mouse' })
-    const options = await screen.findAllByRole('option')
-    const badges = options.map((option) => option.querySelector('[data-transport-badge]')?.getAttribute('data-transport-badge'))
-    expect(badges).toEqual(['API', 'MCP'])
+    expect(screen.queryByTestId('video-connection-select')).toBeNull()
+    expect(screen.queryByTestId('video-connection-summary')).toBeNull()
+    expect(screen.queryByText('Conexão')).toBeNull()
+  })
+
+  it('renders one control per configured connection, on the Modelo row', async () => {
+    await renderReady()
+    const toggle = screen.getByTestId('video-connection-toggle')
+    expect(within(toggle).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['API', 'MCP'])
+    expect(toggle.closest('div')?.parentElement?.textContent).toContain('Modelo')
+    expect(screen.getByRole('radiogroup', { name: 'Conexão de geração' })).toBe(toggle)
+  })
+
+  it('only API configured → only the API control renders', async () => {
+    connections = [describeRestConnection('configured')]
+    await renderReady()
+    expect(within(screen.getByTestId('video-connection-toggle')).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['API'])
+    expect(screen.queryByTestId('video-connection-option-mcp')).toBeNull()
+  })
+
+  it('only MCP configured → only the MCP control renders, already selected', async () => {
+    connections = [mcpDescriptor(GENERATION_SCOPES)]
+    await renderReady()
+    expect(within(screen.getByTestId('video-connection-toggle')).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['MCP'])
+    expect(selected()).toBe('MCP')
+  })
+
+  it('the active control is obvious and exposed accessibly; the inactive one is not', async () => {
+    await renderReady()
+    const api = screen.getByTestId('video-connection-option-api')
+    const mcp = screen.getByTestId('video-connection-option-mcp')
+    expect(api.getAttribute('aria-checked')).toBe('true')
+    expect(api.getAttribute('data-selected')).toBe('true')
+    expect(mcp.getAttribute('aria-checked')).toBe('false')
+    expect(mcp.getAttribute('data-selected')).toBe('false')
+    expect(api.className).not.toEqual(mcp.className)
+
+    chooseConnection('mcp')
+    await waitFor(() => expect(mcp.getAttribute('aria-checked')).toBe('true'))
+    expect(api.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('the controls are real, keyboard-operable buttons', async () => {
+    await renderReady()
+    for (const control of within(screen.getByTestId('video-connection-toggle')).getAllByRole('radio')) {
+      expect(control.tagName).toBe('BUTTON')
+      expect(control.getAttribute('type')).toBe('button')
+      expect(control.getAttribute('aria-label')).toMatch(/\((API|MCP)\)$/)
+    }
   })
 
   it('no numeric or predicted cost is shown, for either connection', async () => {
     await renderReady()
-    const summary = () => screen.getByTestId('video-connection-summary').textContent ?? ''
+    const summary = () => screen.getByTestId('video-connection-detail').textContent ?? ''
     expect(summary()).not.toMatch(/\d/)
-    await selectOption('video-connection-select', /Minha conta Kling/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP'))
+    chooseConnection('mcp')
+    await waitFor(() => expect(selected()).toBe('MCP'))
     expect(summary()).not.toMatch(/\d/)
     expect(document.body.textContent).not.toMatch(/\b18\s*créditos/i)
   })
@@ -286,35 +332,34 @@ describe('connection clarity: API vs MCP', () => {
   it('connecting MCP does not silently change the spending source: API stays selected, whatever the list order', async () => {
     connections = [mcpDescriptor(GENERATION_SCOPES), describeRestConnection('configured')]
     await renderReady()
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('API')
-    expect(screen.getByTestId('video-connection-select').textContent).toContain('Kling API')
+    expect(selected()).toBe('API')
   })
 
   it('an MCP connection that appears later (form reopened) does not replace the API selection', async () => {
     connections = [describeRestConnection('configured')]
     const view = await renderReady()
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('API')
+    expect(selected()).toBe('API')
 
     connections = [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)]
     view.rerender(<CreateVideoGenerationDialog open={false} onOpenChange={view.onOpenChange} {...props} />)
     view.rerender(<CreateVideoGenerationDialog open onOpenChange={view.onOpenChange} {...props} />)
-    await waitFor(() => expect(screen.getByTestId('video-connection-select')).toBeTruthy())
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('API')
+    await waitFor(() => expect(screen.getByTestId('video-connection-toggle')).toBeTruthy())
+    expect(selected()).toBe('API')
   })
 
   it('MCP is the default only when it is the ONLY usable connection', async () => {
     connections = [describeRestConnection('missing'), mcpDescriptor(GENERATION_SCOPES)]
     await renderReady()
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP')
+    expect(selected()).toBe('MCP')
   })
 
   it('an MCP account without generation.create keeps the explicit authorization gate and cannot generate', async () => {
     connections = [describeRestConnection('configured'), mcpDescriptor(READ_ONLY_SCOPES)]
     await renderReady()
-    await selectOption('video-connection-select', /Minha conta Kling/)
+    chooseConnection('mcp')
 
     await waitFor(() => expect(screen.getByTestId('video-connection-blocked')).toBeTruthy())
-    expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP')
+    expect(selected()).toBe('MCP')
     expect(screen.getByTestId('video-connection-blocked').getAttribute('data-reason')).toBe('generation_authorization_required')
     expect(screen.getByTestId('authorize-generation')).toBeTruthy()
     expect(generateButton().hasAttribute('disabled')).toBe(true)
@@ -329,8 +374,8 @@ describe('connection switching keeps the form truthful', () => {
     await selectOption('video-duration-select', '10 segundos')
     await selectOption('video-resolution-select', /Alta \(1080p\)/)
 
-    await selectOption('video-connection-select', /Minha conta Kling/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP'))
+    chooseConnection('mcp')
+    await waitFor(() => expect(selected()).toBe('MCP'))
 
     expect(screen.getByTestId('video-duration-select').textContent).toContain('10 segundos')
     expect(screen.getByTestId('video-resolution-select').textContent).toContain('1080p')
@@ -338,14 +383,14 @@ describe('connection switching keeps the form truthful', () => {
 
   it('MCP → API: values only the MCP account offers (3 s, 4K) reset to the API model’s explicit defaults, and models/controls are re-read', async () => {
     await renderReady()
-    await selectOption('video-connection-select', /Minha conta Kling/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP'))
+    chooseConnection('mcp')
+    await waitFor(() => expect(selected()).toBe('MCP'))
     await selectOption('video-duration-select', '3 segundos')
     await selectOption('video-resolution-select', /Ultra \(4K\)/)
     expect(screen.getByTestId('video-duration-select').textContent).toContain('3 segundos')
 
-    await selectOption('video-connection-select', /^Kling API/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('API'))
+    chooseConnection('api')
+    await waitFor(() => expect(selected()).toBe('API'))
 
     expect(screen.getByTestId('video-duration-select').textContent).toContain('5 segundos')
     expect(screen.getByTestId('video-resolution-select').textContent).toContain('720p')
@@ -354,11 +399,11 @@ describe('connection switching keeps the form truthful', () => {
 
   it('what is submitted after a switch is the switched connection’s reference and only values it supports', async () => {
     await renderReady()
-    await selectOption('video-connection-select', /Minha conta Kling/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('MCP'))
+    chooseConnection('mcp')
+    await waitFor(() => expect(selected()).toBe('MCP'))
     await selectOption('video-duration-select', '3 segundos')
-    await selectOption('video-connection-select', /^Kling API/)
-    await waitFor(() => expect(screen.getByTestId('video-connection-badge').textContent).toBe('API'))
+    chooseConnection('api')
+    await waitFor(() => expect(selected()).toBe('API'))
     await fillPrompt()
 
     fireEvent.click(generateButton())
