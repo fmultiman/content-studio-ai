@@ -7,6 +7,7 @@
 // so the order is total and the keyset cursor is exact. The cursor is opaque to callers.
 
 import { isUuid } from '@/lib/library/production-scope'
+import { I2V_SOURCE_MIME_TYPES } from '@/lib/video-generation/i2v-source'
 
 export const BROWSE_DEFAULT_LIMIT = 48
 export const BROWSE_MAX_LIMIT = 100
@@ -16,6 +17,25 @@ export const BROWSE_KINDS = ['image', 'video', 'audio', 'document', 'other'] as 
 export type BrowseKind = (typeof BROWSE_KINDS)[number]
 
 export type ProductionFilter = { mode: 'all' } | { mode: 'unscoped' } | { mode: 'one'; productionId: string }
+
+/**
+ * `arquivos` : reusable media — hides Creative Editor still renders (they live in Galeria)
+ * `gallery`  : Creative Editor image outputs only (origin=studio_render, kind=image)
+ * Anything else is refused; the browser can never send its own origin/SQL expression.
+ */
+export const BROWSE_SCOPES = ['arquivos', 'gallery'] as const
+export type BrowseScope = (typeof BROWSE_SCOPES)[number]
+
+export function parseScope(raw: string | null): BrowseScope | 'none' | null {
+  if (raw === null || raw === '') return 'none'
+  return (BROWSE_SCOPES as readonly string[]).includes(raw) ? (raw as BrowseScope) : null
+}
+
+/** Typed source-format eligibility. Only the I2V image rule exists; it maps to a fixed MIME allow-list. */
+export function parseFormat(raw: string | null): readonly string[] | 'none' | null {
+  if (raw === null || raw === '') return 'none'
+  return raw === 'i2v-image' ? I2V_SOURCE_MIME_TYPES : null
+}
 
 export function clampLimit(raw: string | null): number {
   const parsed = Number(raw)

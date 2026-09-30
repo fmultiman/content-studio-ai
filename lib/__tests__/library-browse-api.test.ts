@@ -87,6 +87,7 @@ function builder(tables: Record<string, Row[]>, table: string) {
   const api: any = {
     select: () => api,
     eq: (column: string, value: any) => (predicates.push((row) => row[column] === value), api),
+    in: (column: string, values: any[]) => (predicates.push((row) => values.includes(row[column])), api),
     is: (column: string, value: any) => (predicates.push((row) => (value === null ? row[column] == null : row[column] === value)), api),
     not: (column: string, operator: string, value: any) => (predicates.push((row) => !(operator === 'is' && value === null ? row[column] == null : row[column] === value)), api),
     ilike: (column: string, pattern: string) => (predicates.push((row) => likeToRegExp(pattern).test(String(row[column] ?? ''))), api),
@@ -134,6 +135,7 @@ function file(n: number, overrides: Row = {}): Row {
     folder: '/Projetos/A',
     name: `arquivo-${n}.png`,
     kind: 'image',
+    mime_type: 'image/png',
     origin: 'upload',
     deleted_at: null,
     created_at: at(n),
@@ -414,5 +416,104 @@ describe('response safety', () => {
     const response = await browse({ projectId: PROJECT_A })
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect((await response.json()).files[0].production_id).toBe(PROD_A1)
+  })
+})
+
+// ---- VIDEO_I2V_SOURCE_BROWSER_V1: Galeria scope + I2V format eligibility -------------------------------------------
+describe('scope=gallery — Creative Editor image outputs only (Galeria source)', () => {
+  const studio = (n: number, overrides: Row = {}) => file(n, { origin: 'studio_render', folder: '/', ...overrides })
+
+  beforeEach(() => {
+    seed([
+      studio(1, { production_id: PROD_A1 }),
+      studio(2, { production_id: PROD_A2 }),
+      studio(3),
+      studio(4, { kind: 'video', mime_type: 'video/mp4' }),
+      studio(5, { deleted_at: at(50) }),
+      studio(6, { project_id: PROJECT_B }),
+      file(7, { production_id: PROD_A1 }),
+      file(8, { kind: 'video', mime_type: 'video/mp4' }),
+      studio(9, { user_id: OTHER, storage_path: `users/${OTHER}/library/${uuid(9)}/x.png` }),
+    ])
+  })
+
+  it('returns ONLY origin=studio_render images of this user and Project: no uploads, no video renders, no trash, no other Project/user', async () => {
+    expect((await ids(await browse({ projectId: PROJECT_A, scope: 'gallery' }))).sort()).toEqual([uuid(1), uuid(2), uuid(3)])
+  })
+
+  it('the browser cannot widen the scope: kind / folder hints do not turn it into something else', async () => {
+    expect((await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', kind: 'video' }))).sort()).toEqual([uuid(1), uuid(2), uuid(3)])
+  })
+
+  it('Production filter: one / all / unscoped, and a Production of another Project is refused', async () => {
+    expect(await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', production: PROD_A1 }))).toEqual([uuid(1)])
+    expect((await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', production: 'all' }))).sort()).toEqual([uuid(1), uuid(2), uuid(3)])
+    expect(await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', production: 'unscoped' }))).toEqual([uuid(3)])
+    const refused = await browse({ projectId: PROJECT_A, scope: 'gallery', production: PROD_B1 })
+    expect(refused.status).toBe(404)
+  })
+
+  it('search matches the stored name and pages deterministically with no duplicates', async () => {
+    seed(Array.from({ length: 30 }, (_, index) => studio(index + 1, { name: index % 2 ? 'slide-x.png' : 'capa-y.png' })))
+    expect((await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', q: 'slide', limit: '100' }))).length).toBe(15)
+    const seen: string[] = []
+    let cursor: string | undefined
+    do {
+      const body = await (await browse({ projectId: PROJECT_A, scope: 'gallery', limit: '8', cursor })).json()
+      seen.push(...body.files.map((item: Row) => item.id))
+      cursor = body.nextCursor ?? undefined
+    } while (cursor)
+    expect(seen).toHaveLength(30)
+    expect(new Set(seen).size).toBe(30)
+  })
+
+  it('Galeria and Arquivos never show the same static render (taxonomy boundary, not a storage boundary)', async () => {
+    const gallery = await ids(await browse({ projectId: PROJECT_A, scope: 'gallery', limit: '100' }))
+    const arquivos = await ids(await browse({ projectId: PROJECT_A, scope: 'arquivos', kind: 'image', limit: '100' }))
+    expect(gallery.length).toBeGreaterThan(0)
+    expect(arquivos.length).toBeGreaterThan(0)
+    expect(gallery.filter((id) => arquivos.includes(id))).toEqual([])
+    expect(arquivos).toContain(uuid(7))
+    expect(arquivos).not.toContain(uuid(1))
+  })
+
+  it('an unknown scope is refused without touching the database', async () => {
+    const response = await browse({ projectId: PROJECT_A, scope: 'origin=studio_render' })
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('INVALID_SCOPE')
+    expect(calls.filter((call) => call.table === 'library_files')).toHaveLength(0)
+  })
+})
+
+describe('format=i2v-image — PNG and JPEG only (source eligibility, not a Library-wide format rule)', () => {
+  beforeEach(() => {
+    seed([
+      file(1, { mime_type: 'image/png' }),
+      file(2, { mime_type: 'image/jpeg' }),
+      file(3, { mime_type: 'image/webp' }),
+      file(4, { mime_type: 'image/gif' }),
+      file(5, { mime_type: 'image/svg+xml' }),
+      file(6, { mime_type: 'image/avif' }),
+      file(7, { mime_type: null }),
+    ])
+  })
+
+  it('offers PNG and JPEG and nothing else', async () => {
+    expect((await ids(await browse({ projectId: PROJECT_A, format: 'i2v-image' }))).sort()).toEqual([uuid(1), uuid(2)])
+  })
+
+  it('without the format hint the Library itself still lists every image format (Library support is unchanged)', async () => {
+    expect((await ids(await browse({ projectId: PROJECT_A, kind: 'image', limit: '100' }))).length).toBe(7)
+  })
+
+  it('only the typed value is accepted; a raw MIME list from the browser is refused', async () => {
+    const response = await browse({ projectId: PROJECT_A, format: 'image/webp' })
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('INVALID_FORMAT')
+  })
+
+  it('combines with scope, kind and Production filters', async () => {
+    seed([file(1, { production_id: PROD_A1 }), file(2, { mime_type: 'image/webp', production_id: PROD_A1 }), file(3, { production_id: PROD_A2 })])
+    expect(await ids(await browse({ projectId: PROJECT_A, scope: 'arquivos', kind: 'image', format: 'i2v-image', production: PROD_A1 }))).toEqual([uuid(1)])
   })
 })

@@ -30,7 +30,7 @@ import {
   type VideoResolution,
 } from '@/lib/video-generation/capabilities'
 import { I2vSourcePicker } from '@/components/videos/i2v-source-picker'
-import { i2vSourceFields, reconcileI2vSource, type I2vSource } from '@/lib/video-generation/i2v-source'
+import { i2vSourceFields, reconcileI2vSource, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
 import { parseConnectionRef } from '@/lib/video-generation/connection-ref'
 import { connectionDisplayName, spendingSourceCopy, transportBadge } from '@/lib/video-generation/connection-presentation'
 import {
@@ -159,10 +159,12 @@ export function CreateVideoGenerationDialog({
   // Exactly one source class (generated image OR Arquivos file); never both. The choice is
   // remembered WITH the Project it was made for, so changing the Project on the page behind
   // this dialog can never carry a file/image of another Project into the form.
-  const [chosenSource, setChosenSource] = useState<{ projectId: string; source: I2vSource } | null>(null)
-  const source = chosenSource && chosenSource.projectId === projectId ? chosenSource.source : null
-  const setSource = useCallback(
-    (next: I2vSource | null) => setChosenSource(next ? { projectId, source: next } : null),
+  // The selection also carries its in-memory display summary (name, thumbnail, origin); only `source` is ever submitted.
+  const [chosenSource, setChosenSource] = useState<{ projectId: string; selection: I2vSourceSelection } | null>(null)
+  const i2vSelection = chosenSource && chosenSource.projectId === projectId ? chosenSource.selection : null
+  const source = i2vSelection?.source ?? null
+  const setSourceSelection = useCallback(
+    (next: I2vSourceSelection | null) => setChosenSource(next ? { projectId, selection: next } : null),
     [projectId],
   )
 
@@ -243,7 +245,7 @@ export function CreateVideoGenerationDialog({
     setSelection(next)
     // Any path that leaves image_to_video (tab, or a connection switch that drops the
     // operation) also drops the source: a stale selection never rides along.
-    setChosenSource((prev) => (prev && reconcileI2vSource(next.operation, prev.source) ? prev : null))
+    setChosenSource((prev) => (prev && reconcileI2vSource(next.operation, prev.selection.source) ? prev : null))
   }
 
   const blocked = connection && !connection.canGenerate ? connection.blockedReason : undefined
@@ -577,7 +579,7 @@ export function CreateVideoGenerationDialog({
                 </div>
 
                 <TabsContent value="image_to_video" className="space-y-4 pt-4">
-                  <I2vSourcePicker key={projectId} projectId={projectId} value={source} onChange={setSource} />
+                  <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={i2vSelection} onChange={setSourceSelection} />
 
                   <div className="space-y-2">
                     <Label>Motion Prompt (Dicas de animação)</Label>
