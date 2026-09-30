@@ -60,13 +60,13 @@ describe('Settings navigation', () => {
     }
   })
 
-  it('does not depend on horizontal scrolling: the list wraps (grid on phones, wrapping flex from sm) and is never a fixed-height, centred, no-wrap row', () => {
+  it('does not depend on horizontal scrolling: the list wraps, items keep their natural width, and it is never a fixed-height, centred, no-wrap row', () => {
     renderTabs()
     const list = screen.getByTestId('settings-tabs').className
-    expect(list).toMatch(/\bgrid\b/)
-    expect(list).toMatch(/grid-cols-2/)
-    expect(list).toMatch(/sm:flex\b/)
-    expect(list).toMatch(/sm:flex-wrap/)
+    expect(list).toMatch(/\bflex\b/)
+    expect(list).toMatch(/\bflex-wrap\b/)
+    // A fixed-column grid squeezed the longer labels at phone width: not used.
+    expect(list).not.toMatch(/\bgrid\b/)
     expect(list).toMatch(/\bh-auto\b/)
     expect(list).toMatch(/\bw-full\b/)
     // The old defect: a centred row that overflows on both sides. Items start at the left edge instead.
@@ -76,7 +76,9 @@ describe('Settings navigation', () => {
     expect(list).not.toMatch(/overflow/)
     for (const trigger of screen.getAllByRole('tab')) {
       expect(trigger.className).not.toMatch(/overflow/)
-      expect(trigger.className).toMatch(/min-w-0/)
+      // Natural width: never shrunk, never ellipsized.
+      expect(trigger.className).toMatch(/\bflex-none\b/)
+      expect(trigger.querySelector('span')!.className).not.toMatch(/truncate|overflow|text-ellipsis/)
     }
   })
 
