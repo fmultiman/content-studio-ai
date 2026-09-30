@@ -61,6 +61,7 @@ import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-
 import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
 import { CreateVideoGenerationDialog } from '@/components/videos/create-video-generation-dialog'
 import { GenerationProvenance } from '@/components/videos/generation-provenance'
+import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
 
 function VideosPageContent() {
@@ -299,6 +300,9 @@ function VideosPageContent() {
     )
   }
 
+  const markGenerationSaved = (generationId: string, libraryFileId: string) =>
+    setGenerations((previous) => previous.map((entry) => (entry.id === generationId ? { ...entry, library_file_id: libraryFileId } : entry)))
+
   const renderDraftActions = (item: (typeof filteredHubCards)[number], size: 'sm' | 'default') => {
     if (item.kind === 'generation') {
       return (
@@ -313,6 +317,7 @@ function VideosPageContent() {
             <Video className="h-4 w-4" />
             {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
           </Button>
+          <SaveGenerationToLibrary generation={item.generation} size={size} onSaved={markGenerationSaved} />
           {item.productionHref && (
             <Button size={size} variant="outline" onClick={() => router.push(item.productionHref!)}>
               Ver Production
