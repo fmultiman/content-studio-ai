@@ -122,6 +122,20 @@ export interface VideoConnectionsResponse {
 /** Continuity with the REST integration's historical Kling 3.0 default; deliberately not a "best model" ranking. */
 export const PREFERRED_DEFAULT_MODEL_IDS = ['kling-v3', 'kling-video-v3_0'] as const
 
+/** Canonical logical model groups (REST id <-> MCP id) to preserve selection across transport switches */
+export const LOGICAL_MODEL_MAPPING: Record<string, string[]> = {
+  kling_3_0: ['kling-v3', 'kling-video-v3_0'],
+  kling_2_6: ['kling-v2-6', 'kling-video-v2_6']
+}
+
+export function areLogicallyEquivalentModels(idA: string, idB: string): boolean {
+  if (idA === idB) return true
+  for (const group of Object.values(LOGICAL_MODEL_MAPPING)) {
+    if (group.includes(idA) && group.includes(idB)) return true
+  }
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // Explicit defaults
 // ---------------------------------------------------------------------------

@@ -100,8 +100,8 @@ export class KlingRestTransport implements KlingVideoTransport {
 
     const submitted =
       request.operation === 'image_to_video'
-        ? await this.adapter.submitImageToVideo(input.prompt, input.sourceImageUrl ?? '', input.generationId, input.callbackUrl, settings)
-        : await this.adapter.submitTextToVideo(input.prompt, input.generationId, input.callbackUrl, settings)
+        ? await this.adapter.submitImageToVideo(input.prompt, input.sourceImageUrl ?? '', input.generationId, input.callbackUrl, settings, request.model)
+        : await this.adapter.submitTextToVideo(input.prompt, input.generationId, input.callbackUrl, settings, request.model)
 
     return { taskId: submitted.task_id, providerMetadata: { task_id: submitted.task_id } }
   }
