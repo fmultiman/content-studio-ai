@@ -12,7 +12,10 @@ an **optional local override over the existing effective default**; nothing reso
 | Branch | `feat/creative-editor-contextual-styles-typography-v1` (continued from the previous agent; not recreated) |
 | `origin/main` at takeover | `cd65f4a` (PR #82, Kling settings UX — unrelated; renderer identical to `9732cda`) |
 | Worktree | the same Static worktree; neighbouring worktrees untouched; pre-existing untracked utility scripts untouched and never staged |
-| Implementation / PR / merge SHA | recorded in the delivery section below |
+| Implementation SHA | `ab7df229093ec89380b077f8160cb1cef728b17a` |
+| PR | #83 |
+| Merge SHA | `ab0d351067137ad326eec18e2122a7636d948123` |
+| Vercel Production | `success` — deployment `6788663007` for the exact merge SHA |
 
 ## Recovered partial implementation (what the previous agent left)
 
@@ -195,3 +198,40 @@ Parity trees: this branch vs `git archive origin/main` (kept outside the repo, `
   (the strings they match are absent at `HEAD`: they pre-date the Composição tab / `selectedTarget` rewrite; CI only runs Vercel, so
   nothing caught it). They were updated to assert the current equivalents (same intent: single Template control, same viewport hook,
   free-mode orientation, selection cleared on slide switch / element removal). No product behaviour changed for them.
+
+## Validation (final tree `ab7df22`)
+
+* Full Vitest: **193 files / 3739 tests pass** (new: `typography-overrides` 81, `styles-tab` 22, `typography-wiring` 5).
+* `pnpm tsc --noEmit`: exit 0. `pnpm lint`: 0 errors (42 pre-existing warnings, none in this mission's files). `pnpm build`: exit 0.
+* Local render proof: 16/16 legacy parity renders at 0 differing pixels (run twice: before and after the font-name module refactor) and the 7 changed-state renders.
+* Worker export: `node infra/render-worker-runtime/export.mjs` — 57 files copied, coordinator/entrypoint portable smoke tests passed.
+
+## Worker handoff (operator-only) — CLOSURE PENDING
+
+**Status: IMPLEMENTATION COMPLETE · WORKER/PRODUCTION CLOSURE PENDING.** The agent has no VPS access, so worker parity and the
+production render smoke are **not** claimed here. Worker impact is **YES**.
+
+Export (already run from the merged tree; worker-copied files are byte-identical between `ab7df22` and the merge `ab0d351`):
+
+```
+node infra/render-worker-runtime/export.mjs      # → infra/render-worker-runtime/dist/content-studio
+```
+
+Operator steps (same procedure as previous worker updates; never `docker cp`):
+
+1. Copy `dist/content-studio` over `/opt/content-studio/render-worker`.
+2. `docker service update --force content-studio-execution_render-worker` (one replica); wait for the Remotion bundle startup log.
+3. Inside the **active container**, hash these six files and compare (sha256 of the bytes in `dist/content-studio/<path>`):
+
+| File | sha256 |
+|---|---|
+| `components/creative/documentary-card/CoverVariant.tsx` | `46109c6083523c3286c1408409698316e5f828bf98751a604f598e0ac39bccc8` |
+| `lib/creative/templates/template-definitions.ts` | `3be5189d15a81f362bda52a2339ace05cccc6cda42ca09715714bece7a4d6196` |
+| `lib/creative/typography/resolve-typography.ts` | `94665d1e803f3f6ab3a23c005fed2d3881be3416a909e90bfedf48143affd0f2` |
+| `lib/schemas/creative/runtime-font-families.ts` (**new file**) | `a9985a20e7fd1aeaa5d2c74c72abff039c6ed25be3b67035517a402ae4e39d97` |
+| `remotion/DocumentaryCardComposition.tsx` | `3771b0379e24ddf640dc04504dacc341d50fd46de54dd6ca0053c81a639ff06d` |
+| `components/creative/free/free-stage.tsx` | `e1e167985ed8039088792a2683931615caca42728a686e311c1271dcc149cac4` |
+
+4. Production render smoke (legitimate logged-in session, no Auth shortcuts, no Salvar): render (a) a Cover with the Título set to a
+   numeric size and another family, (b) a text Element other than the Título (e.g. Introdução) with a different family, (c) a Custom
+   Text with a numeric size, and confirm the PNGs show the chosen fonts (not a fallback face).
