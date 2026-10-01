@@ -31,6 +31,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       aspectRatios: ['16:9', '9:16', '1:1'],
       audio: true,
       multiShot: true,
+      asmr: false,
+      audioPrompt: false,
+      musicPrompt: false,
     },
     image_to_video: {
       id: REST_MODEL_ID,
@@ -40,6 +43,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       aspectRatios: [],
       audio: true,
       multiShot: true,
+      asmr: false,
+      audioPrompt: false,
+      musicPrompt: false,
     },
   },
   [REST_KLING_V2_6_ID]: {
@@ -53,6 +59,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       aspectRatios: ['16:9', '9:16', '1:1'],
       audio: true,
       multiShot: false, // Kling 2.6 does not support multi-shot
+      asmr: false,
+      audioPrompt: false,
+      musicPrompt: false,
     },
     image_to_video: {
       id: REST_KLING_V2_6_ID,
@@ -63,6 +72,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       audio: true,
       multiShot: false, // Kling 2.6 does not support multi-shot
       audioRequiresResolution: '1080p',
+      asmr: false,
+      audioPrompt: false,
+      musicPrompt: false,
     },
   },
 }

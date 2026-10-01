@@ -144,6 +144,9 @@ function normalizeModel(operation: VideoOperation, raw: unknown): VideoModelCapa
     aspectRatios,
     audio,
     multiShot: isBooleanControl(findArgument(args, 'prefer_multi_shots')),
+    asmr: isBooleanControl(findArgument(args, 'enable_asmr')),
+    audioPrompt: findArgument(args, 'audio_prompt') !== undefined,
+    musicPrompt: findArgument(args, 'music_prompt') !== undefined,
     ...(audioRequiresResolution && resolutions.includes(audioRequiresResolution) ? { audioRequiresResolution } : {}),
     // Server-side mapping hint: send imageCount=1 only when the model declares it.
     outputCountArg: findArgument(args, 'imageCount') !== undefined,

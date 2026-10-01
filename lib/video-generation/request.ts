@@ -42,6 +42,9 @@ export interface RawVideoControls {
   aspect_ratio?: unknown
   audio?: unknown
   multi_shot?: unknown
+  asmr?: unknown
+  audio_prompt?: unknown
+  music_prompt?: unknown
   outputCount?: unknown
 }
 
@@ -54,6 +57,9 @@ export interface NormalizedVideoRequest {
   aspectRatio: VideoAspectRatio | null
   audio: VideoAudio | null
   multiShot: boolean | null
+  asmr: boolean | null
+  audioPrompt: string | null
+  musicPrompt: string | null
 }
 
 export type VideoRequestFailureCode =
@@ -64,6 +70,9 @@ export type VideoRequestFailureCode =
   | 'UNSUPPORTED_ASPECT_RATIO'
   | 'UNSUPPORTED_AUDIO'
   | 'UNSUPPORTED_MULTI_SHOT'
+  | 'UNSUPPORTED_ASMR'
+  | 'UNSUPPORTED_AUDIO_PROMPT'
+  | 'UNSUPPORTED_MUSIC_PROMPT'
   | 'AUDIO_RESOLUTION_CONFLICT'
   | 'UNSUPPORTED_OUTPUT_COUNT'
 
@@ -162,10 +171,43 @@ export function validateVideoRequest(
     multiShot = raw.multi_shot
   }
 
+  let asmr: boolean | null
+  if (raw.asmr === undefined) {
+    asmr = model.asmr ? false : null
+  } else if (!model.asmr) {
+    return fail('UNSUPPORTED_ASMR', 'This model does not support ASMR.')
+  } else if (typeof raw.asmr !== 'boolean') {
+    return fail('UNSUPPORTED_ASMR', 'asmr must be a boolean.')
+  } else {
+    asmr = raw.asmr
+  }
+
+  let audioPrompt: string | null
+  if (raw.audio_prompt === undefined) {
+    audioPrompt = model.audioPrompt ? '' : null
+  } else if (!model.audioPrompt) {
+    return fail('UNSUPPORTED_AUDIO_PROMPT', 'This model does not support an audio prompt.')
+  } else if (typeof raw.audio_prompt !== 'string') {
+    return fail('UNSUPPORTED_AUDIO_PROMPT', 'audio_prompt must be a string.')
+  } else {
+    audioPrompt = raw.audio_prompt
+  }
+
+  let musicPrompt: string | null
+  if (raw.music_prompt === undefined) {
+    musicPrompt = model.musicPrompt ? '' : null
+  } else if (!model.musicPrompt) {
+    return fail('UNSUPPORTED_MUSIC_PROMPT', 'This model does not support a music prompt.')
+  } else if (typeof raw.music_prompt !== 'string') {
+    return fail('UNSUPPORTED_MUSIC_PROMPT', 'music_prompt must be a string.')
+  } else {
+    musicPrompt = raw.music_prompt
+  }
+
   return {
     ok: true,
     model,
-    request: { operation, model: model.id, duration, resolution, aspectRatio, audio, multiShot },
+    request: { operation, model: model.id, duration, resolution, aspectRatio, audio, multiShot, asmr, audioPrompt, musicPrompt },
   }
 }
 
@@ -190,6 +232,15 @@ export function validateControlVocabulary(operation: unknown, raw: RawVideoContr
   }
   if (raw.multi_shot !== undefined && typeof raw.multi_shot !== 'boolean') {
     return fail('UNSUPPORTED_MULTI_SHOT', 'multi_shot must be a boolean.')
+  }
+  if (raw.asmr !== undefined && typeof raw.asmr !== 'boolean') {
+    return fail('UNSUPPORTED_ASMR', 'asmr must be a boolean.')
+  }
+  if (raw.audio_prompt !== undefined && typeof raw.audio_prompt !== 'string') {
+    return fail('UNSUPPORTED_AUDIO_PROMPT', 'audio_prompt must be a string.')
+  }
+  if (raw.music_prompt !== undefined && typeof raw.music_prompt !== 'string') {
+    return fail('UNSUPPORTED_MUSIC_PROMPT', 'music_prompt must be a string.')
   }
   if (operation === 'image_to_video') {
     // Image-to-video takes its framing from the source image: no aspect ratio, for any connection.

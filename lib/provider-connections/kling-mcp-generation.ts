@@ -64,6 +64,10 @@ export function buildKlingMcpVideoCall(params: {
   }
   if (request.audio !== null) args.push({ name: 'enable_audio', value: request.audio === 'on' ? 'true' : 'false' })
   if (request.multiShot !== null) args.push({ name: 'prefer_multi_shots', value: request.multiShot ? 'true' : 'false' })
+  if (request.asmr !== null) args.push({ name: 'enable_asmr', value: request.asmr ? 'true' : 'false' })
+  if (request.audioPrompt !== null && request.audioPrompt !== '') args.push({ name: 'audio_prompt', value: request.audioPrompt })
+  if (request.musicPrompt !== null && request.musicPrompt !== '') args.push({ name: 'music_prompt', value: request.musicPrompt })
+  
   // One action -> one VideoGeneration -> one video. Never more than one output.
   if (model.outputCountArg) args.push({ name: 'imageCount', value: '1' })
 
