@@ -8,11 +8,8 @@ import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/l
 import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
-import { presignLibraryRead } from '@/lib/storage/library-storage'
-import { presignImageObject } from '@/lib/storage/image-storage'
-import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
-import { isTrustedLibraryStoragePath } from '@/lib/storage/library-path'
-import { checkLibrarySourceFile, LIBRARY_SOURCE_REJECTION_MESSAGE } from '@/lib/video-generation/i2v-source'
+import { I2V_MEDIA_FAILURE_MESSAGE, loadTrustedI2vSourceImage, resolveI2vSource } from '@/lib/video-generation/i2v-source-media'
+import type { KlingMcpUploadImage } from '@/lib/provider-connections/kling-mcp-upload'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
 import {
@@ -166,65 +163,34 @@ export async function POST(req: NextRequest) {
     }
 
     let resolvedSourceUrl = ''
+    let mcpSourceImage: KlingMcpUploadImage | undefined
 
     if (mode === 'image_to_video') {
-      if (sourceImageId) {
-        const { data: image, error: imageError } = await supabase
-          .from('images')
-          .select('*')
-          .eq('id', sourceImageId)
-          .eq('user_id', user.id)
-          .eq('project_id', projectId)
-          .single()
+      // One trust chain for both transports (owner, Project, kind, deleted state, proven storage key).
+      const source = await resolveI2vSource(supabase, {
+        userId: user.id,
+        projectId,
+        sourceImageId,
+        sourceLibraryFileId,
+        deliver: transport.transport === 'mcp' ? 'bytes' : 'url',
+      })
+      if (!source.ok) return NextResponse.json(source.body, { status: source.status })
+      resolvedSourceUrl = source.restSourceUrl
 
-        if (imageError || !image) {
-          return NextResponse.json({ error: 'Source image not found or not owned by user in this project' }, { status: 403 })
+      if (transport.transport === 'mcp') {
+        // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1: Kling can never fetch our private storage (a presigned URL is unreachable,
+        // a data URL is not an absolute URL). The MCP transport uploads the BYTES through file_upload, so they are
+        // loaded and validated HERE, before any record exists and before any provider call. REST is untouched.
+        const loaded = await loadTrustedI2vSourceImage(source.locator)
+        if (!loaded.ok) {
+          console.error('I2V MCP source rejected before any provider call:', { code: loaded.code, sourceKind: source.locator.kind, sourceId: source.locator.id.slice(0, 8) })
+          return jsonError(422, loaded.code, I2V_MEDIA_FAILURE_MESSAGE[loaded.code])
         }
-        // IMAGES_STORAGE_PATH_TENANT_ISOLATION_SECURITY_V1: `images` rows are browser-written, so the stored
-        // key is a claim. Only the owner's own image key is signed; a forged key is refused before any
-        // provider call. A NULL key (legacy provider/data URL representation) keeps its existing behavior.
-        if (image.storage_path) {
-          const presigned = await presignImageObject(image.user_id, image.storage_path, 'original')
-          if (!presigned && !isTrustedImageStoragePath(image.user_id, image.storage_path, 'original')) {
-            return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
-          }
-          resolvedSourceUrl = presigned || image.image_url
-        } else {
-          resolvedSourceUrl = image.image_url
-        }
-      } else if (sourceLibraryFileId) {
-        const { data: file, error: fileError } = await supabase
-          .from('library_files')
-          .select('*')
-          .eq('id', sourceLibraryFileId)
-          .eq('user_id', user.id)
-          .eq('project_id', projectId)
-          .single()
-
-        if (fileError || !file) {
-          return NextResponse.json({ error: 'Source library file not found or not owned by user in this project' }, { status: 403 })
-        }
-        // Owner + project are proven above; the row itself must also be a live image.
-        const rejection = checkLibrarySourceFile(file)
-        if (rejection) {
-          return jsonError(422, rejection, LIBRARY_SOURCE_REJECTION_MESSAGE[rejection])
-        }
-        // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1: the row's storage_path is a claim. Only the
-        // owner's own Library key is signed, and the recorded public_url (also user-writable) is
-        // never a fallback for a key that failed that proof.
-        if (file.storage_path) {
-          if (!isTrustedLibraryStoragePath(file.user_id, file.storage_path)) {
-            return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
-          }
-          const presigned = await presignLibraryRead(file)
-          resolvedSourceUrl = presigned || file.public_url || ''
-        } else {
-          resolvedSourceUrl = file.public_url || ''
-        }
+        mcpSourceImage = { bytes: loaded.image.bytes, mimeType: loaded.image.mimeType, filename: loaded.image.filename }
       }
     }
 
-    if (mode === 'image_to_video' && !resolvedSourceUrl) {
+    if (mode === 'image_to_video' && transport.transport === 'rest' && !resolvedSourceUrl) {
       return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
     }
 
@@ -270,7 +236,8 @@ export async function POST(req: NextRequest) {
         prompt,
         request: videoRequest,
         model: modelCapability,
-        sourceImageUrl: mode === 'image_to_video' ? resolvedSourceUrl : undefined,
+        sourceImageUrl: mode === 'image_to_video' && transport.transport === 'rest' ? resolvedSourceUrl : undefined,
+        sourceImage: mcpSourceImage,
         callbackUrl: transport.transport === 'rest' ? callbackUrl : undefined,
       })
     } catch (providerError: any) {
@@ -368,7 +335,7 @@ function describeMcpSubmitFailure(error: unknown) {
     }
   }
   if (error instanceof KlingMcpSubmitError) {
-    const status = error.failureClass === 'PROVIDER_QUOTA_EXCEEDED' ? 402 : error.outcomeUnknown ? 502 : 422
+    const status = error.failureClass === 'PROVIDER_QUOTA_EXCEEDED' ? 402 : error.failureClass === 'MCP_FILE_UPLOAD_FAILED' || error.failureClass === 'MCP_SOURCE_REFERENCE_INVALID' ? 502 : error.outcomeUnknown ? 502 : 422
     return {
       code: error.failureClass,
       httpStatus: status,

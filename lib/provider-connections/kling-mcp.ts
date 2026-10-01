@@ -65,6 +65,17 @@ export function isKlingMcpVideoTool(name: string): name is KlingMcpVideoTool {
   return (KLING_MCP_VIDEO_TOOLS as readonly string[]).includes(name)
 }
 
+/**
+ * VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1 — the ONE media-ingestion tool, used only as internal plumbing for Image -> Video.
+ * It issues a one-time upload ticket (the file itself is POSTed to the returned URL by the server). It is deliberately
+ * NOT part of KLING_MCP_VIDEO_TOOLS (it generates nothing), never user-selectable, and has its own single-purpose gate.
+ */
+export const KLING_MCP_SOURCE_UPLOAD_TOOL = 'file_upload' as const
+
+export function isKlingMcpSourceUploadTool(name: string): name is typeof KLING_MCP_SOURCE_UPLOAD_TOOL {
+  return name === KLING_MCP_SOURCE_UPLOAD_TOOL
+}
+
 /** Generation operations Content Studio cares about (asked of who_am_i as read-only discovery). */
 export const KLING_MCP_DISCOVERY_OPERATIONS = ['text_to_video', 'image_to_video'] as const
 

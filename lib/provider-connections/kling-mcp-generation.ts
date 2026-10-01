@@ -99,7 +99,13 @@ function firstText(result: CallToolResult): string | null {
 
 /** A rejected or unconfirmed submission. Messages are safe, bounded and never carry tokens. */
 export class KlingMcpSubmitError extends Error {
-  readonly failureClass: SubmitFailureClass | 'PROVIDER_UNAVAILABLE' | 'SUBMIT_RESPONSE_UNREADABLE'
+  readonly failureClass:
+    | SubmitFailureClass
+    | 'PROVIDER_UNAVAILABLE'
+    | 'SUBMIT_RESPONSE_UNREADABLE'
+    // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1: source preparation, BEFORE any paid submission (never outcomeUnknown).
+    | 'MCP_FILE_UPLOAD_FAILED'
+    | 'MCP_SOURCE_REFERENCE_INVALID'
   /**
    * True when the request may have reached the provider (and be billed) but
    * we cannot confirm it. The row is failed with an explicit warning; it is
