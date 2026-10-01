@@ -240,4 +240,25 @@ The existing proof under `.tmp/atomic-proof/out` was preserved and not rerun who
 
 Repository implementation is ready for merge. Renderer/worker impact is **YES** because worker-copied registry, stack, shared primitives/layout kit and all eight Documentary variants changed.
 
-After merge, the canonical runtime export must be generated with `node infra/render-worker-runtime/export.mjs`; no `docker cp` patching is permitted. Worker closure requires the operator to update/restart the render worker, confirm the expected hashes from inside the active container, confirm one healthy replica / completed Remotion bundle startup, and execute a real production render. Vercel Production must also be verified against the exact merge SHA. Until those post-merge checks are complete, the correct status is **IMPLEMENTATION COMPLETE / WORKER-PRODUCTION CLOSURE PENDING**.
+After merge, the canonical runtime export must be generated with `node infra/render-worker-runtime/export.mjs`; no `docker cp` patching is permitted. Worker closure requires the operator to update/restart the render worker, confirm the expected hashes from inside the active container, confirm one healthy replica / completed Remotion bundle startup, and execute a real production render. Vercel Production must also be verified against the exact merge SHA.
+
+### Post-Deployment Worker Parity & Production Smoke Test
+
+Worker parity was verified successfully on the VPS:
+- **Worker manifest:** 59 exported files.
+- **Manifesto SHA256:** `97eb7a4a17b5c52b919aeb02a471f73e7dad264200b8910ee2d6f857010e8356`
+- **Container Parity:** The exported bundle successfully matched the new active container (`/app/content-studio`).
+
+A production smoke test using the legitimate built-in Content Studio session generated real 1080×1350 PNG executions covering all 8 Layouts, confirming zero errors from the new renderer executing the atomic changes:
+1. **Cover / Capa**: Ocultar "Papel da nota". The noteText ("Nota da edição") rendered visible without its underlying paper backing, proving the critical Cover independence rule natively in production.
+2. **Info / Informação**: Ocultar "Cartão 1" paper. Re-rendered correctly showing independent elements.
+3. **Lista**: Ocultar "Legenda da imagem" (noteText). Re-rendered correctly.
+4. **Grade**: Rendered successfully showing the `ideasText` and decomposed structures.
+5. **Mapa**: Rendered successfully with atomic `mapPins` logic.
+6. **Rede**: Rendered successfully with independent links bounding logic.
+7. **Citação**: Rendered successfully with independent quotation mark framing logic.
+8. **Encerramento**: Rendered successfully with decomposed `tagline` and `body` structures.
+
+No modifications were saved persistently during the session test (dirty state discarded via reload).
+
+**Final Status:** Everything is functioning correctly as designed. Vercel Production check returned EXACT MERGE SHA SUCCESS. The mission is officially closed.
