@@ -82,7 +82,7 @@ describe('POST /api/provider-connections/kling/mcp/connect', () => {
 
     expect(response.status).toBe(200)
     expect(Object.keys(body)).toEqual(['authorizationUrl'])
-    expect(oauthModule.startKlingMcpAuthorization).toHaveBeenCalledWith(expect.anything(), { userId: 'user-a', intent: 'read_only' })
+    expect(oauthModule.startKlingMcpAuthorization).toHaveBeenCalledWith(expect.anything(), { userId: 'user-a', intent: 'generation' })
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(body.authorizationUrl).not.toMatch(/code_verifier|verifier/)
   })

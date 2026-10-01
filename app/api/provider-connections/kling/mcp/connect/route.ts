@@ -28,8 +28,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
 
-    // An empty body means the default read-only connect. Anything else must be a known intent.
-    let intent: KlingMcpConnectIntent = 'read_only'
+    // An empty body means the default generation-ready connect. Anything else must be a known intent.
+    let intent: KlingMcpConnectIntent = 'generation'
     const raw = await request.text()
     if (raw.trim()) {
       let parsed: unknown
