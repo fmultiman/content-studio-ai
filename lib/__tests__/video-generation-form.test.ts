@@ -55,7 +55,7 @@ describe('validateVideoRequest (server validation against the RESOLVED connectio
 
   it('fills every omitted supported control with an EXPLICIT deterministic default (never a provider default)', () => {
     const { request } = ok(restVideoOperations(), { operation: 'text_to_video' })
-    expect(request).toEqual({ operation: 'text_to_video', model: 'kling-v3', duration: 5, resolution: '720p', aspectRatio: '16:9', audio: 'off', multiShot: false })
+    expect(request).toEqual({ operation: 'text_to_video', model: 'kling-v3', duration: 5, resolution: '720p', aspectRatio: '16:9', audio: 'off', multiShot: false, asmr: null, audioPrompt: null, musicPrompt: null })
 
     // MCP's provider defaults are 1080p / audio on / multi-shot on: Content Studio's are not.
     const mcp = ok(mcpOperations, { operation: 'text_to_video' }).request
@@ -137,6 +137,48 @@ describe('dynamic form reconciliation', () => {
   const withRef = (selection: VideoFormSelection, connectionRef: string) => reconcileSelection(both, { ...selection, connectionRef })
   const set = (selection: VideoFormSelection, patch: Partial<VideoFormSelection>) => reconcileSelection(both, { ...selection, ...patch })
 
+  it('MCP advanced capabilities (Kling 2.5): clears on operation/model switch when unsupported', () => {
+    const mcp = withRef(start, accountConnectionRef(MCP_ID))
+    const v25 = set(mcp, { operation: 'text_to_video', modelId: 'kling-video-v2_5', asmr: true, audioPrompt: 'rain', musicPrompt: 'lofi' })
+    
+    expect(v25).toMatchObject({
+      operation: 'text_to_video',
+      modelId: 'kling-video-v2_5',
+      asmr: true,
+      audioPrompt: 'rain',
+      musicPrompt: 'lofi'
+    })
+    
+    // Switch to I2V: only asmr is supported
+    const v25i2v = set(v25, { operation: 'image_to_video' })
+    expect(v25i2v).toMatchObject({
+      operation: 'image_to_video',
+      modelId: 'kling-video-v2_5',
+      asmr: true,
+      audioPrompt: null,
+      musicPrompt: null
+    })
+
+    // Switch back to T2V: audioPrompt and musicPrompt are restored to defaults empty, not the previous state.
+    const backToT2V = set(v25i2v, { operation: 'text_to_video' })
+    expect(backToT2V).toMatchObject({
+      operation: 'text_to_video',
+      modelId: 'kling-video-v2_5',
+      asmr: true,
+      audioPrompt: '',
+      musicPrompt: ''
+    })
+
+    // Switch model to 3.0: no advanced controls are supported
+    const v3 = set(v25, { modelId: 'kling-video-v3_0' })
+    expect(v3).toMatchObject({
+      modelId: 'kling-video-v3_0',
+      asmr: null,
+      audioPrompt: null,
+      musicPrompt: null
+    })
+  })
+
   it('Kling REST stays the default connection when both exist (MCP is never chosen automatically)', () => {
     expect(start.connectionRef).toBe(REST_CONNECTION_REF)
     expect(start).toMatchObject({ operation: 'image_to_video', modelId: 'kling-v3', duration: 5, resolution: '720p', aspectRatio: null, audio: 'off', multiShot: false })
@@ -190,7 +232,7 @@ describe('dynamic form reconciliation', () => {
     // Turbo: no audio, no multi-shot at all.
     const turbo = set(v3, { modelId: 'kling-video-v3_0_turbo' })
     expect(turbo).toMatchObject({ resolution: '720p', audio: null, multiShot: null, duration: 12 })
-    expect(visibleControls(selectedModel(both, turbo))).toEqual({ aspectRatio: true, audio: false, multiShot: false })
+    expect(visibleControls(selectedModel(both, turbo))).toEqual({ aspectRatio: true, audio: false, multiShot: false, asmr: false, audioPrompt: false, musicPrompt: false })
   })
 
   it('hidden controls are never part of the submit payload; visible ones are all sent explicitly', () => {

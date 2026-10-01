@@ -57,6 +57,18 @@ export interface VideoModelCapability {
   /** Audio can only be switched on at this resolution (provider-documented model constraint). */
   audioRequiresResolution?: VideoResolution
   /**
+   * The model supports generating ASMR audio (boolean).
+   */
+  asmr: boolean
+  /**
+   * The model supports an explicit audio prompt description.
+   */
+  audioPrompt: boolean
+  /**
+   * The model supports an explicit music prompt description.
+   */
+  musicPrompt: boolean
+  /**
    * Server-side mapping hint (MCP): the model declares an output-count
    * argument, which is always pinned to 1. Stripped from browser descriptors.
    */
@@ -156,6 +168,9 @@ export const DEFAULT_RESOLUTION: VideoResolution = '720p'
 export const DEFAULT_ASPECT_RATIO: VideoAspectRatio = '16:9'
 export const DEFAULT_AUDIO: VideoAudio = 'off'
 export const DEFAULT_MULTI_SHOT = false
+export const DEFAULT_ASMR = false
+export const DEFAULT_AUDIO_PROMPT = ''
+export const DEFAULT_MUSIC_PROMPT = ''
 
 export function defaultDuration(model: VideoModelCapability): number {
   return model.durations.includes(DEFAULT_DURATION_SECONDS) ? DEFAULT_DURATION_SECONDS : model.durations[0]

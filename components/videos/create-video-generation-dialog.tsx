@@ -721,6 +721,56 @@ export function CreateVideoGenerationDialog({
                     </p>
                   )}
                 </div>
+
+                {/* ADVANCED SECTION (MCP only) */}
+                {(controls.asmr || controls.audioPrompt || controls.musicPrompt) && connection.transport === 'mcp' && (
+                  <div className="mt-4 space-y-4 rounded-md border border-border/60 bg-background p-4" data-testid="video-advanced-controls">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configurações Avançadas</p>
+                    {controls.asmr && selection.asmr !== null && (
+                      <div className="space-y-2">
+                        <Label htmlFor="video-asmr">ASMR</Label>
+                        <Select
+                          value={selection.asmr ? 'true' : 'false'}
+                          onValueChange={(value) => change({ asmr: value === 'true' })}
+                        >
+                          <SelectTrigger id="video-asmr" data-testid="video-asmr-select">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="false">Desligado</SelectItem>
+                            <SelectItem value="true">Ligado</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {controls.audioPrompt && selection.audioPrompt !== null && (
+                      <div className="space-y-2">
+                        <Label htmlFor="video-audio-prompt">Prompt de Áudio (Efeitos)</Label>
+                        <Textarea
+                          id="video-audio-prompt"
+                          data-testid="video-audio-prompt-textarea"
+                          placeholder="Ex: Sons da natureza, o vento soprando."
+                          value={selection.audioPrompt}
+                          onChange={(e) => change({ audioPrompt: e.target.value })}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+                    )}
+                    {controls.musicPrompt && selection.musicPrompt !== null && (
+                      <div className="space-y-2">
+                        <Label htmlFor="video-music-prompt">Prompt de Música</Label>
+                        <Textarea
+                          id="video-music-prompt"
+                          data-testid="video-music-prompt-textarea"
+                          placeholder="Ex: Uma melodia calma e relaxante de piano."
+                          value={selection.musicPrompt}
+                          onChange={(e) => change({ musicPrompt: e.target.value })}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </Tabs>
             )}
           </div>

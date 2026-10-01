@@ -40,6 +40,9 @@ export interface VideoFormSelection {
   aspectRatio: VideoAspectRatio | null
   audio: VideoAudio | null
   multiShot: boolean | null
+  asmr: boolean | null
+  audioPrompt: string | null
+  musicPrompt: string | null
 }
 
 export const EMPTY_SELECTION: VideoFormSelection = {
@@ -51,6 +54,9 @@ export const EMPTY_SELECTION: VideoFormSelection = {
   aspectRatio: null,
   audio: null,
   multiShot: null,
+  asmr: null,
+  audioPrompt: null,
+  musicPrompt: null,
 }
 
 /** Which controls the selected model offers. Drives rendering; hidden controls are never submitted. */
@@ -58,6 +64,9 @@ export interface VisibleControls {
   aspectRatio: boolean
   audio: boolean
   multiShot: boolean
+  asmr: boolean
+  audioPrompt: boolean
+  musicPrompt: boolean
 }
 
 export function visibleControls(model: VideoModelCapability | null): VisibleControls {
@@ -65,6 +74,9 @@ export function visibleControls(model: VideoModelCapability | null): VisibleCont
     aspectRatio: !!model && model.aspectRatios.length > 0,
     audio: !!model && model.audio,
     multiShot: !!model && model.multiShot,
+    asmr: !!model && model.asmr,
+    audioPrompt: !!model && model.audioPrompt,
+    musicPrompt: !!model && model.musicPrompt,
   }
 }
 
@@ -136,8 +148,11 @@ export function reconcileSelection(
   }
 
   const multiShot = model.multiShot ? (previous.multiShot ?? false) : null
+  const asmr = model.asmr ? (previous.asmr ?? false) : null
+  const audioPrompt = model.audioPrompt ? (previous.audioPrompt ?? '') : null
+  const musicPrompt = model.musicPrompt ? (previous.musicPrompt ?? '') : null
 
-  return { connectionRef: connection.ref, operation, modelId: model.id, duration, resolution, aspectRatio, audio, multiShot }
+  return { connectionRef: connection.ref, operation, modelId: model.id, duration, resolution, aspectRatio, audio, multiShot, asmr, audioPrompt, musicPrompt }
 }
 
 /** Body fields for POST /api/video-generations — visible controls only. */
@@ -151,5 +166,8 @@ export function toSubmitControls(selection: VideoFormSelection): Record<string, 
     ...(selection.aspectRatio !== null ? { aspect_ratio: selection.aspectRatio } : {}),
     ...(selection.audio !== null ? { audio: selection.audio } : {}),
     ...(selection.multiShot !== null ? { multi_shot: selection.multiShot } : {}),
+    ...(selection.asmr !== null ? { asmr: selection.asmr } : {}),
+    ...(selection.audioPrompt !== null ? { audio_prompt: selection.audioPrompt } : {}),
+    ...(selection.musicPrompt !== null ? { music_prompt: selection.musicPrompt } : {}),
   }
 }
