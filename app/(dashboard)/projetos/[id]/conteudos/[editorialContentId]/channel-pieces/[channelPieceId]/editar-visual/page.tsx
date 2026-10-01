@@ -744,8 +744,8 @@ export default function StaticAuthoringProductPage() {
   
   // ELEMENTOS ↔ CANVAS PARITY (Scrolling)
   useEffect(() => {
-    if (activeTab === 'element' && selectedTarget?.kind === 'template-element') {
-      const el = document.querySelector(`[data-layer-id="${selectedTarget.elementId}"]`)
+    if (activeTab === 'element' && selectedTarget?.elementId) {
+      const el = document.querySelector(`[data-state="active"] [data-layer-id="${selectedTarget.elementId}"]`) || document.querySelector(`[data-layer-id="${selectedTarget.elementId}"]`)
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [activeTab, selectedTarget])

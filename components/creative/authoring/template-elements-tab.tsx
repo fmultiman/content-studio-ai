@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, type ComponentProps, type ReactNode } from 'react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { ElementLayers } from '@/components/creative/authoring/element-layers'
 import { FreeElementAddActions, FreeSceneElements } from '@/components/creative/video/free-scene-panels'
@@ -55,52 +56,64 @@ export function TemplateElementsTab({
   renderPanel: (id: string) => ReactNode
   custom: CustomProps
 }) {
-  const [orderOpen, setOrderOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'anatomia' | 'camadas'>('anatomia')
   const customFull = freeElements(custom.scene).length >= MAX_FREE_ELEMENTS
+  
   return (
     <div className="space-y-4" data-testid="template-elements-tab">
-      <section className="space-y-2" aria-labelledby="template-anatomy-heading" data-testid="template-anatomy">
-        <h3 id="template-anatomy-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Anatomia do template</h3>
-        <p className="text-[11px] leading-snug text-muted-foreground">
-          O que compõe o layout {layoutLabel}. Os grupos só organizam a lista — não são salvos e não mudam a composição.
-        </p>
-        {/* key: switching Layout starts from a fresh, fully expanded tree (UI state only). */}
-        <TemplateAnatomyTree key={sections.map((section) => section.id).join('|')} sections={sections} labels={labels} openId={openId} hidden={hidden} onToggle={onToggle} onToggleVisibility={onToggleVisibility} renderPanel={renderPanel} />
-        <div className="rounded-md border border-border/60" data-testid="template-layer-order">
-          <button type="button" className="flex w-full items-center justify-between gap-1 px-2 py-1.5 text-left text-xs" aria-expanded={orderOpen} aria-controls="template-layer-order-panel" onClick={() => setOrderOpen((current) => !current)} data-testid="template-layer-order-toggle">
-            <span>Ordem das camadas (frente → trás)</span>
-            {orderOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
-          </button>
-          {orderOpen ? (
-            <div id="template-layer-order-panel" className="border-t border-border/60 p-2">
-              <ElementLayers
-                orderOnly
-                title="Ordem"
-                order={order}
-                labels={labels}
-                openId={null}
-                isDefault={isDefaultOrder}
-                onToggle={onToggle}
-                onReorder={onReorder}
-                onRestoreDefault={onRestoreDefault}
-                renderPanel={() => null}
-                hidden={hidden}
-                note={<p className="text-[11px] leading-snug text-muted-foreground">Arraste ≡ para trazer à frente ou levar para trás. É a ordem real de desenho do Template; os elementos adicionados ficam sempre acima dele.</p>}
-              />
-            </div>
-          ) : null}
-        </div>
-      </section>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'anatomia' | 'camadas')} defaultValue="anatomia">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="anatomia" data-testid="tab-anatomia">Anatomia</TabsTrigger>
+          <TabsTrigger value="camadas" data-testid="tab-camadas">Camadas</TabsTrigger>
+        </TabsList>
 
-      <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="add-elements-heading" data-testid="add-elements">
-        <h3 id="add-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Adicionar elementos</h3>
-        <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
-      </section>
+        <TabsContent value="anatomia" className={`mt-3 space-y-4 ${activeTab === "anatomia" ? "" : "hidden"}`} forceMount data-testid="template-anatomy">
+          <section className="space-y-2">
+            <h3 className="sr-only">Anatomia do template</h3>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              O que compõe o layout {layoutLabel}. Os grupos organizam a estrutura lógica, sem interferir na ordem de desenho final.
+            </p>
+            <TemplateAnatomyTree key={sections.map((section) => section.id).join('|')} sections={sections} labels={labels} openId={openId} hidden={hidden} onToggle={onToggle} onToggleVisibility={onToggleVisibility} renderPanel={renderPanel} />
+          </section>
 
-      <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
-        <h3 id="added-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</h3>
-        <FreeSceneElements {...custom} hideAddActions emptyMessage="Nenhum elemento adicionado a este slide. Use Adicionar elementos para colocar um texto ou uma imagem sobre o template." />
-      </section>
+          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="add-elements-heading" data-testid="add-elements">
+            <h3 id="add-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Adicionar elementos</h3>
+            <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
+          </section>
+
+          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
+            <h3 id="added-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</h3>
+            <FreeSceneElements {...custom} hideAddActions emptyMessage="Nenhum elemento adicionado a esta arte. O que você adicionar aparecerá aqui e também sobre o Template original." />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="camadas" className={`mt-3 space-y-4 ${activeTab === "camadas" ? "" : "hidden"}`} forceMount data-testid="template-layers">
+          <section className="space-y-2">
+             <h3 className="sr-only">Camadas</h3>
+             <p className="text-[11px] leading-snug text-muted-foreground">A ordem de pintura do Template (frente no topo). O botão ≡ arrasta a camada de posição. Elementos adicionados livres ficam sempre acima destas.</p>
+             <div className="rounded-md border border-border/60 px-2 py-2">
+               <ElementLayers
+                 orderOnly
+                 title="Template"
+                 order={order}
+                 labels={labels}
+                 openId={openId}
+                 isDefault={isDefaultOrder}
+                 onToggle={onToggle}
+                 onReorder={onReorder}
+                 onRestoreDefault={onRestoreDefault}
+                 renderPanel={renderPanel}
+                 hidden={hidden}
+               />
+             </div>
+          </section>
+
+          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-layers-heading" data-testid="added-elements-layers">
+            <h3 id="added-elements-layers-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sobreposição</h3>
+            <FreeSceneElements {...custom} hideAddActions emptyMessage="Você ainda não adicionou elementos sobre o template. Eles apareceriam aqui, posicionados livremente." />
+          </section>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
