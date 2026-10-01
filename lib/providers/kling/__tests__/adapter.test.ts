@@ -12,7 +12,7 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
     adapter = new KlingAdapter(MOCK_API_KEY)
   })
 
-  it('submits I2V using correct contents/settings envelope and parses data.data.id', async () => {
+  it('submits I2V using correct contents/settings envelope and parses data.data.id for kling-3.0', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -26,7 +26,7 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     })
 
-    const res = await adapter.submitImageToVideo('my motion', 'http://img.png', 'ext-uuid', 'http://callback')
+    const res = await adapter.submitImageToVideo('my motion', 'http://img.png', 'ext-uuid', 'http://callback', {}, 'kling-v3')
     
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api-singapore.klingai.com/image-to-video/kling-3.0',
@@ -55,7 +55,46 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
     expect(res.task_id).toBe('test-i2v-task-123')
   })
 
-  it('submits T2V using top-level prompt, settings.aspect_ratio, and NO contents[]', async () => {
+  it('submits I2V using correct legacy format and parses data.data.task_info.task_id or data.data.task_id for kling-v2-6', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        message: 'string',
+        request_id: 'string',
+        data: {
+          task_id: 'test-i2v-legacy-123'
+        }
+      })
+    })
+
+    const res = await adapter.submitImageToVideo('my motion', 'http://img.png', 'ext-uuid', 'http://callback', {
+      duration: 10,
+      resolution: '1080p',
+      audio: 'on'
+    }, 'kling-v2-6')
+    
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api-singapore.klingai.com/v1/videos/image2video',
+      expect.objectContaining({ 
+        method: 'POST',
+        body: JSON.stringify({
+          model_name: 'kling-v2-6',
+          prompt: 'my motion',
+          image: 'http://img.png',
+          duration: '10',
+          mode: 'pro',
+          sound: 'on',
+          callback_url: 'http://callback',
+          external_task_id: 'ext-uuid'
+        })
+      })
+    )
+    
+    expect(res.task_id).toBe('test-i2v-legacy-123')
+  })
+
+  it('submits T2V using top-level prompt, settings.aspect_ratio, and NO contents[] for kling-3.0', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -66,7 +105,7 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     })
 
-    const res = await adapter.submitTextToVideo('cinematic scene', 'ext-uuid', 'http://callback')
+    const res = await adapter.submitTextToVideo('cinematic scene', 'ext-uuid', 'http://callback', {}, 'kling-v3')
     
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api-singapore.klingai.com/text-to-video/kling-3.0',
@@ -90,12 +129,49 @@ describe('Kling Adapter - Task Query and Create Response Parsing', () => {
       })
     )
     
-    // Explicitly verify the contract invariants
     const calledBody = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(calledBody.prompt).toBe('cinematic scene')
     expect(calledBody.contents).toBeUndefined()
     expect(calledBody.settings.aspect_ratio).toBe('16:9')
     expect(res.task_id).toBe('test-t2v-task-444')
+  })
+
+  it('submits T2V using correct legacy format for kling-v2-6', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          task_id: 'test-t2v-legacy-444'
+        }
+      })
+    })
+
+    const res = await adapter.submitTextToVideo('cinematic scene', 'ext-uuid', 'http://callback', {
+      duration: 5,
+      resolution: '720p',
+      audio: 'off',
+      aspect_ratio: '16:9'
+    }, 'kling-v2-6')
+    
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api-singapore.klingai.com/v1/videos/text2video',
+      expect.objectContaining({ 
+        method: 'POST',
+        body: JSON.stringify({
+          model_name: 'kling-v2-6',
+          prompt: 'cinematic scene',
+          duration: '5',
+          mode: 'std',
+          sound: 'off',
+          aspect_ratio: '16:9',
+          callback_url: 'http://callback',
+          external_task_id: 'ext-uuid'
+        })
+      })
+    )
+    
+    expect(res.task_id).toBe('test-t2v-legacy-444')
   })
 
   it('submits T2V with explicit settings: 5s, 720p, 9:16, audio off, multi_shot false', async () => {

@@ -90,8 +90,11 @@ export class KlingAdapter {
     throw new Error(`Kling API HTTP error: ${res.statusText || res.status}${errorDetail}`)
   }
 
-  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
-    const payload: KlingRequestPayload = {
+  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}, restModelId: string = 'kling-v3'): Promise<KlingSubmitResponse> {
+        const isLegacy26 = restModelId === 'kling-v2-6'
+    
+    let path = '/image-to-video/kling-3.0'
+    let body: any = {
       contents: [
         { type: 'prompt', text: prompt },
         { type: 'first_frame', url: imageUrl }
@@ -105,16 +108,28 @@ export class KlingAdapter {
       options: {
         external_task_id: externalTaskId,
         callback_url: callbackUrl,
-        watermark_info: {
-          enabled: false
-        }
+        watermark_info: { enabled: false }
       }
     }
 
-    const res = await fetch(`${this.apiUrl}/image-to-video/kling-3.0`, {
+    if (isLegacy26) {
+      path = '/v1/videos/image2video'
+      body = {
+        model_name: 'kling-v2-6',
+        prompt,
+        image: imageUrl,
+        duration: String(settings.duration || 5),
+        mode: settings.resolution === '1080p' ? 'pro' : 'std',
+        sound: settings.audio || 'off',
+        callback_url: callbackUrl || '',
+        external_task_id: externalTaskId || ''
+      }
+    }
+
+    const res = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {
@@ -122,7 +137,7 @@ export class KlingAdapter {
     }
 
     const data = await res.json()
-    const task_id = data.data?.id
+    const task_id = data.data?.id || data.data?.task_id
     if (!task_id) {
        throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
@@ -130,8 +145,11 @@ export class KlingAdapter {
     return { task_id }
   }
 
-  async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}): Promise<KlingSubmitResponse> {
-    const payload: KlingTextToVideoPayload = {
+  async submitTextToVideo(prompt: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}, restModelId: string = 'kling-v3'): Promise<KlingSubmitResponse> {
+        const isLegacy26 = restModelId === 'kling-v2-6'
+    
+    let path = '/text-to-video/kling-3.0'
+    let body: any = {
       prompt,
       settings: {
         resolution: settings.resolution || '720p',
@@ -143,16 +161,28 @@ export class KlingAdapter {
       options: {
         external_task_id: externalTaskId,
         callback_url: callbackUrl,
-        watermark_info: {
-          enabled: false
-        }
+        watermark_info: { enabled: false }
       }
     }
 
-    const res = await fetch(`${this.apiUrl}/text-to-video/kling-3.0`, {
+    if (isLegacy26) {
+      path = '/v1/videos/text2video'
+      body = {
+        model_name: 'kling-v2-6',
+        prompt,
+        duration: String(settings.duration || 5),
+        mode: settings.resolution === '1080p' ? 'pro' : 'std',
+        sound: settings.audio || 'off',
+        aspect_ratio: settings.aspect_ratio || '16:9',
+        callback_url: callbackUrl || '',
+        external_task_id: externalTaskId || ''
+      }
+    }
+
+    const res = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     })
 
     if (!res.ok) {
@@ -160,7 +190,7 @@ export class KlingAdapter {
     }
 
     const data = await res.json()
-    const task_id = data.data?.id
+    const task_id = data.data?.id || data.data?.task_id
     if (!task_id) {
        throw new Error(`Kling API structure error: ${JSON.stringify(data)}`)
     }
