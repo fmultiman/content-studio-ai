@@ -124,7 +124,8 @@ describe('Template registry — Completion V1 layouts', () => {
   })
 
   it('adds no Asset Slot: every element slot is an existing template slot (or the content image)', () => {
-    expect(AUTHORING_ASSET_SLOT_IDS).toHaveLength(11)
+    // 10 materials + the two content assets: the hero image and (ATOMIC_VISUAL_ELEMENTS_V1) the brand logo artwork.
+    expect(AUTHORING_ASSET_SLOT_IDS).toHaveLength(12)
     for (const layout of TEMPLATE.layouts) {
       for (const element of layout.elements) {
         if (element.assetSlot) expect(AUTHORING_ASSET_SLOT_IDS).toContain(element.assetSlot)
@@ -143,8 +144,8 @@ describe('Template registry — Completion V1 layouts', () => {
     expect(getTemplateLayout(TEMPLATE, 'grid')!.elements.map((element) => element.id)).toContain('tiles')
     expect(getTemplateLayout(TEMPLATE, 'map')!.elements.map((element) => element.id)).toContain('map')
     expect(getTemplateLayout(TEMPLATE, 'network')!.elements.map((element) => element.id)).toContain('cards')
-    // Cover (15, COVER_ELEMENT_COMPLETENESS_V1) is the largest: still a bounded set, never one Element per item.
-    for (const layout of TEMPLATE.layouts) expect(layout.elements.length).toBeLessThanOrEqual(15)
+    // Info (22, ATOMIC_VISUAL_ELEMENTS_V1) is the largest: still a bounded set of visual atoms, never one Element per item.
+    for (const layout of TEMPLATE.layouts) expect(layout.elements.length).toBeLessThanOrEqual(22)
   })
 })
 

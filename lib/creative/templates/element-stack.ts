@@ -21,6 +21,22 @@ import {
 export const MAX_ELEMENT_ORDER_LENGTH = 64
 
 /**
+ * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — a persisted id of a compound Element the Template later
+ * split into atoms (`replaces`) expands to its atoms, in declared order. An id the layout still defines
+ * is never expanded. Non-strings pass through (callers filter them).
+ */
+function expandReplacedIds(layout: Pick<TemplateLayoutDefinition, 'elements'>, ids: readonly unknown[]): unknown[] {
+  const defined = new Set(layout.elements.map((element) => element.id))
+  const expanded: unknown[] = []
+  for (const id of ids) {
+    const atoms = typeof id === 'string' && !defined.has(id) ? layout.elements.filter((element) => element.replaces?.includes(id)).map((element) => element.id) : []
+    if (atoms.length > 0) expanded.push(...atoms)
+    else expanded.push(id)
+  }
+  return expanded
+}
+
+/**
  * Normalizes any persisted/requested order against a layout's current
  * element set:
  *  - missing / non-array → the template default stack;
@@ -37,7 +53,7 @@ export function normalizeElementOrder(layout: TemplateLayoutDefinition, raw: unk
   if (!Array.isArray(raw)) return defaults
   const known = new Set(layout.elements.map((element) => element.id))
   const result: string[] = []
-  for (const value of raw.slice(0, MAX_ELEMENT_ORDER_LENGTH)) {
+  for (const value of expandReplacedIds(layout, raw.slice(0, MAX_ELEMENT_ORDER_LENGTH))) {
     if (typeof value === 'string' && known.has(value) && !result.includes(value)) result.push(value)
   }
   if (result.length === 0) return defaults
@@ -45,7 +61,14 @@ export function normalizeElementOrder(layout: TemplateLayoutDefinition, raw: unk
     const id = defaults[index]
     if (result.includes(id)) continue
     // An Element that always painted above the whole stack keeps doing so for an order authored before the Template gained it.
-    if (layout.elements.find((element) => element.id === id)?.stackPlacement === 'front') { result.push(id); continue }
+    const placement = layout.elements.find((element) => element.id === id)?.stackPlacement
+    if (placement === 'front') { result.push(id); continue }
+    // A unit that always sat directly over/under another (a text on its paper, a frame under its image) keeps doing so.
+    if (placement && typeof placement === 'object') {
+      const below = 'below' in placement
+      const anchor = result.indexOf(below ? placement.below : placement.above)
+      if (anchor !== -1) { result.splice(below ? anchor : anchor + 1, 0, id); continue }
+    }
     let insertAt = 0
     for (let back = index - 1; back >= 0; back--) {
       const anchor = result.indexOf(defaults[back])
@@ -88,9 +111,9 @@ export function elementStackFromOrder(order: readonly string[]): ElementStack {
  * deduplicated, in the layout's default paint order (so equal sets always
  * serialize identically). Unknown/legacy ids are dropped, never an error.
  */
-export function normalizeHiddenElements(layout: Pick<TemplateLayoutDefinition, 'defaultStackOrder'>, hidden: readonly unknown[] | undefined): string[] {
+export function normalizeHiddenElements(layout: Pick<TemplateLayoutDefinition, 'defaultStackOrder' | 'elements'>, hidden: readonly unknown[] | undefined): string[] {
   if (!Array.isArray(hidden) || hidden.length === 0) return []
-  const wanted = new Set(hidden.filter((id): id is string => typeof id === 'string'))
+  const wanted = new Set(expandReplacedIds(layout, hidden).filter((id): id is string => typeof id === 'string'))
   return layout.defaultStackOrder.filter((id) => wanted.has(id))
 }
 

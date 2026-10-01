@@ -1,5 +1,5 @@
 import type { DocumentaryCardGridContent } from '@/lib/schemas/creative/documentary-card'
-import { AssetLayer, materialMetrics, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, materialMetrics, type CardPalette } from './primitives'
 import { DocumentaryIcon } from './icons'
 import { ElementGroup, LayoutBackground, SequenceBadge, TitleOnStrip, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
@@ -57,7 +57,9 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
 
       {/* Papel das ideias: the cross-cutting ideas on a wide paper scrap. */}
       {hasIdeas ? (
-        <AssetLayer label="Papel das ideias" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(34), top: y(1046), width: x(1012), height: y(280) }} rotation={-0.6} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow>
+        <>
+        <AssetLayer label="Papel das ideias" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(34), top: y(1046), width: x(1012), height: y(280) }} rotation={-0.6} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow />
+        <AssetTextLayer label="Ideias transversais" metrics={materialMetrics('paperScrap')} box={{ left: x(34), top: y(1046), width: x(1012), height: y(280) }} rotation={-0.6} transform={transforms?.note} zIndex={kit.z('ideasText', 14)} hidden={kit.hidden('ideasText')}>
           <div style={{ color: paperInk, display: 'flex', flexDirection: 'column', inset: 0, justifyContent: 'center', padding: `0 ${x(36)}px`, position: 'absolute' }}>
             {content.ideas_title ? <div style={{ fontFamily: body, fontSize: x(27), fontWeight: 600, marginBottom: y(18), textAlign: 'center' }}>{content.ideas_title}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'space-around' }}>
@@ -69,7 +71,8 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
               ))}
             </div>
           </div>
-        </AssetLayer>
+        </AssetTextLayer>
+        </>
       ) : null}
 
       <TitleOnStrip context={context} kit={kit} title={content.title} fontSize={58} />
@@ -78,7 +81,7 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(70), lineHeight: 1.36, top: y(428), width: x(820) }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(31), left: x(70), lineHeight: 1.36, top: y(428), width: x(820) }}>{renderEmphasis(content.intro)}</div>
       ) : null}
     </>
   )

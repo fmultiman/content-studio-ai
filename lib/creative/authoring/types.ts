@@ -138,8 +138,9 @@ export interface HeroTuning {
   /** dimensionless, clamped to 0.9–1.15 */
   scale: number
   /**
-   * COVER_ELEMENT_COMPLETENESS_V1 — the Hero's frame and paper-coloured backing. Absent = shown
-   * (the legacy look); only `false` is ever stored. Offered by layouts whose Hero declares `presentation.frame`.
+   * LEGACY (COVER_ELEMENT_COMPLETENESS_V1 toggle): the Hero's frame is its own Element now ('heroFrame', visibility
+   * in `hiddenElements`). `frame: false` is only ever READ — slides saved with it are migrated to a hidden
+   * 'heroFrame' on load, and the renderer still honours it so an old frozen snapshot paints as it did.
    */
   frame?: boolean
 }

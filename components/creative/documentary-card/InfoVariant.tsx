@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardFactCard, DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
-import { AssetLayer, BrandMark, GrainOverlay, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -73,16 +73,23 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       <AssetLayer label="Fita do ramo 2" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(-8), top: y(642), width: x(124) }} rotation={9} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 14)} hidden={isHidden('tape2')} filter="saturate(.7) brightness(1.08)" />
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(990), top: y(606), width: x(118) }} rotation={-10} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
 
+      {/* Cartão = the paper + its text, two Elements: the text takes the paper's box and transform channel and owns its visibility. */}
       {content.fact_cards[0] ? (
-        <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} hidden={isHidden('card1')} shadow>
-          {factCard(content.fact_cards[0], cream)}
-        </AssetLayer>
+        <>
+          <AssetLayer label="Cartão 1" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1', 16)} hidden={isHidden('card1')} shadow />
+          <AssetTextLayer label="Texto do cartão 1" metrics={materialMetrics('paperDark')} box={{ left: x(664), top: y(478), width: x(360), height: y(350) }} rotation={3} transform={transforms?.card1} zIndex={z('card1Text', 16)} hidden={isHidden('card1Text')}>
+            {factCard(content.fact_cards[0], cream)}
+          </AssetTextLayer>
+        </>
       ) : null}
       <AssetLayer label="Pin do cartão 1" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(832), top: y(486), width: x(58) }} rotation={-8} transform={transforms?.pin} zIndex={z('pin', 17)} hidden={isHidden('pin')} />
       {content.fact_cards[1] ? (
-        <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} hidden={isHidden('paper')} shadow>
-          {factCard(content.fact_cards[1], green)}
-        </AssetLayer>
+        <>
+          <AssetLayer label="Cartão 2" url={url('tornPaper')} metrics={materialMetrics('tornPaper')} contain={context.materialContain?.tornPaper} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('paper', 18)} hidden={isHidden('paper')} shadow />
+          <AssetTextLayer label="Texto do cartão 2" metrics={materialMetrics('tornPaper')} box={{ left: x(588), top: y(820), width: x(404), height: y(352) }} rotation={3.5} transform={transforms?.paper} zIndex={z('card2Text', 18)} hidden={isHidden('card2Text')}>
+            {factCard(content.fact_cards[1], green)}
+          </AssetTextLayer>
+        </>
       ) : null}
       <AssetLayer label="Pin do cartão 2" url={url('pin')} metrics={materialMetrics('pin')} contain={context.materialContain?.pin} box={{ left: x(790), top: y(828), width: x(58) }} rotation={-6} transform={transforms?.pin2} zIndex={z('pin2', 19)} hidden={isHidden('pin2')} />
       <AssetLayer label="Fita inferior" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(48), top: y(1012), width: x(122) }} rotation={16} transform={transforms?.tape3 ?? transforms?.tape} zIndex={z('tape3', 20)} hidden={isHidden('tape3')} filter="saturate(.8)" />
@@ -116,7 +123,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
           </div>
         </div>
       ) : null}
-      <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(29), left: x(168), lineHeight: 1.36, top: y(572), transform: `translateY(${context.contentTranslateY}px)`, width: x(420) }}>
+      <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(29), left: x(168), lineHeight: 1.36, top: y(572), transform: `translateY(${context.contentTranslateY}px)`, width: x(420), zIndex: z('bodyText', STACK_TOP_Z), ...hideStyle('bodyText') }}>
         {content.body_blocks.map((block, index) => (
           <div key={index}>
             {index > 0 ? <div aria-hidden="true" style={{ background: gold, height: 2, margin: `${y(26)}px 0 ${y(30)}px`, opacity: .8, transform: 'rotate(-1deg)', width: x(240) }} /> : null}
@@ -125,18 +132,25 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
         ))}
       </div>
       {content.annotation ? (
-        <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126) }}>{content.annotation}</div>
+        <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126), zIndex: z('annotation', STACK_TOP_Z), ...hideStyle('annotation') }}>{content.annotation}</div>
       ) : null}
-      <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: STACK_TOP_Z + 1 }}>
-        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow>
-          {content.intro ? (
-            <div style={{ alignItems: 'center', color: '#d9c79b', display: 'flex', fontFamily: display.family, fontSize: x(19), inset: 0, justifyContent: 'center', letterSpacing: '.16em', lineHeight: 1.5, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center', textTransform: 'uppercase' }}>{content.intro}</div>
-          ) : null}
-        </AssetLayer>
+      {/* Faixa da chamada (paper) + Chamada (its text): two Elements sharing the banner's fixed box. */}
+      <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introBanner', STACK_TOP_Z + 1), ...hideStyle('introBanner') }}>
+        <AssetLayer label="Faixa da chamada" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow />
       </div>
-      <div style={{ ...fixedText, right: x(-16), top: y(-18) }}>
-        <AssetLayer url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
-        <BrandMark asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58) }} />
+      {content.intro ? (
+        <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introText', STACK_TOP_Z + 1), ...hideStyle('introText') }}>
+          <AssetTextLayer label="Chamada" metrics={materialMetrics('paperDark')} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2}>
+            <div style={{ alignItems: 'center', color: '#d9c79b', display: 'flex', fontFamily: display.family, fontSize: x(19), inset: 0, justifyContent: 'center', letterSpacing: '.16em', lineHeight: 1.5, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center', textTransform: 'uppercase' }}>{content.intro}</div>
+          </AssetTextLayer>
+        </div>
+      ) : null}
+      {/* Aba da marca (paper) + Logo da marca (artwork): two Elements; the logo is the "logo" asset slot. */}
+      <div style={{ ...fixedText, right: x(-16), top: y(-18), zIndex: z('brandTab', STACK_TOP_Z), ...hideStyle('brandTab') }}>
+        <AssetLayer label="Aba da marca" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
+      </div>
+      <div style={{ ...fixedText, right: x(-16), top: y(-18), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo') }}>
+        <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58) }} />
       </div>
     </>
   )

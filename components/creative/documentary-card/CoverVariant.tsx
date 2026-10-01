@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import type { DocumentaryCardCoverContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, elementTransform, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -43,8 +43,10 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
     transform: `${base ? `${base} ` : ''}translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${tuning?.rotation ?? 0}deg)`,
     transformOrigin: 'top left',
   })
-  // Hero frame: the CSS frame AND its paper-coloured backing are ONE presentation option (the backing only exists inside the frame).
-  const heroFramed = heroTuning?.frame !== false
+  // STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — the Hero's pale photo border is its OWN Element ('heroFrame'), painted under the
+  // image. A slide saved with the old `tuning.hero.frame = false` toggle keeps its look (frame hidden).
+  const frameHidden = isHidden('heroFrame') || heroTuning?.frame === false
+  const heroPlate: PlateGeometry = { height: y(676), left: x(566), padding: x(14), rotation: 3.2, top: y(214), width: x(468) }
 
   return (
     <>
@@ -60,46 +62,24 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       <AssetLayer label="Fragmento de mapa" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(826), top: y(1054), width: x(430) }} rotation={90} transform={transforms?.archival} zIndex={z('archival', 12)} hidden={isHidden('archival')} shadow />
       <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(405), top: y(842), width: x(280) }} rotation={-8} flipX transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 13)} hidden={isHidden('botanicalLeaf')} />
 
-      {/* Hero ("Imagem principal"): the content image in a pale photo border, tilted like the Pack B book. */}
-      <div
-        aria-label="Imagem principal"
-        data-hero-frame={heroFramed ? 'on' : 'off'}
-        style={{
-          background: heroFramed ? '#e8dcc3' : 'transparent',
-          boxShadow: heroFramed ? '0 22px 40px rgba(0, 0, 0, .45)' : 'none',
-          height: y(676),
-          left: x(566),
-          padding: heroFramed ? x(14) : 0,
-          position: 'absolute',
-          top: y(214),
-          width: x(468),
-          zIndex: z('hero', 14), ...hideStyle('hero'),
-          transform: `translate(${heroTuning?.offsetX ?? 0}px, ${heroTuning?.offsetY ?? 0}px) rotate(${3.2 + (heroTuning?.rotation ?? 0)}deg) scale(${heroTuning?.scale ?? 1})`,
-          transformOrigin: 'center',
-        }}
-      >
-        <div style={{ height: '100%', overflow: 'hidden', position: 'relative', width: '100%' }}>
-          <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: heroFramed ? palette.paper : 'transparent', backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
-        </div>
-      </div>
+      {/* Moldura da imagem principal (procedural, no file): the pale border + shadow, under the image. Independent of the image. */}
+      <PlateFrame geometry={heroPlate} tuning={heroTuning} zIndex={z('heroFrame', 13)} hidden={frameHidden} background="#e8dcc3" shadow="0 22px 40px rgba(0, 0, 0, .45)" />
+      {/* Hero ("Imagem principal"): the content image, tilted like the Pack B book. Painted whatever the frame does. */}
+      <PlateImage geometry={heroPlate} tuning={heroTuning} zIndex={z('hero', 14)} hidden={isHidden('hero')} frameHidden={frameHidden} label="Imagem principal">
+        <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: frameHidden ? 'transparent' : palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
+      </PlateImage>
 
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(498), width: x(190) }} rotation={14} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
       <AssetLayer label="Fita da imagem" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(176), width: x(158) }} rotation={6} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 16)} hidden={isHidden('tape1')} filter="saturate(.85)" />
 
-      {/* Papel da nota (spatial owner) + Nota da edição (its text child): siblings, so each owns its visibility and paint layer. The text takes the paper's box and transform, and hiding the paper hides it too. */}
+      {/* Papel da nota (the paper) + Nota da edição (its text): two independent Elements. The text takes the paper's box and transform channel, is painted ABOVE the paper by default, and each owns its visibility: hiding the paper leaves the text, hiding the text leaves the paper. */}
       <AssetLayer label="Papel da nota" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('note', 17)} hidden={isHidden('note')} shadow />
-      {content.detail_note && !isHidden('note') && !isHidden('noteText') ? (
-        <div
-          aria-label="Nota da edição"
-          data-element="Nota da edição"
-          style={{ height: (x(408) * materialMetrics('paperScrap').visible.height) / materialMetrics('paperScrap').visible.width, left: x(598), position: 'absolute', top: y(906), width: x(408), zIndex: z('noteText', 17), ...elementTransform(-1.5, transforms?.note) }}
-        >
-          <div style={{ inset: 0, position: 'absolute' }}>
-            <div style={{ color: titleInk, fontFamily: context.tokens.typography.body.family, fontSize: x(21), left: '11%', lineHeight: 1.34, position: 'absolute', right: '9%', top: '25%' }}>
-              {noteBody ? <><div style={{ fontWeight: 700 }}>{noteLabel}:</div><div>{noteBody}</div></> : content.detail_note}
-            </div>
+      {content.detail_note ? (
+        <AssetTextLayer label="Nota da edição" metrics={materialMetrics('paperScrap')} box={{ left: x(598), top: y(906), width: x(408) }} rotation={-1.5} transform={transforms?.note} zIndex={z('noteText', 17)} hidden={isHidden('noteText')}>
+          <div style={{ color: titleInk, fontFamily: context.tokens.typography.body.family, fontSize: x(21), left: '11%', lineHeight: 1.34, position: 'absolute', right: '9%', top: '25%' }}>
+            {noteBody ? <><div style={{ fontWeight: 700 }}>{noteLabel}:</div><div>{noteBody}</div></> : content.detail_note}
           </div>
-        </div>
+        </AssetTextLayer>
       ) : null}
       <AssetLayer label="Fita da nota" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(694), top: y(880), width: x(138) }} rotation={-3} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 18)} hidden={isHidden('tape2')} filter="saturate(.85)" />
 
@@ -142,7 +122,11 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
           {content.source_line}
         </div>
       ) : null}
-      <BrandMark asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brand', context.previewTuning?.brand) }} />
+      {/* Assinatura = two Elements with the SAME geometry: Logo da marca (artwork, slot "logo") and Nome da marca (text). Each keeps the other's layout space, so hiding one never moves the other. */}
+      <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandLogo', context.previewTuning?.brand) }} />
+      {content.brand_label ? (
+        <BrandMark show="name" asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandName', context.previewTuning?.brand) }} />
+      ) : null}
     </>
   )
 }

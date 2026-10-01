@@ -54,10 +54,14 @@ export type AssetSlotId =
  * ('hero', the Cover's Imagem principal). Content images are not template
  * materials: they render through the manifest's `assets.hero`, never through
  * `materialUrls`.
+ *
+ * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — 'logo' is the artwork of the brand signature
+ * (Logo da marca). Like 'hero' it is a content asset (manifest `assets.logo`), filled from the
+ * existing LibraryFile model; it is NOT a Project Identity redesign.
  */
-export type AuthoringAssetSlotId = AssetSlotId | 'hero'
+export type AuthoringAssetSlotId = AssetSlotId | 'hero' | 'logo'
 export const AUTHORING_ASSET_SLOT_IDS: readonly AuthoringAssetSlotId[] = [
-  'hero', 'paper', 'paperStrip', 'paperDark', 'paperScrap', 'archival', 'tape', 'pin', 'botanical', 'botanicalLeaf', 'ornament',
+  'hero', 'logo', 'paper', 'paperStrip', 'paperDark', 'paperScrap', 'archival', 'tape', 'pin', 'botanical', 'botanicalLeaf', 'ornament',
 ]
 
 /** Pixel metrics of an asset file: full size + the visible (alpha) bounding box. */
@@ -106,6 +110,12 @@ export type TemplateElementControl =
    * visibility and paint order). Hiding the owner also hides the child.
    */
   | { type: 'follows'; parent: string }
+  /**
+   * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — fixed Template geometry: the Element is an independent
+   * visible unit (own visibility + paint order) whose position is part of the layout, so it has no
+   * spatial control. Not a Group and not a parent.
+   */
+  | { type: 'fixed' }
 
 /**
  * Static Detail Polish V1 — bounded typographic capability of a text element.
@@ -122,23 +132,27 @@ export type TemplateElementDefinition = {
   id: string
   /** Product-facing label — the only name users ever see. */
   label: string
-  kind: 'text' | 'image' | 'material'
+  /** `shape` = a procedural (CSS/SVG) unit: it has Element identity but no file behind it. */
+  kind: 'text' | 'image' | 'material' | 'shape'
   assetSlot?: AuthoringAssetSlotId
   control: TemplateElementControl
   /** Authorable typography (Entrelinha). Absent = not exposed. */
   typography?: TemplateElementTypography
   /**
-   * COVER_ELEMENT_COMPLETENESS_V1 — bounded presentation options of this Element (not a frame
-   * builder). `frame`: its frame/backing can be turned off (`tuning.hero.frame`); absent = not offered.
+   * COVER_ELEMENT_COMPLETENESS_V1 / STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — where an Element the
+   * Template GAINED after a slide's paint order was authored is placed when that order lacks it.
+   * Absent = right after its nearest preceding default neighbour (the existing rule); 'front' = on top,
+   * so a unit that always painted above the whole stack (fixed text) keeps doing so for saved slides;
+   * `{ above | below }` = directly over/under another Element, so a text that always sat on its paper
+   * (or a frame under its image) keeps doing so whatever the saved order is.
    */
-  presentation?: TemplateElementPresentation
+  stackPlacement?: 'front' | { above: string } | { below: string }
   /**
-   * COVER_ELEMENT_COMPLETENESS_V1 — where an Element the Template GAINED after a slide's paint order
-   * was authored is placed when that order lacks it. Absent = right after its nearest preceding
-   * default neighbour (the existing rule); 'front' = on top, so a unit that always painted above the
-   * whole stack (fixed text) keeps doing so for saved slides.
+   * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — ids this Element replaces: a compound Element that was
+   * split into atoms. A persisted id of the compound (in `hiddenElements` / `elementOrder`) keeps its
+   * meaning: it expands to every atom that declares it.
    */
-  stackPlacement?: 'front'
+  replaces?: readonly string[]
   /**
    * VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1 — the element may take Scene-local
    * timing in Video (when it participates inside its Scene). Absent = it stays
@@ -150,8 +164,6 @@ export type TemplateElementDefinition = {
 }
 
 export type TemplateElementTiming = { companions?: readonly string[] }
-
-export type TemplateElementPresentation = { frame: true }
 
 export type TemplateLayoutDefinition = {
   id: string
@@ -165,7 +177,7 @@ export type TemplateLayoutDefinition = {
 
 /** A content-image slot (Imagem principal): filled by content media, default = the template's example image. */
 export type ContentImageSlotDefinition = {
-  id: 'hero'
+  id: 'hero' | 'logo'
   label: string
   defaultAsset: { key: string; label: string; path: string }
 }
@@ -196,7 +208,7 @@ export type TemplateDefinition = {
   /** Registry-owned semantic grammar shown read-only in the Creative Editor. */
   anatomy: readonly TemplateAnatomyRegion[]
   assetSlots: Readonly<Record<AssetSlotId, AssetSlotDefinition>>
-  contentImageSlots: Readonly<Record<'hero', ContentImageSlotDefinition>>
+  contentImageSlots: Readonly<Record<'hero' | 'logo', ContentImageSlotDefinition>>
   layouts: readonly TemplateLayoutDefinition[]
 }
 
@@ -246,6 +258,21 @@ const ASSET_SLOTS: Readonly<Record<AssetSlotId, AssetSlotDefinition>> = {
 }
 
 const t = (key: ElementTransformKey): TemplateElementControl => ({ type: 'transform', key })
+const follows = (parent: string): TemplateElementControl => ({ type: 'follows', parent })
+const FIXED: TemplateElementControl = { type: 'fixed' }
+
+/*
+ * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — every meaningful independent visible unit of a layout is
+ * its own Element (an "atom"): own visibility, own place in the paint order, and — when a file is behind
+ * it — its own Asset Slot. A paper and the text printed on it are two atoms; a photo and its frame are two
+ * atoms; a logo and the brand name are two atoms. Nothing here is a Group or a parent: an atom that
+ * `follows` another only takes its position (never its visibility). Procedural units (frames, links,
+ * pins, rules) are `shape` Elements: identity and visibility, no fake file.
+ *
+ * Transform classification per atom: `transform`/`tuning` = independent; `follows` = moves with its
+ * anchor; `fixed` = Template geometry. Text that used to be painted on the fixed top layer keeps painting
+ * on top by default (`stackPlacement: 'front'`), so legacy output is unchanged.
+ */
 
 /** Pack B Slide 1 — reconstructed from docs/discovery/creative-rendering/visual-reference-pack/pack-b/01.png. */
 const COVER_LAYOUT: TemplateLayoutDefinition = {
@@ -256,12 +283,13 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02 } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
-    // COVER_ELEMENT_COMPLETENESS_V1: the Hero's frame/backing is bounded presentation of this Element.
-    { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' }, presentation: { frame: true } },
+    // The Hero is the image; its pale photo border + shadow is its own procedural Element, painted right under it.
+    { id: 'heroFrame', label: 'Moldura da imagem principal', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
+    { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita da imagem', kind: 'material', assetSlot: 'tape', control: t('tape1') },
-    // The editorial note: `note` is the paper (spatial owner); `noteText` (content `detail_note`) is its semantic child.
+    // The editorial note: `note` is the paper (spatial owner); `noteText` (content `detail_note`) is ITS OWN Element, painted above it.
     { id: 'note', label: 'Papel da nota', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
-    { id: 'noteText', label: 'Nota da edição', kind: 'text', control: { type: 'follows', parent: 'note' } },
+    { id: 'noteText', label: 'Nota da edição', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'tape2', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape2') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
@@ -271,9 +299,11 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
     { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front' },
     { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front' },
     { id: 'source', label: 'Fonte editorial', kind: 'text', control: { type: 'tuning', group: 'source' }, stackPlacement: 'front' },
-    { id: 'brand', label: 'Assinatura', kind: 'image', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
+    // The signature was ONE compound Element ('brand'); its logo artwork and its name are now two atoms.
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front', replaces: ['brand'] },
+    { id: 'brandName', label: 'Nome da marca', kind: 'text', control: follows('brandLogo'), stackPlacement: 'front', replaces: ['brand'] },
   ],
-  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brand'],
+  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'heroFrame', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brandLogo', 'brandName'],
 }
 
 /** Pack B Slide 2 — reconstructed from docs/discovery/creative-rendering/visual-reference-pack/pack-b/02.png. */
@@ -288,8 +318,10 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'paperDark', label: 'Faixa escura do título', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'card1', label: 'Cartão 1', kind: 'material', assetSlot: 'paperDark', control: t('card1') },
+    { id: 'card1Text', label: 'Texto do cartão 1', kind: 'text', control: follows('card1'), stackPlacement: { above: 'card1' } },
     { id: 'pin', label: 'Pin do cartão 1', kind: 'material', assetSlot: 'pin', control: t('pin') },
     { id: 'paper', label: 'Cartão 2', kind: 'material', assetSlot: 'paper', control: t('paper') },
+    { id: 'card2Text', label: 'Texto do cartão 2', kind: 'text', control: follows('paper'), stackPlacement: { above: 'paper' } },
     { id: 'pin2', label: 'Pin do cartão 2', kind: 'material', assetSlot: 'pin', control: t('pin2') },
     { id: 'tape1', label: 'Fita do ramo 1', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'tape2', label: 'Fita do ramo 2', kind: 'material', assetSlot: 'tape', control: t('tape2') },
@@ -297,8 +329,15 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
+    // Fixed-layer units (they used to paint on the top layer with no identity).
+    { id: 'bodyText', label: 'Texto principal', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'annotation', label: 'Anotação', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'introBanner', label: 'Faixa da chamada', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
+    { id: 'introText', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: { above: 'introBanner' } },
+    { id: 'brandTab', label: 'Aba da marca', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['archival', 'botanicalLeaf', 'tape1', 'tape2', 'botanical', 'card1', 'pin', 'paper', 'pin2', 'tape3', 'paperStrip', 'paperDark', 'title', 'source'],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'tape1', 'tape2', 'botanical', 'card1', 'card1Text', 'pin', 'paper', 'card2Text', 'pin2', 'tape3', 'paperStrip', 'paperDark', 'title', 'source', 'bodyText', 'annotation', 'introBanner', 'introText', 'brandTab', 'brandLogo'],
 }
 
 /**
@@ -315,17 +354,23 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'heroFrame', label: 'Moldura da imagem', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
     { id: 'hero', label: 'Imagem do documento', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita do documento', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'note', label: 'Papel da legenda', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'noteText', label: 'Legenda da imagem', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'tape2', label: 'Fita da legenda', kind: 'material', assetSlot: 'tape', control: t('tape2') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
     // Completion V1 (Slide 5): optional closing callout on dark paper.
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
+    { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'items', label: 'Itens da lista', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'callout', 'note', 'tape2', 'paperStrip', 'title'],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'heroFrame', 'hero', 'tape1', 'botanical', 'callout', 'calloutText', 'note', 'noteText', 'tape2', 'paperStrip', 'title', 'intro', 'items', 'brandLogo'],
 }
 
 /*
@@ -349,10 +394,12 @@ const GRID_LAYOUT: TemplateLayoutDefinition = {
     { id: 'tape1', label: 'Fita do título', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'tiles', label: 'Grade de temas', kind: 'text', control: t('card1') },
     { id: 'note', label: 'Papel das ideias', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'ideasText', label: 'Ideias transversais', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['archival', 'botanicalLeaf', 'tiles', 'note', 'paperStrip', 'tape1', 'title'],
+  defaultStackOrder: ['archival', 'botanicalLeaf', 'tiles', 'note', 'ideasText', 'paperStrip', 'tape1', 'title', 'intro'],
 }
 
 /** Mapa — places pinned by federative unit on a code-drawn Brazil map, with legend and note (Pack A Slide 7). */
@@ -364,13 +411,17 @@ const MAP_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
-    { id: 'map', label: 'Mapa do Brasil', kind: 'image', control: t('card1') },
+    { id: 'map', label: 'Mapa do Brasil', kind: 'shape', control: t('card1') },
+    { id: 'mapPins', label: 'Pinos dos lugares', kind: 'shape', control: follows('map'), stackPlacement: { above: 'map' } },
     { id: 'note', label: 'Nota do mapa', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'noteText', label: 'Texto da nota do mapa', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'tape1', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'legend', label: 'Legenda dos lugares', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['botanicalLeaf', 'map', 'botanical', 'note', 'tape1', 'paperStrip', 'title'],
+  defaultStackOrder: ['botanicalLeaf', 'map', 'mapPins', 'botanical', 'note', 'noteText', 'tape1', 'paperStrip', 'title', 'intro', 'legend'],
 }
 
 /** Rede — 3..9 linked cards plus an optional icon-led callout with bullets (Pack A Slide 8). */
@@ -382,11 +433,16 @@ const NETWORK_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
+    { id: 'links', label: 'Conexões da rede', kind: 'shape', control: follows('cards'), stackPlacement: { below: 'cards' } },
     { id: 'cards', label: 'Cartões da rede', kind: 'material', assetSlot: 'paperScrap', control: t('card1') },
+    { id: 'cardsText', label: 'Textos dos cartões', kind: 'text', control: follows('cards'), stackPlacement: { above: 'cards' } },
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
+    { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
+    { id: 'kicker', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['ornament', 'cards', 'callout', 'paperStrip', 'title'],
+  defaultStackOrder: ['ornament', 'links', 'cards', 'cardsText', 'callout', 'calloutText', 'paperStrip', 'title', 'kicker', 'intro'],
 }
 
 /** Citação — a pull quote as focal point, with intro, bullets, one wide content image and a callout (Pack A Slide 9). */
@@ -397,16 +453,22 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
   defaultAppearance: 'light',
   elements: [
     // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: the four content-bearing units of this layout take
-    // Scene-local timing. The title's strip and the quote's tape are drawn WITH them (companions).
+    // Scene-local timing. The units drawn WITH each (title strip, quote text + tape, image frame, callout
+    // text) are its companions: they enter and leave with it.
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 }, timing: { companions: ['paperStrip'] } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
-    { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper'), timing: { companions: ['tape1'] } },
+    { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper'), timing: { companions: ['quoteText', 'tape1'] } },
+    { id: 'quoteText', label: 'Texto da citação', kind: 'text', control: follows('quote'), stackPlacement: { above: 'quote' } },
     { id: 'tape1', label: 'Fita da citação', kind: 'material', assetSlot: 'tape', control: t('tape1') },
-    { id: 'hero', label: 'Imagem', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' }, timing: {} },
-    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark'), timing: {} },
+    { id: 'heroFrame', label: 'Moldura da imagem', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
+    { id: 'hero', label: 'Imagem', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' }, timing: { companions: ['heroFrame'] } },
+    { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark'), timing: { companions: ['calloutText'] } },
+    { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'bullets', label: 'Tópicos', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['botanicalLeaf', 'hero', 'callout', 'quote', 'tape1', 'paperStrip', 'title'],
+  defaultStackOrder: ['botanicalLeaf', 'heroFrame', 'hero', 'callout', 'calloutText', 'quote', 'quoteText', 'tape1', 'paperStrip', 'title', 'intro', 'bullets'],
 }
 
 /** Encerramento — closing statement, icon-labelled items, an invitation with contact, brand and tagline (Pack A Slide 10). */
@@ -418,12 +480,19 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.06 } },
     { id: 'note', label: 'Papel do convite', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
+    { id: 'inviteText', label: 'Texto do convite', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'tape1', label: 'Fita do convite', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
+    { id: 'body', label: 'Texto de apoio', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'items', label: 'Itens do encerramento', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'divider', label: 'Linha pontilhada', kind: 'shape', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandName', label: 'Nome da marca', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'tagline', label: 'Frase final', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'tape1', 'title'],
+  defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'inviteText', 'tape1', 'title', 'body', 'items', 'divider', 'brandLogo', 'brandName', 'tagline'],
 }
 
 export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
@@ -441,6 +510,7 @@ export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {
   assetSlots: ASSET_SLOTS,
   contentImageSlots: {
     hero: { id: 'hero', label: 'Imagem principal', defaultAsset: { key: 'documentary-card-hero-01', label: 'Imagem de exemplo do template', path: 'documentary-card-hero-01.webp' } },
+    logo: { id: 'logo', label: 'Logo da marca', defaultAsset: { key: 'comunidades-alternativas-logo-v1', label: 'Logo padrão do Template', path: 'comunidades-alternativas-logo-v1.svg' } },
   },
   layouts: [COVER_LAYOUT, INFO_LAYOUT, LIST_LAYOUT, GRID_LAYOUT, MAP_LAYOUT, NETWORK_LAYOUT, QUOTE_LAYOUT, CLOSING_LAYOUT],
 }
@@ -505,9 +575,14 @@ export function layoutUsesContentImage(layout: TemplateLayoutDefinition | null):
   return Boolean(layout?.elements.some((element) => element.assetSlot === 'hero'))
 }
 
+/** True when the layout draws the brand logo artwork ('logo'): the layouts with a brand signature. */
+export function layoutUsesLogo(layout: TemplateLayoutDefinition | null): boolean {
+  return Boolean(layout?.elements.some((element) => element.assetSlot === 'logo'))
+}
+
 export function slotView(template: TemplateDefinition, slotId: AuthoringAssetSlotId): AuthoringSlotView {
-  if (slotId === 'hero') {
-    const slot = template.contentImageSlots.hero
+  if (slotId === 'hero' || slotId === 'logo') {
+    const slot = template.contentImageSlots[slotId]
     return { id: slot.id, label: slot.label, role: 'content', defaultAsset: slot.defaultAsset }
   }
   const slot = template.assetSlots[slotId]

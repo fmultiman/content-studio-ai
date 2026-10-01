@@ -1,7 +1,8 @@
 /**
  * COVER_ELEMENT_COMPLETENESS_V1 — every meaningful Cover unit has an explicit owner:
- * Elements (kicker, intro, source, brand, note text), content children, a bounded Hero
- * frame option, derived chrome and internal detail; all backward compatible.
+ * Elements (kicker, intro, source, brand, note text), content children, derived chrome and internal
+ * detail; all backward compatible. STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 later split the compounds
+ * (hero frame, brand, note text) into independent atoms — see atomic-visual-elements.test.ts for the matrix.
  */
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -12,13 +13,14 @@ import {
   PersistedAuthoredSlideSchema, authoringStateToPersistedSlide, createTemplateSlide, persistedSlideToAuthoringState,
 } from '../carousel-state'
 import {
-  deriveHiddenElementsRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, resetTuningGroup, resolvePreviewInput, setHeroFrame, setTuningField, TUNING_BOUNDS,
+  deriveHiddenElementsRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, resetTuningGroup, resolvePreviewInput, setTuningField, TUNING_BOUNDS,
 } from '../authoring-state'
 import { STATIC_COVER_CONTENT_FIELDS, COVER_CONTENT_FIELDS } from '../layout-content-fields'
 import { hasLayoutOwnedAuthoredWork } from '../layout-switch'
 import { authoringReducer } from '../reducer'
 import { authoringRenderOverridesSchema, authoringRenderRequestSchema } from '../render-request'
 import { DEFAULT_TUNING } from '../types'
+import type { PersistedAuthoredSlide } from '../carousel-state'
 import type { AuthoringProductContext, AuthoringState } from '../types'
 import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE as TEMPLATE, AUTHORING_ASSET_SLOT_IDS, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
 import { normalizeElementOrder, normalizeHiddenElements, resolveElementStack } from '@/lib/creative/templates/element-stack'
@@ -93,10 +95,10 @@ describe('Cover content (Static): every authored string is reachable and named b
     expect(DocumentaryCardCoverContentSchema.safeParse(content).success).toBe(true)
   })
 
-  it('5. brand ownership is explicit: the label is the live Project name (not authored per slide), the logo is the Template default — neither is a Content field or an Asset Slot', () => {
+  it('5. brand ownership is explicit: the label is the live Project name (not authored per slide) and is not a Content field; the logo artwork is the "logo" Asset Slot (Template default until replaced)', () => {
     expect(byKey.brand_label).toBeUndefined()
     expect((cover().contentOverride as { brand_label?: string }).brand_label).toBe('Portal Comunidades Alternativas')
-    expect((AUTHORING_ASSET_SLOT_IDS as readonly string[]).includes('logo')).toBe(false)
+    expect((AUTHORING_ASSET_SLOT_IDS as readonly string[]).includes('logo')).toBe(true)
     expect(resolvePreviewInput(cover()).manifest.assets).toHaveProperty('logo')
     // Video keeps its own descriptor set (unchanged).
     expect(COVER_CONTENT_FIELDS.map((field) => field.label)).toEqual(['Chamada', 'Título', 'Texto', 'Linha de fonte', 'Nota da edição', 'Nome da marca'])
@@ -106,10 +108,10 @@ describe('Cover content (Static): every authored string is reachable and named b
 describe('Cover Template Elements and anatomy', () => {
   it('6. the exact Cover Element set, with stable ids and truthful labels', () => {
     expect(COVER.elements.map((element) => [element.id, element.label])).toEqual([
-      ['title', 'Título'], ['paper', 'Papel do título'], ['hero', 'Imagem principal'], ['tape1', 'Fita da imagem'],
+      ['title', 'Título'], ['paper', 'Papel do título'], ['heroFrame', 'Moldura da imagem principal'], ['hero', 'Imagem principal'], ['tape1', 'Fita da imagem'],
       ['note', 'Papel da nota'], ['noteText', 'Nota da edição'], ['tape2', 'Fita da nota'],
       ['botanical', 'Botânica seca'], ['botanicalLeaf', 'Ramo de folhas'], ['archival', 'Fragmento de mapa'], ['ornament', 'Ornamento celeste'],
-      ['kicker', 'Chamada'], ['intro', 'Introdução'], ['source', 'Fonte editorial'], ['brand', 'Assinatura'],
+      ['kicker', 'Chamada'], ['intro', 'Introdução'], ['source', 'Fonte editorial'], ['brandLogo', 'Logo da marca'], ['brandName', 'Nome da marca'],
     ])
     expect([...COVER.defaultStackOrder].sort()).toEqual(COVER.elements.map((element) => element.id).sort())
   })
@@ -118,48 +120,51 @@ describe('Cover Template Elements and anatomy', () => {
     const sections = resolveLayoutSections(TEMPLATE, COVER)
     expect(sections.map((section) => [section.label, section.elements.map((element) => element.id)])).toEqual([
       ['Cabeçalho', ['kicker']], ['Bloco de título', ['title', 'paper']], ['Introdução', ['intro']], ['Fonte editorial', ['source']],
-      ['Hero', ['hero', 'tape1']], ['Nota editorial', ['note', 'noteText', 'tape2']], ['Assinatura', ['brand']],
+      ['Hero', ['heroFrame', 'hero', 'tape1']], ['Nota editorial', ['note', 'noteText', 'tape2']], ['Assinatura', ['brandLogo', 'brandName']],
       ['Decoração', ['botanical', 'botanicalLeaf', 'archival', 'ornament']],
     ])
   })
 
-  it('8. internal/derived nodes are not Elements (stars, grain, gradient, source rule, frame, sequence badge)', () => {
+  it('8. internal/derived nodes are not Elements (stars, grain, gradient, source rule, sequence badge)', () => {
     const ids = COVER.elements.map((element) => element.id)
-    for (const internal of ['sparkle', 'grain', 'background', 'rule', 'sourceRule', 'frame', 'heroFrame', 'sequence', 'badge', 'noteBacking']) expect(ids).not.toContain(internal)
+    for (const internal of ['sparkle', 'grain', 'background', 'rule', 'sourceRule', 'frame', 'sequence', 'badge', 'noteBacking']) expect(ids).not.toContain(internal)
     const html = render(cover())
     expect(has(html, 'Chamada') && has(html, 'Introdução') && has(html, 'Fonte editorial')).toBe(true)
     // the source rule is a child of the source Element, not an Element of its own
     expect(html.match(/data-element="Fonte editorial"/g)).toHaveLength(1)
   })
 
-  it('capabilities match the semantic type: text/brand are positioned, the note text follows its paper, the Hero offers a frame', () => {
+  it('capabilities match the semantic type: text/brand are positioned, the note text and the frame follow their anchor', () => {
     const control = (id: string) => COVER.elements.find((element) => element.id === id)!.control
     expect(control('kicker')).toEqual({ type: 'tuning', group: 'kicker' })
     expect(control('intro')).toEqual({ type: 'tuning', group: 'intro' })
     expect(control('source')).toEqual({ type: 'tuning', group: 'source' })
-    expect(control('brand')).toEqual({ type: 'tuning', group: 'brand' })
+    expect(control('brandLogo')).toEqual({ type: 'tuning', group: 'brand' })
+    expect(control('brandName')).toEqual({ type: 'follows', parent: 'brandLogo' })
     expect(control('noteText')).toEqual({ type: 'follows', parent: 'note' })
-    expect(COVER.elements.find((element) => element.id === 'hero')?.presentation).toEqual({ frame: true })
-    expect(COVER.elements.filter((element) => element.presentation).map((element) => element.id)).toEqual(['hero'])
+    expect(control('heroFrame')).toEqual({ type: 'follows', parent: 'hero' })
     // no font/size capability was added to any new Element
-    for (const id of ['kicker', 'intro', 'source', 'brand', 'noteText']) expect(COVER.elements.find((element) => element.id === id)).not.toHaveProperty('typography')
+    for (const id of ['kicker', 'intro', 'source', 'brandLogo', 'brandName', 'noteText', 'heroFrame']) expect(COVER.elements.find((element) => element.id === id)).not.toHaveProperty('typography')
   })
 })
 
-describe('Hero frame: presentation independent of the image', () => {
+describe('Hero frame: its own Element, independent of the image', () => {
+  const frameOff = (state: AuthoringState) => hiding(state, 'heroFrame')
+
   it('9. the default (and a legacy slide) keeps the current backing: cream frame, 14px padding, shadow, paper-coloured surface', () => {
     const html = render(cover())
     expect(html).toContain('data-hero-frame="on"')
-    expect(html).toMatch(/aria-label="Imagem principal"[^>]*style="background:#e8dcc3;box-shadow:0 22px 40px rgba\(0, 0, 0, \.45\)/)
+    expect(html).toMatch(/data-element="Moldura"[^>]*background:#e8dcc3;box-shadow:0 22px 40px rgba\(0, 0, 0, \.45\)/)
     expect(html).toMatch(/padding:14px/)
     expect(html).toMatch(/background-color:#efe3ca/)
   })
 
-  it('10. the bounded control removes the frame AND its backing (one presentation option) and nothing else', () => {
-    const off = render({ ...cover(), tuning: setHeroFrame(cover().tuning, false) })
+  it('10. hiding the frame Element removes the border and its backing and nothing else; the image stays', () => {
+    const off = render(frameOff(cover()))
     expect(off).toContain('data-hero-frame="off"')
     expect(off).not.toContain('#e8dcc3')
-    expect(off).toMatch(/aria-label="Imagem principal"[^>]*style="background:transparent;box-shadow:none/)
+    expect(has(off, 'Moldura')).toBe(false)
+    expect(has(off, 'Imagem principal') || off.includes('aria-label="Imagem principal"')).toBe(true)
     expect(off).not.toMatch(/padding:14px/)
     expect(off).toMatch(/aria-label="Documentary hero evidence fixture"[^>]*background-color:transparent/)
     // the hero box itself (position/size) is unchanged
@@ -170,7 +175,7 @@ describe('Hero frame: presentation independent of the image', () => {
   it('11. replacing the image never toggles the frame, and the frame never depends on which image is shown', () => {
     for (const hero of [{ url: '/library/book-a.png' }, { url: '/library/book-b.png', fit: 'contain' as const }]) {
       const framed = render(cover(), hero)
-      const bare = render({ ...cover(), tuning: setHeroFrame(cover().tuning, false) }, hero)
+      const bare = render(frameOff(cover()), hero)
       expect(framed).toContain(hero.url)
       expect(bare).toContain(hero.url)
       expect(framed).toContain('data-hero-frame="on"')
@@ -180,16 +185,28 @@ describe('Hero frame: presentation independent of the image', () => {
 
   it('12. the tape keeps its behaviour with or without the frame', () => {
     const tape = (html: string) => html.match(/<div aria-label="Fita da imagem"[^>]*>/)?.[0]
-    expect(tape(render({ ...cover(), tuning: setHeroFrame(cover().tuning, false) }))).toBe(tape(render(cover())))
+    expect(tape(render(frameOff(cover())))).toBe(tape(render(cover())))
     const moved = authoringReducer(cover(), { type: 'SET_PRIMITIVE_TRANSFORM', slot: 'tape1', field: 'rotation', value: 5 })
     expect(tape(render(moved))).toContain('rotate(11deg)')
   })
 
-  it('the frame flag stores only `false` (showing it again restores the exact default state)', () => {
-    const off = setHeroFrame(DEFAULT_TUNING, false)
-    expect(off.hero).toMatchObject({ frame: false })
-    expect(setHeroFrame(off, true)).toEqual(DEFAULT_TUNING)
-    expect(deriveTuningOverrides({ ...cover(), tuning: setHeroFrame(DEFAULT_TUNING, true) })).toBeUndefined()
+  it('the frame is plain visibility now: no tuning flag is stored; showing it again restores the exact default state', () => {
+    const off = frameOff(cover())
+    expect(off.hiddenElements).toEqual(['heroFrame'])
+    expect(off.tuning.hero).not.toHaveProperty('frame')
+    expect(deriveTuningOverrides(off)).toBeUndefined()
+    expect(frameOff(off).hiddenElements).toBeUndefined()
+  })
+
+  it('a slide saved with the OLD frame toggle off (tuning.hero.frame=false) loads as a hidden frame Element with the same look', () => {
+    const legacy: PersistedAuthoredSlide = { ...createTemplateSlide({ templateId: TEMPLATE.id, layoutId: 'cover', appearance: 'dark', id: 's', order: 0, primitiveProjectRef: null })!, tuning: { hero: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, frame: false }, title: { offsetX: 0, offsetY: 0, rotation: 0 } } }
+    expect(PersistedAuthoredSlideSchema.safeParse(legacy).success).toBe(true)
+    const loaded = persistedSlideToAuthoringState(legacy, productContext, 'portrait')
+    expect(loaded.hiddenElements).toEqual(['heroFrame'])
+    expect(loaded.tuning.hero).not.toHaveProperty('frame')
+    expect(render(loaded)).toBe(render(frameOff(cover())))
+    // the legacy flag is still honoured by the renderer for a stale frozen snapshot
+    expect(render({ ...cover(), tuning: { ...cover().tuning, hero: { ...cover().tuning.hero, frame: false } } })).toBe(render(frameOff(cover())))
   })
 })
 
@@ -205,13 +222,13 @@ describe('Compounds: text is not paper, the source rule belongs to the source', 
     expect(box('Nota da edição')).toBe(box('Papel da nota'))
   })
 
-  it('13. hiding the text keeps the paper; hiding the paper (the owner) hides the text too, exactly as before', () => {
+  it('13. hiding the text keeps the paper; hiding the paper keeps the text (two independent Elements)', () => {
     const textHidden = render(hiding(cover(), 'noteText'))
     expect(has(textHidden, 'Papel da nota')).toBe(true)
     expect(textHidden).not.toContain('Edição apresentada')
     const paperHidden = render(hiding(cover(), 'note'))
     expect(has(paperHidden, 'Papel da nota')).toBe(false)
-    expect(paperHidden).not.toContain('Edição apresentada')
+    expect(paperHidden).toContain('Edição apresentada')
   })
 
   it('the note text follows the paper transform (moving the note moves both)', () => {
@@ -246,19 +263,20 @@ describe('New Elements: position, visibility and order', () => {
     expect(render(hiding(cover(), 'intro'))).toMatch(/data-element="Introdução"[^>]*display:none/)
   })
 
-  it('15. the default brand appearance is unchanged (logo + Project name at the same place, on top); hiding removes the whole block', () => {
+  it('15. the default brand appearance is unchanged (logo + Project name at the same place, on top); the legacy "brand" id still hides both atoms', () => {
     const html = render(cover())
     expect(html).toContain('aria-label="Project brand mark"')
     expect(html).toContain('Portal Comunidades Alternativas')
     expect(html).toMatch(/bottom:[\d.]+px;left:110px/)
-    const hidden = render(hiding(cover(), 'brand'))
-    expect(hidden).toMatch(/<div style="[^"]*display:none[^"]*"><div aria-label="Project brand mark"/)
+    const legacyHidden = render({ ...cover(), hiddenElements: normalizeHiddenElements(COVER, ['brand']) })
+    expect(normalizeHiddenElements(COVER, ['brand'])).toEqual(['brandLogo', 'brandName'])
+    expect(legacyHidden.match(/display:none/g)?.length).toBeGreaterThanOrEqual(2)
     expect(html).not.toMatch(/<div style="[^"]*display:none[^"]*"><div aria-label="Project brand mark"/)
   })
 
   it('the new text Elements still paint above the whole stack by default, like the fixed layer they replace', () => {
     const stack = resolveElementStack(TEMPLATE.id, 'cover', undefined)
-    for (const id of ['kicker', 'intro', 'source', 'brand']) expect(stack.zIndex[id]).toBeGreaterThan(stack.zIndex.title)
+    for (const id of ['kicker', 'intro', 'source', 'brandLogo', 'brandName']) expect(stack.zIndex[id]).toBeGreaterThan(stack.zIndex.title)
     expect(Math.max(...Object.values(stack.zIndex))).toBeLessThan(200)
     // z order of the legacy Elements relative to each other is unchanged
     const legacy = ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'tape2', 'paper', 'title']
@@ -268,21 +286,22 @@ describe('New Elements: position, visibility and order', () => {
   it('a paint order saved BEFORE these Elements existed keeps them on top; the note text sits right after its paper', () => {
     const legacyOrder = ['title', 'ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'tape2', 'paper']
     const normalized = normalizeElementOrder(COVER, legacyOrder)
-    expect(normalized.slice(-4)).toEqual(['kicker', 'intro', 'source', 'brand'])
+    expect(normalized.slice(-5)).toEqual(['kicker', 'intro', 'source', 'brandLogo', 'brandName'])
     expect(normalized.indexOf('noteText')).toBe(normalized.indexOf('note') + 1)
-    expect(normalized.filter((id) => !['noteText', 'kicker', 'intro', 'source', 'brand'].includes(id))).toEqual(legacyOrder)
+    expect(normalized.indexOf('heroFrame')).toBe(normalized.indexOf('hero') - 1)
+    expect(normalized.filter((id) => !['noteText', 'heroFrame', 'kicker', 'intro', 'source', 'brandLogo', 'brandName'].includes(id))).toEqual(legacyOrder)
   })
 
   it('hidden ids of the new Elements persist and normalize like any Element', () => {
-    expect(normalizeHiddenElements(COVER, ['brand', 'noteText', 'unknown', 'kicker'])).toEqual(['noteText', 'kicker', 'brand'])
+    expect(normalizeHiddenElements(COVER, ['brandName', 'noteText', 'unknown', 'kicker'])).toEqual(['noteText', 'kicker', 'brandName'])
   })
 })
 
 describe('Persistence, backward compatibility and the render contract', () => {
   const authored = () => {
     let state = cover()
-    state = { ...state, tuning: setHeroFrame(setTuningField(setTuningField(setTuningField(state.tuning, 'kicker', 'offsetY', -12), 'intro', 'rotation', 1), 'brand', 'offsetX', 20), false) }
-    state = hiding(state, 'noteText', 'source')
+    state = { ...state, tuning: setTuningField(setTuningField(setTuningField(state.tuning, 'kicker', 'offsetY', -12), 'intro', 'rotation', 1), 'brand', 'offsetX', 20) }
+    state = hiding(state, 'heroFrame', 'noteText', 'source')
     return authoringReducer(state, { type: 'SET_CUSTOM_ELEMENTS', elements: [CUSTOM] })
   }
 
@@ -292,9 +311,9 @@ describe('Persistence, backward compatibility and the render contract', () => {
     expect(PersistedAuthoredSlideSchema.safeParse(persisted).success).toBe(true)
     const reloaded = persistedSlideToAuthoringState(JSON.parse(JSON.stringify(persisted)), productContext, 'portrait')
     expect(reloaded.tuning).toEqual(state.tuning)
-    expect(reloaded.tuning.hero.frame).toBe(false)
+    expect(reloaded.tuning.hero).not.toHaveProperty('frame')
     expect(reloaded.tuning.kicker).toEqual({ offsetX: 0, offsetY: -12, rotation: 0 })
-    expect(reloaded.hiddenElements).toEqual(['noteText', 'source'])
+    expect(reloaded.hiddenElements).toEqual(['heroFrame', 'noteText', 'source'])
     expect(render(reloaded)).toBe(render(state))
   })
 
@@ -325,7 +344,7 @@ describe('Persistence, backward compatibility and the render contract', () => {
   it('21. the render request and the frozen snapshot carry the new authored state; an old snapshot still parses', () => {
     const state = authored()
     const overrides = deriveTuningOverrides(state)!
-    expect(authoringRenderOverridesSchema.parse(overrides).documentaryCard?.hero.frame).toBe(false)
+    expect(authoringRenderOverridesSchema.parse(overrides).documentaryCard?.hero.frame).toBeUndefined()
     const request = { manifest: resolvePreviewInput(state).manifest, overrides, templateId: TEMPLATE.id, hiddenElements: deriveHiddenElementsRequest(state, TEMPLATE.id) }
     expect(authoringRenderRequestSchema.safeParse(request).success).toBe(true)
     const snapshot = buildStaticRenderExecutionSnapshot({ manifest: request.manifest, identitySnapshot: productContext.identitySnapshot, overrides, templateId: TEMPLATE.id, hiddenElements: request.hiddenElements, slide: null })
@@ -334,7 +353,7 @@ describe('Persistence, backward compatibility and the render contract', () => {
     if (parsed.ok) {
       expect(parsed.snapshot.overrides?.documentaryCard?.intro).toEqual({ offsetX: 0, offsetY: 0, rotation: 1 })
       expect(parsed.snapshot.overrides?.documentaryCard?.brand?.offsetX).toBe(20)
-      expect(parsed.snapshot.hiddenElements).toEqual(['noteText', 'source'])
+      expect(parsed.snapshot.hiddenElements).toEqual(['heroFrame', 'noteText', 'source'])
     }
     const legacy = buildStaticRenderExecutionSnapshot({ manifest: request.manifest, identitySnapshot: productContext.identitySnapshot, overrides: { documentaryCard: { ...DEFAULT_TUNING, hero: { offsetX: 1, offsetY: 0, rotation: 0, scale: 1 } } }, slide: null })
     expect(parseStaticRenderExecutionSnapshot(JSON.parse(JSON.stringify(legacy))).ok).toBe(true)
@@ -352,19 +371,19 @@ describe('Persistence, backward compatibility and the render contract', () => {
 describe('Layout switch protects the new Cover state', () => {
   const authoredCover = () => {
     let state = cover()
-    state = { ...state, tuning: setHeroFrame(setTuningField(setTuningField(setTuningField(state.tuning, 'kicker', 'offsetY', 8), 'intro', 'offsetX', 9), 'brand', 'rotation', 1), false) }
-    state = hiding(state, 'noteText', 'kicker', 'brand')
+    state = { ...state, tuning: setTuningField(setTuningField(setTuningField(state.tuning, 'kicker', 'offsetY', 8), 'intro', 'offsetX', 9), 'brand', 'rotation', 1) }
+    state = hiding(state, 'heroFrame', 'noteText', 'kicker', 'brandLogo')
     return authoringReducer(state, { type: 'SET_CUSTOM_ELEMENTS', elements: [CUSTOM] })
   }
 
   it('the new Cover state counts as Layout-owned work (confirmation is required)', () => {
     expect(hasLayoutOwnedAuthoredWork(cover())).toBe(false)
-    expect(hasLayoutOwnedAuthoredWork({ ...cover(), tuning: setHeroFrame(cover().tuning, false) })).toBe(true)
+    expect(hasLayoutOwnedAuthoredWork(hiding(cover(), 'heroFrame'))).toBe(true)
     expect(hasLayoutOwnedAuthoredWork({ ...cover(), tuning: setTuningField(cover().tuning, 'intro', 'offsetX', 1) })).toBe(true)
     expect(hasLayoutOwnedAuthoredWork(hiding(cover(), 'noteText'))).toBe(true)
   })
 
-  it('17. Cover → Info resets every new Cover field: tuning groups, hero frame, hidden ids', () => {
+  it('17. Cover → Info resets every new Cover field: tuning groups, hidden ids (frame included)', () => {
     const next = authoringReducer(authoredCover(), { type: 'SET_VARIANT', variant: 'info' })
     expect(next.tuning).toEqual(persistedSlideToAuthoringState(createTemplateSlide({ templateId: TEMPLATE.id, layoutId: 'info', appearance: 'dark', id: 's', order: 0, primitiveProjectRef: productContext.primitiveProjectRef ?? null })!, productContext, 'portrait').tuning)
     for (const group of ['kicker', 'intro', 'brand']) expect(next.tuning).not.toHaveProperty(group)
@@ -376,13 +395,5 @@ describe('Layout switch protects the new Cover state', () => {
 
   it('18. Custom Elements survive the switch', () => {
     expect(authoringReducer(authoredCover(), { type: 'SET_VARIANT', variant: 'closing' }).elements).toEqual([CUSTOM])
-  })
-})
-
-describe('Impact boundaries', () => {
-  it('only the Cover layout gained Elements; every other layout and Video composition tables are untouched', () => {
-    const counts = Object.fromEntries(TEMPLATE.layouts.map((layout) => [layout.id, layout.elements.length]))
-    expect(counts).toEqual({ cover: 15, info: 14, list: 10, grid: 7, map: 7, network: 5, quote: 7, closing: 6 })
-    expect(TEMPLATE.layouts.filter((layout) => layout.id !== 'cover').every((layout) => layout.elements.every((element) => !element.presentation && !element.stackPlacement))).toBe(true)
   })
 })

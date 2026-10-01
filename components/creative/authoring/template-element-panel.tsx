@@ -1,7 +1,7 @@
 'use client'
 
-import { BrandOwnershipNote, FollowsOwnerNote, HeroTuningControls, PrimitiveTransformControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
-import { DEFAULT_POSITION_TUNING, DEFAULT_PRIMITIVE_TRANSFORMS, resetTuningGroup, setHeroFrame, setTuningField, type AuthoringAction, type AuthoringState, type TuningGroup } from '@/lib/creative/authoring'
+import { BrandOwnershipNote, FixedElementNote, FollowsOwnerNote, HeroTuningControls, PrimitiveTransformControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
+import { DEFAULT_POSITION_TUNING, DEFAULT_PRIMITIVE_TRANSFORMS, resetTuningGroup, setTuningField, type AuthoringAction, type AuthoringState, type TuningGroup } from '@/lib/creative/authoring'
 import type { EditorElement } from '@/lib/creative/authoring/editor-workspace'
 import { STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { TITLE_LINE_HEIGHT_BOUNDS, getLayoutElement, type TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
@@ -10,8 +10,10 @@ import { TITLE_LINE_HEIGHT_BOUNDS, getLayoutElement, type TemplateLayoutDefiniti
  * The open Template Element's own controls: exactly what its Template control contract supports
  * (COVER_ELEMENT_COMPLETENESS_V1 extracted this from the Static editor page so the same code is
  * testable). Nothing here is offered that the renderer/authored state cannot honour:
- *  - `follows`   a semantic child (Cover's Nota da edição): no spatial control, it follows its owner;
- *  - `tuning`    bounded X/Y/rotation (+ Entrelinha where declared; + the Hero's frame option where declared);
+ *  - `follows`   an atom anchored to another (a text on its paper, a frame under its image): no spatial control, it takes its
+ *                anchor's position and stays an independent Element (own visibility, own paint order);
+ *  - `fixed`     Template geometry (STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1): visibility and order only;
+ *  - `tuning`    bounded X/Y/rotation (+ Entrelinha where declared);
  *  - `transform` the material sliders.
  */
 export function TemplateElementPanel({ elementId, state, layout, elements, dispatch }: {
@@ -26,21 +28,15 @@ export function TemplateElementPanel({ elementId, state, layout, elements, dispa
   const set = (group: TuningGroup, field: string, value: number) => dispatch({ type: 'SET_TUNING', tuning: setTuningField(state.tuning, group, field, value) })
   const reset = (group: TuningGroup) => dispatch({ type: 'SET_TUNING', tuning: resetTuningGroup(state.tuning, group) })
 
+  const definition = layout ? getLayoutElement(layout, elementId) : null
+  if (control.type === 'fixed') return <FixedElementNote isText={definition?.kind === 'text'} />
   if (control.type === 'follows') {
     const owner = elements.find((element) => element.key === control.parent)
-    const field = STATIC_COVER_CONTENT_FIELDS.find((descriptor) => descriptor.key === 'detail_note')
+    const field = state.variant === 'cover' && elementId === 'noteText' ? STATIC_COVER_CONTENT_FIELDS.find((descriptor) => descriptor.key === 'detail_note') : undefined
     return <FollowsOwnerNote ownerLabel={owner?.label ?? control.parent} content={field?.label} />
   }
   if (control.type === 'tuning' && control.group === 'hero') {
-    const framed = layout ? Boolean(getLayoutElement(layout, elementId)?.presentation?.frame) : false
-    return (
-      <HeroTuningControls
-        tuning={state.tuning.hero}
-        onChange={(field, value) => set('hero', field, value)}
-        onReset={() => reset('hero')}
-        frame={framed ? { framed: state.tuning.hero.frame !== false, onChange: (next) => dispatch({ type: 'SET_TUNING', tuning: setHeroFrame(state.tuning, next) }) } : undefined}
-      />
-    )
+    return <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => set('hero', field, value)} onReset={() => reset('hero')} />
   }
   if (control.type === 'tuning') {
     const group = control.group

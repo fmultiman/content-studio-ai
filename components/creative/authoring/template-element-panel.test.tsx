@@ -2,6 +2,8 @@
 /**
  * COVER_ELEMENT_COMPLETENESS_V1 — the Template Element panel offers only controls the Element's
  * contract supports, and the Cover Content tab exposes every authored Cover string by role.
+ * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — follows / fixed atoms say so, hide independently and
+ * never offer a spatial control they cannot honour.
  */
 import { useReducer } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -35,22 +37,27 @@ function Harness({ elementId }: { elementId: string }) {
 const tuning = () => JSON.parse(screen.getByTestId('tuning').textContent as string)
 
 describe('TemplateElementPanel', () => {
-  it('Hero: offers the frame option (on by default); turning it off stores only frame:false and back on restores the exact default', () => {
+  it('Hero: position sliders only — the frame is its own Element now, so there is no frame toggle inside the Hero panel', () => {
     render(<Harness elementId="hero" />)
-    const toggle = within(screen.getByTestId('hero-frame-toggle')).getByRole('checkbox') as HTMLInputElement
-    expect(toggle.checked).toBe(true)
-    expect(screen.getByTestId('hero-frame-toggle').textContent).toContain('a troca da imagem fica em Assets')
-    fireEvent.click(toggle)
-    expect(tuning().hero.frame).toBe(false)
-    expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1, frame: false })
-    fireEvent.click(within(screen.getByTestId('hero-frame-toggle')).getByRole('checkbox'))
-    expect(tuning().hero).not.toHaveProperty('frame')
+    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala'])
+    expect(screen.queryByTestId('hero-frame-toggle')).toBeNull()
+    expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 })
   })
 
-  it('a layout whose Hero declares no frame offers none (Lista/Citação)', () => {
-    const list = getTemplateLayout(TEMPLATE, 'list')!
-    render(<TemplateElementPanel elementId="hero" state={{ ...initial(), variant: 'list' }} layout={list} elements={elementsForVariant('list')} dispatch={() => {}} />)
-    expect(screen.queryByTestId('hero-frame-toggle')).toBeNull()
+  it('Moldura da imagem principal: no spatial control; it follows the image and says hiding one never hides the other', () => {
+    render(<Harness elementId="heroFrame" />)
+    expect(screen.queryAllByRole('slider')).toHaveLength(0)
+    const note = screen.getByTestId('follows-owner-note').textContent as string
+    expect(note).toContain('“Imagem principal”')
+    expect(note).toContain('ocultar “Imagem principal” não oculta este')
+  })
+
+  it('a fixed-geometry atom (Info: Texto principal) offers visibility/order only and points the text to Conteúdo', () => {
+    const info = getTemplateLayout(TEMPLATE, 'info')!
+    render(<TemplateElementPanel elementId="bodyText" state={{ ...initial(), variant: 'info' }} layout={info} elements={elementsForVariant('info')} dispatch={() => {}} />)
+    expect(screen.queryAllByRole('slider')).toHaveLength(0)
+    expect(screen.getByTestId('fixed-element-note').textContent).toContain('Posição fixa do Template')
+    expect(screen.getByTestId('fixed-element-note').textContent).toContain('Conteúdo')
   })
 
   it('Introdução / Chamada: only X, Y and rotation (no scale, opacity, size or Entrelinha); the change creates the optional group, Restaurar removes it', () => {
@@ -73,15 +80,20 @@ describe('TemplateElementPanel', () => {
     expect(screen.queryByLabelText('Entrelinha')).toBeNull()
   })
 
-  it('Assinatura: positioned, and says where each part comes from (logo = Template, name = Project); no replacement control is offered', () => {
-    render(<Harness elementId="brand" />)
+  it('Logo da marca: positioned, and says where each part comes from (logo = Template, replaceable in Assets; name = Project); the panel itself has no replace button', () => {
+    render(<Harness elementId="brandLogo" />)
     expect(screen.getAllByRole('slider')).toHaveLength(3)
     const note = screen.getByTestId('brand-ownership-note').textContent as string
     expect(note).toContain('Portal Comunidades Alternativas')
-    expect(note).toContain('logo é do Template')
+    expect(note).toContain('O logo vem do Template e pode ser trocado em Assets')
     expect(note).toContain('vem do Projeto')
-    expect(note).toContain('A troca do logo ainda não está disponível')
     expect(screen.queryByRole('button', { name: /trocar/i })).toBeNull()
+  })
+
+  it('Nome da marca: follows the logo position, independent visibility', () => {
+    render(<Harness elementId="brandName" />)
+    expect(screen.queryAllByRole('slider')).toHaveLength(0)
+    expect(screen.getByTestId('follows-owner-note').textContent).toContain('“Logo da marca”')
   })
 
   it('Nota da edição (the note text): no spatial control at all; it names its owner and where the text is edited', () => {
@@ -89,7 +101,8 @@ describe('TemplateElementPanel', () => {
     expect(screen.queryAllByRole('slider')).toHaveLength(0)
     const note = screen.getByTestId('follows-owner-note').textContent as string
     expect(note).toContain('“Papel da nota”')
-    expect(note).toContain('ocultar “Papel da nota” também oculta este texto')
+    expect(note).toContain('ocultar “Papel da nota” não oculta este')
+    expect(note).toContain('ocultar este não oculta “Papel da nota”')
     expect(note).toContain('Conteúdo (Nota da edição)')
   })
 

@@ -1,5 +1,5 @@
 import type { DocumentaryCardMapContent } from '@/lib/schemas/creative/documentary-card'
-import { AssetLayer, materialMetrics, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, materialMetrics, type CardPalette } from './primitives'
 import { BRAZIL_UF_GEOMETRY, BRAZIL_UF_VIEWBOX, type BrazilUf } from './brazil-uf-geometry'
 import { ElementGroup, LayoutBackground, SequenceBadge, TitleOnStrip, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
@@ -54,10 +54,16 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
               ))}
             </g>
           </svg>
+          <div style={{ bottom: x(-6), color: muted, fontFamily: body, fontSize: x(15), fontStyle: 'italic', position: 'absolute', right: x(20) }}>Base cartográfica: IBGE</div>
+        </div>
+      </ElementGroup>
+
+      {/* Pinos dos lugares (procedural): the UF markers share the map's box and transform channel, and are their own Element. */}
+      <ElementGroup id="mapPins" label="Pinos dos lugares" kit={kit} transformKey="card1" zFallback={12}>
+        <div style={{ height: x(mapSize), left: x(24), position: 'absolute', top: y(580), width: x(mapSize) }}>
           {pins.map((pin, index) => (
             <div key={index} aria-hidden="true" style={{ background: pin.color, border: `${x(2.5)}px solid #fbf5e8`, borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,.35)', height: x(20), left: x(pin.left - 10), position: 'absolute', top: x(pin.top - 10), width: x(20) }} />
           ))}
-          <div style={{ bottom: x(-6), color: muted, fontFamily: body, fontSize: x(15), fontStyle: 'italic', position: 'absolute', right: x(20) }}>Base cartográfica: IBGE</div>
         </div>
       </ElementGroup>
 
@@ -66,9 +72,10 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
       {/* Nota do mapa: the disclaimer on a paper scrap. */}
       {content.note ? (
         <>
-          <AssetLayer label="Nota do mapa" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(1106), width: x(450), height: y(210) }} rotation={-2.5} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow>
+          <AssetLayer label="Nota do mapa" url={kit.url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(40), top: y(1106), width: x(450), height: y(210) }} rotation={-2.5} transform={transforms?.note} zIndex={kit.z('note', 14)} hidden={kit.hidden('note')} shadow />
+          <AssetTextLayer label="Texto da nota do mapa" metrics={materialMetrics('paperScrap')} box={{ left: x(40), top: y(1106), width: x(450), height: y(210) }} rotation={-2.5} transform={transforms?.note} zIndex={kit.z('noteText', 14)} hidden={kit.hidden('noteText')}>
             <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(25), inset: 0, justifyContent: 'center', lineHeight: 1.3, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center' }}>{content.note}</div>
-          </AssetLayer>
+          </AssetTextLayer>
           <AssetLayer label="Fita da nota" url={kit.url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(190), top: y(1088), width: x(130) }} rotation={4} transform={transforms?.tape1 ?? transforms?.tape} zIndex={kit.z('tape1', 15)} hidden={kit.hidden('tape1')} filter="saturate(.85)" />
         </>
       ) : null}
@@ -78,9 +85,9 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
       {/* Template text (fixed layer): badge, intro, legend. */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedText, color: ink, fontFamily: body, fontSize: x(30), left: x(70), lineHeight: 1.36, top: y(426), width: x(920) }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(30), left: x(70), lineHeight: 1.36, top: y(426), width: x(920) }}>{renderEmphasis(content.intro)}</div>
       ) : null}
-      <div style={{ ...kit.fixedText, display: 'flex', flexDirection: 'column', gap: y(12), left: x(690), top: y(600), width: x(370) }} data-map-places={places.length}>
+      <div style={{ ...kit.fixedAtom('legend'), display: kit.hidden('legend') ? 'none' : 'flex', flexDirection: 'column', gap: y(12), left: x(690), top: y(600), width: x(370) }} data-map-places={places.length}>
         {pins.map((pin, index) => (
           <div key={index} style={{ alignItems: 'center', color: ink, display: 'flex', fontFamily: body, fontSize: x(26), gap: x(16), lineHeight: 1.2 }}>
             <span aria-hidden="true" style={{ background: pin.color, borderRadius: '50%', flexShrink: 0, height: x(18), width: x(18) }} />

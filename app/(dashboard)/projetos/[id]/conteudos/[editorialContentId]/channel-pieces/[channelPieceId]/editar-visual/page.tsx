@@ -37,7 +37,7 @@ import {
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
-  variantUsesContentImage, hasLayoutOwnedAuthoredWork, setTuningField as applyTuningField, resetTuningGroup, setHeroFrame, type TuningGroup,
+  variantUsesContentImage, variantUsesLogo, hasLayoutOwnedAuthoredWork, setTuningField as applyTuningField, resetTuningGroup, type TuningGroup,
 } from '@/lib/creative/authoring'
 import { contextualContentForChannelPiece } from '@/lib/creative/context/static-authoring'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -558,9 +558,10 @@ export default function StaticAuthoringProductPage() {
     // Slot overrides painted with the same shapes the claim-time resolver gives the worker.
     const overrideAssets = previewOverrideAssets(state.assetOverrides, projectImages)
     const heroAsset = variantUsesContentImage(state.variant) && overrideAssets.hero ? overrideAssets.hero : undefined
+    const logoAsset = variantUsesLogo(state.variant) && overrideAssets.logo ? overrideAssets.logo : undefined
     const previewWithSequence = {
       ...previewInput,
-      resolvedAssets: heroAsset ? { ...previewInput.resolvedAssets, hero: heroAsset } : previewInput.resolvedAssets,
+      resolvedAssets: { ...previewInput.resolvedAssets, ...(heroAsset ? { hero: heroAsset } : {}), ...(logoAsset ? { logo: logoAsset } : {}) },
       manifest: { ...previewInput.manifest, sequence },
     }
     const materials = Object.keys(overrideAssets.materials).length > 0 ? overrideAssets.materials : undefined
