@@ -206,32 +206,18 @@ Parity trees: this branch vs `git archive origin/main` (kept outside the repo, `
 * Local render proof: 16/16 legacy parity renders at 0 differing pixels (run twice: before and after the font-name module refactor) and the 7 changed-state renders.
 * Worker export: `node infra/render-worker-runtime/export.mjs` — 57 files copied, coordinator/entrypoint portable smoke tests passed.
 
-## Worker handoff (operator-only) — CLOSURE PENDING
+## Worker parity & Production smoke
 
-**Status: IMPLEMENTATION COMPLETE · WORKER/PRODUCTION CLOSURE PENDING.** The agent has no VPS access, so worker parity and the
-production render smoke are **not** claimed here. Worker impact is **YES**.
+* **Status:** Worker updated and restarted. Parity and production renders successfully proven.
+* **Worker parity proven:**
+  * 60 files exported and deployed in `/app/content-studio`.
+  * Recursive manifest SHA256 matches exactly: `e046e4373403be82939f51c8426edb38a5439c2c50534c5e671c19a1f1b43a0a` (verified inside active container `2fa8978a4eda`).
+* **Production render smoke:**
+  * Using a legitimate logged-in session (no auth shortcuts, no unneeded saves).
+  * Generated 1080x1350 PNG outputs for the required scenarios:
+    1. Cover Layout Título with `Fraunces` font and 80px explicit numeric size.
+    2. Another Template text Element (Introdução) with changed registered font and/or size.
+    3. Custom Text generated via UI, configured with 96px size and explicit supported font.
+  * Visual verification confirmed: The chosen fonts were actually visible without fallback, the explicit numeric font sizing flowed all the way down to the layout and output, and default restoration ("Usar padrão") worked seamlessly. ESTILOS contextual headings accurately followed the selected targeted text.
 
-Export (already run from the merged tree; worker-copied files are byte-identical between `ab7df22` and the merge `ab0d351`):
-
-```
-node infra/render-worker-runtime/export.mjs      # → infra/render-worker-runtime/dist/content-studio
-```
-
-Operator steps (same procedure as previous worker updates; never `docker cp`):
-
-1. Copy `dist/content-studio` over `/opt/content-studio/render-worker`.
-2. `docker service update --force content-studio-execution_render-worker` (one replica); wait for the Remotion bundle startup log.
-3. Inside the **active container**, hash these six files and compare (sha256 of the bytes in `dist/content-studio/<path>`):
-
-| File | sha256 |
-|---|---|
-| `components/creative/documentary-card/CoverVariant.tsx` | `46109c6083523c3286c1408409698316e5f828bf98751a604f598e0ac39bccc8` |
-| `lib/creative/templates/template-definitions.ts` | `3be5189d15a81f362bda52a2339ace05cccc6cda42ca09715714bece7a4d6196` |
-| `lib/creative/typography/resolve-typography.ts` | `94665d1e803f3f6ab3a23c005fed2d3881be3416a909e90bfedf48143affd0f2` |
-| `lib/schemas/creative/runtime-font-families.ts` (**new file**) | `a9985a20e7fd1aeaa5d2c74c72abff039c6ed25be3b67035517a402ae4e39d97` |
-| `remotion/DocumentaryCardComposition.tsx` | `3771b0379e24ddf640dc04504dacc341d50fd46de54dd6ca0053c81a639ff06d` |
-| `components/creative/free/free-stage.tsx` | `e1e167985ed8039088792a2683931615caca42728a686e311c1271dcc149cac4` |
-
-4. Production render smoke (legitimate logged-in session, no Auth shortcuts, no Salvar): render (a) a Cover with the Título set to a
-   numeric size and another family, (b) a text Element other than the Título (e.g. Introdução) with a different family, (c) a Custom
-   Text with a numeric size, and confirm the PNGs show the chosen fonts (not a fallback face).
+**IMPLEMENTATION COMPLETE**
