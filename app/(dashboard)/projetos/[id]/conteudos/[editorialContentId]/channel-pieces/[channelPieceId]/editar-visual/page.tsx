@@ -23,7 +23,7 @@ import { LAYOUT_CONTENT_FIELDS, STATIC_COVER_CONTENT_FIELDS } from '@/lib/creati
 import { AssetSlotCard } from '@/components/creative/authoring/inspector-panels'
 import { StylesTab } from '@/components/creative/authoring/styles-tab'
 import { RuntimeFontFaces } from '@/components/creative/authoring/runtime-font-faces'
-import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
+import { UnifiedMediaPickerDialog } from '@/components/creative/authoring/unified-media-picker-dialog'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
 import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
@@ -282,7 +282,7 @@ export default function StaticAuthoringProductPage() {
         const response = await fetch(`/api/library-files?projectId=${encodeURIComponent(projectIdForImages)}&kind=image`)
         if (!response.ok) return
         const payload = await response.json() as { files?: LibraryFile[] }
-        if (!cancelled) setProjectImages(new Map((payload.files ?? []).map((file) => [file.id, file])))
+        if (!cancelled) setProjectImages(new Map((payload.files ?? []).map((file) => [file.id as string, file])))
       } catch {
         // best-effort: slots still show names/origins from authored state
       }
@@ -844,7 +844,7 @@ export default function StaticAuthoringProductPage() {
       <TabsContent value="element" className="pt-3">
         <FreeSceneElements
           scene={currentFreeSlide}
-          fileNames={new Map([...projectImages.values()].map((file) => [file.id, file.name]))}
+          fileNames={new Map([...projectImages.values()].map((file) => [file.id as string, file.name]))}
           openId={selectedTarget?.kind === 'free-element' ? selectedTarget.elementId : null}
           onOpen={(id) => setSelectedTarget(id ? { kind: 'free-element', elementId: id } : null)}
           onEdit={editCurrentFree}
@@ -943,7 +943,7 @@ export default function StaticAuthoringProductPage() {
             renderPanel={renderElementPanel}
             custom={{
               scene: { id: 'custom', composition: { kind: 'free', elements: state.elements ?? [] } },
-              fileNames: new Map([...projectImages.values()].map((file) => [file.id, file.name])),
+              fileNames: new Map([...projectImages.values()].map((file) => [file.id as string, file.name])),
               openId: selectedTarget?.kind === 'free-element' ? selectedTarget.elementId : null,
               onOpen: (id) => setSelectedTarget(id ? { kind: 'free-element', elementId: id } : null),
               onEdit: editCurrentCustomElements,
@@ -1119,42 +1119,40 @@ export default function StaticAuthoringProductPage() {
   const pendingLayoutLabel = pendingLayoutId ? getTemplateLayout(template, pendingLayoutId)?.label : undefined
   const layoutSwitchDialog = <LayoutSwitchDialog layoutLabel={pendingLayoutLabel ?? null} onCancel={() => setPendingLayoutId(null)} onConfirm={() => { if (pendingLayoutId) applyLayoutSwitch(pendingLayoutId); setPendingLayoutId(null) }} />
   const restoreDialog = <>{layoutSwitchDialog}{removeDialog}<AlertDialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Restaurar padrão do Template?</AlertDialogTitle><AlertDialogDescription>Os valores padrão do Template serão aplicados {isCarousel ? 'ao slide atual' : 'à arte'}. Clique em Salvar para persistir.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction onClick={restoreSlideDefault}>Restaurar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    <ProjectLibraryAssetPicker
+    <UnifiedMediaPickerDialog
       open={Boolean(pickerSlot)}
       onOpenChange={(open) => { if (!open) setAssetPickerSlot(null) }}
       projectId={context.project.id}
+      productionId={context.editorialContent.production_id ?? null}
       selectedId={pickerSlot ? state?.assetOverrides?.[pickerSlot.id]?.libraryFileId ?? null : null}
-      allowedKinds={['image']}
-      allowedMimeTypes={SLOT_IMAGE_MIME_TYPES}
-      groupByOrigin
       title={pickerSlot ? `Trocar: ${pickerSlot.label}` : 'Trocar asset'}
-      description="Escolha uma imagem do Projeto para este papel visual. O arquivo é referenciado, não copiado."
+      description="Escolha uma imagem do Projeto para este papel visual. Ela será referenciada, não copiada."
       onSelect={(file) => {
         if (!pickerSlot) return
         setProjectImages((current) => new Map(current).set(file.id, file))
         dispatch({ type: 'SET_ASSET_OVERRIDE', slot: pickerSlot.id, libraryFileId: file.id })
       }}
     />
-    <ProjectLibraryAssetPicker
+    <UnifiedMediaPickerDialog
       open={freeImagePicker !== null}
       onOpenChange={(open) => { if (!open) setFreeImagePicker(null) }}
       projectId={context.project.id}
+      productionId={context.editorialContent.production_id ?? null}
       selectedId={freeImagePicker?.mode === 'replace' ? (freeUnitElements.find((element) => element.id === freeImagePicker.elementId) as { library_file_id?: string } | undefined)?.library_file_id ?? null : null}
-      allowedKinds={['image']}
-      allowedMimeTypes={SLOT_IMAGE_MIME_TYPES}
-      groupByOrigin
       title="Imagem da composição livre"
-      description="Escolha uma imagem do Projeto. Ela é referenciada (não copiada) e posicionada dentro do formato da peça."
+      description="Escolha uma imagem do Projeto. Ela será referenciada (não copiada) e posicionada dentro do formato da peça."
       onSelect={(file) => {
         setProjectImages((current) => new Map(current).set(file.id, file))
         const picker = freeImagePicker
+        
         if (mode === 'template') {
           if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
-          else { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+          else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
         } else {
           if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
-          else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+          else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
         }
+        
         setFreeImagePicker(null)
       }}
     />
