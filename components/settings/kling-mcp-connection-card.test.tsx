@@ -41,21 +41,20 @@ function renderCard(props: Partial<ComponentProps<typeof KlingMcpConnectionCard>
 describe('KlingMcpConnectionCard', () => {
   it('is clearly the Kling ACCOUNT connection, funded by the user’s own Kling credits', () => {
     renderCard()
-    expect(screen.getByText('Conta Kling')).toBeTruthy()
-    expect(screen.getByText(/Usa os créditos da sua conta Kling/)).toBeTruthy()
-    expect(screen.getByText(/somente leitura/)).toBeTruthy()
+    expect(screen.getByText('Conta Kling via MCP')).toBeTruthy()
+    expect(screen.getByText(/usar os modelos Kling diretamente com seus créditos/)).toBeTruthy()
   })
 
   it('shows "Não conectada" with a connect action when there is no connection', () => {
-    const { onConnect } = renderCard({ connection: null })
+    const handlers = renderCard({ connection: null })
     expect(screen.getByText('Não conectada')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /Conectar conta/ }))
-    return waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /Conectar conta Kling/ }))
+    return waitFor(() => expect(handlers.onConnect).toHaveBeenCalledWith('generation'))
   })
 
-  it('explains it only asks for read permissions before connecting', () => {
+  it('explains it asks for generation permissions before connecting', () => {
     renderCard({ connection: null })
-    expect(screen.getByText(/apenas permissões de leitura/)).toBeTruthy()
+    expect(screen.getByText(/pedirá permissão extra para criar gerações/)).toBeTruthy()
   })
 
   it('shows a loading badge while the connection state is unknown but not failed', () => {
@@ -81,16 +80,16 @@ describe('KlingMcpConnectionCard', () => {
   })
 
   it('a connected account shows safe metadata and check / disconnect actions (no connect button)', () => {
-    const { onCheck } = renderCard({ connection: connection() })
-    expect(screen.getByText('Conectada ✓')).toBeTruthy()
+    const handlers = renderCard({ connection: connection() })
+    expect(screen.getByText(/Conectada - Somente leitura/)).toBeTruthy()
     expect(screen.getByText('final 4242')).toBeTruthy()
     expect(screen.getByText('Pro')).toBeTruthy()
-    expect(screen.getByText('generation.read, account.credit.read')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Conectar conta|Reconectar/ })).toBeNull()
+    expect(screen.getByText('Consultar conta, modelos e créditos')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Conectar conta/ })).toBeNull()
     expect(screen.getByRole('button', { name: /Desconectar/ })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /Verificar conexão/ }))
-    return waitFor(() => expect(onCheck).toHaveBeenCalledTimes(1))
+    return waitFor(() => expect(handlers.onCheck).toHaveBeenCalledTimes(1))
   })
 
   it('does not request or show generate scope, and never shows a credit balance unless a live read was just made', () => {
@@ -106,21 +105,21 @@ describe('KlingMcpConnectionCard', () => {
   })
 
   it('an expired grant offers Reconectar instead of Verificar', () => {
-    const { onConnect } = renderCard({ connection: connection({ status: 'authorization_required' }) })
+    const handlers = renderCard({ connection: connection({ status: 'authorization_required', generationAuthorized: true }) })
     expect(screen.getByText('Reautorização necessária')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Verificar conexão/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Reconectar/ }))
-    return waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1))
+    return waitFor(() => expect(handlers.onConnect).toHaveBeenCalledWith('generation'))
   })
 
   it('an errored connection is labelled as such, and offers BOTH Reconectar and Verificar', () => {
-    const { onConnect, onCheck } = renderCard({ connection: connection({ status: 'error', lastErrorCode: 'PROVIDER_CLIENT_REJECTED' }) })
+    const handlers = renderCard({ connection: connection({ status: 'error', lastErrorCode: 'PROVIDER_CLIENT_REJECTED' }) })
     expect(screen.getByText('Erro na conexão')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Verificar conexão/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Reconectar/ })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /Reconectar/ }))
-    return waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1))
+    return waitFor(() => expect(handlers.onConnect).toHaveBeenCalledWith('read_only')) // uses old context since it wasn't generation authorized
   })
 
   it('disconnect asks for confirmation and states the honest revocation copy', async () => {
@@ -135,32 +134,29 @@ describe('KlingMcpConnectionCard', () => {
   })
 
   it('a read-only connection says so truthfully and offers "Autorizar geração" (explicit action, never automatic)', async () => {
-    const onAuthorizeGeneration = vi.fn().mockResolvedValue(undefined)
-    const { onConnect } = renderCard({ connection: connection({ generationAuthorized: false }), onAuthorizeGeneration })
+    const handlers = renderCard({ connection: connection({ generationAuthorized: false }) })
 
     expect(screen.getByText(/Conexão somente leitura: ainda não gera vídeos/)).toBeTruthy()
     // Nothing starts on render.
-    expect(onAuthorizeGeneration).not.toHaveBeenCalled()
+    expect(handlers.onConnect).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: /Autorizar geração/ }))
-    await waitFor(() => expect(onAuthorizeGeneration).toHaveBeenCalledTimes(1))
-    expect(onConnect).not.toHaveBeenCalled()
+    await waitFor(() => expect(handlers.onConnect).toHaveBeenCalledWith('generation'))
   })
 
   it('once generation is authorized the CTA is gone and the copy says so', () => {
     renderCard({
-      connection: connection({ generationAuthorized: true, scopes: ['generation.read', 'account.credit.read', 'generation.create'] }),
-      onAuthorizeGeneration: vi.fn().mockResolvedValue(undefined),
+      connection: connection({ generationAuthorized: true, scopes: ['generation.read', 'account.credit.read', 'generation.create'] })
     })
     expect(screen.queryByRole('button', { name: /Autorizar geração/ })).toBeNull()
     expect(screen.getByText(/Geração de vídeos autorizada/)).toBeTruthy()
   })
 
   it('does not offer the authorization CTA when the connection is not connected or the environment cannot connect', () => {
-    renderCard({ connection: connection({ status: 'authorization_required', generationAuthorized: false }), onAuthorizeGeneration: vi.fn() })
+    renderCard({ connection: connection({ status: 'authorization_required', generationAuthorized: false }) })
     expect(screen.queryByRole('button', { name: /Autorizar geração/ })).toBeNull()
     cleanup()
-    renderCard({ connection: connection({ generationAuthorized: false }), onAuthorizeGeneration: vi.fn(), connectionsAvailable: false })
+    renderCard({ connection: connection({ generationAuthorized: false }), connectionsAvailable: false })
     expect((screen.getByRole('button', { name: /Autorizar geração/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 

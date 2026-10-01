@@ -123,22 +123,28 @@ describe('access-token refresh', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it('refreshes an expired access token using the stored refresh token, server-side', async () => {
+  it('refreshes an expired access token using the stored refresh token, server-side, without mutating metadata scopes', async () => {
     const db = seedDb()
+    db.tables.provider_connections[0].scopes = ['generation.read', 'account.credit.read', 'generation.create']
     await saveConnectionTokens(db as any, 'conn-1', INITIAL, GRANT, NOW)
     const refresh = vi.fn(async () => ({
       access_token: 'at-refreshed-0002',
       refresh_token: 'rt-rotated-0002',
       token_type: 'Bearer',
       expires_in: 3600,
+      scope: 'generation.read account.credit.read' // DCR could return narrower scope, our logic should NOT trust it over what the user has granted to the connection in the DB on refresh
     }))
 
     const token = await getValidAccessToken(db as any, 'conn-1', makeDeps(refresh, later(2 * 3600_000)))
 
     expect(token).toBe('at-refreshed-0002')
+    // the DB scopes are unchanged! Refresh doesn't escalate or downgrade the scopes.
+    expect(db.tables.provider_connections[0].scopes).toEqual(['generation.read', 'account.credit.read', 'generation.create'])
+    
     expect(refresh).toHaveBeenCalledTimes(1)
     const [, options] = refresh.mock.calls[0] as unknown as [unknown, Record<string, unknown>]
     expect(options.refreshToken).toBe(INITIAL.refresh_token)
+    expect(options.scope).toBeUndefined() // Refresh logic DOES NOT ask for/escalate permission scopes.
     expect(options.clientInformation).toEqual({ client_id: 'client-content-studio-1' })
     expect(options.resource).toBe(KLING_MCP_URL)
   })

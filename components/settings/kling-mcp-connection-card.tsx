@@ -36,15 +36,13 @@ interface KlingMcpConnectionCardProps {
   /** False when this environment cannot store connection secrets. */
   connectionsAvailable: boolean
   liveCredits: number | null
-  onConnect: () => Promise<void>
-  /** Explicit user action that re-authorizes WITH the generation permission (never automatic). */
-  onAuthorizeGeneration?: () => Promise<void>
+  onConnect: (intent: 'generation' | 'read_only') => Promise<void>
   onCheck: () => Promise<void>
   onDisconnect: () => Promise<void>
 }
 
 const STATUS_LABEL: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' | 'unavailable' | 'neutral' }> = {
-  connected: { label: 'Conectada ✓', tone: 'success' },
+  connected: { label: 'Conectada', tone: 'success' },
   authorization_required: { label: 'Reautorização necessária', tone: 'warning' },
   error: { label: 'Erro na conexão', tone: 'danger' },
 }
@@ -56,17 +54,20 @@ export function KlingMcpConnectionCard({
   connectionsAvailable,
   liveCredits,
   onConnect,
-  onAuthorizeGeneration,
   onCheck,
   onDisconnect,
 }: KlingMcpConnectionCardProps) {
   const [isConnecting, setIsConnecting] = useState(false)
+  const [isConnectingReadOnly, setIsConnectingReadOnly] = useState(false)
   const [isAuthorizing, setIsAuthorizing] = useState(false)
   const [isChecking, setIsChecking] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
 
   const stateUnknown = loadFailed && !connection
-  const badge = stateUnknown
+  const readOnly = connection?.status === 'connected' && !connection.generationAuthorized
+  const generationAuthorized = connection?.status === 'connected' && connection.generationAuthorized
+
+  let badge = stateUnknown
     ? { label: 'Estado indisponível', tone: 'warning' as const }
     : connection === undefined
       ? { label: 'Carregando...', tone: 'neutral' as const }
@@ -74,12 +75,16 @@ export function KlingMcpConnectionCard({
         ? { label: 'Não conectada', tone: 'unavailable' as const }
         : STATUS_LABEL[connection.status]
 
+  if (connection?.status === 'connected') {
+    badge = generationAuthorized 
+      ? { label: 'Conectada - Pronta para gerar', tone: 'success' as const }
+      : { label: 'Conectada - Somente leitura', tone: 'success' as const }
+  }
+
   // Reconnecting is offered when authorization is lost, and also for an error state
   // (e.g. the provider rejected our registration) where re-checking alone cannot help.
   const canReconnect = connection?.status === 'authorization_required' || connection?.status === 'error'
   const needsAuthorization = connection?.status === 'authorization_required'
-  const readOnly = connection?.status === 'connected' && !connection.generationAuthorized
-  const generationAuthorized = connection?.status === 'connected' && connection.generationAuthorized
   const modelCount = connection?.capabilities.models?.text_to_video?.length
 
   const run = async (setBusy: (value: boolean) => void, action: () => Promise<void>) => {
@@ -93,14 +98,19 @@ export function KlingMcpConnectionCard({
 
   return (
     <div className="space-y-3 rounded-lg border border-border/50 p-4" data-provider="kling" data-connection-method="mcp_oauth">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h4 className="font-medium">Conta Kling</h4>
-          <p className="text-xs text-muted-foreground">
-            Usa os créditos da sua conta Kling.{' '}
-            {generationAuthorized
-              ? 'Geração de vídeos autorizada.'
-              : 'Conexão somente leitura: ainda não gera vídeos até você autorizar a geração.'}
+          <h4 className="font-medium">Conta Kling via MCP</h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            {connection === null ? (
+              'Conecte sua conta para usar os modelos Kling diretamente com seus créditos.'
+            ) : generationAuthorized ? (
+              'Geração de vídeos autorizada com sucesso.'
+            ) : connection?.status === 'connected' ? (
+              'Conexão somente leitura: ainda não gera vídeos até você autorizar a geração.'
+            ) : (
+              'Usa os créditos da sua conta Kling.'
+            )}
           </p>
         </div>
         <StatusBadge label={badge.label} tone={badge.tone} />
@@ -126,12 +136,17 @@ export function KlingMcpConnectionCard({
               <dd>{modelCount}</dd>
             </div>
           ) : null}
-          <div className="flex gap-2">
-            <dt>Permissões:</dt>
-            <dd>{connection.scopes.length ? connection.scopes.join(', ') : '—'}</dd>
+          <div className="flex flex-col gap-1 mt-1">
+            <dt>Permissões concedidas:</dt>
+            <dd className="pl-2">
+              <ul className="list-disc list-inside">
+                <li>Consultar conta, modelos e créditos</li>
+                {generationAuthorized && <li>Criar gerações</li>}
+              </ul>
+            </dd>
           </div>
           {connection.lastCheckedAt ? (
-            <div className="flex gap-2">
+            <div className="flex gap-2 mt-1">
               <dt>Última verificação:</dt>
               <dd>{new Date(connection.lastCheckedAt).toLocaleString('pt-BR')}</dd>
             </div>
@@ -163,30 +178,54 @@ export function KlingMcpConnectionCard({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        {(connection === null && !stateUnknown) || canReconnect ? (
+        {connection === null && !stateUnknown ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isConnecting || isConnectingReadOnly || !connectionsAvailable}
+              onClick={() => void run(setIsConnecting, () => onConnect('generation'))}
+            >
+              {isConnecting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-2 h-3.5 w-3.5" />}
+              Conectar conta Kling
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isConnecting || isConnectingReadOnly || !connectionsAvailable}
+              onClick={() => void run(setIsConnectingReadOnly, () => onConnect('read_only'))}
+            >
+              {isConnectingReadOnly ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              Conectar somente para leitura
+            </Button>
+          </>
+        ) : null}
+        
+        {canReconnect ? (
           <Button
             type="button"
             size="sm"
             variant="outline"
             disabled={isConnecting || !connectionsAvailable}
-            onClick={() => void run(setIsConnecting, onConnect)}
+            onClick={() => void run(setIsConnecting, () => onConnect(connection?.generationAuthorized ? 'generation' : 'read_only'))}
           >
             {isConnecting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-2 h-3.5 w-3.5" />}
-            {canReconnect ? 'Reconectar' : 'Conectar conta'}
+            Reconectar
           </Button>
         ) : null}
 
-        {readOnly && onAuthorizeGeneration ? (
+        {readOnly && (
           <Button
             type="button"
             size="sm"
             disabled={isAuthorizing || !connectionsAvailable}
-            onClick={() => void run(setIsAuthorizing, onAuthorizeGeneration)}
+            onClick={() => void run(setIsAuthorizing, () => onConnect('generation'))}
           >
             {isAuthorizing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="mr-2 h-3.5 w-3.5" />}
             Autorizar geração
           </Button>
-        ) : null}
+        )}
 
         {connection && !needsAuthorization ? (
           <Button type="button" size="sm" variant="outline" disabled={isChecking} onClick={() => void run(setIsChecking, onCheck)}>
@@ -223,7 +262,7 @@ export function KlingMcpConnectionCard({
       {connection === null && !stateUnknown ? (
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Você será levado à Kling para autorizar. Pedimos apenas permissões de leitura (consultar conta e créditos).
+          Você será levado à Kling para autorizar. &quot;Conectar conta Kling&quot; pedirá permissão extra para criar gerações.
         </p>
       ) : null}
     </div>
