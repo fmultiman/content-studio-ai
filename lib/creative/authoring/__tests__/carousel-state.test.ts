@@ -297,7 +297,7 @@ describe('Template Foundation V1 — per-slide element stack', () => {
 
   it('persists an authored reorder per slide and round-trips it', () => {
     const [cover] = defaultCarouselSlides('project:portal-comunidades-alternativas')
-    const authored = ['ornament', 'archival', 'botanicalLeaf', 'botanical', 'tape1', 'hero', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brand']
+    const authored = ['ornament', 'archival', 'botanicalLeaf', 'botanical', 'tape1', 'heroFrame', 'hero', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brandLogo', 'brandName']
     const state = authoringReducer(persistedSlideToAuthoringState(cover, productContext, canvas), { type: 'SET_ELEMENT_ORDER', order: authored })
     const persisted = authoringStateToPersistedSlide(state, cover.id, cover.order)
     expect(persisted.elementOrder).toEqual(authored)

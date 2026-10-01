@@ -106,7 +106,7 @@ const heroTuningSchema = z
     offsetY: z.number().finite().min(TUNING_BOUNDS.hero.offsetY.min).max(TUNING_BOUNDS.hero.offsetY.max),
     rotation: z.number().finite().min(TUNING_BOUNDS.hero.rotation.min).max(TUNING_BOUNDS.hero.rotation.max),
     scale: z.number().finite().min(TUNING_BOUNDS.hero.scale.min).max(TUNING_BOUNDS.hero.scale.max),
-    // COVER_ELEMENT_COMPLETENESS_V1: Hero frame/backing; absent = shown (the legacy look), only `false` is stored.
+    // LEGACY toggle (COVER_ELEMENT_COMPLETENESS_V1), read-only: migrated to a hidden 'heroFrame' Element on load, never written.
     frame: z.boolean().optional(),
   })
   .strict()
@@ -287,6 +287,13 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
   }
 }
 
+/** The legacy Hero `frame` toggle is migrated to a hidden 'heroFrame' Element; the stored tuning no longer carries it. */
+function withoutLegacyFrame<T extends { frame?: boolean }>(hero: T): Omit<T, 'frame'> {
+  const { frame: _legacy, ...rest } = hero
+  void _legacy
+  return rest
+}
+
 /** Only a non-empty, layout-normalized hidden list is persisted; absence = all visible. */
 function hiddenEntry(layout: ReturnType<typeof layoutFor>, hidden: readonly string[] | undefined): { hiddenElements?: string[] } {
   const normalized = layout ? normalizeHiddenElements(layout, hidden) : []
@@ -327,7 +334,8 @@ export function persistedSlideToAuthoringState(
     primitiveTransforms: completeTransforms(slide.primitiveTransforms as Partial<AuthoringPrimitiveTransforms>),
     ...(slide.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, slide.elementOrder) } : {}),
     ...(slide.assetOverrides && Object.keys(slide.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(slide.assetOverrides) } : {}),
-    ...hiddenEntry(layout, slide.hiddenElements),
+    // A slide saved with the old Hero frame toggle off keeps that look as a hidden 'heroFrame' Element.
+    ...hiddenEntry(layout, slide.tuning?.hero?.frame === false ? [...(slide.hiddenElements ?? []), 'heroFrame'] : slide.hiddenElements),
     ...(slide.elements && slide.elements.length > 0 ? { elements: [...slide.elements] } : {}),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no
@@ -336,7 +344,7 @@ export function persistedSlideToAuthoringState(
     // Polish V2.1 have `tuning.hero`/`tuning.title` but no `tuning.source`.
     tuning: slide.tuning
       ? {
-        hero: { ...slide.tuning.hero }, title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) },
+        hero: withoutLegacyFrame(slide.tuning.hero), title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) },
         ...(slide.tuning.kicker ? { kicker: { ...slide.tuning.kicker } } : {}),
         ...(slide.tuning.intro ? { intro: { ...slide.tuning.intro } } : {}),
         ...(slide.tuning.brand ? { brand: { ...slide.tuning.brand } } : {}),

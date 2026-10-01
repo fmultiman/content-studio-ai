@@ -225,8 +225,10 @@ describe('Temporal authoring is untouched by the stage', () => {
       const quote = manifest.segments.find((segment) => segment.id === 'scene:s2')
       expect(quote?.kind === 'template' ? quote.payload.element_timing : null).toEqual([
         { element_id: 'quote', start_frame: 15, duration_frames: 60 },
+        { element_id: 'quoteText', start_frame: 15, duration_frames: 60 },
         { element_id: 'tape1', start_frame: 15, duration_frames: 60 },
         { element_id: 'callout', start_frame: 45, duration_frames: 75 },
+        { element_id: 'calloutText', start_frame: 45, duration_frames: 75 },
       ])
       const bed = manifest.segments.find((segment) => segment.id === 'item:bed')
       expect(bed).toMatchObject({ start_frame: 0, duration_frames: legacy.specification.duration_frames })

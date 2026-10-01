@@ -32,6 +32,16 @@ export function layoutKit(context: DocumentaryCardVisualContext) {
     hideStyle: (id: string): CSSProperties => (context.hidden.has(id) ? { display: 'none' } : {}),
     url: (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls),
     fixedText: { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z } as CSSProperties,
+    /**
+     * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — a text/brand unit that used to sit on the fixed top layer with no identity.
+     * It is an Element now: painted from the stack (on top by default, exactly where the fixed layer was) and hideable.
+     */
+    fixedAtom: (id: string, fallbackZ: number = STACK_TOP_Z): CSSProperties => ({
+      opacity: context.contentOpacity,
+      position: 'absolute',
+      zIndex: context.stack.zIndex[id] ?? fallbackZ,
+      ...(context.hidden.has(id) ? { display: 'none' } : {}),
+    }),
   }
 }
 

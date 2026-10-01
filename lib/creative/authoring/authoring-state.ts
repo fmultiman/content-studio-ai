@@ -48,6 +48,11 @@ export function variantUsesContentImage(variant: AuthoringVariant): boolean {
   return variant === 'cover' || variant === 'list' || variant === 'quote'
 }
 
+/** Layouts that draw the brand logo artwork ('logo'); mirrors the Template registry (layoutUsesLogo). */
+export function variantUsesLogo(variant: AuthoringVariant): boolean {
+  return variant === 'cover' || variant === 'info' || variant === 'list' || variant === 'closing'
+}
+
 /** Layouts with a brand block whose label defaults to the live Project name. */
 export function variantHasBrandLabel(variant: AuthoringVariant): boolean {
   return variant === 'cover' || variant === 'closing'
@@ -439,7 +444,7 @@ export function setTuningField(tuning: DocumentaryCardPreviewTuning, group: Tuni
 
 /**
  * Back to the Template position. An optional group is REMOVED (absent = default), so a reset slide
- * serializes exactly like one never adjusted; the Hero reset also restores its frame.
+ * serializes exactly like one never adjusted.
  */
 export function resetTuningGroup(tuning: DocumentaryCardPreviewTuning, group: TuningGroup): DocumentaryCardPreviewTuning {
   if (OPTIONAL_TUNING_GROUPS.includes(group)) {
@@ -448,13 +453,6 @@ export function resetTuningGroup(tuning: DocumentaryCardPreviewTuning, group: Tu
     return rest as DocumentaryCardPreviewTuning
   }
   return { ...tuning, [group]: { ...DEFAULT_TUNING[group as 'hero' | 'title' | 'source'] } }
-}
-
-/** Hero frame + backing on/off. Only `false` is ever stored; showing it again removes the key (the legacy look). */
-export function setHeroFrame(tuning: DocumentaryCardPreviewTuning, framed: boolean): DocumentaryCardPreviewTuning {
-  const { frame: _frame, ...hero } = tuning.hero
-  void _frame
-  return { ...tuning, hero: framed ? hero : { ...hero, frame: false } }
 }
 
 export function clampTuningValue(

@@ -20,17 +20,20 @@ describe('Documentary layouts expose their factual semantic Sections', () => {
       ['Bloco de título', ['title', 'paper']],
       ['Introdução', ['intro']],
       ['Fonte editorial', ['source']],
-      ['Hero', ['hero', 'tape1']],
+      ['Hero', ['heroFrame', 'hero', 'tape1']],
       ['Nota editorial', ['note', 'noteText', 'tape2']],
-      ['Assinatura', ['brand']],
+      ['Assinatura', ['brandLogo', 'brandName']],
       ['Decoração', ['botanical', 'botanicalLeaf', 'archival', 'ornament']],
     ])
   })
   it('Info', () => {
     expect(sectionsOf('info')).toEqual([
       ['Bloco de título', ['title', 'paperStrip', 'paperDark']],
-      ['Cartão 1', ['card1', 'pin']],
-      ['Cartão 2', ['paper', 'pin2']],
+      ['Cartão 1', ['card1', 'card1Text', 'pin']],
+      ['Cartão 2', ['paper', 'card2Text', 'pin2']],
+      ['Texto de apoio', ['bodyText', 'annotation']],
+      ['Faixa da chamada', ['introBanner', 'introText']],
+      ['Assinatura', ['brandTab', 'brandLogo']],
       ['Fonte e crédito', ['source']],
       ['Decoração', ['botanicalLeaf', 'botanical', 'tape1', 'tape2', 'tape3', 'archival']],
     ])
@@ -38,49 +41,60 @@ describe('Documentary layouts expose their factual semantic Sections', () => {
   it('Lista', () => {
     expect(sectionsOf('list')).toEqual([
       ['Bloco de título', ['title', 'paperStrip']],
-      ['Hero · imagem do documento', ['hero', 'tape1']],
-      ['Legenda', ['note', 'tape2']],
-      ['Destaque', ['callout']],
+      ['Introdução', ['intro']],
+      ['Itens', ['items']],
+      ['Hero · imagem do documento', ['heroFrame', 'hero', 'tape1']],
+      ['Legenda', ['note', 'noteText', 'tape2']],
+      ['Destaque', ['callout', 'calloutText']],
+      ['Assinatura', ['brandLogo']],
       ['Decoração', ['botanicalLeaf', 'botanical', 'archival']],
     ])
   })
   it('Grade', () => {
     expect(sectionsOf('grid')).toEqual([
       ['Bloco de título', ['title', 'paperStrip', 'tape1']],
+      ['Introdução', ['intro']],
       ['Grade de temas', ['tiles']],
-      ['Ideias transversais', ['note']],
+      ['Ideias transversais', ['note', 'ideasText']],
       ['Decoração', ['botanicalLeaf', 'archival']],
     ])
   })
   it('Mapa', () => {
     expect(sectionsOf('map')).toEqual([
       ['Bloco de título', ['title', 'paperStrip']],
-      ['Mapa', ['map']],
-      ['Nota do mapa', ['note', 'tape1']],
+      ['Introdução', ['intro']],
+      ['Mapa', ['map', 'mapPins']],
+      ['Legenda', ['legend']],
+      ['Nota do mapa', ['note', 'noteText', 'tape1']],
       ['Decoração', ['botanicalLeaf', 'botanical']],
     ])
   })
   it('Rede', () => {
     expect(sectionsOf('network')).toEqual([
       ['Bloco de título', ['title', 'paperStrip']],
-      ['Rede', ['cards']],
-      ['Destaque', ['callout']],
+      ['Chamada e introdução', ['kicker', 'intro']],
+      ['Rede', ['links', 'cards', 'cardsText']],
+      ['Destaque', ['callout', 'calloutText']],
       ['Decoração', ['ornament']],
     ])
   })
   it('Citação', () => {
     expect(sectionsOf('quote')).toEqual([
       ['Bloco de título', ['title', 'paperStrip']],
-      ['Citação', ['quote', 'tape1']],
-      ['Hero · imagem', ['hero']],
-      ['Destaque', ['callout']],
+      ['Introdução e tópicos', ['intro', 'bullets']],
+      ['Citação', ['quote', 'quoteText', 'tape1']],
+      ['Hero · imagem', ['heroFrame', 'hero']],
+      ['Destaque', ['callout', 'calloutText']],
       ['Decoração', ['botanicalLeaf']],
     ])
   })
   it('Encerramento', () => {
     expect(sectionsOf('closing')).toEqual([
       ['Bloco de título', ['title']],
-      ['Convite', ['note', 'tape1']],
+      ['Texto de apoio', ['body', 'items']],
+      ['Convite', ['note', 'inviteText', 'tape1']],
+      ['Assinatura', ['brandLogo', 'brandName']],
+      ['Fecho', ['divider', 'tagline']],
       ['Decoração', ['ornament', 'botanicalLeaf', 'botanical']],
     ])
   })

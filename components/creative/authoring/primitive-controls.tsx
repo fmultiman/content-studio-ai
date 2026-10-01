@@ -33,16 +33,21 @@ export function TitleTuningControls({ tuning, onChange, onReset, lineHeight }: {
  * COVER_ELEMENT_COMPLETENESS_V1: when the Element declares a frame (`presentation.frame`), a bounded on/off for its
  * frame and paper-coloured backing — independent of which image fills the Hero.
  */
-export function HeroTuningControls({ tuning, onChange, onReset, frame }: { tuning: { offsetX: number; offsetY: number; rotation: number; scale: number }; onChange: (field: 'offsetX' | 'offsetY' | 'rotation' | 'scale', value: number) => void; onReset: () => void; frame?: { framed: boolean; onChange: (framed: boolean) => void } }) {
-  return <div className="space-y-2"><Slider label="Posição X" value={tuning.offsetX} min={-120} max={120} step={1} onChange={(value) => onChange('offsetX', value)} /><Slider label="Posição Y" value={tuning.offsetY} min={-120} max={120} step={1} onChange={(value) => onChange('offsetY', value)} /><Slider label="Rotação" value={tuning.rotation} min={-4} max={4} step={0.1} onChange={(value) => onChange('rotation', value)} /><Slider label="Escala" value={tuning.scale} min={0.9} max={1.15} step={0.01} onChange={(value) => onChange('scale', value)} />{frame ? <label className="flex items-start gap-2 text-xs" data-testid="hero-frame-toggle"><input type="checkbox" className="mt-0.5" checked={frame.framed} onChange={(event) => frame.onChange(event.target.checked)} /><span><span className="font-medium">Moldura e fundo da imagem</span><span className="block text-[11px] text-muted-foreground">A borda clara e o papel atrás da imagem. Desligue para mostrar só a imagem, seja ela qual for; a troca da imagem fica em Assets.</span></span></label> : null}<div className="pt-1"><button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={onReset}>Restaurar elemento</button></div></div>
+export function HeroTuningControls({ tuning, onChange, onReset }: { tuning: { offsetX: number; offsetY: number; rotation: number; scale: number }; onChange: (field: 'offsetX' | 'offsetY' | 'rotation' | 'scale', value: number) => void; onReset: () => void }) {
+  return <div className="space-y-2"><Slider label="Posição X" value={tuning.offsetX} min={-120} max={120} step={1} onChange={(value) => onChange('offsetX', value)} /><Slider label="Posição Y" value={tuning.offsetY} min={-120} max={120} step={1} onChange={(value) => onChange('offsetY', value)} /><Slider label="Rotação" value={tuning.rotation} min={-4} max={4} step={0.1} onChange={(value) => onChange('rotation', value)} /><Slider label="Escala" value={tuning.scale} min={0.9} max={1.15} step={0.01} onChange={(value) => onChange('scale', value)} /><div className="pt-1"><button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={onReset}>Restaurar elemento</button></div></div>
 }
 
 /** COVER_ELEMENT_COMPLETENESS_V1 — a semantic child of a spatial owner: it moves with its owner and has no spatial control of its own. */
+/** An atom that takes its anchor's POSITION only: it stays its own Element (own visibility, own place in Camadas). */
 export function FollowsOwnerNote({ ownerLabel, content }: { ownerLabel: string; content?: string }) {
-  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="follows-owner-note">Acompanha a posição, a rotação e a escala de “{ownerLabel}”; ocultar “{ownerLabel}” também oculta este texto.{content ? ` O texto se edita em Conteúdo (${content}).` : ''}</p>
+  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="follows-owner-note">Acompanha a posição, a rotação e a escala de “{ownerLabel}”, mas é um elemento independente: ocultar “{ownerLabel}” não oculta este, e ocultar este não oculta “{ownerLabel}”.{content ? ` O texto se edita em Conteúdo (${content}).` : ''}</p>
+}
+/** An atom whose position is Template geometry: own visibility and paint order, no spatial control. */
+export function FixedElementNote({ isText }: { isText: boolean }) {
+  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="fixed-element-note">Posição fixa do Template: este elemento tem visibilidade e ordem próprias, mas não tem ajuste de posição.{isText ? ' O texto se edita em Conteúdo.' : ''}</p>
 }
 
 /** COVER_ELEMENT_COMPLETENESS_V1 — the brand block's authored facts: what it shows and where each part comes from. */
 export function BrandOwnershipNote({ projectName }: { projectName?: string }) {
-  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="brand-ownership-note">Marca padrão do Template: o logo é do Template{projectName ? ` e o nome (“${projectName}”) vem do Projeto` : ' e o nome vem do Projeto'}. A troca do logo ainda não está disponível.</p>
+  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="brand-ownership-note">O logo vem do Template e pode ser trocado em Assets (Logo da marca); o nome{projectName ? ` (“${projectName}”)` : ''} vem do Projeto e é um elemento à parte (Nome da marca).</p>
 }

@@ -105,7 +105,7 @@ describe('Asset slots', () => {
 
   it('keeps distinct slots independent (Cartão 1 dark paper vs Cartão 2 light paper)', () => {
     const slots = layoutAssetSlots(template, info)
-    expect(slots.find(({ slot }) => slot.id === 'paperDark')?.elements.map((element) => element.id)).toEqual(['paperDark', 'card1'])
+    expect(slots.find(({ slot }) => slot.id === 'paperDark')?.elements.map((element) => element.id)).toEqual(['paperDark', 'card1', 'introBanner', 'brandTab'])
     expect(slots.find(({ slot }) => slot.id === 'paper')?.elements.map((element) => element.id)).toEqual(['paper'])
   })
 

@@ -77,16 +77,18 @@ export function resolveSlotResource(
 export function previewOverrideAssets(
   overrides: AuthoringState['assetOverrides'],
   files: ReadonlyMap<string, SlotLibraryFile>,
-): { materials: Partial<Record<AssetSlotId, ResolvedAsset>>; hero?: ResolvedAsset } {
+): { materials: Partial<Record<AssetSlotId, ResolvedAsset>>; hero?: ResolvedAsset; logo?: ResolvedAsset } {
   const materials: Partial<Record<AssetSlotId, ResolvedAsset>> = {}
   let hero: ResolvedAsset | undefined
+  let logo: ResolvedAsset | undefined
   for (const [slot, value] of Object.entries(overrides ?? {}) as [AuthoringAssetSlotId, { libraryFileId: string } | undefined][]) {
     const file = value ? files.get(value.libraryFileId) : undefined
     const url = file?.public_url
     if (!file || !url) continue
     const asset: ResolvedAsset = { ref: file.id, source: 'library_file', path: `library_file:${file.id}`, url, mime_type: file.mime_type ?? 'image/*' }
     if (slot === 'hero') hero = { ...asset, fit: 'cover' }
+    else if (slot === 'logo') logo = { ...asset, fit: 'contain' }
     else materials[slot] = { ...asset, fit: 'contain' }
   }
-  return { materials, ...(hero ? { hero } : {}) }
+  return { materials, ...(hero ? { hero } : {}), ...(logo ? { logo } : {}) }
 }

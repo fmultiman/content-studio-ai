@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, BrandMark, GrainOverlay, Sparkle, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 import { DocumentaryIcon } from './icons'
 
@@ -51,6 +51,9 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
   // Completion V1: an optional closing callout takes the bottom band; with a caption too, the image and its caption move up.
   const hasCallout = Boolean(content.callout)
   const compact = hasCallout && Boolean(content.image_caption)
+  const heroPlate: PlateGeometry = { height: y(compact ? 540 : 600), left: x(598), padding: x(14), rotation: 2.2, top: y(430), width: x(426) }
+  const captionBox = { left: x(588), top: y(compact ? 988 : 1052), width: x(420), height: y(compact ? 150 : 190) }
+  const calloutBox = { left: x(48), top: y(1134), width: x(984), height: y(176) }
 
   return (
     <>
@@ -65,50 +68,39 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
       <AssetLayer label="Fragmento de arquivo" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(292), top: y(1150), width: x(390) }} rotation={-4} transform={transforms?.archival} zIndex={z('archival', 11)} hidden={isHidden('archival')} filter="sepia(.35)" shadow />
       <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(-150), top: y(1086), width: x(360) }} rotation={38} transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 12)} hidden={isHidden('botanicalLeaf')} />
 
-      {/* Imagem do documento: the content image in a pale archival border, pinned like evidence. */}
-      <div
-        aria-label="Imagem do documento"
-        style={{
-          background: '#ece2cc',
-          boxShadow: '0 22px 40px rgba(0, 0, 0, .38)',
-          height: y(compact ? 540 : 600),
-          left: x(598),
-          padding: x(14),
-          position: 'absolute',
-          top: y(430),
-          width: x(426),
-          zIndex: z('hero', 13), ...hideStyle('hero'),
-          transform: `translate(${heroTuning?.offsetX ?? 0}px, ${heroTuning?.offsetY ?? 0}px) rotate(${2.2 + (heroTuning?.rotation ?? 0)}deg) scale(${heroTuning?.scale ?? 1})`,
-          transformOrigin: 'center',
-        }}
-      >
-        <div style={{ height: '100%', overflow: 'hidden', position: 'relative', width: '100%' }}>
-          <AssetSurface asset={context.assets.hero} label="Imagem do documento" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.85) contrast(1.04)', inset: 0, position: 'absolute' }} />
-        </div>
-      </div>
+      {/* Moldura da imagem (procedural): the pale archival border, under the image. Independent of it. */}
+      <PlateFrame geometry={heroPlate} tuning={heroTuning} zIndex={z('heroFrame', 12)} hidden={isHidden('heroFrame')} background="#ece2cc" shadow="0 22px 40px rgba(0, 0, 0, .38)" />
+      {/* Imagem do documento: the content image, pinned like evidence. Painted whatever the frame does. */}
+      <PlateImage geometry={heroPlate} tuning={heroTuning} zIndex={z('hero', 13)} hidden={isHidden('hero')} frameHidden={isHidden('heroFrame')} label="Imagem do documento">
+        <AssetSurface asset={context.assets.hero} label="Imagem do documento" style={{ backgroundColor: palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.85) contrast(1.04)', inset: 0, position: 'absolute' }} />
+      </PlateImage>
       <AssetLayer label="Fita do documento" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(742), top: y(402), width: x(150) }} rotation={-5} transform={transforms?.tape1 ?? transforms?.tape} zIndex={z('tape1', 14)} hidden={isHidden('tape1')} filter="saturate(.85)" />
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(992), top: y(700), width: x(116) }} rotation={-12} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
 
-      {/* Papel da legenda: image_caption on its own paper scrap (only when there is a caption). */}
+      {/* Papel da legenda + Legenda da imagem: the caption paper and its text are two Elements (only when there is a caption). */}
       {content.image_caption ? (
         <>
-          <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={{ left: x(588), top: y(compact ? 988 : 1052), width: x(420), height: y(compact ? 150 : 190) }} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} hidden={isHidden('note')} shadow>
+          <AssetLayer label="Papel da legenda" url={url('paperScrap')} metrics={materialMetrics('paperScrap')} contain={context.materialContain?.paperScrap} box={captionBox} rotation={-1.8} transform={transforms?.note} zIndex={z('note', 16)} hidden={isHidden('note')} shadow />
+          <AssetTextLayer label="Legenda da imagem" metrics={materialMetrics('paperScrap')} box={captionBox} rotation={-1.8} transform={transforms?.note} zIndex={z('noteText', 16)} hidden={isHidden('noteText')}>
             <div style={{ alignItems: 'center', color: paperInk, display: 'flex', fontFamily: body, fontSize: x(23), fontStyle: 'italic', inset: 0, lineHeight: 1.32, padding: `0 ${x(44)}px`, position: 'absolute' }}>
               {content.image_caption}
             </div>
-          </AssetLayer>
+          </AssetTextLayer>
           <AssetLayer label="Fita da legenda" url={url('tape')} metrics={materialMetrics('tape')} contain={context.materialContain?.tape} box={{ left: x(676), top: y(compact ? 968 : 1030), width: x(118) }} rotation={4} transform={transforms?.tape2 ?? transforms?.tape} zIndex={z('tape2', 17)} hidden={isHidden('tape2')} filter="saturate(.85)" />
         </>
       ) : null}
 
       {/* Caixa de destaque (optional): the closing thought on dark paper, full width. */}
       {hasCallout ? (
-        <AssetLayer label="Caixa de destaque" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(48), top: y(1134), width: x(984), height: y(176) }} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('callout', 16)} hidden={isHidden('callout')} shadow>
-          <div style={{ alignItems: 'center', color: '#efe4cc', display: 'flex', fontFamily: body, fontSize: x(28), gap: x(28), inset: 0, lineHeight: 1.36, padding: `0 ${x(56)}px 0 ${x(64)}px`, position: 'absolute' }}>
-            <div style={{ flex: 1 }}>{renderEmphasis(content.callout ?? '')}</div>
-            <DocumentaryIcon icon="leaf" color="#c9a45c" size={x(64)} />
-          </div>
-        </AssetLayer>
+        <>
+          <AssetLayer label="Caixa de destaque" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={calloutBox} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('callout', 16)} hidden={isHidden('callout')} shadow />
+          <AssetTextLayer label="Texto do destaque" metrics={materialMetrics('paperDark')} box={calloutBox} rotation={-0.6} transform={transforms?.paperDark} zIndex={z('calloutText', 16)} hidden={isHidden('calloutText')}>
+            <div style={{ alignItems: 'center', color: '#efe4cc', display: 'flex', fontFamily: body, fontSize: x(28), gap: x(28), inset: 0, lineHeight: 1.36, padding: `0 ${x(56)}px 0 ${x(64)}px`, position: 'absolute' }}>
+              <div style={{ flex: 1 }}>{renderEmphasis(content.callout ?? '')}</div>
+              <DocumentaryIcon icon="leaf" color="#c9a45c" size={x(64)} />
+            </div>
+          </AssetTextLayer>
+        </>
       ) : null}
 
       {/* Faixa do título + Título: siblings, so each owns its own layer. */}
@@ -143,12 +135,12 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
         </div>
       ) : null}
       {content.intro ? (
-        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480) }}>
+        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480), zIndex: z('intro', STACK_TOP_Z), ...hideStyle('intro') }}>
           {renderEmphasis(content.intro)}
           <div aria-hidden="true" style={{ background: gold, height: 2, marginTop: y(26), opacity: .85, width: x(200) }} />
         </div>
       ) : null}
-      <div style={{ ...fixedText, display: 'flex', flexDirection: 'column', gap: y(34), left: x(66), top: y(content.intro ? 686 : 470), transform: `translateY(${context.contentTranslateY}px)`, width: x(490) }} data-list-items={items.length}>
+      <div style={{ ...fixedText, display: 'flex', flexDirection: 'column', gap: y(34), left: x(66), top: y(content.intro ? 686 : 470), transform: `translateY(${context.contentTranslateY}px)`, width: x(490), zIndex: z('items', STACK_TOP_Z), ...hideStyle('items') }} data-list-items={items.length}>
         {items.map((item, index) => (
           <div key={index} style={{ alignItems: 'flex-start', display: 'flex', gap: x(26) }}>
             <div style={{ alignItems: 'center', border: `1.5px solid ${gold}`, borderRadius: '50%', display: 'flex', flexShrink: 0, height: x(76), justifyContent: 'center', width: x(76) }}>
@@ -158,7 +150,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           </div>
         ))}
       </div>
-      <BrandMark asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} tokens={context.tokens} logoSize={x(96)} style={{ ...fixedText, right: x(48), top: y(36) }} />
+      <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} tokens={context.tokens} logoSize={x(96)} style={{ ...fixedText, right: x(48), top: y(36), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo') }} />
     </>
   )
 }

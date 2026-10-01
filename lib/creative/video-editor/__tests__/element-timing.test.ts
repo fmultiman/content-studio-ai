@@ -172,8 +172,10 @@ describe('Scene retime: authored intent preserved, effective range clipped', () 
     const segment = templateSegment(tiny, 's3')
     expect(segment.payload.element_timing).toEqual([
       { element_id: 'quote', start_frame: 15, duration_frames: 15 },
+      { element_id: 'quoteText', start_frame: 15, duration_frames: 15 },
       { element_id: 'tape1', start_frame: 15, duration_frames: 15 },
       { element_id: 'callout', start_frame: 30, duration_frames: 0 },
+      { element_id: 'calloutText', start_frame: 30, duration_frames: 0 },
     ])
     const { diagnostics } = adaptVideoDraftToTimelineManifest({ draft: { ...DRAFT, scenes: tiny }, identity: { type: 'fixture', ref: 'x' } as never })
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual(expect.arrayContaining(['element_timing_clipped', 'element_timing_outside_scene']))
@@ -305,8 +307,10 @@ describe('renderer: one semantics for Live Player and final render', () => {
   it('derivation is Scene-local, clipped, and carries companions (never global frames, never engine objects)', () => {
     expect(deriveSegmentElementTiming(TIMED, quoteLayout(), 120)).toEqual([
       { element_id: 'quote', start_frame: 15, duration_frames: 60 },
+      { element_id: 'quoteText', start_frame: 15, duration_frames: 60 },
       { element_id: 'tape1', start_frame: 15, duration_frames: 60 },
       { element_id: 'callout', start_frame: 45, duration_frames: 75 },
+      { element_id: 'calloutText', start_frame: 45, duration_frames: 75 },
     ])
     const domain = readFileSync(join(process.cwd(), 'lib/creative/video-editor/element-timing.ts'), 'utf8')
     expect(domain).not.toMatch(/from 'remotion'|@remotion|Sequence|durationInFrames/)

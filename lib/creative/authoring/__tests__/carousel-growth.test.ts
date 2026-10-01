@@ -87,7 +87,8 @@ describe('Template layout "list" (Lista)', () => {
     expect(layoutUsesContentImage(getTemplateLayout(EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, 'info'))).toBe(false)
     const slots = layoutAssetSlots(EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE, layout!).map(({ slot }) => slot.id)
     // Completion V1 adds the optional callout on dark paper (paperDark) — still no new slot.
-    expect(slots).toEqual(['paperStrip', 'hero', 'tape', 'paperScrap', 'botanicalLeaf', 'botanical', 'archival', 'paperDark'])
+    // ATOMIC_VISUAL_ELEMENTS_V1 adds the brand logo artwork ('logo') as the one new slot.
+    expect(slots).toEqual(['paperStrip', 'hero', 'tape', 'paperScrap', 'botanicalLeaf', 'botanical', 'archival', 'paperDark', 'logo'])
   })
 
   it('content schema: 2..4 items, closed icon set, optional intro/caption', () => {
@@ -169,7 +170,7 @@ describe('Slide 3 render path', () => {
     expect(manifest.assets.hero).toMatchObject({ type: 'fixture' })
     const resolved = resolveStaticRenderManifest({ ...manifest, identity: { snapshot_ref: productContext.identitySnapshot.snapshot_ref, token_profile: 'default' } }, { identitySnapshot: productContext.identitySnapshot })
     expect(resolved.valid).toBe(true)
-    expect(deriveElementOrderRequest(state, DEFAULT_TEMPLATE_ID)).toEqual(['archival', 'botanicalLeaf', 'hero', 'tape1', 'botanical', 'callout', 'note', 'tape2', 'paperStrip', 'title'])
+    expect(deriveElementOrderRequest(state, DEFAULT_TEMPLATE_ID)).toEqual(['archival', 'botanicalLeaf', 'heroFrame', 'hero', 'tape1', 'botanical', 'callout', 'calloutText', 'note', 'noteText', 'tape2', 'paperStrip', 'title', 'intro', 'items', 'brandLogo'])
   })
 
   it('DocumentaryCard draws the List layout: title, bold runs, one row per item, caption, sequence', () => {

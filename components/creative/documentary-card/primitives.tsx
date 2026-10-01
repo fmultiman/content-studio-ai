@@ -185,6 +185,84 @@ export function AssetLayer({
   )
 }
 
+/**
+ * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — the text printed on a paper, as its OWN Element.
+ *
+ * A sibling of the paper's `AssetLayer` with the SAME box, rotation and transform channel: the text
+ * sits exactly where the paper's visible area is, follows the paper's position, and owns its own
+ * visibility and paint layer. Hiding the paper never hides the text (and vice-versa); replacing the
+ * paper's file never touches the text. The paper's transform (opacity included) is shared by design:
+ * it is the anchor the text follows, not a parent.
+ */
+export function AssetTextLayer({
+  metrics,
+  box,
+  rotation = 0,
+  transform,
+  zIndex,
+  hidden = false,
+  label,
+  children,
+}: {
+  metrics: AssetMetrics
+  box: LayerBox
+  rotation?: number
+  transform?: PrimitiveTransforms
+  zIndex?: number
+  hidden?: boolean
+  label?: string
+  children?: ReactNode
+}) {
+  if (hidden) return null
+  const height = box.height ?? (box.width * metrics.visible.height) / metrics.visible.width
+  return (
+    <div aria-label={label} data-element={label} style={{ height, left: box.left, position: 'absolute', top: box.top, width: box.width, zIndex, ...elementTransform(rotation, transform) }}>
+      <div style={{ inset: 0, position: 'absolute' }}>{children}</div>
+    </div>
+  )
+}
+
+/** Canvas-space box + base rotation of a content-image plate (the photo and its frame share it). */
+export type PlateGeometry = { left: number; top: number; width: number; height: number; padding: number; rotation: number }
+type PlateTuning = { offsetX: number; offsetY: number; rotation: number; scale: number } | undefined
+
+/**
+ * Both halves of a framed content image use THESE inline styles verbatim (height/width + padding stay
+ * on the element, so content-box and border-box renderers lay the frame and the photo out identically).
+ */
+function plateStyle(geometry: PlateGeometry, tuning: PlateTuning, zIndex: number): CSSProperties {
+  return {
+    height: geometry.height,
+    left: geometry.left,
+    padding: geometry.padding,
+    position: 'absolute',
+    top: geometry.top,
+    width: geometry.width,
+    zIndex,
+    transform: `translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${geometry.rotation + (tuning?.rotation ?? 0)}deg) scale(${tuning?.scale ?? 1})`,
+    transformOrigin: 'center',
+  }
+}
+
+/** The pale photo border + shadow of a content image: a procedural Element (no file), painted under the image. */
+export function PlateFrame({ geometry, tuning, zIndex, hidden, background, shadow }: { geometry: PlateGeometry; tuning: PlateTuning; zIndex: number; hidden: boolean; background: string; shadow: string }) {
+  if (hidden) return null
+  return <div aria-hidden="true" data-element="Moldura" style={{ ...plateStyle(geometry, tuning, zIndex), background, boxShadow: shadow }} />
+}
+
+/**
+ * The content image itself, in the plate's box. `frameHidden` only changes the GEOMETRY (the photo takes the
+ * whole plate instead of sitting inside the border) — the image is always painted, whatever the frame does.
+ */
+export function PlateImage({ geometry, tuning, zIndex, hidden, frameHidden, label, children }: { geometry: PlateGeometry; tuning: PlateTuning; zIndex: number; hidden: boolean; frameHidden: boolean; label: string; children: ReactNode }) {
+  if (hidden) return null
+  return (
+    <div aria-label={label} data-hero-frame={frameHidden ? 'off' : 'on'} style={plateStyle({ ...geometry, padding: frameHidden ? 0 : geometry.padding }, tuning, zIndex)}>
+      <div style={{ height: '100%', overflow: 'hidden', position: 'relative', width: '100%' }}>{children}</div>
+    </div>
+  )
+}
+
 export function GrainOverlay({ color, style }: { color: string; style?: CSSProperties }) {
   return (
     <div
@@ -211,12 +289,18 @@ export function Sparkle({ color, size, style }: { color: string; size: number; s
   )
 }
 
+/**
+ * The brand signature: logo artwork + (optionally) the brand name. STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1
+ * made them two Elements: a caller paints ONE part by passing `show`, and the other part keeps its layout
+ * space (`visibility: hidden`), so the visible part stays exactly where the whole signature put it.
+ */
 export function BrandMark({
   asset,
   tokens,
   palette,
   label,
   logoSize = 56,
+  show = 'both',
   style,
 }: {
   asset?: ResolvedAsset
@@ -225,27 +309,31 @@ export function BrandMark({
   /** Brand label beside the logo; absent renders the logo alone. */
   label?: string
   logoSize?: number
+  show?: 'both' | 'logo' | 'name'
   style?: CSSProperties
 }) {
+  const logoVisibility: CSSProperties = show === 'name' ? { visibility: 'hidden' } : {}
+  const nameVisibility: CSSProperties = show === 'logo' ? { visibility: 'hidden' } : {}
   return (
     <div style={{ alignItems: 'center', display: 'flex', gap: logoSize * 0.28, ...style }}>
       <AssetSurface
-        asset={asset}
+        asset={show === 'name' ? undefined : asset}
         label="Project brand mark"
         style={{
-          backgroundColor: asset ? undefined : palette.accent,
+          backgroundColor: asset && show !== 'name' ? undefined : palette.accent,
           border: `2px solid ${palette.accent}`,
           borderRadius: '50%',
           flexShrink: 0,
           height: logoSize,
           overflow: 'hidden',
           width: logoSize,
+          ...logoVisibility,
         }}
       />
       {label ? (
         <>
-          <div aria-hidden="true" style={{ alignSelf: 'stretch', background: palette.accent, opacity: .7, width: 2 }} />
-          <div style={{ color: palette.foreground, fontFamily: tokens.typography.display.family, fontSize: logoSize * 0.22, fontWeight: tokens.typography.display.weight, letterSpacing: '.08em', lineHeight: 1.22, maxWidth: logoSize * 2.1, textTransform: 'uppercase' }}>
+          <div aria-hidden="true" style={{ alignSelf: 'stretch', background: palette.accent, opacity: .7, width: 2, ...nameVisibility }} />
+          <div style={{ ...nameVisibility, color: palette.foreground, fontFamily: tokens.typography.display.family, fontSize: logoSize * 0.22, fontWeight: tokens.typography.display.weight, letterSpacing: '.08em', lineHeight: 1.22, maxWidth: logoSize * 2.1, textTransform: 'uppercase' }}>
             {label}
           </div>
         </>

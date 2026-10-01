@@ -128,6 +128,12 @@ export async function resolveStaticRuntimeInput(input: {
       if (hero && hero.ref === frozen.libraryFileId) {
         resolvedInput = { ...resolvedInput, resolvedAssets: { ...resolvedInput.resolvedAssets, hero: { ...hero, ...asset, fit: hero.fit ?? 'cover' } } }
       }
+    } else if (slot === 'logo') {
+      // STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — brand logo artwork: same contract as the hero (bound at enqueue, URL presigned here).
+      const logo = resolvedInput.resolvedAssets.logo
+      if (logo && logo.ref === frozen.libraryFileId) {
+        resolvedInput = { ...resolvedInput, resolvedAssets: { ...resolvedInput.resolvedAssets, logo: { ...logo, ...asset, fit: logo.fit ?? 'contain' } } }
+      }
     } else {
       // Template material replaced by a Project image of unknown alpha bounds.
       primitiveMaterials[slot as AssetSlotId] = { ...asset, fit: 'contain' }

@@ -38,7 +38,7 @@ import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/proje
 import { listPrimitivesForProject, PORTAL_PROJECT_REF, selectPrimitiveAssetRef } from '@/lib/creative/primitives/discovery'
 import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
-import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage } from '@/lib/creative/templates/template-definitions'
+import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage, layoutUsesLogo } from '@/lib/creative/templates/template-definitions'
 import { normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
 import type { FrozenAssetOverrides, StaticRenderExecutionSnapshot } from '@/lib/render-execution/static-snapshot'
 import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
@@ -296,9 +296,13 @@ export async function POST(request: Request) {
 
     // A content-image override binds only on layouts that draw one (Cover, Lista).
     const heroOverride = assetOverrides.hero
-    const manifestAssets = heroOverride && layoutUsesContentImage(layout)
-      ? { ...input.manifest.assets, hero: { type: 'library_file' as const, ref: heroOverride.libraryFileId, fit: 'cover' as const } }
-      : input.manifest.assets
+    // STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1: the brand logo artwork binds the same way, only on layouts that draw one.
+    const logoOverride = assetOverrides.logo
+    const manifestAssets = {
+      ...input.manifest.assets,
+      ...(heroOverride && layoutUsesContentImage(layout) ? { hero: { type: 'library_file' as const, ref: heroOverride.libraryFileId, fit: 'cover' as const } } : {}),
+      ...(logoOverride && layoutUsesLogo(layout) ? { logo: { type: 'library_file' as const, ref: logoOverride.libraryFileId, fit: 'contain' as const } } : {}),
+    }
 
     const manifest = {
       ...input.manifest,

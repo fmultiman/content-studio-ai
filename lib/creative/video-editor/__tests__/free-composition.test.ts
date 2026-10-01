@@ -318,6 +318,7 @@ describe('Sequence, timing and root regressions', () => {
     const quote = snapshot(MIXED).segments.find((segment) => segment.id === 'scene:s3')
     expect(quote?.kind === 'template' ? quote.payload.element_timing : null).toEqual([
       { element_id: 'quote', start_frame: 15, duration_frames: 60 },
+      { element_id: 'quoteText', start_frame: 15, duration_frames: 60 },
       { element_id: 'tape1', start_frame: 15, duration_frames: 60 },
     ])
   })

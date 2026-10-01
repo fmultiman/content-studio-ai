@@ -24,7 +24,7 @@ const heroTuningSchema = z.object({
   offsetY: z.number().finite().min(-120).max(120),
   rotation: z.number().finite().min(-4).max(4),
   scale: z.number().finite().min(0.9).max(1.15),
-  // COVER_ELEMENT_COMPLETENESS_V1 — Hero frame/backing; absent = shown (legacy look).
+  // LEGACY Hero frame toggle: accepted from older clients; the renderer reads it as a hidden 'heroFrame'.
   frame: z.boolean().optional(),
 }).strict()
 
