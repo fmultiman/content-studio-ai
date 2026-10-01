@@ -143,12 +143,7 @@ export function FreeElementsOverlay({ left, top, width, height, elements, editab
     <div
       ref={rootRef}
       className="absolute"
-      style={{ left, top, width, height, zIndex: 5, cursor: 'default' }}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return
-        event.stopPropagation() // Select tool: the stage never pans
-        if (editable) onSelect(null)
-      }}
+      style={{ left, top, width, height, zIndex: 5, pointerEvents: 'none' }}
       data-testid="free-overlay"
       data-scene-id={hostId}
     >
@@ -159,7 +154,7 @@ export function FreeElementsOverlay({ left, top, width, height, elements, editab
           <div
             key={element.id}
             className={selected ? 'absolute outline outline-2 outline-sky-500' : 'absolute hover:outline hover:outline-1 hover:outline-sky-400/80'}
-            style={{ left: pct(element.box.x), top: pct(element.box.y), width: pct(element.box.width), height: pct(element.box.height), zIndex: order + 1, cursor: 'move', touchAction: 'none' }}
+            style={{ left: pct(element.box.x), top: pct(element.box.y), width: pct(element.box.width), height: pct(element.box.height), zIndex: order + 1, cursor: 'move', touchAction: 'none', pointerEvents: 'auto' }}
             onPointerDown={(event) => begin(event, element, null)}
             onPointerMove={move}
             onPointerUp={end}

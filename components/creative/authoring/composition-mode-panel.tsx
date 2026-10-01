@@ -51,14 +51,17 @@ export function CompositionModePanel({ mode, templates, currentTemplateId, scope
 
   return (
     <div className="space-y-3" data-testid="composition-mode" data-mode={mode}>
-      <div className="space-y-1 rounded-md border border-border/60 p-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Composição atual</p>
-        <p className="text-sm font-medium" data-testid="composition-mode-state">{mode === 'free' ? 'Livre · nenhum template aplicado' : `Template · ${current?.name ?? 'Template'}`}</p>
+      <div className="space-y-2 rounded-md border border-border/60 p-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo</p>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium" data-testid="composition-mode-state">{mode === 'free' ? 'Composição livre' : 'Template'}</span>
+          {mode === 'free' ? null : (
+            <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-[11px]" onClick={() => setPending({ kind: 'free' })} data-testid="composition-mode-free">Usar composição livre</Button>
+          )}
+        </div>
         {mode === 'free' ? (
-          <p className="text-[11px] text-muted-foreground">Você posiciona textos e imagens. Cores e fontes seguem os papéis do estilo do projeto (hoje, o padrão do Studio).</p>
-        ) : (
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => setPending({ kind: 'free' })} data-testid="composition-mode-free">Usar composição livre…</Button>
-        )}
+          <p className="text-[11px] text-muted-foreground">Elementos adicionados compõem diretamente esta lâmina.</p>
+        ) : null}
       </div>
       {mode === 'free' ? (
         <div className="space-y-1.5" data-testid="composition-mode-templates">

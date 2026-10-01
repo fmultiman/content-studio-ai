@@ -20,7 +20,7 @@ import { TemplateElementsTab } from '@/components/creative/authoring/template-el
 import { resolveLayoutSections } from '@/lib/creative/templates/template-anatomy'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { LAYOUT_CONTENT_FIELDS, STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
-import { AssetSlotCard, StyleSourcePanel, TemplateReference } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard, StyleSourcePanel } from '@/components/creative/authoring/inspector-panels'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
@@ -69,6 +69,10 @@ const SLOT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/g
 type ContextResponse = { project: Project; production: Production | null; editorialContent: EditorialContent; channelPiece: ChannelPiece; target: StaticAuthoringTarget; projectIdentity: ProjectIdentity; primitiveProjectRef: string | null; primitives: PrimitiveListItem[] }
 const RENDER_POLL_INTERVAL_MS = 2000
 type StaticAuthoringStateResponse = { state: { schemaVersion: string; channelPieceId: string; composition?: StaticCompositionMode; templateId?: string | null; slides: PersistedStaticSlide[] } | null }
+export type ActiveElementTarget =
+  | { kind: 'template-element'; elementId: string }
+  | { kind: 'free-element'; elementId: string }
+
 type AuthoringSlide = { id: string; order: number; state: AuthoringState }
 
 /** Instagram's carousel ceiling — "Adicionar slide" stops there. */
@@ -150,7 +154,7 @@ export default function StaticAuthoringProductPage() {
   const [templateFallback, setTemplateFallback] = useState(false)
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0)
   // Camadas accordion: the single expanded element. Editor UI state only — never persisted.
-  const [openElementId, setOpenElementId] = useState<string | null>(null)
+  const [selectedTarget, setSelectedTarget] = useState<ActiveElementTarget | null>(null)
   // Project image LibraryFiles (signed display URLs) for slot thumbnails, previews and "Trocar".
   const [projectImages, setProjectImages] = useState<ReadonlyMap<string, SlotLibraryFile>>(new Map())
   const [assetPickerSlot, setAssetPickerSlot] = useState<AuthoringAssetSlotId | null>(null)
@@ -187,6 +191,8 @@ export default function StaticAuthoringProductPage() {
   // VIEWPORT (Static Detail Polish V1; shared with the Video Live Player since Video Static Parity V1):
   // the editor's camera only — never authoring state, never dirty.
   const { attach: attachPreviewViewport, ...viewport } = usePreviewViewport({ surfaceWidth: context?.target.canvas.width ?? 1080, surfaceHeight: context?.target.canvas.height ?? 1350, floating })
+
+  const LAYOUT_DISPLAY_LABELS: Record<string, string> = { cover: 'Capa', info: 'Informação', list: 'Lista', grid: 'Grade', map: 'Mapa', network: 'Rede', quote: 'Citação', closing: 'Encerramento' }
 
   const isCarousel = context?.channelPiece.format === 'carousel'
   // The live authored units of the active mode (a collection only for carousel).
@@ -406,7 +412,7 @@ export default function StaticAuthoringProductPage() {
     setFreeSlides(null)
     setMode('template')
     setCurrentSlideIndex(0)
-    setOpenElementId(null)
+    setSelectedTarget(null)
   }
 
   /** Explicit free entry: REPLACES the Template composition with ONE blank free unit (no conversion). */
@@ -417,7 +423,7 @@ export default function StaticAuthoringProductPage() {
     setSlides(null)
     setMode('free')
     setCurrentSlideIndex(0)
-    setOpenElementId(null)
+    setSelectedTarget(null)
   }
 
   function switchSlide(index: number) {
@@ -425,7 +431,7 @@ export default function StaticAuthoringProductPage() {
     setCurrentSlideIndex(index)
     // Free element ids are slide-local: a selection never survives into another slide.
     // (Template Camadas keep their disclosure: element ids are shared by slides of the same layout.)
-    if (mode === 'free') setOpenElementId(null)
+    setSelectedTarget(null)
   }
 
   const dispatch = (action: AuthoringAction) => setSlides((current) => current
@@ -437,7 +443,7 @@ export default function StaticAuthoringProductPage() {
     const customIds = new Set((state?.elements ?? []).map((element) => element.id))
     dispatch({ type: 'SET_VARIANT', variant: layoutId as AuthoringState['variant'], templateId: template.id })
     // A Template element disclosure of the old Layout is closed; a selected Custom Element is kept.
-    setOpenElementId((current) => (current && customIds.has(current) ? current : null))
+    setSelectedTarget((current) => (current?.kind === 'free-element' && customIds.has(current.elementId) ? current : null))
   }
   /** Confirm only when meaningful Layout-owned authored work would be discarded. */
   function requestLayoutSwitch(layoutId: string) {
@@ -504,7 +510,7 @@ export default function StaticAuthoringProductPage() {
     const [id] = freshSlideIds(1)
     setFreeSlides([...freeSlides, createFreeStaticSlide(id, nextSlideOrder(freeSlides))])
     setCurrentSlideIndex(freeSlides.length)
-    setOpenElementId(null)
+    setSelectedTarget(null)
   }
 
   /** Appends a Template-initialized slide (never a clone) and selects it. Unsaved until Salvar/autosave. */
@@ -522,7 +528,7 @@ export default function StaticAuthoringProductPage() {
     const createdState = persistedSlideToAuthoringState(created, buildProductContext(context), canvasKind(context), templateId)
     setSlides([...slides, { id: created.id, order: created.order, state: createdState }])
     setCurrentSlideIndex(slides.length)
-    setOpenElementId(null)
+    setSelectedTarget(null)
     setAddSlideOpen(false)
   }
 
@@ -539,7 +545,7 @@ export default function StaticAuthoringProductPage() {
       const result = removeSlideFromCollection(freeSlides, currentSlideIndex)
       setFreeSlides(result.slides)
       setCurrentSlideIndex(result.selectedIndex)
-      setOpenElementId(null)
+      setSelectedTarget(null)
       setRemoveDialogOpen(false)
       return
     }
@@ -547,7 +553,7 @@ export default function StaticAuthoringProductPage() {
     const result = removeSlideFromCollection(slides, currentSlideIndex)
     setSlides(result.slides)
     setCurrentSlideIndex(result.selectedIndex)
-    setOpenElementId(null)
+    setSelectedTarget(null)
     setRemoveDialogOpen(false)
   }
 
@@ -733,6 +739,28 @@ export default function StaticAuthoringProductPage() {
   const canvasW = context?.target.canvas.width ?? 1080
   const canvasH = context?.target.canvas.height ?? 1350
 
+  
+  // ELEMENTOS ↔ CANVAS PARITY (Scrolling)
+  useEffect(() => {
+    if (activeTab === 'element' && selectedTarget?.kind === 'template-element') {
+      const el = document.querySelector(`[data-layer-id="${selectedTarget.elementId}"]`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [activeTab, selectedTarget])
+
+  // CONTEÚDO PARITY (Focus)
+  useEffect(() => {
+    if (activeTab === 'content' && selectedTarget?.kind === 'template-element') {
+      const fieldIdMap: Record<string, string> = { kicker: 'eyebrow', intro: 'subtitle', source: 'source_line', noteText: 'detail_note', title: 'title', calloutText: 'callout', ideasText: 'ideas', items: 'items', tiles: 'tiles', bullets: 'bullets', inviteText: 'contact', tagline: 'tagline' }
+      const fieldId = fieldIdMap[selectedTarget.elementId] || selectedTarget.elementId
+      const el = document.getElementById(`content-${fieldId}`) || document.querySelector(`[id^="content-${fieldId}-"]`) as HTMLElement | null
+      if (el) {
+        el.focus()
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  }, [activeTab, selectedTarget])
+
   if (error && !context) return <DashboardPage><DashboardPageContent width="4xl"><Card><CardContent className="p-6"><p className="text-sm text-muted-foreground">{error}</p><Button className="mt-4" variant="outline" onClick={() => router.back()}>Voltar</Button></CardContent></Card></DashboardPageContent></DashboardPage>
   if (!context || !units || !currentUnit) return <DashboardPage><DashboardPageContent width="4xl"><div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></DashboardPageContent></DashboardPage>
 
@@ -750,7 +778,7 @@ export default function StaticAuthoringProductPage() {
   const slideLabel = `Slide ${currentSlideIndex + 1}`
   const currentHasSavedOutput = renderJobs[currentUnit.id]?.save === 'saved'
   // An expanded element the active layout does not have (layout switch) is simply closed.
-  const openElement = openElementId && elements.some((element) => element.key === openElementId) ? openElementId : null
+  const openElement = selectedTarget?.kind === 'template-element' && elements.some((element) => element.key === selectedTarget.elementId) ? selectedTarget.elementId : null
   const elementLabels = Object.fromEntries(elements.map((element) => [element.key, element.label]))
   const stack = state ? resolveElementStack(template.id, state.variant, state.elementOrder) : { order: [] as string[] }
   const stackIsDefault = layout ? isDefaultElementOrder(layout, stack.order) : true
@@ -803,19 +831,24 @@ export default function StaticAuthoringProductPage() {
         ) : null)}
       </TabsContent>
       <TabsContent value="style" className="pt-3">
-        <StyleSourcePanel tokens={freeTokens ?? undefined} free />
+        <StyleSourcePanel 
+          tokens={freeTokens ?? undefined} 
+          free 
+          contextHeadline={selectedTarget?.kind === 'free-element' ? 'ESTILOS · ELEMENTO SELECIONADO' : undefined}
+          contextHint={selectedTarget?.kind === 'free-element' ? 'Estilos locais não estão habilitados. Elementos livres usam as propriedades da Identidade diretamente.' : undefined} 
+        />
       </TabsContent>
       <TabsContent value="element" className="pt-3">
         <FreeSceneElements
           scene={currentFreeSlide}
           fileNames={new Map([...projectImages.values()].map((file) => [file.id, file.name]))}
-          openId={openElementId}
-          onOpen={setOpenElementId}
+          openId={selectedTarget?.kind === 'free-element' ? selectedTarget.elementId : null}
+          onOpen={(id) => setSelectedTarget(id ? { kind: 'free-element', elementId: id } : null)}
           onEdit={editCurrentFree}
-          onAddText={() => { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeTextElement(slide, id)); setOpenElementId(id) }}
+          onAddText={() => { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeTextElement(slide, id)); setSelectedTarget({ kind: 'free-element', elementId: id }) }}
           onAddImage={() => setFreeImagePicker({ mode: 'add' })}
           onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
-          onRemoved={(elementId) => setOpenElementId((current) => (current === elementId ? null : current))}
+          onRemoved={(id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current))}
           wording={freeWording}
         />
       </TabsContent>
@@ -837,15 +870,26 @@ export default function StaticAuthoringProductPage() {
         {/* CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: the Template is named by the mode panel above and changed ONLY through it (confirmed replacement). */}
         {templateFallback ? <p className="text-xs text-destructive" role="alert">Template salvo não reconhecido; usando {template.name}.</p> : null}
         <div className="space-y-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-layout-label">Estrutura</span>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-layout-label">{template.layouts.map((option) => { const checked = state.variant === option.id; return <Button key={option.id} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked) requestLayoutSwitch(option.id) }} data-testid="static-layout-option" data-value={option.id}>{option.label}</Button> })}</div>
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-layout-label">Layout</span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-layout-label">{template.layouts.map((option) => { const checked = state.variant === option.id; return <Button key={option.id} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked) requestLayoutSwitch(option.id) }} data-testid="static-layout-option" data-value={option.id}>{LAYOUT_DISPLAY_LABELS[option.id] ?? option.label}</Button> })}</div>
         </div>
         <div className="space-y-1">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground" id="static-appearance-label">Aparência</span>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="static-appearance-label">{(layout?.supportedAppearances ?? []).map((appearance) => { const checked = state.appearance === appearance; return <Button key={appearance} size="sm" variant={checked ? 'default' : 'outline'} role="radio" aria-checked={checked} onClick={() => { if (!checked && isAppearanceSupported(template, state.variant, appearance)) dispatch({ type: 'SET_APPEARANCE', appearance }) }} data-testid="static-appearance-option" data-value={appearance}>{appearance === 'light' ? 'Light' : 'Dark'}</Button> })}</div>
         </div>
         <p className="text-xs text-muted-foreground">{template.description}</p>
-        <TemplateReference template={template} layout={layout} />
+        
+        <div className="space-y-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Anatomia</span>
+          <div className="rounded-md border border-border/60 p-2 text-[11px] text-muted-foreground shadow-sm bg-muted/20">
+            <ul className="space-y-1">
+              {anatomySections.map(section => (
+                <li key={section.label}>▾ {section.label}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
         </CompositionModePanel>
       </TabsContent>
       <TabsContent value="content" className="space-y-3 pt-3">
@@ -863,13 +907,18 @@ export default function StaticAuthoringProductPage() {
             slot={slot}
             resource={resolveSlotResource(slot, state, projectImages, context.primitives)}
             usedBy={users.map((element) => element.label)}
+            highlighted={selectedTarget?.kind === 'template-element' && users.some((u) => u.id === selectedTarget.elementId)}
             onReplace={() => setAssetPickerSlot(slot.id)}
             onUseDefault={() => dispatch({ type: 'USE_TEMPLATE_DEFAULT_ASSET', slot: slot.id })}
           />
         ))}
       </TabsContent>
       <TabsContent value="style" className="pt-3">
-        <StyleSourcePanel tokens={state.productContext?.identitySnapshot} />
+        <StyleSourcePanel 
+          tokens={state.productContext?.identitySnapshot} 
+          contextHeadline={selectedTarget?.kind === 'template-element' ? `ESTILOS · ${elements.find(e => e.key === selectedTarget.elementId)?.label.toUpperCase()}` : undefined}
+          contextHint={selectedTarget?.kind === 'template-element' ? 'Estilos locais não estão habilitados. Este elemento segue a Identidade e a Aparência do Template.' : undefined} 
+        />
       </TabsContent>
       <TabsContent value="element" className="pt-3">
         {layout ? (
@@ -881,7 +930,7 @@ export default function StaticAuthoringProductPage() {
             openId={openElement}
             isDefaultOrder={stackIsDefault}
             hidden={new Set(state.hiddenElements ?? [])}
-            onToggle={(id) => setOpenElementId((current) => (current === id ? null : id))}
+            onToggle={(id) => setSelectedTarget((current) => (current?.kind === 'template-element' && current.elementId === id ? null : { kind: 'template-element', elementId: id }))}
             onToggleVisibility={(id) => dispatch({ type: 'TOGGLE_ELEMENT_VISIBILITY', id })}
             onReorder={(order) => dispatch({ type: 'SET_ELEMENT_ORDER', order })}
             onRestoreDefault={() => dispatch({ type: 'RESET_ELEMENT_ORDER' })}
@@ -889,13 +938,13 @@ export default function StaticAuthoringProductPage() {
             custom={{
               scene: { id: 'custom', composition: { kind: 'free', elements: state.elements ?? [] } },
               fileNames: new Map([...projectImages.values()].map((file) => [file.id, file.name])),
-              openId: openElementId,
-              onOpen: setOpenElementId,
+              openId: selectedTarget?.kind === 'free-element' ? selectedTarget.elementId : null,
+              onOpen: (id) => setSelectedTarget(id ? { kind: 'free-element', elementId: id } : null),
               onEdit: editCurrentCustomElements,
-              onAddText: () => { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeTextElement(host, id)); setOpenElementId(id) },
+              onAddText: () => { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeTextElement(host, id)); setSelectedTarget({ kind: 'free-element', elementId: id }) },
               onAddImage: () => setFreeImagePicker({ mode: 'add' }),
               onReplaceImage: (elementId) => setFreeImagePicker({ mode: 'replace', elementId }),
-              onRemoved: (elementId) => setOpenElementId((current) => (current === elementId ? null : current)),
+              onRemoved: (id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current)),
               wording: freeWording,
             }}
           />
@@ -913,20 +962,38 @@ export default function StaticAuthoringProductPage() {
     : mode === 'template' && state?.elements && state.elements.length > 0 && freeTokens
       ? deriveFreeSegment({ kind: 'free', elements: state.elements })
       : null
+
+  const handleCanvasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    const dataElement = target.closest('[data-element]')
+    if (dataElement) {
+      const label = dataElement.getAttribute('data-element')
+      const match = elements.find(el => el.label === label)
+      if (match) {
+        setSelectedTarget({ kind: 'template-element', elementId: match.key })
+        return
+      }
+    }
+    // "empty Canvas click clears Element selection"
+    setSelectedTarget(null)
+  }
+
   const canvas = (
+
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
       <div
         ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}
         style={{ cursor: customSelecting ? 'default' : viewport.panning ? 'grabbing' : 'grab', touchAction: floating || customSelecting ? 'none' : 'pan-y' }}
-        {...(customSelecting ? {} : viewport.panHandlers)}
+        {...(customSelecting ? { onPointerDown: handleCanvasPointerDown } : viewport.panHandlers)}
         data-interaction-mode={interactionMode}
         aria-label="Canvas (arraste para mover a visualização)"
         data-testid="canvas-viewport"
         data-pan={`${Math.round(viewport.effectivePan.x)},${Math.round(viewport.effectivePan.y)}`}
       >
         <div className="absolute overflow-hidden" style={{ left: viewport.origin.left, top: viewport.origin.top, width: viewport.scaledWidth, height: viewport.scaledHeight }} data-testid="canvas-surface">
-          <div style={{ position: 'relative', width: canvasW, height: canvasH, transform: `scale(${viewport.scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}>
+          <div style={{ position: 'relative', width: canvasW, height: canvasH, transform: `scale(${viewport.scale})`, transformOrigin: 'top left', pointerEvents: customSelecting ? 'auto' : 'none' }}>
             {mode === 'template' && cardProps ? <DocumentaryCard {...cardProps} /> : null}
             {freeStage && freeTokens ? (
               <FreeStage
@@ -954,8 +1021,8 @@ export default function StaticAuthoringProductPage() {
             height={viewport.scaledHeight}
             elements={freeUnitElements.filter((element) => !element.hidden)}
             editable
-            selectedElementId={openElementId}
-            onSelect={(elementId) => { setOpenElementId(elementId); if (elementId) setActiveTab('element') }}
+            selectedElementId={selectedTarget?.kind === 'free-element' ? selectedTarget.elementId : null}
+            onSelect={(id) => { setSelectedTarget(id ? { kind: 'free-element', elementId: id } : null); if (id) setActiveTab('element') }}
             onBoxChange={(elementId, box) => mode === 'template' ? editCurrentCustomElements((host) => setFreeElementBox(host, elementId, box)) : editCurrentFree((slide) => setFreeElementBox(slide, elementId, box))}
             onInteractionStart={() => undefined}
             hostId={mode === 'template' ? 'custom' : currentFreeSlide?.id ?? 'free'}
@@ -1075,10 +1142,10 @@ export default function StaticAuthoringProductPage() {
         const picker = freeImagePicker
         if (mode === 'template') {
           if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
-          else { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id)); setOpenElementId(id) }
+          else { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
         } else {
           if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
-          else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setOpenElementId(id) }
+          else { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
         }
         setFreeImagePicker(null)
       }}
@@ -1094,7 +1161,7 @@ export default function StaticAuthoringProductPage() {
           <div className="space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Estrutura</span>
             <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Estrutura do novo slide">
-              {template.layouts.map((option) => <Button key={option.id} size="sm" variant={addLayoutId === option.id ? 'default' : 'outline'} role="radio" aria-checked={addLayoutId === option.id} onClick={() => { setAddLayoutId(option.id); setAddAppearance(option.defaultAppearance) }}>{option.label}</Button>)}
+              {template.layouts.map((option) => <Button key={option.id} size="sm" variant={addLayoutId === option.id ? 'default' : 'outline'} role="radio" aria-checked={addLayoutId === option.id} onClick={() => { setAddLayoutId(option.id); setAddAppearance(option.defaultAppearance) }}>{LAYOUT_DISPLAY_LABELS[option.id] ?? option.label}</Button>)}
             </div>
           </div>
           <div className="space-y-1.5">

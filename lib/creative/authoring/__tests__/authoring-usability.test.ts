@@ -78,7 +78,8 @@ describe('Template anatomy (read-only, registry-derived)', () => {
 
   it('the page renders the anatomy from the registry, with no second hardcoded structure', () => {
     // CREATIVE_EDITOR_TRUTHFUL_CONSTRAINTS_CLEANUP_V1: both anatomies render inside the collapsed reference disclosure.
-    expect(PAGE).toMatch(/<TemplateReference template=\{template\} layout=\{layout\} \/>/)
+    // replaced by lightweight inline anatomy rendering
+    expect(PAGE).toMatch(/anatomySections\.map/)
     const panels = read('components', 'creative', 'authoring', 'inspector-panels.tsx')
     expect(panels).toMatch(/<TemplateFamilyAnatomy template=\{template\} \/>/)
     expect(panels).toMatch(/<TemplateAnatomy template=\{template\} layout=\{layout\} \/>/)

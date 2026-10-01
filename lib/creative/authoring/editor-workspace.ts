@@ -81,7 +81,7 @@ export type InspectorSection = 'template' | 'content' | 'assets' | 'style' | 'el
 
 /** Deterministic full/compact labels; compact is used when the palette is narrow, never horizontal scroll. */
 export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: string; compactLabel: string }[] = [
-  { value: 'template', label: 'Template', compactLabel: 'Tpl.' },
+  { value: 'template', label: 'Composição', compactLabel: 'Comp.' },
   { value: 'content', label: 'Conteúdo', compactLabel: 'Cont.' },
   { value: 'assets', label: 'Assets', compactLabel: 'Assets' },
   { value: 'style', label: 'Estilo', compactLabel: 'Estilo' },

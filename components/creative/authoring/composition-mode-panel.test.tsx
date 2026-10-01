@@ -27,7 +27,7 @@ function setup(props: { mode: 'free' | 'template'; freeHasContent: boolean }) {
 describe('CompositionModePanel', () => {
   it('states FREE truthfully and lists registry Templates (no Blank entry)', () => {
     setup({ mode: 'free', freeHasContent: false })
-    expect(screen.getByTestId('composition-mode-state').textContent).toBe('Livre · nenhum template aplicado')
+    expect(screen.getByTestId('composition-mode-state').textContent).toBe('Composição livre')
     expect(screen.getAllByTestId('composition-mode-template').map((button) => button.getAttribute('data-template-id'))).toEqual(['editorial-documentary-collage-v1'])
     expect(screen.queryByText(/controles do template/)).toBeNull()
     expect(document.body.textContent).not.toMatch(/Em branco|Blank/)
@@ -55,7 +55,7 @@ describe('CompositionModePanel', () => {
 
   it('C. Template → free always asks (authored Template state would be lost)', () => {
     const { onChooseFree } = setup({ mode: 'template', freeHasContent: false })
-    expect(screen.getByTestId('composition-mode-state').textContent).toBe('Template · Editorial Documentary Collage')
+    expect(screen.getByTestId('composition-mode-state').textContent).toBe('Template')
     expect(screen.getByText('controles do template')).toBeTruthy()
     fireEvent.click(screen.getByTestId('composition-mode-free'))
     expect(screen.getByTestId('composition-mode-confirm').textContent).toMatch(/substituída por uma composição livre em branco/)
