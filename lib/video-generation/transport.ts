@@ -19,8 +19,8 @@ import {
   queryKlingMcpTask,
   submitKlingMcpVideo,
 } from '@/lib/provider-connections/kling-mcp-generation'
-import type { KlingMcpClientDependencies } from '@/lib/provider-connections/kling-mcp-client'
-import { ProviderAuthorizationRequiredError } from '@/lib/provider-connections/types'
+import { uploadKlingMcpSourceImage, type KlingMcpUploadDependencies, type KlingMcpUploadImage } from '@/lib/provider-connections/kling-mcp-upload'
+import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
 import type { VideoModelCapability, VideoTransport } from './capabilities'
 import type { NormalizedVideoRequest } from './request'
 
@@ -30,8 +30,13 @@ export interface VideoSubmitInput {
   prompt: string
   request: NormalizedVideoRequest
   model: VideoModelCapability
-  /** Externally fetchable, time-limited URL (image_to_video only). */
+  /** REST only: externally fetchable, time-limited URL (image_to_video only). */
   sourceImageUrl?: string
+  /**
+   * MCP only (image_to_video): the trusted, already-validated BYTES of the source image. Kling can never fetch our private
+   * storage, so the MCP transport uploads these through `file_upload` and sends the provider's own file URL instead.
+   */
+  sourceImage?: KlingMcpUploadImage
   /** REST only. */
   callbackUrl?: string
 }
@@ -130,7 +135,7 @@ export class KlingMcpTransport implements KlingVideoTransport {
 
   constructor(
     private readonly tokens: McpAccessTokens,
-    private readonly clientDeps: KlingMcpClientDependencies = {},
+    private readonly clientDeps: KlingMcpUploadDependencies = {},
   ) {}
 
   /** A rejected token never reached a generation tool, so retrying once with a refreshed token cannot double-submit. */
@@ -144,11 +149,21 @@ export class KlingMcpTransport implements KlingVideoTransport {
   }
 
   async submit(input: VideoSubmitInput): Promise<VideoSubmitResult> {
+    // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1 — spend order: the source is uploaded to the provider FIRST. Only a valid
+    // provider file URL lets the (paid) image_to_video be built and sent; any failure here throws before it exists.
+    // image_to_video never receives a Content Studio URL (presigned S3 / browser) or a data URL, and text_to_video
+    // never touches this path.
+    let sourceImageUrl: string | undefined
+    if (input.request.operation === 'image_to_video') {
+      if (!input.sourceImage) throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'image_to_video requires the trusted source image.')
+      const sourceImage = input.sourceImage
+      sourceImageUrl = (await this.withToken((token) => uploadKlingMcpSourceImage(token, sourceImage, this.clientDeps))).url
+    }
     const call = buildKlingMcpVideoCall({
       request: input.request,
       model: input.model,
       prompt: input.prompt,
-      sourceImageUrl: input.sourceImageUrl,
+      sourceImageUrl,
     })
     const { generationId } = await this.withToken((token) => submitKlingMcpVideo(token, call, this.clientDeps))
     return {

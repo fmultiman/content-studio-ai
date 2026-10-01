@@ -201,11 +201,25 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
     expect(filesContaining('StreamableHTTPClientTransport')).toEqual(['lib/provider-connections/kling-mcp-client.ts'])
   })
 
-  it('a tool is invoked from exactly two places: the read-only gate and the video-tool gate', () => {
+  it('a tool is invoked from exactly three places: the read-only gate, the video-tool gate and the single-purpose source-upload gate', () => {
     expect(codeFilesContaining(/\.callTool\(/)).toEqual([
       'lib/provider-connections/kling-mcp-client.ts',
       'lib/provider-connections/kling-mcp-generation.ts',
+      'lib/provider-connections/kling-mcp-upload.ts',
     ])
+  })
+
+  it('VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1: file_upload is internal plumbing — not a read-only tool, not a generation tool, never user-selectable', () => {
+    const mcp = codeOnly(sourceFiles.find((f) => f.path === 'lib/provider-connections/kling-mcp.ts')!.text)
+    expect(mcp).toMatch(/KLING_MCP_SOURCE_UPLOAD_TOOL = 'file_upload'/)
+    const videoTools = /KLING_MCP_VIDEO_TOOLS = \[([^\]]*)\]/.exec(mcp)![1]
+    const readOnlyTools = /KLING_MCP_READ_ONLY_TOOLS = \[([^\]]*)\]/.exec(mcp)![1]
+    expect(videoTools).not.toContain('file_upload')
+    expect(readOnlyTools).not.toContain('file_upload')
+    // the raw tool name is written only by the allow-list module and read by the single upload adapter through that constant
+    expect(codeFilesContaining(/['"]file_upload['"]/)).toEqual(['lib/provider-connections/kling-mcp.ts'])
+    // the UI and the client never learn of it: no capability flag, no toggle
+    expect(codeFilesContaining(/KLING_MCP_SOURCE_UPLOAD_TOOL/).filter((path) => path.startsWith('components/') || path.startsWith('app/(dashboard)'))).toEqual([])
   })
 
   it('generation tools are named only by the allow-lists and the single video client', () => {

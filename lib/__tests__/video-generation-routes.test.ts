@@ -13,7 +13,22 @@ import { whoAmIFixture } from './helpers/kling-who-am-i-fixture'
 // ---------------------------------------------------------------------------
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleSupabase: vi.fn() }))
-vi.mock('@/lib/storage/s3', () => ({ createPresignedReadUrl: vi.fn(async () => 'https://s3.example.test/signed-source.png?sig=1') }))
+vi.mock('@/lib/storage/s3', async () => {
+  // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1: MCP reads the source BYTES server-side (REST still presigns a URL).
+  const { pngBytes } = await import('./helpers/image-fixtures')
+  const png = pngBytes(1024, 1024, 4096)
+  return {
+    createPresignedReadUrl: vi.fn(async () => 'https://s3.example.test/signed-source.png?sig=1'),
+    headS3Object: vi.fn(async () => ({ size: png.byteLength, contentType: 'image/png' })),
+    readS3Object: vi.fn(async () => ({ bytes: png, contentType: 'image/png' })),
+  }
+})
+// The provider's upload endpoint: the multipart POST itself is unit-tested in pinned-provider-upload.test.ts.
+const PROVIDER_FILE_URL = 'https://provider-files.example.test/u/abc123.png'
+vi.mock('@/lib/security/pinned-provider-upload', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/security/pinned-provider-upload')>()),
+  postMultipartToProvider: vi.fn(async () => ({ status: 200, json: { url: 'https://provider-files.example.test/u/abc123.png' } })),
+}))
 vi.mock('@/lib/storage/video-downloader', () => ({ downloadAndStoreVideo: vi.fn() }))
 vi.mock('@/lib/provider-connections/token-store', () => ({
   getValidAccessToken: vi.fn(async () => 'MCP-ACCESS-TOKEN-SECRET'),
@@ -42,7 +57,9 @@ import * as server from '@/lib/supabase/server'
 import * as serviceRole from '@/lib/supabase/service-role'
 import * as mcpClient from '@/lib/provider-connections/kling-mcp-client'
 import { downloadAndStoreVideo } from '@/lib/storage/video-downloader'
-import { createPresignedReadUrl } from '@/lib/storage/s3'
+import { createPresignedReadUrl, headS3Object, readS3Object } from '@/lib/storage/s3'
+import { postMultipartToProvider } from '@/lib/security/pinned-provider-upload'
+import { pngBytes, toDataUrl } from './helpers/image-fixtures'
 
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111'
 const FOREIGN_ID = '22222222-2222-4222-8222-222222222222'
@@ -100,7 +117,13 @@ interface FakeMcp {
   connectError?: Error
 }
 
-function installFakeMcp(reply: FakeMcp['reply'] = () => ({ content: [{ type: 'text', text: JSON.stringify({ generationId: 'mcp-gen-1' }) }] })): FakeMcp {
+const UPLOAD_TICKET = { ticket: 'UPLOAD-TICKET-SECRET', upload_url: 'https://upload.example.test/put', expire_at: Math.floor(Date.now() / 1000) + 600 }
+const defaultMcpReply: FakeMcp['reply'] = (params) =>
+  params.name === 'file_upload'
+    ? { content: [{ type: 'text', text: JSON.stringify(UPLOAD_TICKET) }] }
+    : { content: [{ type: 'text', text: JSON.stringify({ generationId: 'mcp-gen-1' }) }] }
+
+function installFakeMcp(reply: FakeMcp['reply'] = defaultMcpReply): FakeMcp {
   const state: FakeMcp = { calls: [], tokens: [], reply }
   vi.mocked(mcpClient.createKlingMcpClient).mockImplementation(((token: string) => {
     state.tokens.push(token)
@@ -381,7 +404,7 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
     expect(config.multi_shot).toBeUndefined()
   })
 
-  it('MCP image_to_video: reuses the owned-source + presigned URL mechanism and sends it as first_image', async () => {
+  it('MCP image_to_video: uploads the trusted source bytes FIRST and sends the PROVIDER file URL as first_image (never our presigned URL)', async () => {
     const db = makeDb({ connections: [connectionRow()] })
     signIn(db)
     const mcp = installFakeMcp()
@@ -389,24 +412,31 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
     const response = await post({ ...base, mode: 'image_to_video', sourceImageId: 'img-1', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0' })
 
     expect(response.status).toBe(200)
-    expect(mcp.calls[0].name).toBe('image_to_video')
-    expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: 'https://s3.example.test/signed-source.png?sig=1' }])
-    expect(mcp.calls[0].arguments.arguments.map((a: any) => a.name)).not.toContain('aspect_ratio')
+    expect(mcp.calls.map((call) => call.name)).toEqual(['file_upload', 'image_to_video'])
+    expect(mcp.calls[0].arguments).toEqual({ contentType: 'image/png', filename: expect.stringMatching(/\.png$/), size: 4096 })
+    expect(mcp.calls[1].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: PROVIDER_FILE_URL }])
+    expect(JSON.stringify(mcp.calls)).not.toMatch(/s3\.example\.test|signed-source|data:image|UPLOAD-TICKET-SECRET/)
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
+    expect(postMultipartToProvider).toHaveBeenCalledTimes(1)
+    expect(mcp.calls[1].arguments.arguments.map((a: any) => a.name)).not.toContain('aspect_ratio')
     expect(db.tables.video_generations[0]).toMatchObject({ mode: 'image_to_video', source_image_id: 'img-1', source_library_file_id: null, transport: 'mcp' })
   })
 
   it.each([
     ['an image with no url at all', { id: 'img-empty', user_id: 'user-a', project_id: 'proj-1', image_url: '', storage_path: null }],
-  ])('%s is refused (422) BEFORE any record or provider call', async (_name, image) => {
-    const db = makeDb({ connections: [connectionRow()], images: [image] })
+  ])('%s is refused (422) BEFORE any record or provider call (MCP: SOURCE_IMAGE_UNAVAILABLE, REST: SOURCE_MEDIA_UNAVAILABLE)', async (_name, image) => {
+    const db = makeDb({ connections: [connectionRow()], klingKey: 'user-rest-key', images: [image] })
     signIn(db)
     const mcp = installFakeMcp()
     vi.mocked(createPresignedReadUrl).mockResolvedValueOnce(null as any)
 
     const response = await post({ ...base, mode: 'image_to_video', sourceImageId: 'img-empty', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0' })
+    const viaRest = await post({ ...base, mode: 'image_to_video', sourceImageId: 'img-empty', connectionRef: 'kling:api' })
 
+    expect(viaRest.status).toBe(422)
+    expect((await viaRest.json()).code).toBe('SOURCE_MEDIA_UNAVAILABLE')
     expect(response.status).toBe(422)
-    expect((await response.json()).code).toBe('SOURCE_MEDIA_UNAVAILABLE')
+    expect((await response.json()).code).toBe('SOURCE_IMAGE_UNAVAILABLE')
     expect(mcp.calls).toEqual([])
     expect(restCalls).toEqual([])
     expect(db.tables.video_generations).toHaveLength(0)
@@ -492,7 +522,7 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
   const mcpI2v = (extra: Record<string, unknown> = {}) => ({ ...base, mode: 'image_to_video', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0', ...extra })
   const SIGNED = 'https://s3.example.test/signed-source.png?sig=1'
 
-  it('MCP: a valid image LibraryFile is normalized to the provider first_image URL; the row records only source_library_file_id', async () => {
+  it('MCP: a valid image LibraryFile is uploaded as bytes and the PROVIDER URL is first_image; the row records only source_library_file_id', async () => {
     const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
     signIn(db)
     const mcp = installFakeMcp()
@@ -500,8 +530,9 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     const response = await post(mcpI2v({ sourceLibraryFileId: 'lib-1' }))
 
     expect(response.status).toBe(200)
-    expect(mcp.calls[0].name).toBe('image_to_video')
-    expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: SIGNED }])
+    expect(mcp.calls.map((call) => call.name)).toEqual(['file_upload', 'image_to_video'])
+    expect(mcp.calls[1].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: PROVIDER_FILE_URL }])
+    expect(JSON.stringify(mcp.calls)).not.toContain(SIGNED)
     // The LibraryFile id itself never reaches the provider.
     expect(JSON.stringify(mcp.calls)).not.toContain('lib-1')
     expect(db.tables.video_generations[0]).toMatchObject({ mode: 'image_to_video', source_image_id: null, source_library_file_id: 'lib-1', transport: 'mcp' })
@@ -528,10 +559,13 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     installFakeMcp()
     vi.mocked(createPresignedReadUrl).mockClear()
 
+    vi.mocked(readS3Object).mockClear()
     const response = await post(mcpI2v({ sourceLibraryFileId: 'lib-1', storage_path: 'users/victim/secret.png', sourceUrl: 'https://evil.example.test/x.png', publicUrl: 'https://evil.example.test/y.png' }))
 
     expect(response.status).toBe(200)
-    expect(vi.mocked(createPresignedReadUrl).mock.calls.map((call) => call[0])).toEqual([`users/user-a/library/${LIB_BLOB}/capa.png`])
+    // MCP reads the object named by the STORED row, never by the client.
+    expect(vi.mocked(readS3Object).mock.calls.map((call) => call[0])).toEqual([`users/user-a/library/${LIB_BLOB}/capa.png`])
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
     expect(JSON.stringify(db.tables.video_generations[0])).not.toContain('evil.example.test')
   })
 
@@ -614,18 +648,39 @@ describe('POST /api/video-generations — image_to_video from a LibraryFile (Arq
     expect(db.tables.video_generations).toHaveLength(0)
   })
 
-  it('a legacy image with NO stored key (provider URL representation) keeps its existing behavior', async () => {
+  it('a legacy image with NO stored key (provider URL representation) keeps its existing behavior on REST; MCP fails closed (no arbitrary fetch)', async () => {
     const db = makeDb({
       connections: [connectionRow()],
+      klingKey: 'user-rest-key',
       images: [{ id: 'img-legacy', user_id: 'user-a', project_id: 'proj-1', image_url: 'https://img.example.test/legacy.png', storage_path: null }],
     })
     signIn(db)
     const mcp = installFakeMcp()
     vi.mocked(createPresignedReadUrl).mockClear()
-    const response = await post(mcpI2v({ sourceImageId: 'img-legacy' }))
-    expect(response.status).toBe(200)
+
+    const viaRest = await post({ ...base, mode: 'image_to_video', sourceImageId: 'img-legacy', connectionRef: 'kling:api' })
+    expect(viaRest.status).toBe(200)
+    expect(restCalls[0].args[1]).toBe('https://img.example.test/legacy.png')
     expect(createPresignedReadUrl).not.toHaveBeenCalled()
-    expect(mcp.calls[0].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: 'https://img.example.test/legacy.png' }])
+
+    const viaMcp = await post(mcpI2v({ sourceImageId: 'img-legacy' }))
+    expect(viaMcp.status).toBe(422)
+    expect((await viaMcp.json()).code).toBe('SOURCE_IMAGE_UNAVAILABLE')
+    expect(mcp.calls).toEqual([])
+    expect(postMultipartToProvider).not.toHaveBeenCalled()
+  })
+
+  it('a legacy image whose image_url is a bounded PNG data URL is normalized to bytes and uploaded (the data URL itself is never sent)', async () => {
+    const dataUrl = toDataUrl(pngBytes(800, 600))
+    const db = makeDb({ connections: [connectionRow()], images: [{ id: 'img-data', user_id: 'user-a', project_id: 'proj-1', image_url: dataUrl, storage_path: null }] })
+    signIn(db)
+    const mcp = installFakeMcp()
+    const response = await post(mcpI2v({ sourceImageId: 'img-data' }))
+    expect(response.status).toBe(200)
+    expect(mcp.calls.map((call) => call.name)).toEqual(['file_upload', 'image_to_video'])
+    expect(mcp.calls[0].arguments).toMatchObject({ contentType: 'image/png' })
+    expect(JSON.stringify(mcp.calls)).not.toContain('data:image')
+    expect(mcp.calls[1].arguments.inputs[0].url).toBe(PROVIDER_FILE_URL)
   })
 
   it('a generated image of another user is refused (403) and never reaches a provider', async () => {
@@ -1180,5 +1235,288 @@ describe('/api/internal/video-generations/poll — authenticated trigger for the
     const response = await call({ authorization: `Bearer ${SECRET}` })
     expect(response.status).toBe(500)
     expect(JSON.stringify(await response.json())).not.toContain('secret db detail')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1 — MCP Image-to-Video: trusted bytes -> file_upload -> image_to_video.
+// Spend order, model mapping and regression. No real provider call: the MCP client and the provider's upload
+// endpoint are recording fakes.
+// ---------------------------------------------------------------------------
+describe('POST /api/video-generations — MCP image_to_video source transport (file_upload before any paid call)', () => {
+  const libFile = (overrides: Record<string, unknown> = {}) => ({
+    id: 'lib-1', user_id: 'user-a', project_id: 'proj-1', kind: 'image', mime_type: 'image/png', name: 'capa.png',
+    storage_path: `users/user-a/library/${LIB_BLOB}/capa.png`, public_url: 'https://cdn.example.test/capa.png', deleted_at: null, origin: 'upload', ...overrides,
+  })
+  const i2v = (extra: Record<string, unknown> = {}) => ({ ...base, mode: 'image_to_video', connectionRef: accountConnectionRef(CONNECTION_ID), model: 'kling-video-v3_0', sourceLibraryFileId: 'lib-1', ...extra })
+  const names = (mcp: FakeMcp) => mcp.calls.map((call) => call.name)
+  const SINGLE_IMAGE_MODELS = ['kling-video-v2_5', 'kling-video-v2_6', 'kling-video-v3_0', 'kling-video-v3_0_turbo']
+
+  describe('27-32. each single-image model receives the uploaded PROVIDER reference as first_image', () => {
+    it.each(SINGLE_IMAGE_MODELS)('%s', async (model) => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      const response = await post(i2v({ model, duration: 5 }))
+      expect(response.status).toBe(200)
+      expect(names(mcp)).toEqual(['file_upload', 'image_to_video'])
+      expect(mcp.calls[1].arguments.model).toBe(model)
+      expect(mcp.calls[1].arguments.inputs).toEqual([{ name: 'first_image', inputType: 'URL', url: PROVIDER_FILE_URL }])
+      expect(Object.keys(mcp.calls[1].arguments).sort()).toEqual(['arguments', 'inputs', 'model'])
+    })
+
+    it.each(['kling-video-o1', 'kling-video-v3_0_omni'])('%s stays excluded: a multi-reference model is refused before any byte is read or uploaded', async (model) => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      vi.mocked(readS3Object).mockClear()
+      const response = await post(i2v({ model }))
+      expect(response.status).toBe(400)
+      expect(mcp.calls).toEqual([])
+      expect(readS3Object).not.toHaveBeenCalled()
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+      expect(db.tables.video_generations).toHaveLength(0)
+    })
+
+    it('33/34. neither our presigned S3 URL nor a data URL is ever sent as first_image or anywhere else', async () => {
+      const db = makeDb({ connections: [connectionRow()], images: [{ id: 'img-d', user_id: 'user-a', project_id: 'proj-1', image_url: toDataUrl(pngBytes(400, 400)), storage_path: null }] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      const viaImage = await post(i2v({ sourceLibraryFileId: undefined, sourceImageId: 'img-d' }))
+      expect(viaImage.status).toBe(200)
+      const db2 = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db2)
+      const mcp2 = installFakeMcp()
+      await post(i2v())
+      for (const recorded of [mcp, mcp2]) {
+        const all = JSON.stringify(recorded.calls)
+        expect(all).not.toMatch(/data:image|s3\.example\.test|signed-source|cdn\.example\.test/)
+        expect(all).toContain(PROVIDER_FILE_URL)
+      }
+    })
+
+    it('35. the uploaded provider reference is used exactly once in the paid submission, and is not persisted anywhere', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      const response = await post(i2v())
+      expect(response.status).toBe(200)
+      expect(JSON.stringify(mcp.calls).split(PROVIDER_FILE_URL).length - 1).toBe(1)
+      expect(names(mcp).filter((name) => name === 'image_to_video')).toHaveLength(1)
+      const persisted = JSON.stringify({ generations: db.tables.video_generations, library: db.tables.library_files, images: db.tables.images })
+      expect(persisted).not.toContain(PROVIDER_FILE_URL)
+      expect(persisted).not.toContain('UPLOAD-TICKET-SECRET')
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'submitted', source_library_file_id: 'lib-1', source_image_id: null })
+      expect(db.tables.video_generations[0].provider_metadata).toEqual({ generation_id: 'mcp-gen-1', tool: 'image_to_video', model: 'kling-video-v3_0' })
+    })
+  })
+
+  describe('36-41. spend order: any failure BEFORE a valid provider reference means image_to_video is never sent', () => {
+    it('36. a source that cannot be resolved (another user / forged key / deleted): file_upload 0, image_to_video 0, no record', async () => {
+      for (const file of [libFile({ user_id: 'user-b' }), libFile({ storage_path: `users/user-b/library/${LIB_BLOB}/x.png` }), libFile({ deleted_at: '2026-09-01T00:00:00.000Z' })]) {
+        const db = makeDb({ connections: [connectionRow()], libraryFiles: [file] })
+        signIn(db)
+        const mcp = installFakeMcp()
+        const response = await post(i2v())
+        expect(response.status).toBeGreaterThanOrEqual(400)
+        expect(mcp.calls).toEqual([])
+        expect(db.tables.video_generations).toHaveLength(0)
+      }
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['WebP bytes', async () => ({ bytes: (await import('./helpers/image-fixtures')).webpBytes(), contentType: 'image/webp' }), 'SOURCE_IMAGE_FORMAT_UNSUPPORTED'],
+      ['a huge image (4K)', async () => ({ bytes: pngBytes(5000, 3000), contentType: 'image/png' }), 'SOURCE_IMAGE_DIMENSIONS_UNSUPPORTED'],
+      ['a missing object', async () => null, 'SOURCE_IMAGE_UNAVAILABLE'],
+    ])('37. %s: %s before the provider — file_upload 0, image_to_video 0, no record', async (_name, object, code) => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      vi.mocked(readS3Object).mockImplementationOnce(object as never)
+      const response = await post(i2v())
+      expect(response.status).toBe(422)
+      expect((await response.json()).code).toBe(code)
+      expect(mcp.calls).toEqual([])
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+      expect(db.tables.video_generations).toHaveLength(0)
+    })
+
+    it('38. the provider upload failing: image_to_video is NEVER sent, the row is failed (pre-submission, not outcome-unknown), one attempt only', async () => {
+      const { ProviderUploadError } = await import('@/lib/security/pinned-provider-upload')
+      vi.mocked(postMultipartToProvider).mockRejectedValueOnce(new ProviderUploadError('UPLOAD_FAILED', 'http 500'))
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      const response = await post(i2v())
+      const body = await response.json()
+      expect(response.status).toBe(502)
+      expect(body).toMatchObject({ code: 'MCP_FILE_UPLOAD_FAILED', outcomeUnknown: false })
+      expect(names(mcp)).toEqual(['file_upload'])
+      expect(postMultipartToProvider).toHaveBeenCalledTimes(1)
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'MCP_FILE_UPLOAD_FAILED', outcome_unknown: false } })
+      expect(db.tables.video_generations[0].task_id ?? null).toBeNull()
+      expect(JSON.stringify(body)).not.toMatch(/UPLOAD-TICKET-SECRET|upload\.example\.test|provider-files/)
+    })
+
+    it('38. the ticket call failing is the same: image_to_video 0, failed row, no POST', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp((params) => (params.name === 'file_upload' ? { isError: true, content: [{ type: 'text', text: 'nope' }] } : { content: [{ type: 'text', text: '{"generationId":"x"}' }] }))
+      const response = await post(i2v())
+      expect((await response.json()).code).toBe('MCP_FILE_UPLOAD_FAILED')
+      expect(names(mcp)).toEqual(['file_upload'])
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed' })
+    })
+
+    it('39. a malformed upload result (no usable file URL): image_to_video 0, MCP_SOURCE_REFERENCE_INVALID', async () => {
+      for (const json of [{}, { ok: true }, { url: 'http://insecure.example.test/a.png' }, null]) {
+        vi.mocked(postMultipartToProvider).mockResolvedValueOnce({ status: 200, json })
+        const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+        signIn(db)
+        const mcp = installFakeMcp()
+        const response = await post(i2v())
+        expect(response.status).toBe(502)
+        expect((await response.json()).code).toBe('MCP_SOURCE_REFERENCE_INVALID')
+        expect(names(mcp)).toEqual(['file_upload'])
+        expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'MCP_SOURCE_REFERENCE_INVALID', outcome_unknown: false } })
+      }
+    })
+
+    it('40. a valid upload: exactly one file_upload, one POST and ONE image_to_video, in that order', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      expect((await post(i2v())).status).toBe(200)
+      expect(names(mcp)).toEqual(['file_upload', 'image_to_video'])
+      expect(postMultipartToProvider).toHaveBeenCalledTimes(1)
+      expect(db.tables.video_generations).toHaveLength(1)
+    })
+
+    it('41. one request never spawns a second provider sequence, even when the paid submission itself is rejected (no retry, no second upload)', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp((params) => (params.name === 'file_upload' ? { content: [{ type: 'text', text: JSON.stringify(UPLOAD_TICKET) }] } : { isError: true, content: [{ type: 'text', text: 'rejected' }] }))
+      const response = await post(i2v())
+      expect(response.status).toBe(422)
+      // A rejection AFTER a valid upload keeps the existing meaning (PROVIDER_REJECTED): the upload is not the culprit.
+      expect((await response.json()).code).toBe('PROVIDER_REJECTED')
+      expect(names(mcp)).toEqual(['file_upload', 'image_to_video'])
+      expect(postMultipartToProvider).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('auth stays separate from media ingestion', () => {
+    it('a token rejected at file_upload is refreshed ONCE and the upload proceeds (the rejected token never reached the tool)', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      let attempt = 0
+      const original = vi.mocked(mcpClient.createKlingMcpClient).getMockImplementation()!
+      vi.mocked(mcpClient.createKlingMcpClient).mockImplementation(((token: string) => {
+        const made = (original as any)(token)
+        if (attempt++ === 0) made.client.connect = async () => { throw new UnauthorizedError('expired') }
+        return made
+      }) as any)
+      expect((await post(i2v())).status).toBe(200)
+      expect(names(mcp)).toEqual(['file_upload', 'image_to_video'])
+      expect(mcp.tokens[0]).toBe('MCP-ACCESS-TOKEN-SECRET')
+      expect(mcp.tokens[1]).toBe('MCP-REFRESHED-TOKEN-SECRET')
+    })
+
+    it('a token that stays rejected is AUTHORIZATION_REQUIRED (reauthorize), not a media error; image_to_video 0', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      mcp.connectError = new UnauthorizedError('still bad')
+      const response = await post(i2v())
+      expect(response.status).toBe(409)
+      expect((await response.json()).code).toBe('AUTHORIZATION_REQUIRED')
+      expect(names(mcp)).toEqual([])
+      expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { code: 'AUTHORIZATION_REQUIRED' } })
+    })
+
+    it('a missing permission (HTTP 403 at file_upload) uses the authorization wording and never claims "read-only" or a media fault', async () => {
+      const { SdkHttpError, SdkErrorCode } = await import('@modelcontextprotocol/client')
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp((params) => { if (params.name === 'file_upload') throw new SdkHttpError(SdkErrorCode.ClientHttpForbidden, 'forbidden', { status: 403 }); return { content: [] } })
+      const response = await post(i2v())
+      const body = await response.json()
+      expect(response.status).toBe(422)
+      expect(body.code).toBe('PROVIDER_REJECTED')
+      expect(body.error).toMatch(/autorização da conta não permite gerar/)
+      expect(body.error).not.toMatch(/somente leitura|read-only/i)
+      expect(names(mcp)).toEqual(['file_upload'])
+    })
+  })
+
+  describe('42-49. regression: nothing else moved', () => {
+    it('42. REST image_to_video is unchanged: the presigned URL goes to the REST adapter; no MCP client, no file_upload, no upload POST', async () => {
+      const db = makeDb({ klingKey: 'user-rest-key', libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      vi.mocked(readS3Object).mockClear()
+      const response = await post({ ...base, mode: 'image_to_video', sourceLibraryFileId: 'lib-1', connectionRef: 'kling:api' })
+      expect(response.status).toBe(200)
+      expect(restCalls).toHaveLength(1)
+      expect(restCalls[0].args[1]).toBe('https://s3.example.test/signed-source.png?sig=1')
+      expect(mcp.calls).toEqual([])
+      expect(mcp.tokens).toEqual([])
+      expect(readS3Object).not.toHaveBeenCalled()
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+    })
+
+    it('43. REST text_to_video is unchanged', async () => {
+      const db = makeDb({ klingKey: 'user-rest-key' })
+      signIn(db)
+      const mcp = installFakeMcp()
+      expect((await post({ ...base, mode: 'text_to_video', connectionRef: 'kling:api' })).status).toBe(200)
+      expect(restCalls.map((call) => call.kind)).toEqual(['t2v'])
+      expect(mcp.calls).toEqual([])
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+    })
+
+    it('44. MCP text_to_video is unchanged: only text_to_video is called — no source resolution, no bytes, no file_upload', async () => {
+      const db = makeDb({ connections: [connectionRow()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      vi.mocked(readS3Object).mockClear()
+      vi.mocked(headS3Object).mockClear()
+      expect((await post(mcpBody())).status).toBe(200)
+      expect(names(mcp)).toEqual(['text_to_video'])
+      expect(mcp.calls[0].arguments.inputs).toBeUndefined()
+      expect(readS3Object).not.toHaveBeenCalled()
+      expect(headS3Object).not.toHaveBeenCalled()
+      expect(postMultipartToProvider).not.toHaveBeenCalled()
+    })
+
+    it('46/47. the source identity contract is unchanged: XOR, and the row records only the Content Studio id', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      installFakeMcp()
+      expect((await post(i2v({ sourceImageId: 'img-1' }))).status).toBe(400)
+      expect((await post(i2v({ sourceLibraryFileId: undefined }))).status).toBe(400)
+      expect((await post(i2v())).status).toBe(200)
+      expect(db.tables.video_generations[0]).toMatchObject({ source_library_file_id: 'lib-1', source_image_id: null })
+    })
+
+    it('48. file_upload is not a billed event: no usage-ledger row exists after an MCP I2V submission', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      installFakeMcp()
+      expect((await post(i2v())).status).toBe(200)
+      expect(db.tables.provider_usage_events ?? []).toEqual([])
+    })
+
+    it('the generation controls are unchanged: the paid call carries exactly the selected controls and the pinned output count', async () => {
+      const db = makeDb({ connections: [connectionRow()], libraryFiles: [libFile()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      await post(i2v({ model: 'kling-video-v3_0', duration: 10, resolution: '1080p', audio: 'off', multi_shot: false }))
+      const args = Object.fromEntries(mcp.calls[1].arguments.arguments.map((entry: any) => [entry.name, entry.value]))
+      expect(args).toMatchObject({ duration: '10', resolution: '1080p', enable_audio: 'false', prefer_multi_shots: 'false', imageCount: '1' })
+    })
   })
 })
