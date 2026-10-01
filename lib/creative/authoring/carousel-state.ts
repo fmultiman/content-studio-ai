@@ -53,8 +53,10 @@ import {
   type AuthoringAssetSlotId,
 } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH, normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
+import { normalizeTypographyOverrides } from './typography-overrides'
 import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
 import type { FreeSceneComposition } from '@/lib/types'
+
 
 export const STATIC_AUTHORING_STATE_SCHEMA_VERSION = 'static-authoring-state.v1' as const
 
@@ -177,6 +179,9 @@ export const PersistedAuthoredSlideSchema = z
     // Static Detail Polish V1 ??" hidden template element ids (Camadas eye).
     // Absent = every element visible; unknown ids are normalized away on read.
     hiddenElements: z.array(z.string().trim().min(1).max(64)).max(MAX_ELEMENT_ORDER_LENGTH).optional(),
+    // CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — optional local typography per Template text Element.
+    // Read leniently and sanitized against the Layout on load (absent = every default; no migration).
+    typography: z.record(z.string().trim().min(1).max(64), z.object({ fontFamily: z.string().max(64).optional(), fontSizePx: z.number().finite().optional() })).optional(),
     // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ??" Custom Text/Image elements added by author.
     elements: z.custom<FreeSceneComposition['elements']>((value) => {
       if (value === undefined) return true
@@ -261,6 +266,12 @@ function layoutFor(templateId: string, variant: AuthoringVariant) {
   return template ? getTemplateLayout(template, variant) : null
 }
 
+/** Persist only overrides the Layout can honour (Layout-owned); an empty map is absent. */
+function typographyEntry(layout: ReturnType<typeof layoutFor>, raw: unknown): { typography: NonNullable<AuthoringState['typography']> } | Record<string, never> {
+  const typography = normalizeTypographyOverrides(layout, raw)
+  return typography ? { typography } : {}
+}
+
 export function authoringStateToPersistedSlide(state: AuthoringState, id: string, order: number, templateId: string = DEFAULT_TEMPLATE_ID): PersistedAuthoredSlide {
   const layout = layoutFor(templateId, state.variant)
   return {
@@ -283,6 +294,7 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
     ...(state.assetOverrides && Object.keys(state.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(state.assetOverrides) } : {}),
     ...hiddenEntry(layout, state.hiddenElements),
+    ...typographyEntry(layout, state.typography),
     ...(state.elements && state.elements.length > 0 ? { elements: [...state.elements] } : {}),
   }
 }
@@ -336,6 +348,7 @@ export function persistedSlideToAuthoringState(
     ...(slide.assetOverrides && Object.keys(slide.assetOverrides).length > 0 ? { assetOverrides: copyOverrides(slide.assetOverrides) } : {}),
     // A slide saved with the old Hero frame toggle off keeps that look as a hidden 'heroFrame' Element.
     ...hiddenEntry(layout, slide.tuning?.hero?.frame === false ? [...(slide.hiddenElements ?? []), 'heroFrame'] : slide.hiddenElements),
+    ...typographyEntry(layout, slide.typography),
     ...(slide.elements && slide.elements.length > 0 ? { elements: [...slide.elements] } : {}),
     productContext,
     // Absent on rows persisted before tuning existed — defaults to no

@@ -8,7 +8,8 @@
  *  LAYOUT-OWNED — replaced by the target Layout's own baseline:
  *    variant, contentOverride, heroRef, primitiveSelection (Project paper/tape choice),
  *    primitiveTransforms and tuning (per-Element position channels reused across layouts
- *    with different meanings), elementOrder, hiddenElements, assetOverrides.
+ *    with different meanings), elementOrder, hiddenElements, assetOverrides, typography
+ *    (local per-Element font/size overrides, CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1).
  *  APPEARANCE — kept when the target Layout supports it, else the target's default
  *    (`createTemplateSlide` rule; no cross-layout mapping is invented).
  *  COMPOSITION-INSTANCE — preserved untouched:
@@ -64,10 +65,10 @@ export function replaceTemplateLayout(state: AuthoringState, layoutId: Authoring
   const baseline = layoutBaseline(state, layoutId, templateId, state.appearance)
   if (!baseline) return state
   const {
-    heroRef: _heroRef, elementOrder: _elementOrder, hiddenElements: _hiddenElements, assetOverrides: _assetOverrides,
+    heroRef: _heroRef, elementOrder: _elementOrder, hiddenElements: _hiddenElements, assetOverrides: _assetOverrides, typography: _typography,
     ...kept
   } = state
-  void _heroRef; void _elementOrder; void _hiddenElements; void _assetOverrides
+  void _heroRef; void _elementOrder; void _hiddenElements; void _assetOverrides; void _typography
   // `kept` still carries identity, canvas, productContext, debugPanelOpen and the Custom `elements` overlay.
   return { ...kept, ...baseline }
 }
@@ -96,6 +97,7 @@ export function hasLayoutOwnedAuthoredWork(state: AuthoringState, templateId: st
   if (state.heroRef) return true
   if (state.assetOverrides && Object.keys(state.assetOverrides).length > 0) return true
   if (state.hiddenElements && state.hiddenElements.length > 0) return true
+  if (state.typography && Object.keys(state.typography).length > 0) return true
   const template = getTemplateDefinition(templateId)
   const layout = template ? getTemplateLayout(template, state.variant) : null
   if (state.elementOrder && layout && !isDefaultElementOrder(layout, state.elementOrder)) return true

@@ -122,7 +122,17 @@ export type TemplateElementControl =
  * `lineHeight` is the Template default the renderer uses when the slide has
  * no "Entrelinha" override; only elements that declare it expose the control.
  */
-export type TemplateElementTypography = { lineHeight: number }
+export type TemplateElementTypography = {
+  /** Template default Entrelinha (the Title's `tuning.title.lineHeight` overrides it). Absent = not exposed. */
+  lineHeight?: number
+  /**
+   * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — the Element takes a LOCAL typography override
+   * (Styles). `role` = the Identity role whose family is the default; `fontSizePx` = the Template default size
+   * on the 1080px reference canvas (absent = the size is composite, so only the family is overridable).
+   * Only single-style text blocks declare it; a block with several sizes does not pretend to.
+   */
+  local?: { role: 'display' | 'body' | 'label'; fontSizePx?: number }
+}
 
 /** Safe authored range for a title's line-height (display serif, uppercase). */
 export const TITLE_LINE_HEIGHT_BOUNDS = { min: 0.8, max: 1.5 } as const
@@ -281,7 +291,7 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02, local: { role: 'display', fontSizePx: 62 } } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
     // The Hero is the image; its pale photo border + shadow is its own procedural Element, painted right under it.
     { id: 'heroFrame', label: 'Moldura da imagem principal', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
@@ -296,9 +306,9 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
     { id: 'archival', label: 'Fragmento de mapa', kind: 'material', assetSlot: 'archival', control: t('archival') },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
     // Text/brand units that used to be drawn on the fixed top layer without identity; they keep painting on top by default.
-    { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front' },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front' },
-    { id: 'source', label: 'Fonte editorial', kind: 'text', control: { type: 'tuning', group: 'source' }, stackPlacement: 'front' },
+    { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front', typography: { local: { role: 'label', fontSizePx: 21 } } },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 30 } } },
+    { id: 'source', label: 'Fonte editorial', kind: 'text', control: { type: 'tuning', group: 'source' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 19 } } },
     // The signature was ONE compound Element ('brand'); its logo artwork and its name are now two atoms.
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front', replaces: ['brand'] },
     { id: 'brandName', label: 'Nome da marca', kind: 'text', control: follows('brandLogo'), stackPlacement: 'front', replaces: ['brand'] },
@@ -313,8 +323,8 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' } },
-    { id: 'source', label: 'Fonte', kind: 'text', control: { type: 'tuning', group: 'source' } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { local: { role: 'display' } } },
+    { id: 'source', label: 'Fonte', kind: 'text', control: { type: 'tuning', group: 'source' }, typography: { local: { role: 'body', fontSizePx: 24 } } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'paperDark', label: 'Faixa escura do título', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'card1', label: 'Cartão 1', kind: 'material', assetSlot: 'paperDark', control: t('card1') },
@@ -352,7 +362,7 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04, local: { role: 'display', fontSizePx: 64 } } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'heroFrame', label: 'Moldura da imagem', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
     { id: 'hero', label: 'Imagem do documento', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
@@ -366,7 +376,7 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
     // Completion V1 (Slide 5): optional closing callout on dark paper.
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
     { id: 'items', label: 'Itens da lista', kind: 'text', control: FIXED, stackPlacement: 'front' },
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
   ],
@@ -389,7 +399,7 @@ const GRID_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04, local: { role: 'display', fontSizePx: 58 } } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'tape1', label: 'Fita do título', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'tiles', label: 'Grade de temas', kind: 'text', control: t('card1') },
@@ -397,7 +407,7 @@ const GRID_LAYOUT: TemplateLayoutDefinition = {
     { id: 'ideasText', label: 'Ideias transversais', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'tiles', 'note', 'ideasText', 'paperStrip', 'tape1', 'title', 'intro'],
 }
@@ -409,7 +419,7 @@ const MAP_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['light', 'dark'],
   defaultAppearance: 'light',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04, local: { role: 'display', fontSizePx: 58 } } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'map', label: 'Mapa do Brasil', kind: 'shape', control: t('card1') },
     { id: 'mapPins', label: 'Pinos dos lugares', kind: 'shape', control: follows('map'), stackPlacement: { above: 'map' } },
@@ -418,7 +428,7 @@ const MAP_LAYOUT: TemplateLayoutDefinition = {
     { id: 'tape1', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 30 } } },
     { id: 'legend', label: 'Legenda dos lugares', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['botanicalLeaf', 'map', 'mapPins', 'botanical', 'note', 'noteText', 'tape1', 'paperStrip', 'title', 'intro', 'legend'],
@@ -431,7 +441,7 @@ const NETWORK_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04, local: { role: 'display', fontSizePx: 62 } } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'links', label: 'Conexões da rede', kind: 'shape', control: follows('cards'), stackPlacement: { below: 'cards' } },
     { id: 'cards', label: 'Cartões da rede', kind: 'material', assetSlot: 'paperScrap', control: t('card1') },
@@ -439,8 +449,8 @@ const NETWORK_LAYOUT: TemplateLayoutDefinition = {
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
-    { id: 'kicker', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'kicker', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 27 } } },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 28 } } },
   ],
   defaultStackOrder: ['ornament', 'links', 'cards', 'cardsText', 'callout', 'calloutText', 'paperStrip', 'title', 'kicker', 'intro'],
 }
@@ -455,7 +465,7 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
     // VIDEO_HIERARCHICAL_SCENE_TIMING_SPIKE_V1: the four content-bearing units of this layout take
     // Scene-local timing. The units drawn WITH each (title strip, quote text + tape, image frame, callout
     // text) are its companions: they enter and leave with it.
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04 }, timing: { companions: ['paperStrip'] } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.04, local: { role: 'display', fontSizePx: 62 } }, timing: { companions: ['paperStrip'] } },
     { id: 'paperStrip', label: 'Faixa do título', kind: 'material', assetSlot: 'paperStrip', control: t('paperStrip') },
     { id: 'quote', label: 'Papel da citação', kind: 'material', assetSlot: 'paper', control: t('paper'), timing: { companions: ['quoteText', 'tape1'] } },
     { id: 'quoteText', label: 'Texto da citação', kind: 'text', control: follows('quote'), stackPlacement: { above: 'quote' } },
@@ -465,7 +475,7 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark'), timing: { companions: ['calloutText'] } },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 29 } } },
     { id: 'bullets', label: 'Tópicos', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['botanicalLeaf', 'heroFrame', 'hero', 'callout', 'calloutText', 'quote', 'quoteText', 'tape1', 'paperStrip', 'title', 'intro', 'bullets'],
@@ -478,7 +488,7 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
   supportedAppearances: ['dark', 'light'],
   defaultAppearance: 'dark',
   elements: [
-    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.06 } },
+    { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.06, local: { role: 'display', fontSizePx: 72 } } },
     { id: 'note', label: 'Papel do convite', kind: 'material', assetSlot: 'paperScrap', control: t('note') },
     { id: 'inviteText', label: 'Texto do convite', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'tape1', label: 'Fita do convite', kind: 'material', assetSlot: 'tape', control: t('tape1') },
@@ -564,6 +574,12 @@ export function getLayoutElement(layout: TemplateLayoutDefinition, elementId: st
  * (Info sets its title as two single-line strips). Shared by the Editor and
  * the renderer so an absent override always paints the Template value.
  */
+/** The local-typography capability of a Template text Element, or null when it takes none. */
+export function elementLocalTypography(layout: TemplateLayoutDefinition | null | undefined, elementId: string): NonNullable<TemplateElementTypography['local']> | null {
+  const element = layout ? getLayoutElement(layout, elementId) : null
+  return element?.kind === 'text' ? (element.typography?.local ?? null) : null
+}
+
 export function layoutTitleLineHeight(templateId: string | undefined, layoutId: string): number | undefined {
   const template = getTemplateDefinition(templateId ?? DEFAULT_TEMPLATE_ID) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
   const layout = template ? getTemplateLayout(template, layoutId) : null

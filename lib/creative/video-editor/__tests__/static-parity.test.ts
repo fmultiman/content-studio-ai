@@ -82,7 +82,7 @@ describe('shared Preview Surface viewport (Static authority)', () => {
     // (VIDEO_FREE_SCENE_DIRECT_MANIPULATION_V1); Static uses customSelecting (select tool active in any
     // mode — including Template with custom elements) to disable pan handlers so overlays work.
     // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 updated this: select mode now also enables Template overlay.
-    expect(staticPage).toContain('{...(customSelecting ? {} : viewport.panHandlers)}')
+    expect(staticPage).toContain('{...(customSelecting ? { onPointerDown: handleCanvasPointerDown } : viewport.panHandlers)}')
     expect(staticPage).toContain("const customSelecting = interactionMode === 'select'")
     expect(videoPage).toContain("{...(interactionMode === 'pan' ? viewport.panHandlers : {})}")
     expect(staticPage).toContain('data-testid="canvas-viewport"')

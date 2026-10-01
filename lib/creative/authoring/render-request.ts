@@ -18,6 +18,7 @@ import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative
 import { AUTHORING_ASSET_SLOT_IDS, isRegisteredTemplateId, type AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
 import { MAX_ELEMENT_ORDER_LENGTH } from '@/lib/creative/templates/element-stack'
 import { TITLE_LINE_HEIGHT_BOUNDS } from '@/lib/creative/templates/template-definitions'
+import { FONT_SIZE_PX_BOUNDS, RUNTIME_FONT_FAMILY_NAMES, type RuntimeFontFamilyName as RuntimeFontFamily } from '@/lib/schemas/creative/runtime-font-families'
 
 const heroTuningSchema = z.object({
   offsetX: z.number().finite().min(-120).max(120),
@@ -53,8 +54,17 @@ export const documentaryCardPreviewTuningSchema = z.object({
   brand: sourceTuningSchema.optional(),
 }).strict()
 
+
+/** CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: a local typography override — supported registry families only, bounded size. */
+export const typographyOverrideSchema = z.object({
+  fontFamily: z.enum(RUNTIME_FONT_FAMILY_NAMES).optional(),
+  fontSizePx: z.number().finite().min(FONT_SIZE_PX_BOUNDS.min).max(FONT_SIZE_PX_BOUNDS.max).optional(),
+}).strict()
+export const typographyOverridesSchema = z.record(z.string().trim().min(1).max(64), typographyOverrideSchema)
+
 export const authoringRenderOverridesSchema = z.object({
   documentaryCard: documentaryCardPreviewTuningSchema.optional(),
+  typography: typographyOverridesSchema.optional(),
 }).strict()
 
 /**
@@ -129,6 +139,7 @@ export const authoringRenderRequestSchema = z.object({
 
 export type AuthoringRenderOverrides = {
   documentaryCard?: DocumentaryCardPreviewTuning
+  typography?: Record<string, { fontFamily?: RuntimeFontFamily; fontSizePx?: number }>
 }
 
 export type PrimitiveSelectionRequest = {

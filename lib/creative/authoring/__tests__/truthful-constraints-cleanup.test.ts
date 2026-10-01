@@ -78,7 +78,9 @@ describe('3. Structural reference: informational, collapsed, not an editing surf
   })
 
   it('both editors render the same reference', () => {
-    expect(STATIC).toContain('<TemplateReference template={template} layout={layout} />')
+    // Static presents the same grammar as the lightweight Anatomia list of the Composição tab (CREATIVE_EDITOR_COMPOSITION_AND_SELECTION_PARITY_V1).
+    expect(STATIC).toContain('anatomySections.map')
+    expect(STATIC).toContain('Anatomia')
     expect(VIDEO).toContain('<TemplateReference template={sceneView.template} layout={sceneView.layout} />')
   })
 })
@@ -109,13 +111,13 @@ describe('4. Constraints are stated as constraints; nothing claims what the code
       expect(html).not.toContain('ainda não define tipografia')
     }
     expect(PANELS).not.toMatch(/Fonte da Identidade|Cor da Identidade|cores e fontes da Identidade/)
-    expect(MODE).toContain('hoje, o padrão do Studio')
+    expect(MODE).not.toMatch(/Identidade (não|ainda não) define/)
   })
 
   it('an empty free composition is orientation, not an error, and names the Template as an option', () => {
     expect(PANELS).toContain('em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.')
     expect(STATIC).toContain('adicione texto ou imagem em Elementos, ou escolha um template na aba Template')
-    expect(MODE).toContain("'Livre · nenhum template aplicado'")
+    expect(MODE).toContain("'Composição livre'")
     expect(`${PANELS}${MODE}`).not.toMatch(/erro|obrigatório|Selecione um template/i)
   })
 
@@ -170,11 +172,12 @@ describe('6. Bounded Free selection synchronization (no generic selection model)
 
   it('Static: free element ids are slide-local; Template Camadas disclosure is kept across slides', () => {
     const sw = STATIC.slice(STATIC.indexOf('function switchSlide('), STATIC.indexOf('const dispatch ='))
-    expect(sw).toContain("if (mode === 'free') setOpenElementId(null)")
-    expect(STATIC).toContain('onRemoved={(elementId) => setOpenElementId((current) => (current === elementId ? null : current))}')
+    // Selection is the UI-only `selectedTarget`: it is cleared on a slide switch and when its element is removed.
+    expect(sw).toContain('setSelectedTarget(null)')
+    expect(STATIC).toContain("onRemoved={(id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current))}")
     for (const fn of ['function enterTemplate(', 'function enterFree(']) {
       const body = STATIC.slice(STATIC.indexOf(fn), STATIC.indexOf(fn) + 1600)
-      expect(body).toContain('setOpenElementId(null)')
+      expect(body).toContain('setSelectedTarget(null)')
     }
   })
 })

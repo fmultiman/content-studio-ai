@@ -141,13 +141,14 @@ export function AssetSlotCard({
  * adapter (lib/creative/integration/project-identity-adapter.ts) resolves
  * typography and colors from the Project Identity visual tokens when the
  * Project defines them (each token independently), else the Studio defaults;
- * each layout's appearance (Light/Dark) then sets its own palette. Read-only;
- * no per-element overrides yet.
+ * each layout's appearance (Light/Dark) then sets its own palette. Read-only here
+ * (composition level); per-Element typography is ESTILOS · <Element> (text-style-controls).
  */
 export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false, contextHeadline, contextHint }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena'; free?: boolean; contextHeadline?: string; contextHint?: string }) {
   return (
     <div className="space-y-2" data-testid="style-source" data-free={free}>
-      {contextHeadline ? <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{contextHeadline}</h3> : null}
+      {/* CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: no selection = the composition's styles. */}
+      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground" data-testid="style-headline">{contextHeadline ?? 'ESTILOS DA COMPOSIÇÃO'}</h3>
       <p className="text-xs text-muted-foreground">
         {contextHint ? <><span className="font-medium text-foreground">Identidade.</span> {contextHint} </> : null}
         {!contextHint && <><span className="font-medium text-foreground">Identidade do Projeto.</span> A tipografia e as cores abaixo vêm da Identidade do Projeto quando ela as define; o que ela não define usa o padrão do Studio.{' '}</>}
@@ -162,7 +163,7 @@ export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false, co
       <div className="flex flex-wrap gap-1.5" aria-label="Cores do estilo do projeto">
         {Object.entries(tokens?.colors ?? {}).map(([name, value]) => <span key={name} title={`${name}: ${value}`} className="h-5 w-5 rounded border border-border/60" style={{ background: value }} />)}
       </div>
-      <p className="text-[11px] text-muted-foreground">Somente leitura nesta versão.</p>
+      <p className="text-[11px] text-muted-foreground">A Identidade se edita no Projeto. Selecione um texto no canvas ou em Elementos para ajustar a fonte e o tamanho dele.</p>
     </div>
   )
 }

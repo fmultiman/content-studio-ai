@@ -1,5 +1,5 @@
 import type { DocumentaryCardClosingContent } from '@/lib/schemas/creative/documentary-card'
-import { AssetLayer, AssetTextLayer, BrandMark, materialMetrics, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandMark, localTypography, materialMetrics, type CardPalette } from './primitives'
 import { DocumentaryIcon } from './icons'
 import { LayoutBackground, SequenceBadge, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
@@ -49,7 +49,7 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
       ) : null}
 
       {/* Título: the closing statement, manual line breaks kept. */}
-      <div style={{ color: titleInk, fontFamily: display.family, fontSize: x(72), fontWeight: display.weight, left: x(70), letterSpacing: '.01em', lineHeight: titleTuning?.lineHeight ?? layoutTitleLineHeight(context.templateId, 'closing') ?? 1.06, position: 'absolute', textTransform: 'uppercase', top: y(168), whiteSpace: 'pre-line', width: x(860), zIndex: kit.z('title', 16), ...kit.hideStyle('title'), transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${titleTuning?.rotation ?? 0}deg)`, transformOrigin: 'top left' }}>
+      <div style={{ color: titleInk, fontFamily: display.family, fontSize: x(72), fontWeight: display.weight, left: x(70), letterSpacing: '.01em', lineHeight: titleTuning?.lineHeight ?? layoutTitleLineHeight(context.templateId, 'closing') ?? 1.06, position: 'absolute', textTransform: 'uppercase', top: y(168), whiteSpace: 'pre-line', width: x(860), zIndex: kit.z('title', 16), ...kit.hideStyle('title'), ...localTypography(context, 'title'), transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${titleTuning?.rotation ?? 0}deg)`, transformOrigin: 'top left' }}>
         {content.title}
       </div>
 

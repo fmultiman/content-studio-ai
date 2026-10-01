@@ -20,7 +20,9 @@ import { TemplateElementsTab } from '@/components/creative/authoring/template-el
 import { resolveLayoutSections } from '@/lib/creative/templates/template-anatomy'
 import { LayoutContentForm } from '@/components/creative/authoring/layout-content-form'
 import { LAYOUT_CONTENT_FIELDS, STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
-import { AssetSlotCard, StyleSourcePanel } from '@/components/creative/authoring/inspector-panels'
+import { AssetSlotCard } from '@/components/creative/authoring/inspector-panels'
+import { StylesTab } from '@/components/creative/authoring/styles-tab'
+import { RuntimeFontFaces } from '@/components/creative/authoring/runtime-font-faces'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
@@ -33,7 +35,7 @@ import { isDefaultElementOrder, resolveElementStack } from '@/lib/creative/templ
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import {
   authoringReducer, createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest,
-  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_POSITION_TUNING,
+  derivePrimitiveTransformsRequest, deriveTuningOverrides, deriveTypographyOverrides, deriveElementOrderRequest, deriveHiddenElementsRequest, deriveAssetOverridesRequest, resolvePreviewInput, DEFAULT_POSITION_TUNING,
   type AuthoringAction, type AuthoringProductContext, type AuthoringState, DEFAULT_PRIMITIVE_TRANSFORMS,
   STATIC_AUTHORING_STATE_SCHEMA_VERSION, sortedSlides, defaultCarouselSlides, authoringStateToPersistedSlide,
   persistedSlideToAuthoringState, type PersistedAuthoredSlide, createTemplateSlide, nextSlideId, nextSlideOrder,
@@ -572,7 +574,7 @@ export default function StaticAuthoringProductPage() {
     }
     const materials = Object.keys(overrideAssets.materials).length > 0 ? overrideAssets.materials : undefined
     // Same templateId + element stack the render request freezes; DocumentaryCard normalizes both identically in preview and worker.
-    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder, hiddenElements: deriveHiddenElementsRequest(state, templateId) }), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
+    return { ...documentaryCardPropsFromResolvedInput(previewWithSequence, 'still', undefined, state.tuning, materials, undefined, { templateId, elementOrder: state.elementOrder, hiddenElements: deriveHiddenElementsRequest(state, templateId) }, deriveTypographyOverrides(state, templateId)), primitiveTransforms: derivePrimitiveTransformsRequest(state) }
   }, [previewInput, state, slides, currentSlideIndex, templateId, projectImages])
 
   /** "Gerar PNG" of a FREE unit: the template-free still (same execution plane; no TemplateRef). */
@@ -609,7 +611,7 @@ export default function StaticAuthoringProductPage() {
     // time. Rendering never saves authoring and never rereads it later.
     const selection = derivePrimitiveSelectionRequest(state)
     const transforms = derivePrimitiveTransformsRequest(state)
-    const overrides = deriveTuningOverrides(state)
+    const overrides = deriveTuningOverrides(state, templateId)
     const sequence = slides.length > 1 ? { index: slideRef.index, total: slideRef.total } : undefined
     const manifest = deriveManifestFromState(state, sequence)
     const assetOverrides = deriveAssetOverridesRequest(state)
@@ -831,11 +833,12 @@ export default function StaticAuthoringProductPage() {
         ) : null)}
       </TabsContent>
       <TabsContent value="style" className="pt-3">
-        <StyleSourcePanel 
-          tokens={freeTokens ?? undefined} 
-          free 
-          contextHeadline={selectedTarget?.kind === 'free-element' ? 'ESTILOS · ELEMENTO SELECIONADO' : undefined}
-          contextHint={selectedTarget?.kind === 'free-element' ? 'Estilos locais não estão habilitados. Elementos livres usam as propriedades da Identidade diretamente.' : undefined} 
+        <StylesTab
+          free
+          tokens={freeTokens ?? undefined}
+          target={selectedTarget}
+          freeElements={freeUnitElements}
+          onPatchFreeText={(elementId, patch) => editCurrentFree((slide) => updateFreeElement(slide, elementId, patch))}
         />
       </TabsContent>
       <TabsContent value="element" className="pt-3">
@@ -850,6 +853,7 @@ export default function StaticAuthoringProductPage() {
           onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
           onRemoved={(id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current))}
           wording={freeWording}
+          typographyInStyles
         />
       </TabsContent>
     </Tabs>
@@ -914,10 +918,12 @@ export default function StaticAuthoringProductPage() {
         ))}
       </TabsContent>
       <TabsContent value="style" className="pt-3">
-        <StyleSourcePanel 
-          tokens={state.productContext?.identitySnapshot} 
-          contextHeadline={selectedTarget?.kind === 'template-element' ? `ESTILOS · ${elements.find(e => e.key === selectedTarget.elementId)?.label.toUpperCase()}` : undefined}
-          contextHint={selectedTarget?.kind === 'template-element' ? 'Estilos locais não estão habilitados. Este elemento segue a Identidade e a Aparência do Template.' : undefined} 
+        <StylesTab
+          tokens={state.productContext?.identitySnapshot}
+          target={selectedTarget}
+          template={{ layout, state, dispatch }}
+          freeElements={state.elements ?? []}
+          onPatchFreeText={(elementId, patch) => editCurrentCustomElements((host) => updateFreeElement(host, elementId, patch))}
         />
       </TabsContent>
       <TabsContent value="element" className="pt-3">
@@ -946,6 +952,7 @@ export default function StaticAuthoringProductPage() {
               onReplaceImage: (elementId) => setFreeImagePicker({ mode: 'replace', elementId }),
               onRemoved: (id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current)),
               wording: freeWording,
+              typographyInStyles: true,
             }}
           />
         ) : null}
@@ -982,6 +989,7 @@ export default function StaticAuthoringProductPage() {
   const canvas = (
 
     <div className={floating ? 'flex h-full min-h-0 flex-col' : 'flex flex-col'}>
+      <RuntimeFontFaces />
       <div
         ref={attachPreviewViewport}
         className={floating ? 'relative min-h-0 flex-1 overflow-hidden' : 'relative h-[min(62vh,560px)] overflow-hidden'}

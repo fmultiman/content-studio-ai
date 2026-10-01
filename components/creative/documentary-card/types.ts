@@ -87,6 +87,11 @@ export type DocumentaryCardProps = {
    * When absent, the component renders exactly as the Wave 5 still would.
    */
   previewTuning?: DocumentaryCardPreviewTuning
+  /**
+   * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — local typography override per Template text Element
+   * (id → family/size). Absent / empty = every Template + Identity default; never serialised into a manifest.
+   */
+  typographyOverrides?: Record<string, { fontFamily?: string; fontSizePx?: number }>
 }
 
 export type DocumentaryCardVisualContext = DocumentaryCardProps & {

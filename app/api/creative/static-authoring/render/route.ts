@@ -31,7 +31,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
-import { authoringRenderRequestSchema } from '@/lib/creative/authoring/render-request'
+import { authoringRenderRequestSchema, type AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { createClient } from '@/lib/supabase/server'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
@@ -40,6 +40,7 @@ import { staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { resolveStaticRenderManifest } from '@/lib/creative/resolution/resolve-static-render'
 import { DEFAULT_TEMPLATE_ID, getTemplateDefinition, getTemplateLayout, layoutUsesContentImage, layoutUsesLogo } from '@/lib/creative/templates/template-definitions'
 import { normalizeElementOrder, normalizeHiddenElements } from '@/lib/creative/templates/element-stack'
+import { normalizeTypographyOverrides } from '@/lib/creative/authoring/typography-overrides'
 import type { FrozenAssetOverrides, StaticRenderExecutionSnapshot } from '@/lib/render-execution/static-snapshot'
 import { validateFreeCompositionShape } from '@/lib/creative/video-editor/free-composition'
 import { buildStaticFreeRenderManifest } from '@/lib/creative/authoring/free-static'
@@ -81,6 +82,15 @@ function fail(status: number, code: string, error: string) {
  * image, with a mime type the renderer supports. Used by the Free composition
  * branch and by Template Custom Images so the two can never diverge.
  */
+/** The overrides frozen into the snapshot: tuning as sent, typography only for Elements the Layout declares (empty = absent). */
+function freezeOverrides(overrides: AuthoringRenderOverrides | undefined, layout: Parameters<typeof normalizeTypographyOverrides>[0]): AuthoringRenderOverrides | undefined {
+  if (!overrides) return undefined
+  const { typography: requested, ...rest } = overrides
+  const typography = normalizeTypographyOverrides(layout, requested)
+  const frozen: AuthoringRenderOverrides = { ...rest, ...(typography ? { typography } : {}) }
+  return Object.keys(frozen).length > 0 ? frozen : undefined
+}
+
 async function loadUsableProjectImageIds(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -325,7 +335,8 @@ export async function POST(request: Request) {
     snapshot = buildStaticRenderExecutionSnapshot({
       manifest,
       identitySnapshot,
-      overrides: input.overrides,
+      // Local typography is frozen only for Elements this Layout can honour (supported families and sizes were validated by the schema).
+      overrides: freezeOverrides(input.overrides, layout),
       primitiveSelection: input.primitiveSelection,
       primitiveAssets: Object.keys(primitiveAssets).length > 0 ? primitiveAssets : undefined,
       primitiveTransforms: input.primitiveTransforms,

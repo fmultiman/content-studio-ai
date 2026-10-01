@@ -10,7 +10,8 @@ import type { CanvasSpec, SequenceContext } from '@/lib/schemas/creative/primiti
 import type { StaticRenderManifest } from '@/lib/schemas/creative/static-render'
 import { resolveDocumentaryCardFixture, documentaryCardTemplate } from '@/lib/creative/fixtures/documentary-card-fixtures'
 import type { ResolvedStaticRenderInput } from '@/lib/creative/resolution/resolve-static-render'
-import type { PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
+import type { AuthoringRenderOverrides, PrimitiveSelectionRequest, PrimitiveTransformsRequest } from './render-request'
+import { normalizeTypographyOverrides } from './typography-overrides'
 import { PORTAL_PROJECT_REF } from '@/lib/creative/primitives/discovery'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import { DEFAULT_TEMPLATE_ID, TITLE_LINE_HEIGHT_BOUNDS, getTemplateDefinition, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
@@ -316,9 +317,22 @@ export function deriveManifestFromState(state: AuthoringState, sequenceOverride?
  * matching the same "absence means default" pattern already used by
  * derivePrimitiveTransformsRequest.
  */
-export function deriveTuningOverrides(state: AuthoringState): { documentaryCard: DocumentaryCardPreviewTuning } | undefined {
-  const isDefault = JSON.stringify(state.tuning) === JSON.stringify(DEFAULT_TUNING)
-  return isDefault ? undefined : { documentaryCard: state.tuning }
+export function deriveTuningOverrides(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): AuthoringRenderOverrides | undefined {
+  const overrides: AuthoringRenderOverrides = {}
+  if (JSON.stringify(state.tuning) !== JSON.stringify(DEFAULT_TUNING)) overrides.documentaryCard = state.tuning
+  const typography = deriveTypographyOverrides(state, templateId)
+  if (typography) overrides.typography = typography
+  return Object.keys(overrides).length > 0 ? overrides : undefined
+}
+
+/**
+ * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — the local typography overrides the active Layout can honour,
+ * exactly what the preview paints and the render request freezes. Absent = every Template/Identity default.
+ */
+export function deriveTypographyOverrides(state: AuthoringState, templateId: string = DEFAULT_TEMPLATE_ID): NonNullable<AuthoringRenderOverrides['typography']> | undefined {
+  const template = getTemplateDefinition(templateId) ?? getTemplateDefinition(DEFAULT_TEMPLATE_ID)
+  const layout = template ? getTemplateLayout(template, state.variant) : null
+  return normalizeTypographyOverrides(layout, state.typography)
 }
 
 // ── Phase 2C: derive primitive selection for render request ───────────────────

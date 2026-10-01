@@ -4,6 +4,7 @@ import { DEFAULT_PRIMITIVE_TRANSFORMS, DEFAULT_PRIMITIVE_TRANSFORMS_STATE, DEFAU
 import type { AuthoringAppearance, AuthoringCanvas, AuthoringContent, AuthoringCoverContent, AuthoringHeroRef, AuthoringIdentity, AuthoringInfoContent, AuthoringState, AuthoringVariant, DocumentaryCardPreviewTuning, PrimitiveTransforms } from './types'
 import type { PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
 import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
+import { patchTypographyOverride, resetTypographyOverride } from './typography-overrides'
 
 /** DocumentaryCardListContentSchema item bounds. */
 export const LIST_ITEMS_MIN = 2
@@ -37,6 +38,10 @@ export function getContentAt(value: unknown, path: ContentPath): unknown {
 }
 
 export type AuthoringAction =
+  /** CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: patch one Template text Element's local typography (null/absent field = default). */
+  | { type: 'SET_TYPOGRAPHY_OVERRIDE'; elementId: string; patch: { fontFamily?: import('./types').TypographyOverride['fontFamily'] | null; fontSizePx?: number | null } }
+  /** "Usar padrão": remove the Element's whole local override. */
+  | { type: 'RESET_TYPOGRAPHY_OVERRIDE'; elementId: string }
   /** Template Layout A → B: replaces the Layout-owned state, keeps the Custom overlay (see layout-switch.ts). */
   | { type: 'SET_VARIANT'; variant: AuthoringVariant; templateId?: string }
   | { type: 'SET_APPEARANCE'; appearance: AuthoringAppearance }
@@ -92,6 +97,7 @@ export function isContentAction(action: { type: string }): action is ContentActi
  */
 export function applyContentAction(content: unknown, action: ContentAction): unknown {
   switch (action.type) {
+
     case 'SET_CONTENT_VALUE': {
       const cleared = action.value === undefined || action.value === ''
       return action.optional && cleared ? deleteIn(content, action.path) : setIn(content, action.path, action.value)
@@ -110,8 +116,18 @@ export function applyContentAction(content: unknown, action: ContentAction): unk
   }
 }
 
+/** Set (or drop, when empty) the local typography map; an unchanged map keeps the same state reference. */
+function withTypography(state: AuthoringState, typography: AuthoringState['typography']): AuthoringState {
+  if (typography === state.typography) return state
+  const { typography: _previous, ...rest } = state
+  void _previous
+  return typography ? { ...rest, typography } : rest
+}
+
 export function authoringReducer(state: AuthoringState, action: AuthoringAction): AuthoringState {
   switch (action.type) {
+    case 'SET_TYPOGRAPHY_OVERRIDE': return withTypography(state, patchTypographyOverride(state.typography, action.elementId, action.patch))
+    case 'RESET_TYPOGRAPHY_OVERRIDE': return withTypography(state, resetTypographyOverride(state.typography, action.elementId))
     // STATIC_TEMPLATE_LAYOUT_SWITCH_STATE_TRUTH_V1: one explicit Layout replacement; nothing Layout-owned survives.
     case 'SET_VARIANT': return replaceTemplateLayout(state, action.variant, action.templateId)
     // Slice 1 — Portal Carousel V1: appearance is independent of variant, so

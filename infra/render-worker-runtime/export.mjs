@@ -76,6 +76,8 @@ const REQUIRED_WORKER_SOURCE = [
   'lib/creative/templates/template-definitions.ts',
   'lib/creative/templates/element-stack.ts',
   'lib/creative/typography/resolve-typography.ts',
+  // CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: the supported font names (resolve-typography derives its family type from them).
+  'lib/schemas/creative/runtime-font-families.ts',
   'lib/creative/assets/resolve-asset.ts',
   'components/creative/documentary-card/DocumentaryCard.tsx',
   'components/creative/documentary-card/CoverVariant.tsx',

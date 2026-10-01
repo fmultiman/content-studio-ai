@@ -22,6 +22,20 @@ export type CardPalette = {
 export type MaterialName = TemplateMaterialName
 
 /**
+ * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — the LOCAL typography override of a Template text Element
+ * as inline style: only what the author set (a supported registry family; a size in px on the 1080px reference
+ * canvas, scaled like every other Template measure). No override = `{}`, so the legacy tree is untouched.
+ */
+export function localTypography(context: { typographyOverrides?: Record<string, { fontFamily?: string; fontSizePx?: number }>; canvas: { width: number } }, elementId: string): CSSProperties {
+  const override = context.typographyOverrides?.[elementId]
+  if (!override) return {}
+  return {
+    ...(override.fontFamily ? { fontFamily: override.fontFamily } : {}),
+    ...(override.fontSizePx ? { fontSize: override.fontSizePx * (context.canvas.width / 1080) } : {}),
+  }
+}
+
+/**
  * Template-bundled default file per material, derived from the Template
  * registry's asset slots (never a second hand-maintained list). Keep
  * infra/render-worker-runtime/export.mjs REQUIRED_STATIC_ASSETS aligned.

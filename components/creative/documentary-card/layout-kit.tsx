@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, GrainOverlay, Sparkle, elementTransform, materialMetrics, materialUrl } from './primitives'
+import { AssetLayer, GrainOverlay, Sparkle, elementTransform, localTypography, materialMetrics, materialUrl } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -30,6 +30,8 @@ export function layoutKit(context: DocumentaryCardVisualContext) {
     /** Static Detail Polish V1: authored hidden element (paints nothing). */
     hidden: (id: string) => context.hidden.has(id),
     hideStyle: (id: string): CSSProperties => (context.hidden.has(id) ? { display: 'none' } : {}),
+    /** CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: the Element's local font/size override ({} when none). */
+    localType: (id: string): CSSProperties => localTypography(context, id),
     url: (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls),
     fixedText: { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z } as CSSProperties,
     /**
@@ -99,6 +101,7 @@ export function TitleOnStrip({ context, kit, title, top = 150, height = 250, fon
           width: x(890),
           zIndex: kit.z('title', 31),
           ...kit.hideStyle('title'),
+          ...localTypography(context, 'title'),
           transform: `translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${-0.8 + (tuning?.rotation ?? 0)}deg)`,
           transformOrigin: 'top left',
         }}

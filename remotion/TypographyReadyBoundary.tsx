@@ -6,6 +6,8 @@ export function TypographyReadyBoundary({ typography, children }: { typography: 
   const [handle] = useState(() => delayRender('Waiting for deterministic local typography'))
   const [error, setError] = useState<string | undefined>()
 
+  // Keyed by the declared faces (not object identity): a caller that derives `typography` per render must not restart the wait.
+  const facesKey = typography.cssText
   useEffect(() => {
     let active = true
     void awaitTypographyReady(typography).then((diagnostics) => {
@@ -18,7 +20,8 @@ export function TypographyReadyBoundary({ typography, children }: { typography: 
       continueRender(handle)
     })
     return () => { active = false }
-  }, [handle, typography])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `facesKey` is the identity of `typography`'s faces
+  }, [handle, facesKey])
 
   if (error) throw new Error(`typography_error: ${error}`)
   return (

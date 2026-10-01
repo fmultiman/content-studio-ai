@@ -52,6 +52,7 @@ export function DocumentaryCard({
   elementOrder,
   hiddenElements,
   previewTuning,
+  typographyOverrides,
   frame = 0,
   durationInFrames = 180,
 }: DocumentaryCardProps) {
@@ -92,6 +93,7 @@ export function DocumentaryCard({
     stack,
     hidden: new Set(hiddenElements ?? []),
     previewTuning,
+    typographyOverrides,
     frame,
     durationInFrames,
     progress,
@@ -127,7 +129,7 @@ export type DocumentaryCardRuntimeInput = Pick<
 
 export type DocumentaryCardRuntimeOptions = Pick<
   DocumentaryCardProps,
-  'mode' | 'motion' | 'previewTuning' | 'frame' | 'durationInFrames'
+  'mode' | 'motion' | 'previewTuning' | 'typographyOverrides' | 'frame' | 'durationInFrames'
 >
 
 /**
@@ -170,6 +172,7 @@ export function documentaryCardPropsFromRuntimeInput(
     mode: options.mode,
     motion: options.motion,
     previewTuning: options.previewTuning,
+    typographyOverrides: options.typographyOverrides,
     frame: options.frame,
     durationInFrames: options.durationInFrames,
     materialAssets: resolvedMaterialAssets,
@@ -191,6 +194,7 @@ export function documentaryCardPropsFromResolvedInput(
   primitiveMaterials?: DocumentaryCardProps['primitiveMaterials'],
   primitiveTransforms?: DocumentaryCardProps['primitiveTransforms'],
   layering?: Pick<DocumentaryCardProps, 'templateId' | 'elementOrder' | 'hiddenElements'>,
+  typographyOverrides?: DocumentaryCardProps['typographyOverrides'],
 ): DocumentaryCardProps {
   const variant = input.manifest.template.variant
   if (!variant || !(DOCUMENTARY_CARD_VARIANTS as readonly string[]).includes(variant)) throw new Error(`Unsupported documentary card variant: ${variant ?? '(missing)'}`)
@@ -207,5 +211,5 @@ export function documentaryCardPropsFromResolvedInput(
     templateId: layering?.templateId,
     elementOrder: layering?.elementOrder,
     hiddenElements: layering?.hiddenElements,
-  }, { mode, motion, previewTuning })
+  }, { mode, motion, previewTuning, typographyOverrides })
 }

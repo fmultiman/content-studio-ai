@@ -64,6 +64,7 @@ const COMPONENT_BINDINGS: Readonly<Record<string, TemplateComponentBinding>> = {
       frame: runtime.frame,
       durationInFrames: runtime.durationInFrames,
       previewTuning: runtime.overrides?.documentaryCard,
+      typographyOverrides: runtime.overrides?.typography,
     }),
   },
   'editorial.quote-card': {

@@ -70,9 +70,9 @@ describe('TemplateElementPanel', () => {
     expect(tuning()).not.toHaveProperty('intro')
   })
 
-  it('Título keeps Entrelinha; Fonte editorial is positioned by the shared source group', () => {
+  it('Título no longer shows Entrelinha in Elementos (it lives in Estilos); Fonte editorial is positioned by the shared source group', () => {
     const { unmount } = render(<Harness elementId="title" />)
-    expect(screen.getByLabelText('Entrelinha')).toBeTruthy()
+    expect(screen.queryByLabelText('Entrelinha')).toBeNull()
     unmount()
     render(<Harness elementId="source" />)
     fireEvent.change(screen.getByLabelText('Rotação'), { target: { value: '1' } })

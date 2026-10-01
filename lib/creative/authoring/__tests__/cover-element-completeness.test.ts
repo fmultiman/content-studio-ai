@@ -144,7 +144,7 @@ describe('Cover Template Elements and anatomy', () => {
     expect(control('noteText')).toEqual({ type: 'follows', parent: 'note' })
     expect(control('heroFrame')).toEqual({ type: 'follows', parent: 'hero' })
     // no font/size capability was added to any new Element
-    for (const id of ['kicker', 'intro', 'source', 'brandLogo', 'brandName', 'noteText', 'heroFrame']) expect(COVER.elements.find((element) => element.id === id)).not.toHaveProperty('typography')
+    for (const id of ['kicker', 'intro', 'source', 'brandLogo', 'brandName', 'noteText', 'heroFrame']) expect(COVER.elements.find((element) => element.id === id)?.typography?.lineHeight).toBeUndefined()
   })
 })
 
