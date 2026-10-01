@@ -109,7 +109,10 @@ export function reconcileSelection(
   if (!operation) return { ...EMPTY_SELECTION, connectionRef: connection.ref }
 
   const models = findOperation(connection.operations, operation)!.models
-  const model = models.find((entry) => previous.modelId && areLogicallyEquivalentModels(entry.id, previous.modelId)) ?? defaultModel(models)!
+  const model =
+    models.find((entry) => entry.id === previous.modelId) ??
+    models.find((entry) => previous.modelId && areLogicallyEquivalentModels(entry.id, previous.modelId)) ??
+    defaultModel(models)!
 
   const duration =
     previous.duration !== null && model.durations.includes(previous.duration) ? previous.duration : defaultDuration(model)

@@ -13,7 +13,7 @@ import {
   serverOperationsFor,
 } from '@/lib/video-generation/connections'
 import { accountConnectionRef, parseConnectionRef, REST_CONNECTION_REF } from '@/lib/video-generation/connection-ref'
-import { findModel, findOperation, type VideoModelCapability } from '@/lib/video-generation/capabilities'
+import { defaultAspectRatio, defaultDuration, defaultResolution, findModel, findOperation, type VideoModelCapability } from '@/lib/video-generation/capabilities'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 
 const NOW = new Date('2026-09-29T12:00:00.000Z')
@@ -65,9 +65,78 @@ describe('REST connection descriptor (code-backed)', () => {
 
     const t2v = findModel(rest.operations, 'text_to_video', 'kling-v3')!
     expect(t2v).toMatchObject({ durations: [5, 10], resolutions: ['720p', '1080p'], aspectRatios: ['16:9', '9:16', '1:1'], audio: true, multiShot: true })
-    // REST never advertises what it has not productized: no 4K, no extra durations, no extra models.
-    expect(findOperation(rest.operations, 'text_to_video')!.models).toHaveLength(1)
+    // REST never advertises what it has not productized: no 4K, no extra durations, only supported models.
+    expect(findOperation(rest.operations, 'text_to_video')!.models).toHaveLength(2)
     expect(JSON.stringify(rest)).not.toMatch(/4k/i)
+  })
+
+  it('declares truthful, model-specific REST capability contracts for Kling 3.0 and Kling 2.6', () => {
+    const ops = restVideoOperations()
+    const t2v30 = findModel(ops, 'text_to_video', 'kling-v3')!
+    const i2v30 = findModel(ops, 'image_to_video', 'kling-v3')!
+    const t2v26 = findModel(ops, 'text_to_video', 'kling-v2-6')!
+    const i2v26 = findModel(ops, 'image_to_video', 'kling-v2-6')!
+
+    // 1. Every model/operation has capabilities
+    expect(t2v30).toBeDefined()
+    expect(i2v30).toBeDefined()
+    expect(t2v26).toBeDefined()
+    expect(i2v26).toBeDefined()
+
+    // 2. Defaults belong to allowed values
+    for (const model of [t2v30, i2v30, t2v26, i2v26]) {
+      expect(model.durations).toContain(defaultDuration(model))
+      expect(model.resolutions).toContain(defaultResolution(model))
+      if (model.aspectRatios.length > 0) {
+        expect(model.aspectRatios).toContain(defaultAspectRatio(model)!)
+      } else {
+        expect(defaultAspectRatio(model)).toBeNull()
+      }
+    }
+
+    // 3. Unsupported capabilities are distinguishable (multiShot: true vs false)
+    expect(t2v30.multiShot).toBe(true)
+    expect(t2v26.multiShot).toBe(false)
+    expect(i2v30.multiShot).toBe(true)
+    expect(i2v26.multiShot).toBe(false)
+
+    // 4. No duplicate entries in operations
+    for (const op of ops) {
+      const ids = op.models.map((m) => m.id)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+
+    // 5. Kling 3.0 contract
+    expect(t2v30).toMatchObject({
+      id: 'kling-v3',
+      label: 'Kling 3.0',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      audio: true,
+      multiShot: true,
+    })
+
+    // 6. Kling 2.6 contract (no multiShot, audio requires 1080p on I2V)
+    expect(t2v26).toMatchObject({
+      id: 'kling-v2-6',
+      label: 'Kling 2.6',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      audio: true,
+      multiShot: false,
+    })
+    expect(i2v26).toMatchObject({
+      id: 'kling-v2-6',
+      label: 'Kling 2.6',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: [],
+      audio: true,
+      multiShot: false,
+      audioRequiresResolution: '1080p',
+    })
   })
 
   it('image_to_video has no aspect-ratio control', () => {

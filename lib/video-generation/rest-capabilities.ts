@@ -9,55 +9,90 @@
 // The model id is the value already stored in video_generations.model for every
 // REST generation, so history and new rows agree.
 
-import type { VideoModelCapability, VideoOperationCapability } from './capabilities'
+import type {
+  VideoModelCapability,
+  VideoModelOperationsCapability,
+  VideoOperation,
+  VideoOperationCapability,
+} from './capabilities'
 
 export const REST_MODEL_ID = 'kling-v3'
 export const REST_KLING_V2_6_ID = 'kling-v2-6'
 
-const KLING_3_0_BASE = {
-  id: REST_MODEL_ID,
-  label: 'Kling 3.0',
-  durations: [5, 10],
-  resolutions: ['720p', '1080p'],
-  audio: true,
-  multiShot: true,
-} satisfies Omit<VideoModelCapability, 'aspectRatios'>
-
-const KLING_2_6_BASE = {
-  id: REST_KLING_V2_6_ID,
-  label: 'Kling 2.6',
-  durations: [5, 10],
-  resolutions: ['720p', '1080p'],
-  audio: true,
-  multiShot: false, // Kling 2.6 does not support multi-shot
-} satisfies Omit<VideoModelCapability, 'aspectRatios'>
+export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsCapability> = {
+  [REST_MODEL_ID]: {
+    id: REST_MODEL_ID,
+    label: 'Kling 3.0',
+    text_to_video: {
+      id: REST_MODEL_ID,
+      label: 'Kling 3.0',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      audio: true,
+      multiShot: true,
+    },
+    image_to_video: {
+      id: REST_MODEL_ID,
+      label: 'Kling 3.0',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: [],
+      audio: true,
+      multiShot: true,
+    },
+  },
+  [REST_KLING_V2_6_ID]: {
+    id: REST_KLING_V2_6_ID,
+    label: 'Kling 2.6',
+    text_to_video: {
+      id: REST_KLING_V2_6_ID,
+      label: 'Kling 2.6',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16', '1:1'],
+      audio: true,
+      multiShot: false, // Kling 2.6 does not support multi-shot
+    },
+    image_to_video: {
+      id: REST_KLING_V2_6_ID,
+      label: 'Kling 2.6',
+      durations: [5, 10],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: [],
+      audio: true,
+      multiShot: false, // Kling 2.6 does not support multi-shot
+      audioRequiresResolution: '1080p',
+    },
+  },
+}
 
 export function restVideoOperations(): VideoOperationCapability[] {
   return [
     {
       operation: 'image_to_video',
-      // REST I2V takes its framing from the source image: no aspect-ratio control.
-      models: [
-        { ...KLING_3_0_BASE, durations: [...KLING_3_0_BASE.durations], resolutions: ['720p', '1080p'], aspectRatios: [] },
-        { ...KLING_2_6_BASE, durations: [...KLING_2_6_BASE.durations], resolutions: ['720p', '1080p'], aspectRatios: [] },
-      ],
+      models: Object.values(KLING_REST_MODEL_CAPABILITIES)
+        .map((m) => m.image_to_video)
+        .filter((cap): cap is VideoModelCapability => Boolean(cap)),
     },
     {
       operation: 'text_to_video',
-      models: [
-        {
-          ...KLING_3_0_BASE,
-          durations: [...KLING_3_0_BASE.durations],
-          resolutions: ['720p', '1080p'],
-          aspectRatios: ['16:9', '9:16', '1:1'],
-        },
-        {
-          ...KLING_2_6_BASE,
-          durations: [...KLING_2_6_BASE.durations],
-          resolutions: ['720p', '1080p'],
-          aspectRatios: ['16:9', '9:16', '1:1'],
-        },
-      ],
+      models: Object.values(KLING_REST_MODEL_CAPABILITIES)
+        .map((m) => m.text_to_video)
+        .filter((cap): cap is VideoModelCapability => Boolean(cap)),
     },
   ]
+}
+
+export function getRestModelCapabilities(modelId: string): VideoModelOperationsCapability | undefined {
+  return KLING_REST_MODEL_CAPABILITIES[modelId]
+}
+
+export function getRestModelOperationCapability(
+  operation: VideoOperation,
+  modelId: string,
+): VideoModelCapability | undefined {
+  const profile = KLING_REST_MODEL_CAPABILITIES[modelId]
+  if (!profile) return undefined
+  return operation === 'text_to_video' ? profile.text_to_video : profile.image_to_video
 }

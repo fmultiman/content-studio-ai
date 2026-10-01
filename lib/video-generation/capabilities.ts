@@ -68,6 +68,14 @@ export interface VideoOperationCapability {
   models: VideoModelCapability[]
 }
 
+/** Declarative capability specification per operation for a specific model */
+export interface VideoModelOperationsCapability {
+  id: string
+  label: string
+  text_to_video?: VideoModelCapability
+  image_to_video?: VideoModelCapability
+}
+
 export type VideoCapabilityFreshness =
   /** Code-backed (REST): always current. */
   | 'static'
