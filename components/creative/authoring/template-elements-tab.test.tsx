@@ -113,8 +113,10 @@ describe('Sections are UI-only', () => {
 describe('paint order stays real and editable', () => {
   it('"Ordem das camadas" lists the true back→front stack (front first) and reorders through the same callback', () => {
     const { layout, spies } = setup('cover')
-    fireEvent.click(screen.getByTestId('template-layer-order-toggle'))
-    const order = screen.getByTestId('template-layer-order')
+    fireEvent.click(screen.getByTestId('tab-camadas'))
+    fireEvent.pointerDown(screen.getByTestId('tab-camadas'))
+    const order = screen.getByTestId('template-layers')
+console.log(order.innerHTML)
     expect(rowIds(order)).toEqual([...layout.defaultStackOrder].reverse())
     expect(within(order).getByText('Frente')).toBeTruthy()
     expect(within(order).getByText('Trás')).toBeTruthy()
@@ -171,3 +173,4 @@ describe('Free / Video panel is unchanged', () => {
     expect(screen.getByTestId('free-scene-elements-note')).toBeTruthy()
   })
 })
+
