@@ -71,10 +71,11 @@ export function FreeStage({ elements, width, height, tokens, imageUrl, ImageComp
             style={{
               ...boxStyle(element, width, height, index + 1),
               color: colors[element.color] ?? colors.foreground,
-              fontFamily: role.family,
+              fontFamily: element.font_family ?? role.family,
               fontWeight: role.weight,
               fontStyle: role.style as React.CSSProperties['fontStyle'],
-              fontSize: FREE_TEXT_SIZE_SCALE[element.size] * shortSide,
+              // An explicit px size is on the 1080px reference of the shorter side (like the presets); absent = the preset.
+              fontSize: element.font_size_px ? (element.font_size_px / 1080) * shortSide : FREE_TEXT_SIZE_SCALE[element.size] * shortSide,
               lineHeight: element.typography === 'display' ? 1.08 : 1.3,
               textAlign: element.align,
               whiteSpace: 'pre-wrap',

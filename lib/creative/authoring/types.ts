@@ -12,6 +12,22 @@
  * as an optional extension of its existing props contract.
  */
 
+
+// ── Typography ─────────────────────────────────────────────────────────────
+
+/**
+ * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — an OPTIONAL local typography override of ONE Template
+ * text Element. Absent field = the Template/Identity default (nothing resolved is ever stored). `fontFamily` is
+ * a supported runtime-registry family; `fontSizePx` is in px on the 1080px reference canvas.
+ * Line-height is NOT here: a Title's Entrelinha stays `tuning.title.lineHeight` (one canonical source).
+ */
+export interface TypographyOverride {
+  fontFamily?: RuntimeFontFamily
+  fontSizePx?: number
+}
+
+export type TypographyOverrides = Record<string, TypographyOverride>
+
 // ── Fixture identifiers ───────────────────────────────────────────────────────
 
 export type AuthoringIdentity = 'a' | 'b'
@@ -223,6 +239,7 @@ import type {
 } from '@/lib/schemas/creative/documentary-card'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { AuthoringAssetSlotId } from '@/lib/creative/templates/template-definitions'
+import type { RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
 
 /** A Project LibraryFile chosen for a slot (identity only). */
 export interface AuthoringAssetOverride {
@@ -341,6 +358,11 @@ export interface AuthoringState {
    * empty = every element visible (the Template default).
    */
   hiddenElements?: string[]
+
+  /**
+   * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — contextual typography overrides
+   */
+  typography?: TypographyOverrides
 
   /**
    * STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1 ?" Custom Text/Image elements added by

@@ -60,6 +60,11 @@ type ElementsProps<T extends FreeHost & { id: string }> = {
    */
   hideAddActions?: boolean
   emptyMessage?: string
+  /**
+   * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: the Static editor edits a text's font role and size in ESTILOS
+   * (same fields, one source of truth), so Elementos leaves them out. Absent = the unchanged Video panel.
+   */
+  typographyInStyles?: boolean
 }
 
 /** The bounded author actions of a free host (Texto / Imagem da Biblioteca) — Text and Image only. */
@@ -73,7 +78,7 @@ export function FreeElementAddActions({ full, onAddText, onAddImage }: { full: b
 }
 
 /** Elementos tab of a free composition: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, hideAddActions = false, emptyMessage, wording = VIDEO_WORDING }: ElementsProps<T>) {
+export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, hideAddActions = false, emptyMessage, typographyInStyles = false, wording = VIDEO_WORDING }: ElementsProps<T>) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
@@ -106,7 +111,7 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
                   <div className="space-y-3 border-t border-border/40 p-2">
                     {onTiming ? <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => onTiming(element.id)} data-testid="free-element-timing"><Clock className="h-3.5 w-3.5" />Timing na cena</Button> : null}
                     {element.kind === 'text' ? (
-                      <TextFields sceneId={scene.id} element={element} onPatch={(patch) => onEdit((current) => updateFreeElement(current, element.id, patch))} />
+                      <TextFields sceneId={scene.id} element={element} hideTypography={typographyInStyles} onPatch={(patch) => onEdit((current) => updateFreeElement(current, element.id, patch))} />
                     ) : (
                       <ImageFields fileName={fileNames.get(element.library_file_id)} fit={element.fit} onReplace={() => onReplaceImage(element.id)} onPatch={(patch) => onEdit((current) => updateFreeElement(current, element.id, patch))} />
                     )}
@@ -136,16 +141,16 @@ function Choice<T extends string>({ label, value, options, labels, onChange, tes
   )
 }
 
-function TextFields({ sceneId, element, onPatch }: { sceneId: string; element: Extract<FreeSceneElement, { kind: 'text' }>; onPatch: (patch: FreeTextPatch) => void }) {
+function TextFields({ sceneId, element, hideTypography = false, onPatch }: { sceneId: string; element: Extract<FreeSceneElement, { kind: 'text' }>; hideTypography?: boolean; onPatch: (patch: FreeTextPatch) => void }) {
   return (
     <div className="space-y-2" data-testid="free-text-fields">
       <div className="space-y-1">
         <Label htmlFor={`free-text-${sceneId}-${element.id}`} className="text-[11px]">Texto</Label>
         <Textarea id={`free-text-${sceneId}-${element.id}`} value={element.text} maxLength={MAX_FREE_TEXT_LENGTH} rows={3} onChange={(event) => onPatch({ text: event.target.value })} data-testid="free-text-input" />
       </div>
-      <Choice label="Fonte (papel do estilo)" value={element.typography} options={['display', 'body'] as const} labels={TYPOGRAPHY_LABELS} onChange={(typography) => onPatch({ typography })} testId="free-text-typography" />
+      {hideTypography ? null : <Choice label="Fonte (papel do estilo)" value={element.typography} options={['display', 'body'] as const} labels={TYPOGRAPHY_LABELS} onChange={(typography) => onPatch({ typography })} testId="free-text-typography" />}
       <Choice label="Cor (papel do estilo)" value={element.color} options={['foreground', 'background', 'accent', 'muted'] as const} labels={COLOR_LABELS} onChange={(color) => onPatch({ color })} testId="free-text-color" />
-      <Choice label="Tamanho" value={element.size} options={['small', 'medium', 'large', 'title'] as const} labels={SIZE_LABELS} onChange={(size) => onPatch({ size })} testId="free-text-size" />
+      {hideTypography ? null : <Choice label="Tamanho" value={element.size} options={['small', 'medium', 'large', 'title'] as const} labels={SIZE_LABELS} onChange={(size) => onPatch({ size })} testId="free-text-size" />}
       <Choice label="Alinhamento" value={element.align} options={['left', 'center', 'right'] as const} labels={ALIGN_LABELS} onChange={(align) => onPatch({ align })} testId="free-text-align" />
     </div>
   )

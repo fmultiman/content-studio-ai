@@ -62,7 +62,7 @@ export function QuoteVariant({ context, palette }: { context: DocumentaryCardVis
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(29), left: x(70), lineHeight: 1.36, top: y(430), width: x(480) }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(29), left: x(70), lineHeight: 1.36, top: y(430), width: x(480), ...kit.localType('intro') }}>{renderEmphasis(content.intro)}</div>
       ) : null}
       {bullets.length > 0 ? (
         <div style={{ ...kit.fixedAtom('bullets'), display: kit.hidden('bullets') ? 'none' : 'flex', flexDirection: 'column', gap: y(18), left: x(70), top: y(bulletsTop), width: x(470) }}>

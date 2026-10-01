@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 import { DocumentaryIcon } from './icons'
 
@@ -119,6 +119,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           top: y(206),
           width: x(880),
           zIndex: z('title', 19), ...hideStyle('title'),
+          ...localTypography(context, 'title'),
           transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${-0.8 + (titleTuning?.rotation ?? 0)}deg)`,
           transformOrigin: 'top left',
         }}
@@ -135,7 +136,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
         </div>
       ) : null}
       {content.intro ? (
-        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480), zIndex: z('intro', STACK_TOP_Z), ...hideStyle('intro') }}>
+        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480), zIndex: z('intro', STACK_TOP_Z), ...hideStyle('intro'), ...localTypography(context, 'intro') }}>
           {renderEmphasis(content.intro)}
           <div aria-hidden="true" style={{ background: gold, height: 2, marginTop: y(26), opacity: .85, width: x(200) }} />
         </div>

@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardFactCard, DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
-import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, localTypography, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -26,6 +26,12 @@ export function splitInfoTitle(title: string): [string, string] {
  * CoverVariant: 1080×1350 reference coordinates, z-index from the
  * normalized element stack, template text on the fixed top layer.
  */
+/** The Info title is two lines of different sizes set by the Template: only its family is locally overridable. */
+function localFamily(context: DocumentaryCardVisualContext, id: string): CSSProperties {
+  const family = context.typographyOverrides?.[id]?.fontFamily
+  return family ? { fontFamily: family } : {}
+}
+
 export function InfoVariant({ context, palette }: { context: DocumentaryCardVisualContext; palette: CardPalette }) {
   const content = context.content as DocumentaryCardInfoContent
   const sx = context.canvas.width / 1080
@@ -99,7 +105,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       {titleLineTwo ? (
         <AssetLayer label="Faixa escura do título" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: x(150), top: y(292), width: x(676), height: y(190) }} rotation={1.2} transform={transforms?.paperDark} zIndex={z('paperDark', 22)} hidden={isHidden('paperDark')} shadow />
       ) : null}
-      <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), ...hideStyle('title'), transform: titleTransform, transformOrigin: 'top left' }}>
+      <div style={{ fontFamily: display.family, fontWeight: display.weight, inset: 0, pointerEvents: 'none', position: 'absolute', textTransform: 'uppercase', zIndex: z('title', 23), ...hideStyle('title'), ...localFamily(context, 'title'), transform: titleTransform, transformOrigin: 'top left' }}>
         <div style={{ color: green, fontSize: x(86), left: x(152), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(196), transform: 'rotate(-1deg)', whiteSpace: 'nowrap' }}>{titleLineOne}</div>
         {titleLineTwo ? (
           <div style={{ color: cream, fontSize: x(82), left: x(196), letterSpacing: '-.01em', lineHeight: 1, position: 'absolute', top: y(344), transform: 'rotate(1deg)', whiteSpace: 'nowrap' }}>
@@ -110,7 +116,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       </div>
 
       {content.source_line ? (
-        <div style={{ color: isDark ? '#cdbf9f' : '#6d6150', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(56), lineHeight: 1.3, maxWidth: x(300), position: 'absolute', top: y(1152), zIndex: z('source', 24), ...hideStyle('source'), transform: `translate(${sourceTuning?.offsetX ?? 0}px, ${sourceTuning?.offsetY ?? 0}px) rotate(${-4 + (sourceTuning?.rotation ?? 0)}deg)`, transformOrigin: 'top left' }}>
+        <div style={{ color: isDark ? '#cdbf9f' : '#6d6150', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(56), lineHeight: 1.3, maxWidth: x(300), position: 'absolute', top: y(1152), zIndex: z('source', 24), ...hideStyle('source'), ...localTypography(context, 'source'), transform: `translate(${sourceTuning?.offsetX ?? 0}px, ${sourceTuning?.offsetY ?? 0}px) rotate(${-4 + (sourceTuning?.rotation ?? 0)}deg)`, transformOrigin: 'top left' }}>
           {content.source_line}
         </div>
       ) : null}

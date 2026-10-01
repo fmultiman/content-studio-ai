@@ -6,6 +6,7 @@ import type { AnyResolvedStaticInput, ResolvedStaticFreeInput } from '@/lib/crea
 import type { AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { TypographyReadyBoundary } from './TypographyReadyBoundary'
+import { withOverrideFonts } from '@/lib/creative/typography/resolve-typography'
 import { RenderAssetsReadyBoundary } from './RenderAssetsReadyBoundary'
 import { materialUrl, type MaterialName } from '@/components/creative/documentary-card/primitives'
 import { FreeStage } from '@/components/creative/free/free-stage'
@@ -84,12 +85,17 @@ export type StaticRenderManifestStillProps = {
  * still: the shared FreeStage drawing, chosen by `kind`, never by a component
  * key. Held until the Identity fonts and every presigned image have loaded.
  */
+/** The explicit families Free/Custom text picked (id → family): declared and awaited like the Identity roles. */
+function freeTextFamilies(elements: ReadonlyArray<{ element_id: string; kind: string; font_family?: string }>): Record<string, { fontFamily?: string }> {
+  return Object.fromEntries(elements.filter((element) => element.kind === 'text' && element.font_family).map((element) => [element.element_id, { fontFamily: element.font_family }]))
+}
+
 export const StaticFreeStill: React.FC<{ resolvedInput: ResolvedStaticFreeInput }> = ({ resolvedInput }) => {
   const { width, height } = resolvedInput.manifest.canvas
   const elements = resolvedInput.manifest.composition.elements
   const imageUrls = elements.flatMap((element) => (element.kind === 'image' ? [resolvedInput.resolvedAssets[element.asset_ref]?.url] : [])).filter((url): url is string => Boolean(url))
   return (
-    <TypographyReadyBoundary typography={resolvedInput.typography}>
+    <TypographyReadyBoundary typography={withOverrideFonts(resolvedInput.typography, freeTextFamilies(elements))}>
       <RenderAssetsReadyBoundary urls={imageUrls}>
         <div style={{ position: 'relative', width, height }}>
           <FreeStage elements={elements} width={width} height={height} tokens={resolvedInput.tokens} imageUrl={(ref) => resolvedInput.resolvedAssets[ref]} ImageComponent={Img} dataAttributes={{ 'data-kind': 'free-still' }} />
@@ -123,15 +129,17 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
     hiddenElements,
   }, { mode: 'still', overrides })
   const renderProps = remotionTemplateProps(props)
+  // Local per-Element fonts (Template text overrides + Custom Text families): their faces are declared and awaited too.
+  const customElements = resolvedInput.manifest.elements ?? []
+  const typography = withOverrideFonts(resolvedInput.typography, { ...overrides?.typography, ...freeTextFamilies(customElements) })
   // A still is one captured frame: hold it until every painted image loaded.
   const imageUrls = 'materialUrls' in (renderProps as object) ? documentaryCardImageUrls(renderProps as DocumentaryCardProps) : []
   // STATIC_TEMPLATE_CUSTOM_ELEMENTS_V1: author-added Custom Text/Image paint in a
   // transparent plane ABOVE the Template base. With no custom elements the
   // output is exactly the legacy tree (no wrapper, no extra node).
-  const customElements = resolvedInput.manifest.elements ?? []
   if (customElements.length === 0) {
     return (
-      <TypographyReadyBoundary typography={resolvedInput.typography}>
+      <TypographyReadyBoundary typography={typography}>
         <RenderAssetsReadyBoundary urls={imageUrls}>{binding.component(renderProps)}</RenderAssetsReadyBoundary>
       </TypographyReadyBoundary>
     )
@@ -139,7 +147,7 @@ export const StaticRenderManifestStillComposition: React.FC<StaticRenderManifest
   const { width, height } = resolvedInput.manifest.canvas
   const customImageUrls = customElements.flatMap((element) => (element.kind === 'image' ? [resolvedInput.resolvedAssets[element.asset_ref]?.url] : [])).filter((url): url is string => Boolean(url))
   return (
-    <TypographyReadyBoundary typography={resolvedInput.typography}>
+    <TypographyReadyBoundary typography={typography}>
       <RenderAssetsReadyBoundary urls={[...imageUrls, ...customImageUrls]}>
         <div style={{ position: 'relative', width, height }} data-custom-elements-overlay="true">
           {binding.component(renderProps)}

@@ -21,6 +21,7 @@ import type {
   FreeElementBox, FreeImageElement, FreeSceneComposition, FreeSceneElement, FreeTextElement, VideoScene,
 } from '@/lib/types'
 import type { AssetRef } from '@/lib/schemas/creative/primitives'
+import { FONT_SIZE_PX_BOUNDS, clampFontSizePx, isRuntimeFontFamily, type RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
 import type { FreeSegmentPayload } from '@/lib/schemas/creative/timeline'
 
 export const MAX_FREE_ELEMENTS = 24
@@ -85,7 +86,7 @@ function isValidBox(raw: unknown): raw is FreeElementBox {
 // ── Write-boundary validation ────────────────────────────────────────────────
 
 const BASE_KEYS = ['id', 'kind', 'box', 'hidden']
-const TEXT_KEYS = new Set([...BASE_KEYS, 'text', 'typography', 'color', 'align', 'size'])
+const TEXT_KEYS = new Set([...BASE_KEYS, 'text', 'typography', 'color', 'align', 'size', 'font_family', 'font_size_px'])
 const IMAGE_KEYS = new Set([...BASE_KEYS, 'library_file_id', 'fit'])
 const oneOf = (values: readonly string[], value: unknown) => typeof value === 'string' && values.includes(value)
 
@@ -109,6 +110,8 @@ export function validateFreeCompositionShape(raw: unknown): { ok: true } | { ok:
       if (!oneOf(FREE_TEXT_ROLES, element.typography) || !oneOf(FREE_TEXT_COLORS, element.color) || !oneOf(FREE_TEXT_ALIGNS, element.align) || !oneOf(FREE_TEXT_SIZES, element.size)) {
         return { ok: false, message: 'Estilo do texto livre fora dos papéis da Identidade.' }
       }
+      if (element.font_family !== undefined && !(typeof element.font_family === 'string' && isRuntimeFontFamily(element.font_family))) return { ok: false, message: 'Fonte do texto livre fora das fontes suportadas.' }
+      if (element.font_size_px !== undefined && !(typeof element.font_size_px === 'number' && Number.isFinite(element.font_size_px) && element.font_size_px >= FONT_SIZE_PX_BOUNDS.min && element.font_size_px <= FONT_SIZE_PX_BOUNDS.max)) return { ok: false, message: 'Tamanho do texto livre fora do intervalo.' }
     } else if (element.kind === 'image') {
       if (Object.keys(element).some((key) => !IMAGE_KEYS.has(key))) return { ok: false, message: 'Campo desconhecido na imagem livre.' }
       if (typeof element.library_file_id !== 'string' || !UUID_RE.test(element.library_file_id)) return { ok: false, message: 'Imagem livre sem arquivo da Biblioteca válido.' }
@@ -168,7 +171,12 @@ export function addFreeImageElement<T extends FreeHost>(scene: T, id: string, li
   return withElements(scene, [...elements, element])
 }
 
-export type FreeTextPatch = Partial<Pick<FreeTextElement, 'text' | 'typography' | 'color' | 'align' | 'size'>>
+export type FreeTextPatch = Partial<Pick<FreeTextElement, 'text' | 'typography' | 'color' | 'align' | 'size'>> & {
+  /** Explicit family / size; `null` removes the field (back to the semantic role / preset). */
+  font_family?: RuntimeFontFamily | null
+  font_size_px?: number | null
+}
+type FreeTextBasics = Partial<Pick<FreeTextElement, 'text' | 'typography' | 'color' | 'align' | 'size'>>
 export type FreeImagePatch = Partial<Pick<FreeImageElement, 'library_file_id' | 'fit'>>
 
 /** Kind-specific fields only; the element's id and kind never change. */
@@ -178,10 +186,23 @@ export function updateFreeElement<T extends FreeHost>(scene: T, elementId: strin
   if (index < 0) return scene
   const current = elements[index]
   const next = current.kind === 'text'
-    ? { ...current, ...pick(patch as FreeTextPatch, ['text', 'typography', 'color', 'align', 'size']) }
+    ? applyTextStyleRemovals({ ...current, ...pick(patch as FreeTextBasics, ['text', 'typography', 'color', 'align', 'size']) }, patch as FreeTextPatch)
     : { ...current, ...pick(patch as FreeImagePatch, ['library_file_id', 'fit']) }
   if (next.kind === 'text' && next.text.length > MAX_FREE_TEXT_LENGTH) next.text = next.text.slice(0, MAX_FREE_TEXT_LENGTH)
   return withElements(scene, elements.map((element, i) => (i === index ? next as FreeSceneElement : element)))
+}
+
+/** Explicit font family/size: a value sets it (sanitized), `null` removes it, absent keeps it. */
+function applyTextStyleRemovals(element: FreeTextElement, patch: FreeTextPatch): FreeTextElement {
+  const next: FreeTextElement = { ...element }
+  if (patch.font_family === null) delete next.font_family
+  else if (typeof patch.font_family === 'string' && isRuntimeFontFamily(patch.font_family)) next.font_family = patch.font_family
+  if (patch.font_size_px === null) delete next.font_size_px
+  else if (typeof patch.font_size_px === 'number') {
+    const size = clampFontSizePx(patch.font_size_px)
+    if (size !== undefined) next.font_size_px = size
+  }
+  return next
 }
 
 function pick<T extends object, K extends keyof T>(source: T, keys: readonly K[]): Partial<T> {
@@ -252,7 +273,7 @@ export function deriveFreeSegment(composition: FreeSceneComposition): { payload:
     if (element.hidden) continue
     if (element.kind === 'text') {
       if (element.text.trim().length === 0) continue
-      elements.push({ element_id: element.id, kind: 'text', box: element.box, text: element.text, typography: element.typography, color: element.color, align: element.align, size: element.size })
+      elements.push({ element_id: element.id, kind: 'text', box: element.box, text: element.text, typography: element.typography, color: element.color, align: element.align, size: element.size, ...(element.font_family ? { font_family: element.font_family } : {}), ...(element.font_size_px ? { font_size_px: element.font_size_px } : {}) })
     } else {
       const key = freeAssetKey(element.library_file_id)
       assets[key] = { type: 'library_file', ref: element.library_file_id, fit: element.fit }

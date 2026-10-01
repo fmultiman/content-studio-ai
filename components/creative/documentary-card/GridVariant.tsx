@@ -81,7 +81,7 @@ export function GridVariant({ context }: { context: DocumentaryCardVisualContext
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(31), left: x(70), lineHeight: 1.36, top: y(428), width: x(820) }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(31), left: x(70), lineHeight: 1.36, top: y(428), width: x(820), ...kit.localType('intro') }}>{renderEmphasis(content.intro)}</div>
       ) : null}
     </>
   )

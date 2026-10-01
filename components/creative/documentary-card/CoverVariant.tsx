@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import type { DocumentaryCardCoverContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -99,6 +99,7 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
           top: y(276),
           width: x(500),
           zIndex: z('title', 20), ...hideStyle('title'),
+          ...localTypography(context, 'title'),
           transform: `translate(${titleTuning?.offsetX ?? 0}px, ${titleTuning?.offsetY ?? 0}px) rotate(${-1 + (titleTuning?.rotation ?? 0)}deg)`,
           transformOrigin: 'top left',
         }}
@@ -111,13 +112,13 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         {context.sequence?.index}
       </div>
       {content.eyebrow ? (
-        <div data-element="Chamada" style={{ ...fixedText, borderBottom: `1.5px solid ${gold}`, color: gold, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: x(21), fontWeight: 600, left: x(58), letterSpacing: '.2em', paddingBottom: y(10), textTransform: 'uppercase', top: y(180), ...positioned('kicker', context.previewTuning?.kicker) }}>{content.eyebrow}</div>
+        <div data-element="Chamada" style={{ ...fixedText, borderBottom: `1.5px solid ${gold}`, color: gold, fontFamily: context.tokens.typography.label?.family ?? context.tokens.typography.body.family, fontSize: x(21), fontWeight: 600, left: x(58), letterSpacing: '.2em', paddingBottom: y(10), textTransform: 'uppercase', top: y(180), ...positioned('kicker', context.previewTuning?.kicker), ...localTypography(context, 'kicker') }}>{content.eyebrow}</div>
       ) : null}
       {content.subtitle ? (
-        <div data-element="Introdução" style={{ ...fixedText, color: text, fontFamily: context.tokens.typography.body.family, fontSize: x(30), left: x(74), lineHeight: 1.3, maxWidth: x(470), top: y(608), ...positioned('intro', context.previewTuning?.intro, `translateY(${context.contentTranslateY}px)`) }}>{content.subtitle}</div>
+        <div data-element="Introdução" style={{ ...fixedText, color: text, fontFamily: context.tokens.typography.body.family, fontSize: x(30), left: x(74), lineHeight: 1.3, maxWidth: x(470), top: y(608), ...positioned('intro', context.previewTuning?.intro, `translateY(${context.contentTranslateY}px)`), ...localTypography(context, 'intro') }}>{content.subtitle}</div>
       ) : null}
       {content.source_line ? (
-        <div data-element="Fonte editorial" style={{ ...fixedText, alignItems: 'center', color: text, display: 'flex', fontFamily: context.tokens.typography.body.family, fontSize: x(19), fontStyle: 'italic', gap: x(16), left: x(62), top: y(798), ...positioned('source', context.previewTuning?.source) }}>
+        <div data-element="Fonte editorial" style={{ ...fixedText, alignItems: 'center', color: text, display: 'flex', fontFamily: context.tokens.typography.body.family, fontSize: x(19), fontStyle: 'italic', gap: x(16), left: x(62), top: y(798), ...positioned('source', context.previewTuning?.source), ...localTypography(context, 'source') }}>
           <span aria-hidden="true" style={{ background: gold, display: 'inline-block', height: 1.5, width: x(52) }} />
           {content.source_line}
         </div>

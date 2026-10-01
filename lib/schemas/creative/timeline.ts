@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { FONT_SIZE_PX_BOUNDS, RUNTIME_FONT_FAMILY_NAMES } from './runtime-font-families'
 import {
   AssetFitSchema,
   AssetRefSchema,
@@ -253,6 +254,9 @@ export const FreeTextElementPayloadSchema = z
     color: z.enum(['foreground', 'background', 'accent', 'muted']),
     align: z.enum(['left', 'center', 'right']),
     size: z.enum(['small', 'medium', 'large', 'title']),
+    // CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: optional explicit family (supported registry) / px size; absent = the role + preset above.
+    font_family: z.enum(RUNTIME_FONT_FAMILY_NAMES).optional(),
+    font_size_px: z.number().finite().min(FONT_SIZE_PX_BOUNDS.min).max(FONT_SIZE_PX_BOUNDS.max).optional(),
   })
   .strict()
 

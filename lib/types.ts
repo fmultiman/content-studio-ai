@@ -1,6 +1,7 @@
 // Database types for Content Agent Studio
 
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
+import type { RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
 
 export interface Project {
   id: string
@@ -302,6 +303,13 @@ export interface FreeTextElement extends FreeElementBase {
   color: FreeTextColor
   align: FreeTextAlign
   size: FreeTextSize
+  /**
+   * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1 — OPTIONAL explicit font family (a supported runtime-registry
+   * family) and explicit size in px on the 1080px reference of the stage's shorter side. Absent = the semantic
+   * role/preset above, exactly as before (additive and inert for existing Free/Video compositions).
+   */
+  font_family?: RuntimeFontFamily
+  font_size_px?: number
 }
 
 export interface FreeImageElement extends FreeElementBase {

@@ -4,7 +4,7 @@ import { BrandOwnershipNote, FixedElementNote, FollowsOwnerNote, HeroTuningContr
 import { DEFAULT_POSITION_TUNING, DEFAULT_PRIMITIVE_TRANSFORMS, resetTuningGroup, setTuningField, type AuthoringAction, type AuthoringState, type TuningGroup } from '@/lib/creative/authoring'
 import type { EditorElement } from '@/lib/creative/authoring/editor-workspace'
 import { STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
-import { TITLE_LINE_HEIGHT_BOUNDS, getLayoutElement, type TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
+import { getLayoutElement, type TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 
 /**
  * The open Template Element's own controls: exactly what its Template control contract supports
@@ -13,7 +13,7 @@ import { TITLE_LINE_HEIGHT_BOUNDS, getLayoutElement, type TemplateLayoutDefiniti
  *  - `follows`   an atom anchored to another (a text on its paper, a frame under its image): no spatial control, it takes its
  *                anchor's position and stays an independent Element (own visibility, own paint order);
  *  - `fixed`     Template geometry (STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1): visibility and order only;
- *  - `tuning`    bounded X/Y/rotation (+ Entrelinha where declared);
+ *  - `tuning`    bounded X/Y/rotation (Entrelinha lives in Estilos);
  *  - `transform` the material sliders.
  */
 export function TemplateElementPanel({ elementId, state, layout, elements, dispatch }: {
@@ -40,11 +40,11 @@ export function TemplateElementPanel({ elementId, state, layout, elements, dispa
   }
   if (control.type === 'tuning') {
     const group = control.group
-    const typography = layout ? getLayoutElement(layout, elementId)?.typography : undefined
-    const lineHeight = group === 'title' && typography ? { defaultValue: typography.lineHeight, min: TITLE_LINE_HEIGHT_BOUNDS.min, max: TITLE_LINE_HEIGHT_BOUNDS.max } : undefined
+    // CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: Entrelinha (how the text looks) moved to ESTILOS · Título; it still
+    // edits the same `tuning.title.lineHeight`. Elementos keeps only WHERE the Element is.
     return (
       <div className="space-y-2">
-        <TitleTuningControls tuning={{ ...DEFAULT_POSITION_TUNING, ...state.tuning[group] }} lineHeight={lineHeight} onChange={(field, value) => set(group, field, value)} onReset={() => reset(group)} />
+        <TitleTuningControls tuning={{ ...DEFAULT_POSITION_TUNING, ...state.tuning[group] }} onChange={(field, value) => set(group, field, value)} onReset={() => reset(group)} />
         {group === 'brand' ? <BrandOwnershipNote projectName={state.productContext?.projectName} /> : null}
       </div>
     )
