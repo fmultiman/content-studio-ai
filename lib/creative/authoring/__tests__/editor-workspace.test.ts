@@ -46,8 +46,8 @@ describe('labels', () => {
   })
 
   it('keeps five Inspector sections with correct UTF-8 labels', () => {
-    expect(INSPECTOR_SECTIONS.map((section) => section.label)).toEqual(['Template', 'Conteúdo', 'Assets', 'Estilo', 'Elementos'])
-    expect(INSPECTOR_SECTIONS.map((section) => section.compactLabel)).toEqual(['Tpl.', 'Cont.', 'Assets', 'Estilo', 'Elem.'])
+    expect(INSPECTOR_SECTIONS.map((section) => section.label)).toEqual(['Composição', 'Conteúdo', 'Assets', 'Estilo', 'Elementos'])
+    expect(INSPECTOR_SECTIONS.map((section) => section.compactLabel)).toEqual(['Comp.', 'Cont.', 'Assets', 'Estilo', 'Elem.'])
   })
 })
 
@@ -76,5 +76,11 @@ describe('elementsForVariant', () => {
     expect(labels).not.toContain('tape1')
     expect(labels).not.toContain('tape2')
     expect(labels).not.toContain('tape3')
+  })
+})
+
+describe('Editor workspace labels', () => {
+  it('Composição tab is labeled truthfully', () => {
+    expect(INSPECTOR_SECTIONS.find(s => s.value === 'template')?.label).toBe('Composição')
   })
 })

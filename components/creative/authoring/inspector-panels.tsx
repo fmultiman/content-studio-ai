@@ -103,12 +103,14 @@ export function AssetSlotCard({
   usedBy,
   onReplace,
   onUseDefault,
+  highlighted,
 }: {
   slot: AuthoringSlotView
   resource: SlotResource
   usedBy: readonly string[]
   onReplace: () => void
   onUseDefault: () => void
+  highlighted?: boolean
 }) {
   return (
     <div className="flex min-w-0 gap-2 rounded-md border border-border/60 p-2" data-asset-slot={slot.id} data-origin={resource.origin}>
@@ -142,15 +144,16 @@ export function AssetSlotCard({
  * each layout's appearance (Light/Dark) then sets its own palette. Read-only;
  * no per-element overrides yet.
  */
-export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena'; free?: boolean }) {
+export function StyleSourcePanel({ tokens, unitLabel = 'slide', free = false, contextHeadline, contextHint }: { tokens: VisualTokensSnapshot | undefined; unitLabel?: 'slide' | 'cena'; free?: boolean; contextHeadline?: string; contextHint?: string }) {
   return (
     <div className="space-y-2" data-testid="style-source" data-free={free}>
+      {contextHeadline ? <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{contextHeadline}</h3> : null}
       <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Identidade do Projeto.</span> A tipografia e as cores abaixo vêm da Identidade do Projeto quando ela as define; o que ela não define usa o padrão do Studio.{' '}
-        {/* CREATIVE_EDITOR_FREE_DEFAULT_AND_TEMPLATE_ENTRY_V1: a free composition has no Appearance — its roles read these tokens directly. */}
-        {free
+        {contextHint ? <><span className="font-medium text-foreground">Identidade.</span> {contextHint} </> : null}
+        {!contextHint && <><span className="font-medium text-foreground">Identidade do Projeto.</span> A tipografia e as cores abaixo vêm da Identidade do Projeto quando ela as define; o que ela não define usa o padrão do Studio.{' '}</>}
+        {!contextHint && (free
           ? 'Na composição livre, o fundo e os papéis de cor e fonte dos textos usam estes valores diretamente.'
-          : `As fontes seguem estes valores; as cores de fundo e texto de cada ${unitLabel} seguem a Aparência (Light/Dark) do Template.`}
+          : `As fontes seguem estes valores; as cores de fundo e texto de cada ${unitLabel} seguem a Aparência (Light/Dark) do Template.`)}
       </p>
       <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Títulos</dt><dd className="truncate">{tokens?.typography.display.family ?? '—'}</dd>
