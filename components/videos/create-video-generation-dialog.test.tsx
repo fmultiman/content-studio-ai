@@ -140,6 +140,32 @@ describe('CreateVideoGenerationDialog — connection-driven generation form', ()
     expect(options).toEqual(['5 segundos', '10 segundos'])
   })
 
+  it('REST multi-model capabilities: Kling 3.0 exposes multi-shot, Kling 2.6 does not, switching models clears and keeps false on return', async () => {
+    connectionsPayload = { connections: [describeRestConnection('configured')] }
+    renderDialog()
+    await waitFor(() => expect(screen.getByTestId('video-model-select')).toBeTruthy())
+
+    // 1. Initial REST default is Kling 3.0 -> multi-shot is available
+    expect(screen.getByTestId('video-model-select').textContent).toContain('Kling 3.0')
+    expect(screen.getByTestId('video-multishot-select')).toBeTruthy()
+    expect(screen.getByTestId('video-model-summary').textContent).toContain('multi-shot')
+
+    // Turn multi-shot ON for Kling 3.0
+    await selectOption('video-multishot-select', 'Ligado (multi-shot)')
+    expect(screen.getByTestId('video-multishot-select').textContent).toContain('Ligado (multi-shot)')
+
+    // 2. Switch to Kling 2.6 -> multi-shot select disappears and note is shown
+    await selectOption('video-model-select', 'Kling 2.6')
+    await waitFor(() => expect(screen.queryByTestId('video-multishot-select')).toBeNull())
+    expect(screen.getByTestId('video-multishot-unsupported-note').textContent).toMatch(/Kling 2.6 não oferece Multi-shot/)
+    expect(screen.getByTestId('video-model-summary').textContent).not.toContain('multi-shot')
+
+    // 3. Switch back to Kling 3.0 -> multi-shot reappears, but value is Desligado (not kept true)
+    await selectOption('video-model-select', 'Kling 3.0')
+    await waitFor(() => expect(screen.getByTestId('video-multishot-select')).toBeTruthy())
+    expect(screen.getByTestId('video-multishot-select').textContent).toContain('Desligado')
+  })
+
   it('switching to the MCP account updates models and controls from ITS capabilities; unsupported controls disappear', async () => {
     connectionsPayload = { connections: [describeRestConnection('configured'), mcpDescriptor(GENERATION_SCOPES)] }
     renderDialog()

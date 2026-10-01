@@ -576,6 +576,9 @@ export function CreateVideoGenerationDialog({
                   <p className="text-xs text-muted-foreground" data-testid="video-connection-detail" data-transport={transportBadge(connection.transport)}>
                     {spendingSourceCopy(connection.funding)}
                   </p>
+                  <p className="text-[11px] text-muted-foreground" data-testid="video-model-summary">
+                    {model.durations.map((d) => `${d}s`).join('/')} · {model.resolutions.join('/')}{model.audio ? ' · áudio' : ''}{model.multiShot ? ' · multi-shot' : ''}
+                  </p>
                 </div>
 
                 <TabsContent value="image_to_video" className="space-y-4 pt-4">
@@ -687,7 +690,7 @@ export function CreateVideoGenerationDialog({
                     </div>
                   )}
 
-                  {controls.multiShot && selection.multiShot !== null && (
+                  {controls.multiShot && selection.multiShot !== null ? (
                     <div className="space-y-2">
                       <Label htmlFor="video-multishot">Multi-shot</Label>
                       <Select
@@ -703,7 +706,14 @@ export function CreateVideoGenerationDialog({
                         </SelectContent>
                       </Select>
                     </div>
-                  )}
+                  ) : !controls.multiShot ? (
+                    <div className="space-y-1.5" data-testid="video-multishot-unsupported-note">
+                      <Label htmlFor="video-multishot" className="text-muted-foreground">Multi-shot</Label>
+                      <p className="text-xs text-muted-foreground pt-1">
+                        {model.label} não oferece Multi-shot neste modo.
+                      </p>
+                    </div>
+                  ) : null}
 
                   {heavier && (
                     <p className="text-[10px] text-muted-foreground sm:col-span-2">

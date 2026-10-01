@@ -90,6 +90,17 @@ describe('validateVideoRequest (server validation against the RESOLVED connectio
     expect(code(mcpOperations, { operation: 'text_to_video', model: 'kling-video-v3_0', duration: 15, resolution: '4k' })).toBe('OK')
     expect(code(mcpOperations, { operation: 'text_to_video', model: 'kling-video-v2_6', duration: 15 })).toBe('UNSUPPORTED_DURATION')
     expect(code(mcpOperations, { operation: 'text_to_video', model: 'kling-video-v2_6', resolution: '4k' })).toBe('UNSUPPORTED_RESOLUTION')
+
+    // REST Kling 2.6 limits
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v2-6', duration: 7 })).toBe('UNSUPPORTED_DURATION')
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v2-6', resolution: '4k' })).toBe('UNSUPPORTED_RESOLUTION')
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v2-6', multi_shot: true })).toBe('UNSUPPORTED_MULTI_SHOT')
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v2-6', aspect_ratio: '4:3' })).toBe('UNSUPPORTED_ASPECT_RATIO')
+    expect(code(restVideoOperations(), { operation: 'image_to_video', model: 'kling-v2-6', aspect_ratio: '16:9' })).toBe('UNSUPPORTED_ASPECT_RATIO')
+
+    // Valid 3.0 and 2.6 requests accepted
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v3', duration: 10, resolution: '1080p', audio: 'on', multi_shot: true, aspect_ratio: '16:9' })).toBe('OK')
+    expect(code(restVideoOperations(), { operation: 'text_to_video', model: 'kling-v2-6', duration: 10, resolution: '1080p', audio: 'on', aspect_ratio: '16:9' })).toBe('OK')
   })
 
   it('output count is pinned to 1: anything else is rejected', () => {
@@ -226,6 +237,53 @@ describe('dynamic form reconciliation', () => {
     expect(selection.connectionRef).toBe(readOnly.ref)
     expect(selection.modelId).toBe('kling-video-v3_0')
     expect(readOnly.canGenerate).toBe(false)
+  })
+
+  it('switch model on REST: Kling 3.0 multiShot=true clears to null on Kling 2.6, and does NOT auto-enable on switch back', () => {
+    const v3WithMultiShot = set(start, {
+      operation: 'text_to_video',
+      modelId: 'kling-v3',
+      duration: 10,
+      resolution: '1080p',
+      audio: 'on',
+      multiShot: true,
+      aspectRatio: '9:16',
+    })
+    expect(v3WithMultiShot).toMatchObject({
+      modelId: 'kling-v3',
+      duration: 10,
+      resolution: '1080p',
+      audio: 'on',
+      multiShot: true,
+      aspectRatio: '9:16',
+    })
+    expect(toSubmitControls(v3WithMultiShot)).toHaveProperty('multi_shot', true)
+
+    // Switch to Kling 2.6: duration 10, resolution 1080p, audio on, aspect 9:16 are preserved.
+    // multiShot is cleared to null because Kling 2.6 does not support multi-shot.
+    const v26 = set(v3WithMultiShot, { modelId: 'kling-v2-6' })
+    expect(v26).toMatchObject({
+      modelId: 'kling-v2-6',
+      duration: 10,
+      resolution: '1080p',
+      audio: 'on',
+      multiShot: null,
+      aspectRatio: '9:16',
+    })
+    // Hidden control is omitted from the submission payload
+    expect(toSubmitControls(v26)).not.toHaveProperty('multi_shot')
+
+    // Switch back to Kling 3.0: multiShot does NOT auto-enable, but takes default false
+    const backToV3 = set(v26, { modelId: 'kling-v3' })
+    expect(backToV3).toMatchObject({
+      modelId: 'kling-v3',
+      duration: 10,
+      resolution: '1080p',
+      audio: 'on',
+      multiShot: false,
+      aspectRatio: '9:16',
+    })
+    expect(toSubmitControls(backToV3)).toHaveProperty('multi_shot', false)
   })
 
   it('reconciliation is deterministic and idempotent', () => {
