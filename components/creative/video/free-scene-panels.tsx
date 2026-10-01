@@ -36,7 +36,7 @@ export function freeElementLabel(element: FreeSceneElement, fileName?: string): 
 }
 
 /** How the panel names its unit and stage (Video Scene vs Static piece/slide). */
-export type FreeUnitWording = { unit: 'cena' | 'slide' | 'arte'; stage: string }
+export type FreeUnitWording = { unit: 'cena' | 'slide' | 'arte'; stage: string; addImageLabel?: string }
 const VIDEO_WORDING: FreeUnitWording = { unit: 'cena', stage: 'do formato do vídeo' }
 
 type ElementsProps<T extends FreeHost & { id: string }> = {
@@ -67,12 +67,12 @@ type ElementsProps<T extends FreeHost & { id: string }> = {
   typographyInStyles?: boolean
 }
 
-/** The bounded author actions of a free host (Texto / Imagem da Biblioteca) — Text and Image only. */
-export function FreeElementAddActions({ full, onAddText, onAddImage }: { full: boolean; onAddText: () => void; onAddImage: () => void }) {
+/** The bounded author actions of a free host (Texto / Imagem) — Text and Image only. */
+export function FreeElementAddActions({ full, addImageLabel = 'Imagem da Biblioteca', onAddText, onAddImage }: { full: boolean; addImageLabel?: string; onAddText: () => void; onAddImage: () => void }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddText} disabled={full} data-testid="free-add-text"><Type className="h-3.5 w-3.5" />Texto</Button>
-      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />Imagem da Biblioteca</Button>
+      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onAddImage} disabled={full} data-testid="free-add-image"><ImagePlus className="h-3.5 w-3.5" />{addImageLabel}</Button>
     </div>
   )
 }
@@ -85,7 +85,7 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
   const listed = [...elements].reverse()
   return (
     <div className="space-y-2" data-testid="free-scene-elements">
-      {hideAddActions ? null : <FreeElementAddActions full={full} onAddText={onAddText} onAddImage={onAddImage} />}
+      {hideAddActions ? null : <FreeElementAddActions full={full} addImageLabel={wording.addImageLabel} onAddText={onAddText} onAddImage={onAddImage} />}
       {elements.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{emptyMessage ?? `${wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.`}</p>
       ) : (

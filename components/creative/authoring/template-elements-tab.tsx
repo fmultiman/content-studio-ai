@@ -15,7 +15,7 @@ import type { ResolvedTemplateSection } from '@/lib/creative/templates/template-
  *     derived Sections (registry metadata, `template-anatomy.ts`). Rows reuse
  *     the existing per-element controls (open panel, eye); a Section adds none.
  *     Real paint order stays editable in "Ordem das camadas" (FRENTE → TRÁS).
- *  2. ADICIONAR ELEMENTOS — the author actions (Texto / Imagem da Biblioteca).
+ *  2. ADICIONAR ELEMENTOS — the author actions (Texto / Imagem).
  *  3. ELEMENTOS ADICIONADOS — the Custom Elements actually authored on this
  *     slide (an overlay above the Template), or a truthful empty state.
  *
@@ -94,7 +94,7 @@ export function TemplateElementsTab({
 
       <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="add-elements-heading" data-testid="add-elements">
         <h3 id="add-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Adicionar elementos</h3>
-        <FreeElementAddActions full={customFull} onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
+        <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
       </section>
 
       <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
