@@ -92,7 +92,8 @@ export function receivingTargetQuery(target: ReceivingTarget): URLSearchParams {
     : new URLSearchParams({ editor: 'video', draftId: target.draftId })
 }
 
-export type HandoffTargetFamily<T> = { items: T[]; truncated: boolean }
+/** `blockedReason` is set only when the editor itself cannot open for this Project (no target is listed then). */
+export type HandoffTargetFamily<T> = { items: T[]; truncated: boolean; blockedReason?: 'PROJECT_IDENTITY_REQUIRED' }
 
 export type StaticHandoffTarget = {
   channelPieceId: string

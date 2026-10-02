@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { contextualContentForChannelPiece, isStaticChannelPiece, staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
+import { contextualContentForChannelPiece, isStaticChannelPiece, isStaticEditorProjectIdentityReady, staticAuthoringTarget } from '@/lib/creative/context/static-authoring'
 import { createContextualAuthoringState, deriveManifestFromState, derivePrimitiveSelectionRequest } from '@/lib/creative/authoring'
 import type { AuthoringProductContext } from '@/lib/creative/authoring'
 import type { ChannelPiece, EditorialContent } from '@/lib/types'
+import { normalizeProjectIdentity } from '@/lib/project-identity-normalizer'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
 
 const identity = {
@@ -60,5 +61,24 @@ describe('static authoring product context', () => {
     expect(manifest.source).toEqual({ type: 'channel_piece', ref: 'cp-1' })
     expect(manifest.metadata).not.toHaveProperty('fixture')
     expect(manifest.identity.snapshot_ref).toBe(context.identitySnapshot.snapshot_ref)
+  })
+})
+
+describe('isStaticEditorProjectIdentityReady — the Static Editor readiness gate, shared with the handoff chooser', () => {
+  it.each([
+    ['valid identity', identity],
+    ['null', null],
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['empty object', {}],
+    ['wrong schema_version', { schema_version: 2, foundation: { purpose: 'x' } }],
+    ['not an object', 'texto'],
+  ])('%s: ready exactly when normalizeProjectIdentity (the route gate) yields an identity', (_label, raw) => {
+    let routeReady: boolean
+    try { routeReady = normalizeProjectIdentity(raw) !== null } catch { routeReady = false }
+    expect(isStaticEditorProjectIdentityReady(raw)).toBe(routeReady)
+  })
+  it('never throws', () => {
+    expect(() => isStaticEditorProjectIdentityReady({ schema_version: 1, unknown: 'x' })).not.toThrow()
   })
 })
