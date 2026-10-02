@@ -419,7 +419,8 @@ describe('promotion stays storage-only', () => {
   it('the route and policy import nothing provider-, authoring- or ledger-related', () => {
     for (const path of ['app/api/images/[id]/save-to-library/route.ts', 'lib/images/library-promotion.ts', 'components/images/save-image-to-library.tsx']) {
       const imports = readFileSync(join(process.cwd(), path), 'utf8').match(/from '[^']+'/g) ?? []
-      for (const specifier of imports) expect(specifier).not.toMatch(/providers|provider-connections|openai|nanobanana|transport|polling|provider-usage|creative|video-drafts|channel-piece/)
+      // The ONE allowed edge: the navigation-only "Abrir no editor" control (GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1, read-only; proven in handoff-routes.test.ts).
+      for (const specifier of imports.filter((entry) => entry !== "from '@/components/creative/handoff/open-in-editor'")) expect(specifier).not.toMatch(/providers|provider-connections|openai|nanobanana|transport|polling|provider-usage|creative|video-drafts|channel-piece/)
     }
   })
 

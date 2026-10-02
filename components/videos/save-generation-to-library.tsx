@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { Check, FolderPlus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import { OpenInEditorButton } from '@/components/creative/handoff/open-in-editor'
 
 export type SaveableGeneration = {
   id: string
@@ -44,16 +45,21 @@ export function SaveGenerationToLibrary({
   if (generation.status !== 'succeeded') return null
 
   if (generation.library_file_id) {
+    // GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1: only a succeeded generation that already points at its
+    // LibraryFile; the receiving server re-validates that file (active, owner, Project) before anything opens.
     return (
-      <Link
-        href="/arquivos"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-        data-testid="generation-saved-to-library"
-        title="Ver em Arquivos"
-      >
-        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-        Salvo em Arquivos
-      </Link>
+      <>
+        <Link
+          href="/arquivos"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          data-testid="generation-saved-to-library"
+          title="Ver em Arquivos"
+        >
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          Salvo em Arquivos
+        </Link>
+        <OpenInEditorButton libraryFileId={generation.library_file_id} size={size} />
+      </>
     )
   }
 

@@ -43,6 +43,7 @@ import { usePreviewViewport } from '@/components/creative/editor/use-preview-vie
 import { ViewportZoomControls } from '@/components/creative/editor/viewport-zoom-controls'
 import { AuthoringDock } from '@/components/creative/video/authoring-dock'
 import { ProjectLibraryAssetPicker } from '@/components/library/project-library-asset-picker'
+import { ReceivedMediaPanel, type ReceivedMediaAction } from '@/components/creative/handoff/received-media-panel'
 import { SceneStrip } from '@/components/creative/video/scene-strip'
 import { SceneTimeline } from '@/components/creative/video/scene-timeline'
 import { createClient } from '@/lib/supabase/client'
@@ -1242,6 +1243,39 @@ export default function VideoCreativeEditorPage() {
     </header>
   )
 
+  // --- Library intake: the editor's EXISTING explicit-use paths. The Library pickers and the handoff's
+  // "Mídia recebida" (GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1) call the SAME functions; the handoff adds
+  // no role and no second path. Each only changes authored state (dirty until Salvar/autosave). ---
+  /** Free Scene: add (or replace) an image element. */
+  function applyFreeSceneImage(file: LibraryFile, picker: null | { mode: 'add' } | { mode: 'replace'; elementId: string }) {
+    setLibraryFiles((current) => new Map(current).set(file.id, file))
+    if (picker?.mode === 'replace') editSelectedScene((scene) => updateFreeElement(scene, picker.elementId, { library_file_id: file.id }))
+    else { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeImageElement(scene, id, file.id)); setOpenElementId(id) }
+  }
+  /** Template Scene: the image the Scene's hero slot draws. */
+  function applySceneHero(file: LibraryFile) {
+    setLibraryFiles((current) => new Map(current).set(file.id, file))
+    patchSelectedScene({ library_file_id: file.id })
+  }
+  /** Independent timeline layer: B-roll (image or video) add/replace. */
+  function applyTimelineMedia(file: LibraryFile, picker: { mode: 'add' | 'replace'; kind: 'visual' | 'audio' }) {
+    setLibraryFiles((current) => new Map(current).set(file.id, file))
+    if (picker.mode === 'replace' && selectedItem && selectedItem.kind !== 'text') setTimeline((current) => updateTemporalItem<'visual'>(current, selectedItem.id, { library_file_id: file.id }))
+    else addMediaItem(picker.kind, file)
+  }
+  // The compatible roles of the incoming file in THIS editor (image: free-scene image / Scene hero / B-roll; video: B-roll only).
+  const receivedMediaActions = (file: LibraryFile): ReceivedMediaAction[] => {
+    const actions: ReceivedMediaAction[] = []
+    if (file.kind === 'image' && selectedScene) {
+      const sceneLabel = `cena ${safeSelectedIndex + 1}`
+      if (isFreeScene(selectedScene)) actions.push({ key: 'free-image', label: `Imagem na ${sceneLabel}`, hint: `Adiciona a imagem como elemento da ${sceneLabel} (a mesma ação de Elementos → Adicionar imagem).`, run: (received) => applyFreeSceneImage(received, { mode: 'add' }) })
+      else if (resolveSceneComposition(selectedScene).usesHero) actions.push({ key: 'scene-hero', label: `Imagem da ${sceneLabel}`, hint: `Usa a imagem como imagem principal da ${sceneLabel} (a mesma ação de Assets → Trocar). Substitui a imagem atual da cena.`, run: applySceneHero })
+    }
+    actions.push({ key: 'broll', label: 'Adicionar como B-roll', hint: 'Adiciona à timeline como B-roll no ponto atual do playhead (a mesma ação de Timeline → B-roll).', run: (received) => applyTimelineMedia(received, { mode: 'add', kind: 'visual' }) })
+    return actions
+  }
+  const receivedMedia = <ReceivedMediaPanel target={{ editor: 'video', draftId: draft.id }} actionsFor={receivedMediaActions} />
+
   const dialogs = <>
     <ProjectLibraryAssetPicker
       open={freeImagePicker !== null}
@@ -1252,10 +1286,7 @@ export default function VideoCreativeEditorPage() {
       title="Imagem da composição livre"
       description="Escolha uma imagem do Projeto. Ela é referenciada (não copiada) e posicionada dentro do formato do vídeo."
       onSelect={(file) => {
-        setLibraryFiles((current) => new Map(current).set(file.id, file))
-        const picker = freeImagePicker
-        if (picker?.mode === 'replace') editSelectedScene((scene) => updateFreeElement(scene, picker.elementId, { library_file_id: file.id }))
-        else { const id = crypto.randomUUID(); editSelectedScene((scene) => addFreeImageElement(scene, id, file.id)); setOpenElementId(id) }
+        applyFreeSceneImage(file, freeImagePicker)
         setFreeImagePicker(null)
       }}
     />
@@ -1276,10 +1307,7 @@ export default function VideoCreativeEditorPage() {
       allowedKinds={['image']}
       title={`Imagem da cena ${safeSelectedIndex + 1}`}
       description="Escolha uma imagem do Projeto para esta cena. O arquivo é referenciado, não copiado."
-      onSelect={(file) => {
-        setLibraryFiles((current) => new Map(current).set(file.id, file))
-        patchSelectedScene({ library_file_id: file.id })
-      }}
+      onSelect={applySceneHero}
     />
     {/* Gate B: media for the independent layer (B-roll = image/video, Áudio = audio), referenced by LibraryFile id. */}
     <ProjectLibraryAssetPicker
@@ -1292,9 +1320,7 @@ export default function VideoCreativeEditorPage() {
       title={timelinePicker?.kind === 'audio' ? 'Áudio do vídeo' : 'B-roll'}
       description={timelinePicker?.kind === 'audio' ? 'Escolha um arquivo de áudio do Projeto. Ele toca pela timeline, independente das cenas.' : 'Escolha uma imagem ou um vídeo do Projeto para cobrir a cena durante um intervalo próprio.'}
       onSelect={(file) => {
-        setLibraryFiles((current) => new Map(current).set(file.id, file))
-        if (timelinePicker?.mode === 'replace' && selectedItem && selectedItem.kind !== 'text') setTimeline((current) => updateTemporalItem<'visual'>(current, selectedItem.id, { library_file_id: file.id }))
-        else if (timelinePicker) addMediaItem(timelinePicker.kind, file)
+        if (timelinePicker) applyTimelineMedia(file, timelinePicker)
         setTimelinePicker(null)
       }}
     />
@@ -1333,6 +1359,7 @@ export default function VideoCreativeEditorPage() {
       <DashboardPage>
         <div className="min-w-0 space-y-3 px-4 py-3">
           {header}
+          {receivedMedia}
           <StackedWorkbench canvas={canvas} inspector={itemInspector ?? inspector} />
           {dialogs}
         </div>
@@ -1344,6 +1371,7 @@ export default function VideoCreativeEditorPage() {
     <DashboardPage>
       <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
+        {receivedMedia}
         <CreativeWorkbench className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={itemInspector ?? inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
         {dialogs}
       </div>

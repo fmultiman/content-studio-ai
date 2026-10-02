@@ -360,7 +360,8 @@ describe('promotion stays a storage-only, non-authoring, non-provider operation'
     ].map((path) => readFileSync(join(process.cwd(), path), 'utf8'))
     for (const source of sources) {
       const imports = source.match(/from '[^']+'/g) ?? []
-      for (const specifier of imports) {
+      // The ONE allowed edge: the navigation-only "Abrir no editor" control (GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1, read-only).
+      for (const specifier of imports.filter((entry) => entry !== "from '@/components/creative/handoff/open-in-editor'")) {
         expect(specifier).not.toMatch(/providers|provider-connections|transport|polling|completion|provider-usage|creative|video-drafts|video-scene/)
       }
     }

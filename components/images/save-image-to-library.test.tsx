@@ -190,3 +190,43 @@ describe('ImageResult integration — existing behaviour is unchanged', () => {
     expect(screen.queryByTestId('save-image-to-library')).toBeNull()
   })
 })
+
+// GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1 — "Abrir no editor" exists only for an already-saved LibraryFile.
+describe('SaveImageToLibrary — editor handoff entry point', () => {
+  it('an unsaved generated image never exposes the handoff (it must be explicitly saved first)', async () => {
+    render(<SaveImageToLibrary imageId="img-1" />)
+    await button()
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+  })
+
+  it('a saved image exposes the handoff, bound to the LibraryFile id the server reported', async () => {
+    serverState = { available: true, saved: { id: FILE_ID }, promotable: true }
+    render(<SaveImageToLibrary imageId="img-1" />)
+    await screen.findByTestId('image-saved-to-library')
+    expect(screen.getByTestId('open-in-editor').textContent).toContain('Abrir no editor')
+    // Explicit promotion stays separate: showing the handoff never saves or requests anything else.
+    expect(posts()).toHaveLength(0)
+  })
+
+  it('after an explicit save the handoff appears with the new LibraryFile id (no "save and open")', async () => {
+    render(<SaveImageToLibrary imageId="img-1" />)
+    fireEvent.click(await button())
+    await screen.findByTestId('image-saved-to-library')
+    expect(screen.getByTestId('open-in-editor')).toBeTruthy()
+    expect(posts()).toHaveLength(1)
+  })
+
+  it('a deleted saved LibraryFile (server: saved null) offers no handoff', async () => {
+    serverState = { available: true, saved: null, promotable: true }
+    render(<SaveImageToLibrary imageId="img-1" />)
+    await button()
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+  })
+
+  it('nothing is shown for a hidden / unavailable image', async () => {
+    serverState = { available: false, saved: null, promotable: false }
+    render(<SaveImageToLibrary imageId="img-1" />)
+    await waitFor(() => expect(gets()).toHaveLength(1))
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+  })
+})
