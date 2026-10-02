@@ -6,7 +6,6 @@ import { I2vSourceBrowser } from '@/components/videos/i2v-source-browser'
 import { type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import type { SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 
 /**
@@ -47,26 +46,24 @@ export function UnifiedMediaPickerDialog({
     onOpenChange(v)
   }
 
+  /**
+   * The ONE way a chosen LibraryFile enters the editor: a server read that returns it exactly as the Library lists
+   * return it (signed display URL). The raw table row is never handed to the editor — its stored `public_url` is
+   * not a usable browser source, so the Canvas would paint a broken image (alt text = file name).
+   */
+  const loadDisplayFile = async (fileId: string): Promise<SlotLibraryFile> => {
+    const response = await fetch(`/api/library-files/${encodeURIComponent(fileId)}/display?${new URLSearchParams({ projectId })}`)
+    const payload = await response.json().catch(() => null) as { file?: SlotLibraryFile } | null
+    if (!response.ok || !payload?.file?.id) throw new Error('Falha ao obter detalhes do arquivo da biblioteca.')
+    return payload.file
+  }
+
   const handleSelect = async (selection: I2vSourceSelection) => {
-    // 1. If it's a LibraryFile (Arquivos, Galeria, or Enviar), load its actual data
+    // 1. A LibraryFile (Arquivos, Galeria or Enviar): load its signed display row.
     if (selection.source.type === 'library') {
       setPromoting(true)
       try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('library_files')
-          .select('id, name, public_url, thumbnail_url, mime_type, origin')
-          .eq('id', selection.source.id)
-          .eq('project_id', projectId)
-          .eq('kind', 'image')
-          .is('deleted_at', null)
-          .single()
-        
-        if (error || !data) {
-          throw new Error('Falha ao obter detalhes do arquivo da biblioteca.')
-        }
-
-        onSelect(data)
+        onSelect(await loadDisplayFile(selection.source.id))
         onOpenChange(false)
       } catch (err) {
         toast({
@@ -80,22 +77,22 @@ export function UnifiedMediaPickerDialog({
       return
     }
 
-    // 2. If it's a raw generated AI image, promote it via the factual integration API
+    // 2. A raw generated AI image: promote it via the factual integration API, then load it like any LibraryFile.
     if (selection.source.type === 'generated') {
       setPromoting(true)
       try {
         const res = await fetch(`/api/images/${selection.source.id}/save-to-library`, { method: 'POST' })
         const payload = await res.json()
         if (!res.ok) {
-          throw new Error(payload.error || 'Ndo foi possivel registrar a imagem na Biblioteca.')
+          throw new Error(payload.error || 'Não foi possível registrar a imagem na Biblioteca.')
         }
 
-        const libraryFile = payload.libraryFile || payload.data;
-        if (!libraryFile || !libraryFile.id) {
-          throw new Error('Retorno invalido do servidor: ID do LibraryFile nao encontrado.')
+        const promoted = payload.libraryFile || payload.data
+        if (!promoted || !promoted.id) {
+          throw new Error('Retorno inválido do servidor: ID do LibraryFile não encontrado.')
         }
 
-        onSelect(libraryFile)
+        onSelect(await loadDisplayFile(promoted.id as string))
         toast({
           title: 'Imagem vinculada',
           description: 'A imagem gerada foi adicionada aos arquivos do Projeto para uso.',
@@ -103,7 +100,7 @@ export function UnifiedMediaPickerDialog({
         onOpenChange(false)
       } catch (err) {
         toast({
-          title: 'Erro de vinculacao',
+          title: 'Erro de vinculação',
           description: err instanceof Error ? err.message : 'Tente novamente.',
           variant: 'destructive',
         })
@@ -131,6 +128,8 @@ export function UnifiedMediaPickerDialog({
             <I2vSourceBrowser
               projectId={projectId}
               productionId={productionId}
+              // Static composition: Arquivos is Project-scoped durable media, a Production is an optional filter.
+              defaultProductionMode="all"
               selectedId={selectedId ?? null}
               onSelect={handleSelect}
               onClose={() => onOpenChange(false)}

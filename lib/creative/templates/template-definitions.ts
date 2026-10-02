@@ -293,8 +293,7 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
   elements: [
     { id: 'title', label: 'Título', kind: 'text', control: { type: 'tuning', group: 'title' }, typography: { lineHeight: 1.02, local: { role: 'display', fontSizePx: 62 } } },
     { id: 'paper', label: 'Papel do título', kind: 'material', assetSlot: 'paper', control: t('paper') },
-    // The Hero is the image; its pale photo border + shadow is its own procedural Element, painted right under it.
-    { id: 'heroFrame', label: 'Moldura da imagem principal', kind: 'shape', control: follows('hero'), stackPlacement: { below: 'hero' } },
+    // CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1: the Cover's Hero is the content image alone (the book cover): no pale backing/moldura Element.
     { id: 'hero', label: 'Imagem principal', kind: 'image', assetSlot: 'hero', control: { type: 'tuning', group: 'hero' } },
     { id: 'tape1', label: 'Fita da imagem', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     // The editorial note: `note` is the paper (spatial owner); `noteText` (content `detail_note`) is ITS OWN Element, painted above it.
@@ -309,11 +308,10 @@ const COVER_LAYOUT: TemplateLayoutDefinition = {
     { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front', typography: { local: { role: 'label', fontSizePx: 21 } } },
     { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 30 } } },
     { id: 'source', label: 'Fonte editorial', kind: 'text', control: { type: 'tuning', group: 'source' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 19 } } },
-    // The signature was ONE compound Element ('brand'); its logo artwork and its name are now two atoms.
+    // The signature is ONE Element: the COMPLETE logo asset (the logo file already carries the brand name; no separate name text is drawn).
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front', replaces: ['brand'] },
-    { id: 'brandName', label: 'Nome da marca', kind: 'text', control: follows('brandLogo'), stackPlacement: 'front', replaces: ['brand'] },
   ],
-  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'heroFrame', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brandLogo', 'brandName'],
+  defaultStackOrder: ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brandLogo'],
 }
 
 /** Pack B Slide 2 — reconstructed from docs/discovery/creative-rendering/visual-reference-pack/pack-b/02.png. */
@@ -499,10 +497,9 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
     { id: 'items', label: 'Itens do encerramento', kind: 'text', control: FIXED, stackPlacement: 'front' },
     { id: 'divider', label: 'Linha pontilhada', kind: 'shape', control: FIXED, stackPlacement: 'front' },
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
-    { id: 'brandName', label: 'Nome da marca', kind: 'text', control: FIXED, stackPlacement: 'front' },
     { id: 'tagline', label: 'Frase final', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
-  defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'inviteText', 'tape1', 'title', 'body', 'items', 'divider', 'brandLogo', 'brandName', 'tagline'],
+  defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'inviteText', 'tape1', 'title', 'body', 'items', 'divider', 'brandLogo', 'tagline'],
 }
 
 export const EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE: TemplateDefinition = {

@@ -83,8 +83,8 @@ describe('ESTILOS follows the selection', () => {
     expect(screen.queryByTestId('font-family-picker')).toBeNull()
   })
 
-  it('a non-text Element (image, paper, frame) gets truthful information and no typography controls', () => {
-    for (const id of ['hero', 'note', 'heroFrame']) {
+  it('a non-text Element (image, paper, logo) gets truthful information and no typography controls', () => {
+    for (const id of ['hero', 'note', 'brandLogo']) {
       const { unmount } = render(<TemplateHarness initialTarget={{ kind: 'template-element', elementId: id }} />)
       expect(screen.getByTestId('style-nontext-note')).toBeTruthy()
       expect(screen.queryByTestId('font-family-picker')).toBeNull()

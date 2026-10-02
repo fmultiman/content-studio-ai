@@ -20,9 +20,10 @@ describe('Documentary layouts expose their factual semantic Sections', () => {
       ['Bloco de título', ['title', 'paper']],
       ['Introdução', ['intro']],
       ['Fonte editorial', ['source']],
-      ['Hero', ['heroFrame', 'hero', 'tape1']],
-      ['Nota editorial', ['note', 'noteText', 'tape2']],
-      ['Assinatura', ['brandLogo', 'brandName']],
+      // DISPLAY order reads like the visible object (what is on top first); paint order is the stack and is untouched.
+      ['Hero', ['tape1', 'hero']],
+      ['Nota editorial', ['tape2', 'noteText', 'note']],
+      ['Assinatura', ['brandLogo']],
       ['Decoração', ['botanical', 'botanicalLeaf', 'archival', 'ornament']],
     ])
   })
@@ -93,7 +94,7 @@ describe('Documentary layouts expose their factual semantic Sections', () => {
       ['Bloco de título', ['title']],
       ['Texto de apoio', ['body', 'items']],
       ['Convite', ['note', 'inviteText', 'tape1']],
-      ['Assinatura', ['brandLogo', 'brandName']],
+      ['Assinatura', ['brandLogo']],
       ['Fecho', ['divider', 'tagline']],
       ['Decoração', ['ornament', 'botanicalLeaf', 'botanical']],
     ])

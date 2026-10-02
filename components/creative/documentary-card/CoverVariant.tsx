@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import type { DocumentaryCardCoverContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandLogo, GrainOverlay, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -43,10 +43,11 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
     transform: `${base ? `${base} ` : ''}translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${tuning?.rotation ?? 0}deg)`,
     transformOrigin: 'top left',
   })
-  // STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — the Hero's pale photo border is its OWN Element ('heroFrame'), painted under the
-  // image. A slide saved with the old `tuning.hero.frame = false` toggle keeps its look (frame hidden).
-  const frameHidden = isHidden('heroFrame') || heroTuning?.frame === false
-  const heroPlate: PlateGeometry = { height: y(676), left: x(566), padding: x(14), rotation: 3.2, top: y(214), width: x(468) }
+  // CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1 — the Cover's Hero is the book cover ALONE: there is no pale backing/moldura
+  // Element. The box is the one the photo always occupied by default (the former plate minus its 14px border margin), so the image
+  // keeps its size and placement. Saved state of the removed backing (`hiddenElements`/`elementOrder` 'heroFrame', the legacy
+  // `tuning.hero.frame` toggle) names an Element this layout no longer has: it is ignored here and dropped by the shared normalizers.
+  const heroPlate: PlateGeometry = { height: y(676) - x(28), left: x(580), padding: 0, rotation: 3.2, top: y(214) + x(14), width: x(440) }
 
   return (
     <>
@@ -62,11 +63,9 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
       <AssetLayer label="Fragmento de mapa" url={url('archival')} metrics={materialMetrics('archival')} contain={context.materialContain?.archival} box={{ left: x(826), top: y(1054), width: x(430) }} rotation={90} transform={transforms?.archival} zIndex={z('archival', 12)} hidden={isHidden('archival')} shadow />
       <AssetLayer label="Ramo de folhas" url={url('botanicalLeaf')} metrics={materialMetrics('botanicalLeaf')} contain={context.materialContain?.botanicalLeaf} box={{ left: x(405), top: y(842), width: x(280) }} rotation={-8} flipX transform={transforms?.botanicalLeaf} zIndex={z('botanicalLeaf', 13)} hidden={isHidden('botanicalLeaf')} />
 
-      {/* Moldura da imagem principal (procedural, no file): the pale border + shadow, under the image. Independent of the image. */}
-      <PlateFrame geometry={heroPlate} tuning={heroTuning} zIndex={z('heroFrame', 13)} hidden={frameHidden} background="#e8dcc3" shadow="0 22px 40px rgba(0, 0, 0, .45)" />
-      {/* Hero ("Imagem principal"): the content image, tilted like the Pack B book. Painted whatever the frame does. */}
-      <PlateImage geometry={heroPlate} tuning={heroTuning} zIndex={z('hero', 14)} hidden={isHidden('hero')} frameHidden={frameHidden} label="Imagem principal">
-        <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: frameHidden ? 'transparent' : palette.paper, backgroundSize: context.assets.hero?.fit === 'contain' ? 'contain' : 'cover', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
+      {/* Hero ("Imagem principal"): the book cover, tilted like the Pack B book. Always `contain`: the COMPLETE artwork stays visible (no crop state exists; the unused box stays transparent). */}
+      <PlateImage geometry={heroPlate} tuning={heroTuning} zIndex={z('hero', 14)} hidden={isHidden('hero')} frameHidden label="Imagem principal">
+        <AssetSurface asset={context.assets.hero} label="Documentary hero evidence fixture" style={{ backgroundColor: 'transparent', backgroundSize: 'contain', filter: 'saturate(.88) contrast(1.05)', inset: 0, position: 'absolute', transform: `scale(${heroScale})`, transformOrigin: context.assets.hero?.focal_point ? `${context.assets.hero.focal_point.x * 100}% ${context.assets.hero.focal_point.y * 100}%` : 'center' }} />
       </PlateImage>
 
       <AssetLayer label="Botânica seca" url={url('botanical')} metrics={materialMetrics('botanical')} contain={context.materialContain?.botanical} box={{ left: x(968), top: y(498), width: x(190) }} rotation={14} transform={transforms?.botanical} zIndex={z('botanical', 15)} hidden={isHidden('botanical')} />
@@ -123,11 +122,8 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
           {content.source_line}
         </div>
       ) : null}
-      {/* Assinatura = two Elements with the SAME geometry: Logo da marca (artwork, slot "logo") and Nome da marca (text). Each keeps the other's layout space, so hiding one never moves the other. */}
-      <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandLogo', context.previewTuning?.brand) }} />
-      {content.brand_label ? (
-        <BrandMark show="name" asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} tokens={context.tokens} label={content.brand_label} logoSize={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandName', context.previewTuning?.brand) }} />
-      ) : null}
+      {/* Assinatura = Logo da marca: ONE Element, the COMPLETE logo asset (slot "logo"). The file already carries the brand name, so no name text is drawn. */}
+      <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} width={x(400)} height={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandLogo', context.previewTuning?.brand) }} />
     </>
   )
 }

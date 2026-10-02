@@ -128,7 +128,7 @@ const TEXT_OVER_PAPER: Record<LayoutId, [string, string][]> = {
   closing: [['inviteText', 'note']],
 }
 const FRAME_UNDER_IMAGE: Record<string, [string, string][]> = {
-  cover: [['heroFrame', 'hero']], list: [['heroFrame', 'hero']], quote: [['heroFrame', 'hero']], network: [['links', 'cards']],
+  list: [['heroFrame', 'hero']], quote: [['heroFrame', 'hero']], network: [['links', 'cards']],
 }
 
 describe.each(LAYOUT_IDS)('%s — atomic visual Elements', (layoutId) => {
@@ -334,34 +334,32 @@ describe('Cover — the editorial note and the required proofs A–G', () => {
     expect(painted).not.toContain('tape2')
   })
 
-  it('D. hide the hero backing → the image stays        E. hide the hero image → the backing stays', () => {
-    const backingHidden = hide(cover(), 'heroFrame')
-    const htmlD = render(backingHidden, { hero: { url: heroUrl } })
-    expect(paintedAtoms(backingHidden, htmlD)).toContain('hero')
+  it('D. the Cover Hero is the image alone (CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1): no backing Element; hiding a stale "heroFrame" changes nothing', () => {
+    expect(layoutOf('cover').elements.some((element) => element.id === 'heroFrame')).toBe(false)
+    const stale = hide(cover(), 'heroFrame')
+    const htmlD = render(stale, { hero: { url: heroUrl } })
+    expect(paintedAtoms(stale, htmlD)).toContain('hero')
     expect(htmlD).toContain(heroUrl)
     expect(htmlD).not.toContain('#e8dcc3')
+    expect(htmlD).toBe(render(cover(), { hero: { url: heroUrl } }))
+    // hiding the image removes it and leaves no backing behind
     const imageHidden = hide(cover(), 'hero')
     const htmlE = render(imageHidden, { hero: { url: heroUrl } })
-    expect(paintedAtoms(imageHidden, htmlE)).toContain('heroFrame')
-    expect(htmlE).toContain('#e8dcc3')
+    expect(paintedAtoms(imageHidden, htmlE)).not.toContain('hero')
+    expect(htmlE).not.toContain('#e8dcc3')
     expect(htmlE).not.toContain(heroUrl)
   })
 
-  it('F. logo artwork ownership is explicit: the "logo" slot (content asset), its own Element, a separate name Element', () => {
+  it('F. logo ownership is explicit: the "logo" slot (content asset) is ONE Element holding the COMPLETE logo; there is no separate name Element', () => {
     const logo = layoutOf('cover').elements.find((element) => element.id === 'brandLogo')!
-    const name = layoutOf('cover').elements.find((element) => element.id === 'brandName')!
     expect(logo).toMatchObject({ kind: 'image', assetSlot: 'logo' })
-    expect(name).toMatchObject({ kind: 'text' })
-    expect(name.assetSlot).toBeUndefined()
+    expect(layoutOf('cover').elements.some((element) => element.id === 'brandName')).toBe(false)
     expect(slotView(TEMPLATE, 'logo')).toMatchObject({ id: 'logo', role: 'content', label: 'Logo da marca' })
-    // hiding the logo leaves the name (and keeps its place); hiding the name leaves the logo
-    const noLogo = render(hide(cover(), 'brandLogo'))
-    expect(noLogo).toContain('Portal Comunidades Alternativas')
-    expect(noLogo).toMatch(/aria-label="Project brand mark"[^>]*visibility:hidden|visibility:hidden[^>]*aria-label="Project brand mark"|aria-label="Project brand mark"/)
-    const noName = render(hide(cover(), 'brandName'))
-    expect(noName).toContain('aria-label="Project brand mark"')
-    const legacyBrand = normalizeHiddenElements(layoutOf('cover'), ['brand'])
-    expect(legacyBrand).toEqual(['brandLogo', 'brandName'])
+    // the Project name is never drawn beside the logo (the file already carries it)
+    expect(render(cover())).not.toContain('Portal Comunidades Alternativas')
+    expect(render(hide(cover(), 'brandLogo'))).not.toContain('Portal Comunidades Alternativas')
+    // the legacy compound id still means the signature, which is now the logo alone
+    expect(normalizeHiddenElements(layoutOf('cover'), ['brand'])).toEqual(['brandLogo'])
   })
 
   it('G. replacing a file-backed Element changes only that resource: hero → only the hero layer; logo → only the logo layer; paper slot → only paper layers', () => {
@@ -405,12 +403,13 @@ describe('Info / Lista / Encerramento — brand, frames and invitation atoms', (
     expect(render(hide(state, 'noteText'))).not.toContain('Legenda da imagem')
     expect(render(hide(state, 'brandLogo'))).toMatch(/display:none[^>]*>(<div[^>]*aria-label="Project brand mark")/)
   })
-  it('Encerramento: hiding the invitation paper keeps its text; the name and logo are independent', () => {
+  it('Encerramento: hiding the invitation paper keeps its text; the signature is the complete logo alone (no name text)', () => {
     const state = baseState('closing', 'dark')
     expect(render(hide(state, 'note'))).toContain('Texto do convite')
     expect(render(hide(state, 'inviteText'))).not.toContain('Texto do convite')
-    expect(render(hide(state, 'brandName'))).toContain('aria-label="Project brand mark"')
-    expect(render(hide(state, 'brandLogo'))).toContain('Portal Comunidades Alternativas')
+    expect(render(state)).toContain('aria-label="Project brand mark"')
+    expect(render(state)).not.toContain('Portal Comunidades Alternativas')
+    expect(layoutOf('closing').elements.some((element) => element.id === 'brandName')).toBe(false)
   })
 })
 
@@ -467,13 +466,13 @@ describe('the "logo" Asset Slot (existing LibraryFile model; not a Project Ident
 })
 
 describe('Backward compatibility (migration: none)', () => {
-  it('a compound id persisted by an earlier mission keeps its meaning: hidden "brand" hides both atoms; "brand" in a saved order expands in place', () => {
+  it('a compound id persisted by an earlier mission keeps its meaning: hidden "brand" hides the signature (the logo); "brand" in a saved order expands in place', () => {
     const cover = layoutOf('cover')
-    expect(normalizeHiddenElements(cover, ['brand', 'noteText'])).toEqual(['noteText', 'brandLogo', 'brandName'])
+    expect(normalizeHiddenElements(cover, ['brand', 'noteText'])).toEqual(['noteText', 'brandLogo'])
     const saved = ['ornament', 'archival', 'botanicalLeaf', 'hero', 'botanical', 'tape1', 'note', 'noteText', 'tape2', 'paper', 'title', 'kicker', 'intro', 'source', 'brand']
     const normalized = normalizeElementOrder(cover, saved)
-    expect(normalized.slice(-2)).toEqual(['brandLogo', 'brandName'])
-    expect(normalized.indexOf('heroFrame')).toBe(normalized.indexOf('hero') - 1)
+    expect(normalized.slice(-1)).toEqual(['brandLogo'])
+    expect(normalized).not.toContain('heroFrame')
     expect(normalized).not.toContain('brand')
   })
 

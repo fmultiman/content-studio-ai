@@ -304,6 +304,33 @@ export function Sparkle({ color, size, style }: { color: string; size: number; s
 }
 
 /**
+ * CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1 — the brand signature as ONE complete logo asset.
+ *
+ * The Project/Template logo file is a complete logo/wordmark: it already carries the brand name, so nothing else
+ * is drawn beside it, and it is never masked (no circle, no border) or cropped (`contain`, anchored to the left of
+ * its box). Without an asset the accent disc placeholder stays, so an empty slot is still visible.
+ */
+export function BrandLogo({ asset, palette, width, height, style }: { asset?: ResolvedAsset; palette: CardPalette; width: number; height: number; style?: CSSProperties }) {
+  return (
+    <div style={{ alignItems: 'center', display: 'flex', ...style }}>
+      <AssetSurface
+        asset={asset}
+        label="Project brand mark"
+        style={{
+          backgroundColor: asset ? undefined : palette.accent,
+          backgroundPosition: 'left center',
+          backgroundSize: asset ? 'contain' : undefined,
+          borderRadius: asset ? undefined : '50%',
+          flexShrink: 0,
+          height,
+          width: asset ? width : height,
+        }}
+      />
+    </div>
+  )
+}
+
+/**
  * The brand signature: logo artwork + (optionally) the brand name. STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1
  * made them two Elements: a caller paints ONE part by passing `show`, and the other part keeps its layout
  * space (`visibility: hidden`), so the visible part stays exactly where the whole signature put it.
