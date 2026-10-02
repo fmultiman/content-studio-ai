@@ -24,6 +24,7 @@ import { AssetSlotCard } from '@/components/creative/authoring/inspector-panels'
 import { StylesTab } from '@/components/creative/authoring/styles-tab'
 import { RuntimeFontFaces } from '@/components/creative/authoring/runtime-font-faces'
 import { UnifiedMediaPickerDialog } from '@/components/creative/authoring/unified-media-picker-dialog'
+import { ReceivedMediaPanel, type ReceivedMediaAction } from '@/components/creative/handoff/received-media-panel'
 import { previewOverrideAssets, resolveSlotResource, type SlotLibraryFile } from '@/lib/creative/authoring/asset-slots'
 import { CreativeWorkbench, StackedWorkbench, useFloatingWorkbench } from '@/components/creative/editor/creative-workbench'
 import { INSPECTOR_SECTIONS, channelFormatLabel, elementsForVariant, type InspectorSection } from '@/lib/creative/authoring/editor-workspace'
@@ -1115,6 +1116,30 @@ export default function StaticAuthoringProductPage() {
     </header>
   )
 
+  /**
+   * The ONE way a Library image enters the composition as an element (add / replace). The Library picker and the
+   * handoff's "Mídia recebida" both call it: GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1 adds no second path.
+   * Authored state only (dirty until Salvar/autosave); it never creates a ChannelPieceMedia.
+   */
+  function applyLibraryImageToComposition(file: SlotLibraryFile, picker: { mode: 'add' } | { mode: 'replace'; elementId: string } | null) {
+    setProjectImages((current) => new Map(current).set(file.id, file))
+    if (mode === 'template') {
+      if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
+      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+    } else {
+      if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
+      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+    }
+  }
+  // Static accepts image LibraryFiles only (the server already refused any other kind for this editor).
+  const receivedMediaActions = (): ReceivedMediaAction[] => [{
+    key: 'add-image',
+    label: isCarousel ? 'Adicionar ao slide' : 'Adicionar à arte',
+    hint: 'Adiciona a imagem como um elemento (a mesma ação de Elementos → Adicionar imagem). Fica como alteração não salva até Salvar.',
+    run: (file) => applyLibraryImageToComposition(file, { mode: 'add' }),
+  }]
+  const receivedMedia = <ReceivedMediaPanel target={{ editor: 'static', projectId: context.project.id, editorialContentId: context.editorialContent.id, channelPieceId: context.channelPiece.id }} actionsFor={receivedMediaActions} />
+
   const removeDialog = <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}><AlertDialogContent data-testid="remove-slide-dialog"><AlertDialogHeader><AlertDialogTitle>Remover slide {currentSlideIndex + 1}?</AlertDialogTitle><AlertDialogDescription>Este slide será removido do estado de autoria (clique em Salvar para persistir). Arquivos e renders já salvos na peça não serão excluídos automaticamente.{currentHasSavedOutput ? ' Este slide tem um PNG salvo nesta peça: ele continua anexado à peça e na Galeria.' : ''}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={removeCurrentSlide}>Remover slide</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   const pendingLayoutLabel = pendingLayoutId ? getTemplateLayout(template, pendingLayoutId)?.label : undefined
   const layoutSwitchDialog = <LayoutSwitchDialog layoutLabel={pendingLayoutLabel ?? null} onCancel={() => setPendingLayoutId(null)} onConfirm={() => { if (pendingLayoutId) applyLayoutSwitch(pendingLayoutId); setPendingLayoutId(null) }} />
@@ -1142,17 +1167,7 @@ export default function StaticAuthoringProductPage() {
       title="Imagem da composição livre"
       description="Escolha uma imagem do Projeto. Ela será referenciada (não copiada) e posicionada dentro do formato da peça."
       onSelect={(file) => {
-        setProjectImages((current) => new Map(current).set(file.id, file))
-        const picker = freeImagePicker
-        
-        if (mode === 'template') {
-          if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
-          else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
-        } else {
-          if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
-          else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
-        }
-        
+        applyLibraryImageToComposition(file, freeImagePicker)
         setFreeImagePicker(null)
       }}
     />
@@ -1196,7 +1211,7 @@ export default function StaticAuthoringProductPage() {
     </Dialog></>
 
   if (!floating) {
-    return <DashboardPage><div className="min-w-0 px-4 py-3">{header}<StackedWorkbench canvas={canvas} inspector={inspector} />{restoreDialog}</div></DashboardPage>
+    return <DashboardPage><div className="min-w-0 px-4 py-3">{header}{receivedMedia}<StackedWorkbench canvas={canvas} inspector={inspector} />{restoreDialog}</div></DashboardPage>
   }
 
   // Desktop: the editor owns exactly the viewport below the global top bar — no page scroll in the edit loop.
@@ -1204,6 +1219,7 @@ export default function StaticAuthoringProductPage() {
     <DashboardPage>
       <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
+        {receivedMedia}
         <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
         {restoreDialog}
       </div>

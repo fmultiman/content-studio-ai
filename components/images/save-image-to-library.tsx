@@ -12,8 +12,9 @@ import Link from 'next/link'
 import { Check, FolderPlus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import { OpenInEditorButton } from '@/components/creative/handoff/open-in-editor'
 
-type SavedState = { imageId: string; status: 'hidden' | 'unsaved' | 'saved' }
+type SavedState = { imageId: string; status: 'hidden' | 'unsaved' | 'saved'; libraryFileId?: string }
 
 const ERROR_COPY: Record<string, string> = {
   OUTPUT_UNAVAILABLE: 'O arquivo da imagem não está mais disponível.',
@@ -37,14 +38,14 @@ export function SaveImageToLibrary({ imageId }: { imageId: string | null | undef
   useEffect(() => {
     if (!imageId) return
     let cancelled = false
-    const settle = (status: SavedState['status']) => {
-      if (!cancelled) setKnown({ imageId, status })
+    const settle = (status: SavedState['status'], libraryFileId?: string) => {
+      if (!cancelled) setKnown({ imageId, status, libraryFileId })
     }
     fetch(`/api/images/${imageId}/save-to-library`)
       .then(async (response) => (response.ok ? response.json() : null))
       .then((payload) => {
         if (!payload || payload.available === false) settle('hidden')
-        else if (payload.saved) settle('saved')
+        else if (payload.saved) settle('saved', typeof payload.saved.id === 'string' ? payload.saved.id : undefined)
         else settle(payload.promotable ? 'unsaved' : 'hidden')
       })
       .catch(() => settle('hidden'))
@@ -58,16 +59,22 @@ export function SaveImageToLibrary({ imageId }: { imageId: string | null | undef
   if (!imageId || state === 'unknown' || state === 'hidden') return null
 
   if (state === 'saved') {
+    // GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1: the handoff exists ONLY for an already-saved LibraryFile
+    // (never an implicit "save and open"); the id comes from the server's active-file answer.
+    const savedFileId = known?.libraryFileId
     return (
-      <Link
-        href="/arquivos"
-        className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-        data-testid="image-saved-to-library"
-        title="Ver em Arquivos"
-      >
-        <Check className="h-4 w-4" aria-hidden="true" />
-        Salvo em Arquivos
-      </Link>
+      <>
+        <Link
+          href="/arquivos"
+          className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+          data-testid="image-saved-to-library"
+          title="Ver em Arquivos"
+        >
+          <Check className="h-4 w-4" aria-hidden="true" />
+          Salvo em Arquivos
+        </Link>
+        {savedFileId ? <OpenInEditorButton libraryFileId={savedFileId} className="flex-1 gap-1 sm:flex-none" /> : null}
+      </>
     )
   }
 
@@ -79,7 +86,7 @@ export function SaveImageToLibrary({ imageId }: { imageId: string | null | undef
       const response = await fetch(`/api/images/${imageId}/save-to-library`, { method: 'POST' })
       const payload = await response.json().catch(() => ({}))
       if (response.ok && payload?.libraryFile?.id) {
-        setKnown({ imageId, status: 'saved' })
+        setKnown({ imageId, status: 'saved', libraryFileId: payload.libraryFile.id })
         toast({
           title: payload.result === 'already_saved' ? 'Já estava em Arquivos' : 'Salvo em Arquivos',
           description: 'A imagem agora está disponível em Arquivos.',

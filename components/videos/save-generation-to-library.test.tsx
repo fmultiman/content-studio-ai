@@ -124,3 +124,32 @@ describe('SaveGenerationToLibrary', () => {
     await waitFor(() => expect(screen.getByTestId('save-generation-to-library').hasAttribute('disabled')).toBe(false))
   })
 })
+
+// GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1 — "Abrir no editor" exists only for a succeeded generation that is
+// already saved as a LibraryFile.
+describe('SaveGenerationToLibrary — editor handoff entry point', () => {
+  it('an unsaved succeeded generation never exposes the handoff', () => {
+    render(<Card initial={succeeded} />)
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+  })
+
+  it('a saved generation exposes the handoff next to the saved state', () => {
+    render(<Card initial={{ ...succeeded, library_file_id: LIBRARY_FILE_ID }} />)
+    expect(screen.getByTestId('generation-saved-to-library')).toBeTruthy()
+    expect(screen.getByTestId('open-in-editor').textContent).toContain('Abrir no editor')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('an explicit save reveals the handoff afterwards (promotion and handoff stay two separate actions)', async () => {
+    render(<Card initial={succeeded} />)
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+    fireEvent.click(screen.getByTestId('save-generation-to-library'))
+    await screen.findByTestId('open-in-editor')
+    expect(posts()).toHaveLength(1)
+  })
+
+  it.each(['queued', 'submitted', 'processing', 'failed'])('a %s generation never exposes the handoff, even if it carries a stale pointer', (status) => {
+    render(<Card initial={{ ...succeeded, status, library_file_id: LIBRARY_FILE_ID }} />)
+    expect(screen.queryByTestId('open-in-editor')).toBeNull()
+  })
+})
