@@ -17,7 +17,31 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import React from 'react'
 import type { FreeElementBox, FreeSceneElement } from '@/lib/types'
+
+function PrecisionDisclosure({ children, title = 'Precisão' }: { children: React.ReactNode; title?: string }) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <div className="pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+        aria-expanded={open}
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
+        {title}
+      </button>
+      {open ? (
+        <div className="mt-3 animate-in fade-in slide-in-from-top-1">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 import {
   MAX_FREE_ELEMENTS, MAX_FREE_TEXT_LENGTH, freeElements, moveFreeElement, removeFreeElement, setFreeElementBox, setFreeElementHidden,
   updateFreeElement, type FreeHost, type FreeImagePatch, type FreeTextPatch,
@@ -175,7 +199,7 @@ function GeometryFields({ sceneId, element, onBox }: { sceneId: string; element:
   const fields: readonly [keyof FreeElementBox, string][] = [['x', 'X'], ['y', 'Y'], ['width', 'Largura'], ['height', 'Altura']]
   return (
     <div className="space-y-2" data-testid="free-geometry">
-      <span className="text-[11px] font-medium">Posição e tamanho (% do formato)</span>
+      <PrecisionDisclosure title="Posição e tamanho (% do formato)">
       <div className="grid grid-cols-4 gap-1.5">
         {fields.map(([key, label]) => (
           <div key={key} className="space-y-1">
@@ -201,7 +225,8 @@ function GeometryFields({ sceneId, element, onBox }: { sceneId: string; element:
         <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => onBox({ x: (1 - box.width) / 2 })} data-testid="free-geometry-center-x">Centralizar ↔</Button>
         <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => onBox({ y: (1 - box.height) / 2 })} data-testid="free-geometry-center-y">Centralizar ↕</Button>
         <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => onBox({ x: 0, y: 0, width: 1, height: 1 })} data-testid="free-geometry-fill">Palco inteiro</Button>
-      </div>
+        </div>
+      </PrecisionDisclosure>
     </div>
   )
 }
