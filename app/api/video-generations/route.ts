@@ -81,6 +81,11 @@ export async function POST(req: NextRequest) {
       aspect_ratio: body.aspect_ratio ?? undefined,
       audio: body.audio ?? undefined,
       multi_shot: body.multi_shot ?? undefined,
+      // MCP advanced Product controls: validated against the resolved connection's model like every other control
+      // (an unsupported or malformed value is a typed 400, never silently dropped).
+      asmr: body.asmr ?? undefined,
+      audio_prompt: body.audio_prompt ?? undefined,
+      music_prompt: body.music_prompt ?? undefined,
       outputCount: body.outputCount ?? body.imageCount ?? undefined,
     }
     // Vocabulary/shape errors are rejected before any database access.
@@ -217,6 +222,9 @@ export async function POST(req: NextRequest) {
           audio: videoRequest.audio ?? undefined,
           multi_shot: videoRequest.multiShot ?? undefined,
           aspect_ratio: videoRequest.aspectRatio ?? undefined,
+          asmr: videoRequest.asmr ?? undefined,
+          audio_prompt: videoRequest.audioPrompt ? videoRequest.audioPrompt : undefined,
+          music_prompt: videoRequest.musicPrompt ? videoRequest.musicPrompt : undefined,
           output_count: 1,
         },
       })

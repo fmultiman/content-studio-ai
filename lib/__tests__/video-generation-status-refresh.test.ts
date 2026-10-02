@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  describeGenerationNotReady,
   isInFlightGeneration,
   isSchedulerStalled,
   RECOVERY_SYNC_MIN_INTERVAL_MS,
@@ -127,5 +128,24 @@ describe('/videos page wiring', () => {
   it('does not refresh from a hidden tab and never overlaps ticks', () => {
     expect(page).toMatch(/document\.visibilityState === 'hidden'/)
     expect(page).toMatch(/refreshInFlightRef\.current/)
+  })
+})
+
+describe('describeGenerationNotReady — what "Assistir" says without a playable result', () => {
+  it.each(['queued', 'submitted', 'processing'])('%s is "not ready yet", not an error', (status) => {
+    expect(describeGenerationNotReady({ status })).toEqual({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+  })
+
+  it('a failed generation is reported as failed with its recorded reason — never as "not ready yet"', () => {
+    const notice = describeGenerationNotReady({ status: 'failed', error_details: { message: 'O resultado do provedor não pôde ser copiado com segurança.' } })
+    expect(notice).toEqual({ title: 'A geração falhou', description: 'O resultado do provedor não pôde ser copiado com segurança.', variant: 'destructive' })
+  })
+
+  it('a failed generation without a recorded reason still says it failed', () => {
+    for (const error_details of [null, undefined, {}, { message: '  ' }, { message: 42 }]) {
+      const notice = describeGenerationNotReady({ status: 'failed', error_details: error_details as any })
+      expect(notice.title).toBe('A geração falhou')
+      expect(notice.description).toBe('A Kling não concluiu esta geração.')
+    }
   })
 })
