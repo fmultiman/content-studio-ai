@@ -79,11 +79,37 @@ describe('MCP argument mapping (explicit, bounded)', () => {
     expect(() => call({ operation: 'image_to_video' })).toThrow()
   })
 
-  it('never forwards arbitrary UI JSON or unproductized provider arguments', () => {
-    const { request: normalized, model } = request({ operation: 'text_to_video', model: 'kling-video-v2_5', enable_asmr: true, audio_prompt: 'x', elements: '[]', imageCount: 1 } as any)
+  it('never forwards arbitrary UI JSON: only productized controls (by their Product keys) are mapped explicitly', () => {
+    // Raw provider-named / unproductized keys a browser might forge, next to ONE legitimate Product control (audio_prompt).
+    const { request: normalized, model } = request({ operation: 'text_to_video', model: 'kling-video-v2_5', enable_asmr: true, audio_prompt: 'x', elements: '[]', tail_image: 'https://evil.example/t.png', imageCount: 4 } as any)
     const built = buildKlingMcpVideoCall({ request: normalized, model, prompt: 'p' })
-    const names = built.arguments.map((entry) => entry.name)
-    for (const forbidden of ['enable_asmr', 'audio_prompt', 'music_prompt', 'elements', 'tail_image']) expect(names).not.toContain(forbidden)
+    const args = argMap(built)
+
+    // ASMR is a Product control keyed `asmr` (default false). The forged provider-named `enable_asmr: true` is not a Product key and is ignored.
+    expect(normalized.asmr).toBe(false)
+    expect(args.enable_asmr).toBe('false')
+    expect(built.arguments.filter((entry) => entry.name === 'enable_asmr')).toEqual([{ name: 'enable_asmr', value: 'false' }])
+    // audio_prompt IS a Product request field for Kling 2.5 text-to-video: it is forwarded explicitly.
+    expect(args.audio_prompt).toBe('x')
+    // music_prompt was not supplied: empty means omitted, never invented.
+    expect(built.arguments.map((entry) => entry.name)).not.toContain('music_prompt')
+    // Unproductized inputs never reach the provider, as arguments or as inputs.
+    expect(built.arguments.map((entry) => entry.name)).not.toContain('elements')
+    expect(built.arguments.map((entry) => entry.name)).not.toContain('tail_image')
+    expect(built.inputs).toEqual([])
+    // The output count is adapter-controlled (always 1); a browser-supplied imageCount has no authority.
+    expect(args.imageCount).toBe('1')
+    expect(built.arguments.filter((entry) => entry.name === 'imageCount')).toHaveLength(1)
+    // Nothing else leaks: the full argument set is exactly the explicit mapping.
+    expect(Object.keys(args).sort()).toEqual(['aspect_ratio', 'audio_prompt', 'duration', 'enable_asmr', 'enable_audio', 'imageCount', 'prompt', 'resolution'])
+  })
+
+  it('the canonical Product ASMR control (asmr) is what drives enable_asmr, and music_prompt is forwarded when supplied', () => {
+    const { request: normalized, model } = request({ operation: 'text_to_video', model: 'kling-video-v2_5', asmr: true, music_prompt: 'calm piano' })
+    const args = argMap(buildKlingMcpVideoCall({ request: normalized, model, prompt: 'p' }))
+    expect(args.enable_asmr).toBe('true')
+    expect(args.music_prompt).toBe('calm piano')
+    expect(args).not.toHaveProperty('audio_prompt')
   })
 
   it('imageCount is omitted for a model that does not declare it (nothing invented)', () => {
