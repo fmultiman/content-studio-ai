@@ -112,7 +112,7 @@ function TargetLists({ data, onGo, headingId }: { data: TargetsPayload; onGo: (h
                 </li>
               ))}
             </ul>
-          ) : <p className="text-sm text-muted-foreground" data-testid="handoff-static-empty">Nenhuma peça estática existente neste Projeto.</p>}
+          ) : <p className="text-sm text-muted-foreground" data-testid="handoff-static-empty">{data.static.blockedReason === 'PROJECT_IDENTITY_REQUIRED' ? 'O editor estático exige uma Identidade válida no Projeto.' : 'Nenhuma peça estática existente neste Projeto.'}</p>}
           {data.static.truncated ? <p className="text-[11px] text-muted-foreground">Mostrando os conteúdos editoriais mais recentes.</p> : null}
         </section>
       ) : null}

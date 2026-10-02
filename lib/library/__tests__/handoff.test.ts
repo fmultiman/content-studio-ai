@@ -55,13 +55,16 @@ const PROD_B = '20000000-0000-4000-8000-00000000000b'
 const FILE = '30000000-0000-4000-8000-000000000001'
 const UUID = '40000000-0000-4000-8000-000000000001'
 
+// Same shape the Static Editor accepts (normalizeProjectIdentity returns it): a versioned identity with content.
+const VALID_IDENTITY = { schema_version: 1, foundation: { purpose: 'Existir para iluminar.' } }
+
 const libraryFile = (overrides: Row = {}): Row => ({
   id: FILE, user_id: ME, project_id: P1, production_id: PROD_A, name: 'gerada.png', kind: 'image', mime_type: 'image/png',
   storage_path: `users/${ME}/library/${UUID}/gerada.png`, public_url: 'https://stored.example/x', thumbnail_url: null, deleted_at: null, ...overrides,
 })
 
 const baseTables = (): Record<string, Row[]> => ({
-  projects: [{ id: P1, user_id: ME }, { id: P2, user_id: ME }],
+  projects: [{ id: P1, user_id: ME, identity: VALID_IDENTITY }, { id: P2, user_id: ME, identity: VALID_IDENTITY }],
   productions: [
     { id: PROD_A, project_id: P1, user_id: ME, title: 'Production A' },
     { id: PROD_B, project_id: P1, user_id: ME, title: 'Production B' },
@@ -135,6 +138,13 @@ describe('resolveReceivedMedia — the receiving editor revalidates (the Project
   const video = (draftId: string) => ({ editor: 'video' as const, draftId })
   const staticTarget = (projectId: string) => ({ editor: 'static' as const, projectId, editorialContentId: EC_P1, channelPieceId: CP_P1 })
   beforeEach(withTargets)
+
+  it('Static route authority is unchanged: an identity-less Project still resolves a received Static target (the chooser, not this authority, applies the readiness gate)', async () => {
+    tables.projects = [{ id: P1, user_id: ME, identity: null }, { id: P2, user_id: ME, identity: null }]
+    const { client } = fake(tables)
+    const result = await resolveReceivedMedia(client, ME, { fileId: FILE, target: staticTarget(P1) })
+    expect(result.ok).toBe(true)
+  })
 
   it('returns a list-shaped, signed row for a same-Project image in either editor', async () => {
     for (const target of [video(VD_P1), staticTarget(P1)]) {
@@ -295,8 +305,58 @@ describe('loadHandoffTargets — existing, compatible, same-Project targets', ()
     const targets = await loadHandoffTargets(client, ME, await resolved(client))
     expect(targets.static.items.length).toBeGreaterThan(40)
     const before = log.reads.length
-    expect(log.reads.slice(before - 4)).toEqual(expect.arrayContaining(['productions', 'editorial_contents', 'video_drafts', 'channel_pieces']))
+    expect(log.reads.slice(before - 5)).toEqual(expect.arrayContaining(['productions', 'projects', 'editorial_contents', 'video_drafts', 'channel_pieces']))
     expect(log.reads.filter((table) => table === 'channel_pieces')).toHaveLength(1)
     expect(log.writes).toEqual([])
+  })
+})
+
+describe('loadHandoffTargets — Static Editor readiness (Project Identity) gates Static targets only', () => {
+  const resolved = async (client: SupabaseClient) => {
+    const result = await resolveHandoffLibraryFile(client, ME, FILE)
+    if (!result.ok) throw new Error('fixture must resolve')
+    return result
+  }
+
+  it('valid Project Identity: Static targets are listed with no block reason', async () => {
+    const { client } = fake(tables)
+    const targets = await loadHandoffTargets(client, ME, await resolved(client))
+    expect(targets.static.items.length).toBeGreaterThan(0)
+    expect(targets.static.blockedReason).toBeUndefined()
+  })
+
+  it.each([
+    ['missing (null)', null],
+    ['missing (undefined)', undefined],
+    ['empty string', ''],
+    ['empty object', {}],
+    ['structurally invalid (wrong schema_version)', { schema_version: 2, foundation: { purpose: 'x' } }],
+    ['structurally invalid (not an object)', 'texto'],
+  ])('%s Project Identity: NO Static target is listed, Video targets stay listed', async (_label, identity) => {
+    tables.projects = [{ id: P1, user_id: ME, identity }, { id: P2, user_id: ME, identity: VALID_IDENTITY }]
+    const { client, log } = fake(tables)
+    const targets = await loadHandoffTargets(client, ME, await resolved(client))
+    expect(targets.static.items).toEqual([])
+    expect(targets.static.blockedReason).toBe('PROJECT_IDENTITY_REQUIRED')
+    expect(targets.video.items.map((item) => item.draftId)).toEqual(expect.arrayContaining(['vd-a', 'vd-b', 'vd-null']))
+    expect(targets.video.blockedReason).toBeUndefined()
+    expect(log.writes).toEqual([])
+  })
+
+  it('a video file in an identity-less Project is unaffected (Static is not applicable, no block reason)', async () => {
+    tables.projects = [{ id: P1, user_id: ME, identity: null }]
+    tables.library_files = [libraryFile({ kind: 'video', mime_type: 'video/mp4' })]
+    const { client } = fake(tables)
+    const targets = await loadHandoffTargets(client, ME, await resolved(client))
+    expect(targets.static).toEqual({ items: [], truncated: false })
+    expect(targets.video.items.length).toBe(3)
+  })
+
+  it('foreign / mixed protections still hold for the chooser (other user, other Project)', async () => {
+    tables.projects = [{ id: P1, user_id: ME, identity: VALID_IDENTITY }]
+    const { client } = fake(tables)
+    const staticIds = (await loadHandoffTargets(client, ME, await resolved(client))).static.items.map((item) => item.channelPieceId)
+    expect(staticIds).not.toContain('cp-p2')
+    expect(staticIds).not.toContain('cp-foreign')
   })
 })

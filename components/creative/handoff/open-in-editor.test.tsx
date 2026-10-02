@@ -96,6 +96,15 @@ describe('OpenInEditorButton (target chooser)', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('a Static family blocked by the Project Identity gate says so and keeps the Video target openable', async () => {
+    payload = { file: file(), static: { items: [], truncated: false, blockedReason: 'PROJECT_IDENTITY_REQUIRED' }, video: { items: [videoTarget], truncated: false } }
+    await open()
+    expect((await screen.findByTestId('handoff-static-empty')).textContent).toContain('Identidade válida')
+    expect(screen.queryByTestId('handoff-static-target')).toBeNull()
+    fireEvent.click(screen.getByTestId('handoff-video-target'))
+    expect(push).toHaveBeenCalledWith(`/creative-editor/video/vd-1?media=${FILE}`)
+  })
+
   it('a stale / deleted / foreign file shows the server\'s bounded error and no targets', async () => {
     status = 404
     payload = { error: 'Este arquivo não foi encontrado ou foi removido de Arquivos.', code: 'NOT_FOUND' }

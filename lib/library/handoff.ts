@@ -13,7 +13,7 @@
 // authoring object (VideoDraft, ChannelPiece, ChannelPieceMedia, VideoScene, timeline item).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isStaticChannelPiece } from '@/lib/creative/context/static-authoring'
+import { isStaticChannelPiece, isStaticEditorProjectIdentityReady } from '@/lib/creative/context/static-authoring'
 import { channelFormatLabel } from '@/lib/creative/authoring/editor-workspace'
 import {
   handoffCompatibility, isHandoffCompatible, prioritizeByProduction, staticHandoffHref, videoHandoffHref,
@@ -131,8 +131,13 @@ export async function loadHandoffTargets(supabase: SupabaseClient, userId: strin
   const { file, projectId } = resolved
   const compatibility = handoffCompatibility(file)
 
-  const [productionsResult, editorialResult, draftsResult] = await Promise.all([
+  const [productionsResult, projectResult, editorialResult, draftsResult] = await Promise.all([
     supabase.from('productions').select('id, title').eq('project_id', projectId).eq('user_id', userId),
+    // The Static Editor refuses a Project without a valid Identity (PROJECT_IDENTITY_REQUIRED): such a Project has
+    // no openable Static target, so none is advertised. Video targets are independent of this gate.
+    compatibility.static
+      ? supabase.from('projects').select('id, identity').eq('id', projectId).eq('user_id', userId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     compatibility.static
       ? supabase.from('editorial_contents').select('id, title, production_id').eq('project_id', projectId).eq('user_id', userId).order('updated_at', { ascending: false }).limit(HANDOFF_EDITORIAL_CONTENT_LIMIT)
       : Promise.resolve({ data: [] as EditorialContentRow[], error: null }),
@@ -140,11 +145,12 @@ export async function loadHandoffTargets(supabase: SupabaseClient, userId: strin
       ? supabase.from('video_drafts').select('id, name, production_id').eq('project_id', projectId).eq('user_id', userId).order('updated_at', { ascending: false }).limit(HANDOFF_VIDEO_DRAFT_LIMIT)
       : Promise.resolve({ data: [] as VideoDraftRow[], error: null }),
   ])
-  if (productionsResult.error || editorialResult.error || draftsResult.error) throw new Error('HANDOFF_TARGETS_UNAVAILABLE')
+  if (productionsResult.error || projectResult.error || editorialResult.error || draftsResult.error) throw new Error('HANDOFF_TARGETS_UNAVAILABLE')
 
   const productionTitles = new Map((productionsResult.data as ProductionRow[] ?? []).map((row) => [row.id, row.title]))
   const productionTitle = (id: string | null) => (id ? productionTitles.get(id) ?? null : null)
-  const editorialContents = (editorialResult.data ?? []) as EditorialContentRow[]
+  const staticEditorReady = compatibility.static && isStaticEditorProjectIdentityReady((projectResult.data as { identity?: unknown } | null)?.identity)
+  const editorialContents = staticEditorReady ? (editorialResult.data ?? []) as EditorialContentRow[] : []
 
   let staticTargets: StaticHandoffTarget[] = []
   if (compatibility.static && editorialContents.length > 0) {
@@ -187,7 +193,7 @@ export async function loadHandoffTargets(supabase: SupabaseClient, userId: strin
     file: {
       id: file.id, name: file.name, kind: file.kind, mimeType: file.mime_type, projectId, productionId: fileProductionId, productionTitle: productionTitle(fileProductionId),
     },
-    static: { items: prioritizeByProduction(staticTargets, fileProductionId), truncated: editorialContents.length >= HANDOFF_EDITORIAL_CONTENT_LIMIT },
+    static: { items: prioritizeByProduction(staticTargets, fileProductionId), truncated: editorialContents.length >= HANDOFF_EDITORIAL_CONTENT_LIMIT, ...(compatibility.static && !staticEditorReady ? { blockedReason: 'PROJECT_IDENTITY_REQUIRED' as const } : {}) },
     video: { items: prioritizeByProduction(videoTargets, fileProductionId), truncated: drafts.length >= HANDOFF_VIDEO_DRAFT_LIMIT },
   }
 }
