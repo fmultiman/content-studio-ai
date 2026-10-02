@@ -70,3 +70,25 @@ export function selectRecoverySyncs(
   }
   return selected
 }
+
+export interface NotReadyNotice {
+  title: string
+  description: string
+  variant?: 'destructive'
+}
+
+/**
+ * What the card says when "Assistir" is pressed on a generation without a playable result. A failed generation is
+ * terminal: it is reported as failed (with the recorded reason) — never as "not ready yet".
+ */
+export function describeGenerationNotReady(generation: { status?: string | null; error_details?: { message?: unknown } | null }): NotReadyNotice {
+  if (generation.status === 'failed') {
+    const message = generation.error_details?.message
+    return {
+      title: 'A geração falhou',
+      description: typeof message === 'string' && message.trim() ? message : 'A Kling não concluiu esta geração.',
+      variant: 'destructive',
+    }
+  }
+  return { title: 'Aguardando', description: 'O vídeo ainda não está pronto.' }
+}

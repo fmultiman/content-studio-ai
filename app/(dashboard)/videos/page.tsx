@@ -11,8 +11,9 @@
  * render, result player) was removed: `/videos?draft=` is redirected by
  * proxy.ts, with a client-side fallback below.
  *
- * Long-term /videos becomes AI video / clip source-media generation (like
- * /imagens); that does not exist yet and is not simulated here.
+ * /videos also hosts AI video generation (Kling API / MCP): generations are SOURCE MEDIA with
+ * their own history cards, saved explicitly to Arquivos and opened in a Creative Editor only
+ * on an explicit action — a generation never becomes a VideoDraft by itself.
  */
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -20,6 +21,7 @@ import { createClient } from '@/lib/supabase/client'
 import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
 import type { VideoConnectionsResponse } from '@/lib/video-generation/capabilities'
 import {
+  describeGenerationNotReady,
   isInFlightGeneration,
   selectRecoverySyncs,
   STATUS_REFRESH_MS,
@@ -311,7 +313,7 @@ function VideosPageContent() {
             if (item.generation.status === 'succeeded') {
               setSelectedVideoGeneration(item);
             } else {
-              toast({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+              toast(describeGenerationNotReady(item.generation))
             }
           }} className="gap-1">
             <Video className="h-4 w-4" />

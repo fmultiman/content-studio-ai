@@ -12,11 +12,11 @@
 // integration details that stay behind the adapters.
 //
 // Deliberately NOT a universal framework: it models exactly two operations
-// (text_to_video, image_to_video) and the five controls the product exposes
-// today (duration, resolution, aspect ratio, audio, multi-shot). Both real
-// connections express every one of them as a DISCRETE set of allowed values,
-// so that is the only representation modelled (no range type until a real
-// connection needs one).
+// (text_to_video, image_to_video) and the controls the product exposes today:
+// duration, resolution, aspect ratio, audio, multi-shot and the MCP advanced
+// controls (ASMR, audio prompt, music prompt). Both real connections express
+// the discrete ones as a DISCRETE set of allowed values, so that is the only
+// representation modelled (no range type until a real connection needs one).
 
 export const VIDEO_OPERATIONS = ['image_to_video', 'text_to_video'] as const
 export type VideoOperation = (typeof VIDEO_OPERATIONS)[number]

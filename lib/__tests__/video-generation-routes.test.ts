@@ -404,6 +404,77 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
     expect(config.multi_shot).toBeUndefined()
   })
 
+  describe('MCP advanced Product controls (asmr / audio_prompt / music_prompt) reach the provider through the server route', () => {
+    const sentArgs = (mcp: FakeMcp) => Object.fromEntries(mcp.calls[0].arguments.arguments.map((a: any) => [a.name, a.value]))
+
+    it('Kling 2.5 text_to_video: the user’s ASMR, audio prompt and music prompt are validated, sent explicitly and recorded', async () => {
+      const db = makeDb({ connections: [connectionRow()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+
+      const response = await post(mcpBody({ model: 'kling-video-v2_5', asmr: true, audio_prompt: 'soft rain', music_prompt: 'calm piano' }))
+
+      expect(response.status).toBe(200)
+      expect(sentArgs(mcp)).toMatchObject({ enable_asmr: 'true', audio_prompt: 'soft rain', music_prompt: 'calm piano', imageCount: '1' })
+      expect(db.tables.video_generations[0].request_config).toMatchObject({ asmr: true, audio_prompt: 'soft rain', music_prompt: 'calm piano', output_count: 1 })
+    })
+
+    it('Kling 2.5 text_to_video: omitted advanced controls are sent with Content Studio’s defaults (ASMR off, no prompts)', async () => {
+      const db = makeDb({ connections: [connectionRow()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+
+      expect((await post(mcpBody({ model: 'kling-video-v2_5' }))).status).toBe(200)
+
+      const sent = sentArgs(mcp)
+      expect(sent.enable_asmr).toBe('false')
+      expect(sent).not.toHaveProperty('audio_prompt')
+      expect(sent).not.toHaveProperty('music_prompt')
+      expect(db.tables.video_generations[0].request_config).toMatchObject({ asmr: false })
+    })
+
+    it('Kling 2.5 image_to_video: ASMR is offered by the model and honored; audio/music prompts are not offered and are rejected', async () => {
+      const db = makeDb({ connections: [connectionRow()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+      const i2v = { mode: 'image_to_video', sourceImageId: 'img-1', model: 'kling-video-v2_5' }
+
+      expect((await post(mcpBody({ ...i2v, audio_prompt: 'x' }))).status).toBe(400)
+      expect(mcp.calls).toEqual([])
+      expect((await post(mcpBody({ ...i2v, asmr: true }))).status).toBe(200)
+      expect(mcp.calls.at(-1)!.arguments.arguments).toEqual(expect.arrayContaining([{ name: 'enable_asmr', value: 'true' }]))
+    })
+
+    it.each([
+      ['asmr on a model that does not offer it', { model: 'kling-video-v3_0', asmr: true }, 'UNSUPPORTED_ASMR'],
+      ['audio_prompt on a model that does not offer it', { model: 'kling-video-v3_0', audio_prompt: 'x' }, 'UNSUPPORTED_AUDIO_PROMPT'],
+      ['music_prompt on a model that does not offer it', { model: 'kling-video-v2_6', music_prompt: 'x' }, 'UNSUPPORTED_MUSIC_PROMPT'],
+      ['a non-boolean asmr', { model: 'kling-video-v2_5', asmr: 'true' }, 'UNSUPPORTED_ASMR'],
+      ['a non-string audio_prompt', { model: 'kling-video-v2_5', audio_prompt: 7 }, 'UNSUPPORTED_AUDIO_PROMPT'],
+    ])('rejects %s — zero provider calls, zero records', async (_name, extra, code) => {
+      const db = makeDb({ connections: [connectionRow()] })
+      signIn(db)
+      const mcp = installFakeMcp()
+
+      const response = await post(mcpBody(extra as any))
+
+      expect(response.status).toBe(400)
+      expect((await response.json()).code).toBe(code)
+      expect(mcp.calls).toEqual([])
+      expect(db.tables.video_generations).toHaveLength(0)
+    })
+
+    it('REST (Kling API): MCP-only advanced controls are rejected', async () => {
+      const db = makeDb({ klingKey: 'REST-KEY' })
+      signIn(db)
+      installFakeMcp()
+      for (const extra of [{ asmr: true }, { audio_prompt: 'x' }, { music_prompt: 'x' }]) {
+        expect((await post({ ...base, mode: 'text_to_video', ...extra })).status).toBe(400)
+      }
+      expect(restCalls).toEqual([])
+    })
+  })
+
   it('MCP image_to_video: uploads the trusted source bytes FIRST and sends the PROVIDER file URL as first_image (never our presigned URL)', async () => {
     const db = makeDb({ connections: [connectionRow()] })
     signIn(db)
