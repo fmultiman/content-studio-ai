@@ -157,6 +157,8 @@ export interface HeroTuning {
    * LEGACY (COVER_ELEMENT_COMPLETENESS_V1 toggle): the Hero's frame is its own Element now ('heroFrame', visibility
    * in `hiddenElements`). `frame: false` is only ever READ — slides saved with it are migrated to a hidden
    * 'heroFrame' on load, and the renderer still honours it so an old frozen snapshot paints as it did.
+   * The COVER has no hero backing at all any more (CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1): for it the flag, like a
+   * saved 'heroFrame' id, names nothing and is ignored. Lista / Citação keep their frame.
    */
   frame?: boolean
 }

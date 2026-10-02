@@ -33,14 +33,15 @@ describe('Wave 4 Documentary Card composition', () => {
     expect(markup).toContain('paper-card-light-01.png')
   })
 
-  it('renders the cover brand label from content (Pack B Slide 1 brand block)', () => {
+  it('does NOT draw the brand label beside the logo: the logo asset is the COMPLETE logo and already carries the name', () => {
     const input = documentaryCardFixtures.cover45
     const markup = renderToStaticMarkup(createElement(DocumentaryCard, {
       variant: 'cover',
       content: { ...(input.manifest.content as object), brand_label: 'Portal Comunidades Alternativas' } as never,
       assets: input.resolvedAssets, tokens: input.tokens, canvas: input.manifest.canvas, mode: 'still', sequence: input.manifest.sequence,
     }))
-    expect(markup).toContain('Portal Comunidades Alternativas')
+    expect(markup).not.toContain('Portal Comunidades Alternativas')
+    expect(markup.match(/aria-label="Project brand mark"/g)).toHaveLength(1)
   })
 
   it('renders info without a hero and preserves both fact cards', () => {

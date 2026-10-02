@@ -44,12 +44,8 @@ describe('TemplateElementPanel', () => {
     expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 })
   })
 
-  it('Moldura da imagem principal: no spatial control; it follows the image and says hiding one never hides the other', () => {
-    render(<Harness elementId="heroFrame" />)
-    expect(screen.queryAllByRole('slider')).toHaveLength(0)
-    const note = screen.getByTestId('follows-owner-note').textContent as string
-    expect(note).toContain('“Imagem principal”')
-    expect(note).toContain('ocultar “Imagem principal” não oculta este')
+  it('the Cover Hero has no backing/moldura Element to point at (CREATIVE_EDITOR_REAL_SMOKE_CORRECTNESS_HARDENING_V1)', () => {
+    expect(getTemplateLayout(TEMPLATE, 'cover')!.elements.some((element) => element.id === 'heroFrame')).toBe(false)
   })
 
   it('a fixed-geometry atom (Info: Texto principal) offers visibility/order only and points the text to Conteúdo', () => {
@@ -90,10 +86,8 @@ describe('TemplateElementPanel', () => {
     expect(screen.queryByRole('button', { name: /trocar/i })).toBeNull()
   })
 
-  it('Nome da marca: follows the logo position, independent visibility', () => {
-    render(<Harness elementId="brandName" />)
-    expect(screen.queryAllByRole('slider')).toHaveLength(0)
-    expect(screen.getByTestId('follows-owner-note').textContent).toContain('“Logo da marca”')
+  it('there is no separate Nome da marca Element: the signature is the one complete logo', () => {
+    expect(getTemplateLayout(TEMPLATE, 'cover')!.elements.some((element) => element.id === 'brandName')).toBe(false)
   })
 
   it('Nota da edição (the note text): no spatial control at all; it names its owner and where the text is edited', () => {

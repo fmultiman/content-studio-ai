@@ -94,6 +94,7 @@ export function I2vSourceBrowser({
   onClose,
   locked = false,
   onUploadBusyChange,
+  defaultProductionMode = 'current',
 }: {
   projectId: string
   /** The Production of the generation form. Default filter, and the Production of any upload. */
@@ -104,12 +105,14 @@ export function I2vSourceBrowser({
   /** True while an upload is in flight: categories and "Fechar" are locked so the upload always ends in a selection. */
   locked?: boolean
   onUploadBusyChange?: (busy: boolean) => void
+  /** The Production filter before the user chooses one. AI Video keeps 'current'; a Project-scoped caller (Static) passes 'all'. */
+  defaultProductionMode?: ProductionFilterMode
 }) {
   const [category, setCategory] = useState<I2vSourceCategory>('ai')
   // An explicit Production filter choice is remembered WITH the generation Production it was made for: a different
-  // generation Production falls back to the default ("Production atual") with no effect needed.
+  // generation Production falls back to the default ("Production atual" unless the caller sets another) with no effect needed.
   const [explicitFilter, setExplicitFilter] = useState<{ forProductionId: string | null; mode: ProductionFilterMode } | null>(null)
-  const productionMode: ProductionFilterMode = explicitFilter && explicitFilter.forProductionId === productionId ? explicitFilter.mode : 'current'
+  const productionMode: ProductionFilterMode = explicitFilter && explicitFilter.forProductionId === productionId ? explicitFilter.mode : defaultProductionMode
   const setProductionMode = (mode: ProductionFilterMode) => setExplicitFilter({ forProductionId: productionId, mode })
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')

@@ -79,7 +79,6 @@ export const LAYOUT_CONTENT_FIELDS: Readonly<Partial<Record<AuthoringVariant, re
     { kind: 'text', key: 'cta_text', label: 'Convite — texto', rows: 2, optional: true },
     { kind: 'text', key: 'contact', label: 'Contato', rows: 1, optional: true },
     { kind: 'text', key: 'tagline', label: 'Assinatura', rows: 1, optional: true },
-    { kind: 'text', key: 'brand_label', label: 'Nome da marca', rows: 1, optional: true },
   ],
 }
 
@@ -96,13 +95,12 @@ export const COVER_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
   { kind: 'text', key: 'subtitle', label: 'Texto', rows: 3, optional: true },
   { kind: 'text', key: 'source_line', label: 'Linha de fonte', rows: 1, optional: true },
   { kind: 'text', key: 'detail_note', label: 'Nota da edição', rows: 2, optional: true, hint: 'Use "Rótulo: texto" para destacar o rótulo.' },
-  { kind: 'text', key: 'brand_label', label: 'Nome da marca', rows: 1, optional: true },
 ]
 
 /**
  * COVER_ELEMENT_COMPLETENESS_V1 — the Static Cover Content tab: every authored Cover string, named by its role
- * (bounds = DocumentaryCardCoverContentSchema). `brand_label` is deliberately absent: it is derived from the live
- * Project name (variantHasBrandLabel), not per-slide authored content. Video keeps COVER_CONTENT_FIELDS.
+ * (bounds = DocumentaryCardCoverContentSchema). `brand_label` is absent: the logo file already carries the brand name, so
+ * Cover/Encerramento draw no separate name text (the optional content key stays in the schema, inert, for old rows).
  */
 export const STATIC_COVER_CONTENT_FIELDS: readonly ContentFieldDescriptor[] = [
   { kind: 'text', key: 'eyebrow', label: 'Chamada (kicker)', rows: 1, optional: true, maxLength: 48 },
