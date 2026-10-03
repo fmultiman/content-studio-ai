@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, GrainOverlay, Sparkle, elementTransform, localTypography, materialMetrics, materialUrl } from './primitives'
+import { AssetLayer, GrainOverlay, Sparkle, authoredPlacement, elementTransform, localTypography, materialMetrics, materialUrl } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -34,6 +34,8 @@ export function layoutKit(context: DocumentaryCardVisualContext) {
     localType: (id: string): CSSProperties => localTypography(context, id),
     url: (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls),
     fixedText: { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z } as CSSProperties,
+    /** CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: the Element's authored X/Y/rotation (its tuning group); nothing when unauthored. */
+    placed: (group: 'intro' | 'kicker' | 'items' | 'legend' | 'bullets' | 'body' | 'tagline', base = ''): CSSProperties => authoredPlacement(context.previewTuning?.[group], base),
     /**
      * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — a text/brand unit that used to sit on the fixed top layer with no identity.
      * It is an Element now: painted from the stack (on top by default, exactly where the fixed layer was) and hideable.

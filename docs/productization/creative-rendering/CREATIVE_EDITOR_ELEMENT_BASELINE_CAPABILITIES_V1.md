@@ -101,21 +101,55 @@ What changed in the product (everything else already matched the baseline):
 | Logo da marca — Info / Lista / Encerramento | none (fixed) | X, Y, Rotação, **Escala**, **Opacidade** (same set as Cover) |
 | Imagem principal (Cover/Lista/Citação) | X, Y, Rotação, Escala | + **Opacidade** |
 | Materials, procedural `map`, `tiles` | already full | unchanged |
+| Info Faixa da chamada / Aba da marca, Encerramento Linha pontilhada (exception audit) | none (fixed) | full material/procedural baseline (new channels) |
+| 14 formerly fixed text blocks (Info Texto principal/Anotação, `intro` ×5, Rede `kicker`, Itens ×2, Legenda, Tópicos, Texto de apoio, Frase final) (exception audit) | none (fixed) | Posição X/Y + Rotação (tuning) |
+| Info Chamada (`introText`) | none (fixed) | follows its banner (like every text on a paper) |
 | Text (all tuning groups / `transform` channel) | unchanged | unchanged |
 
-## 5. Explicit exceptions
+## 5. Explicit exceptions — and the exception audit
 
-Omitting the spatial baseline (position, scale, rotation, opacity; visibility is never omitted) happens only here:
+A baseline capability may be suppressed **only when the omission is semantically necessary**: the Element's place *is*
+another unit's place (`follows-owner`), its geometry is structurally derived from another Template unit
+(`derived-geometry`), or moving it alone would break an intentional compound relationship (`compound-relationship`).
+"Not implemented yet", "deferred", "fixed in the current code" and "the component does not support it" are **not** reasons.
+A test rejects those phrases in any explanation and rejects any reason outside the semantic list.
 
-| Exception | Elements | Reason |
+### Audit of the first delivery (PR #106, `d0cf68c`)
+
+PR #106 shipped 34 exceptions: 16 `follows` and 18 `fixed`. The 18 `fixed` ones were justified as "fixed text slot / composite
+block / backing / rule" — and one of the reasons even said "deferred". That is an implementation state, not a Template
+meaning, so the audit re-judged every one against the layout semantics:
+
+| Element (layout) / class | Baseline suppressed | Exception reason in #106 | Semantic? | Evidence from Template/layout |
+| :-- | :-- | :-- | :-: | :-- |
+| `follows` ×16 (text on its paper: noteText, card1Text, card2Text, calloutText, ideasText, cardsText, quoteText, inviteText; frame under its image: heroFrame ×2; pins/links of their owner: mapPins, links) / text, proceduralVisual | position, scale, rotation, opacity | follows-owner | **YES** | Each declares `stackPlacement { above | below: owner }`, is drawn inside its owner's visible box through the owner's channel (`AssetTextLayer`, `PlateFrame`, `ElementGroup`), and its owner is itself spatial. Its place is its owner's place by construction. |
+| introText (Info) / text | position, rotation | fixed-text-slot | **NO → now `follows('introBanner')`** | It is the text printed on the "Faixa da chamada" paper (same box, `stackPlacement above introBanner`) — exactly the noteText/card1Text pattern. Its owner was unwired, not the text. |
+| introBanner (Info) / decorativeAsset | position, scale, rotation, opacity | fixed-backing | **NO → transform channel `introBanner`** | A paper like every other paper (note, card1, paperDark…), all of which have the full channel. Nothing derives its geometry from another unit. |
+| brandTab (Info) / decorativeAsset | position, scale, rotation, opacity | fixed-backing | **NO → transform channel `brandTab`** | Same: an independent paper. The logo no longer needs it as a "fixed anchor" — Logo da marca is itself movable (#106). |
+| divider (Encerramento) / proceduralVisual | position, scale, rotation, opacity | fixed-rule | **NO → transform channel `divider`** | A decorative dotted line; no Template unit derives from it or it from them. Procedural visuals (Mapa) already have the full channel. |
+| intro (Lista, Grade, Mapa, Rede, Citação) / text | position, rotation | fixed-text-slot | **NO → tuning `intro`** | Cover's `intro` is the same role and already positioned through tuning `intro`. Same Element, different wiring. |
+| kicker (Rede) / text | position, rotation | fixed-text-slot | **NO → tuning `kicker`** | Cover's `kicker` already uses it. |
+| bodyText, annotation (Info) / text | position, rotation | fixed-text-slot | **NO → tuning `body`, `annotation`** | Single text blocks with absolute coordinates; nothing else depends on their place. |
+| body, tagline (Encerramento) / text | position, rotation | fixed-text-slot | **NO → tuning `body`, `tagline`** | Same. |
+| items (Lista, Encerramento), legend (Mapa), bullets (Citação) / text | position, rotation | fixed-composite-block | **NO → tuning `items`, `legend`, `bullets`** | "Moving it breaks its parts" is false: the block moves as one unit. Grade's `tiles` is the same kind of composite block (rows of icon+text) and already has a full transform channel. |
+
+Outcome: **all 18 `fixed` exceptions were implementation gaps** and were removed by implementing the missing baseline with the existing
+architecture (no new model): six honestly-named optional tuning groups (`body`, `annotation`, `items`, `legend`, `bullets`, `tagline`;
+`intro`/`kicker` already existed) and three material transform channels (`introBanner`, `brandTab`, `divider`). `introText` became a
+`follows` of its banner.
+
+### Current exceptions (after the audit)
+
+| Exception | Elements | Semantic evidence |
 | :-- | :-- | :-- |
-| `follows-owner` (`control: follows`) | noteText, card1Text, heroFrame, mapPins, links, … | Takes its owner's position, rotation, scale **and opacity**; independent only in visibility and paint order. |
-| `fixed-text-slot` | intro, kicker, annotation, introText, bodyText, body, tagline (where `fixed`) | Single text slot aligned to the layout's text column; place is Template grammar. A per-block authored position does not exist yet — **honestly recorded as deferred, not as semantically necessary**. |
-| `fixed-composite-block` | items, bullets, legend | Multi-part block laid out as one unit; moving/scaling it breaks its parts. |
-| `fixed-backing` | introBanner, brandTab | Paper backing fixed content that shares its box; moving it alone detaches it from the content on it. |
-| `fixed-rule` | divider | A rule spanning the layout's grammar. |
+| `follows-owner` | 17 `follows` Elements (the 16 above + Info `introText`, which now follows its banner: closing.inviteText, cover.noteText, grid.ideasText, info.card1Text, info.card2Text, info.introText, list.calloutText, list.heroFrame, list.noteText, map.mapPins, map.noteText, network.calloutText, network.cardsText, network.links, quote.calloutText, quote.heroFrame, quote.quoteText) | painted directly above/below an existing spatial owner and positioned by it |
+| `derived-geometry` / `compound-relationship` | none | `SEMANTIC_FIXED_EXCEPTIONS` is deliberately empty; no Template Element is `control: fixed` any more |
 
-Adding a `fixed` Element without a reason makes the registry test fail (and `missingBaseline` report it).
+The registry test pins this exact 17-element set.
+
+Tests that enforce this: every exception is semantic with layout evidence; a `fixed` Element without a semantic entry is a reported
+`missingBaseline` (never an exception); a source that cannot store a baseline field is reported; class baseline enforcement still fails when a
+capability is arbitrarily omitted; the excuse phrases above are rejected.
 
 ## 6. State-source mapping (nothing duplicated)
 
@@ -125,7 +159,8 @@ Adding a `fixed` Element without a reason makes the registry test fail (and `mis
 | Material / procedural / `tiles` placement | `primitiveTransforms[channel]` (`offsetX/Y, rotation, scale, opacity`) |
 | Content image placement | `tuning.hero` (`offsetX/Y, rotation, scale`, **+ optional `opacity`**) |
 | Logo da marca placement | `tuning.brand` (`offsetX/Y, rotation`, **+ optional `scale`, `opacity`**) |
-| Text placement | `tuning.title|source|kicker|intro` |
+| Text placement | `tuning.title|source|kicker|intro` and, since the exception audit, `tuning.body|annotation|items|legend|bullets|tagline` (same bounds: X/Y ±60, rotation ±2°) |
+| Formerly fixed materials / procedural visual | `primitiveTransforms.introBanner|brandTab|divider` (full five fields, same as every material) |
 | Typography | `typography` (Estilos) — untouched |
 | Resources | `assetOverrides` — untouched |
 | Paint order | `elementOrder` — untouched |
@@ -170,8 +205,7 @@ slide (`carousel-state.ts`) and the render request / frozen snapshot (`render-re
 ## 10. Renderer / worker impact
 
 Files bundled by the render worker that changed: `components/creative/documentary-card/{primitives,CoverVariant,
-InfoVariant,ListVariant,ClosingVariant}.tsx`, `lib/creative/templates/template-definitions.ts` (data only: three
-`brandLogo` controls). The Editor-only registry (`element-capabilities.ts`) is **not** in the export list (tested).
+InfoVariant,ListVariant,ClosingVariant}.tsx`, `lib/creative/templates/template-definitions.ts` (data only: controls of `brandLogo` and, after the exception audit, the 18 formerly fixed Elements), `layout-kit.tsx`, and the Grade/Mapa/Rede/Citação variants (`kit.placed`). The Editor-only registry (`element-capabilities.ts`) is **not** in the export list (tested).
 Preview and final render consume the same authored truth: a test freezes the state into a snapshot, parses it, builds the
 renderer props through the worker's `editorial.documentary-card` binding and asserts the markup is byte-identical to
 the Preview for a scaled Logo (4 layouts), a procedural visual with non-default Opacity and an image with a non-default
@@ -195,9 +229,9 @@ Range policy is the next slice. Visible current limits:
 * Content image Escala `0.9 – 1.15` (unchanged — the exact case the audit flagged), X/Y `±120`, rotation `±4°`; Opacity `0 – 1`.
 * Material channels: X/Y `±120`, rotation `±15°`, Escala `0.5 – 2`, Opacity `0 – 1`.
 * Text groups: X/Y `±60`, rotation `±2°`.
-* Fixed text slots have no authored position yet (listed as exceptions above).
+* The formerly fixed text blocks take the same bounded position as every other text (X/Y ±60, rotation ±2°); their range is part of the later range-policy slice.
 * Info/Lista logos are still drawn inside the existing circular mark (pre-existing; not part of this slice).
-* Two pre-existing baseline failures (`Estilo` vs `Estilos` label assertions in `editor-workspace.test.ts` and
+* Two pre-existing baseline failures (test-label drift, NOT part of this work; the product label stays "Estilos") (`Estilo` vs `Estilos` label assertions in `editor-workspace.test.ts` and
   `video-editor/__tests__/static-parity.test.ts`) fail identically on clean `origin/main` `1393c43`; unrelated and untouched.
 
 ## 13. Deferred next slices (not started)

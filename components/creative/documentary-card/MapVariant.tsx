@@ -85,9 +85,9 @@ export function MapVariant({ context }: { context: DocumentaryCardVisualContext;
       {/* Template text (fixed layer): badge, intro, legend. */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(30), left: x(70), lineHeight: 1.36, top: y(426), width: x(920), ...kit.localType('intro') }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(30), left: x(70), lineHeight: 1.36, top: y(426), width: x(920), ...kit.localType('intro'), ...kit.placed('intro') }}>{renderEmphasis(content.intro)}</div>
       ) : null}
-      <div style={{ ...kit.fixedAtom('legend'), display: kit.hidden('legend') ? 'none' : 'flex', flexDirection: 'column', gap: y(12), left: x(690), top: y(600), width: x(370) }} data-map-places={places.length}>
+      <div style={{ ...kit.fixedAtom('legend'), display: kit.hidden('legend') ? 'none' : 'flex', flexDirection: 'column', gap: y(12), left: x(690), top: y(600), width: x(370), ...kit.placed('legend') }} data-map-places={places.length}>
         {pins.map((pin, index) => (
           <div key={index} style={{ alignItems: 'center', color: ink, display: 'flex', fontFamily: body, fontSize: x(26), gap: x(16), lineHeight: 1.2 }}>
             <span aria-hidden="true" style={{ background: pin.color, borderRadius: '50%', flexShrink: 0, height: x(18), width: x(18) }} />

@@ -9,8 +9,9 @@
  *
  * Principle: Template constraints protect composition grammar; they do not arbitrarily remove safe manipulation
  * from a user-selectable Element. A visual class therefore has a BASELINE (a floor, never a ceiling: a control a source
- * supports beyond it stays), and the only ways to omit a baseline capability are the two explicit exception kinds below
- * — an Element that `follows` an owner, and a `fixed` Template-geometry Element with a written reason. Omission by
+ * supports beyond it stays), and the only way to omit a baseline capability is an explicit SEMANTIC exception (see
+ * CapabilityExceptionReason): an Element that `follows` its owner, or a `fixed` unit whose geometry is derived from another
+ * Template unit, with the evidence written down. "Not implemented yet" is never an exception. Omission by
  * "this component forgot to wire it" is not a state the model allows: `missingBaseline` reports it and the registry
  * test fails on it.
  *
@@ -60,37 +61,32 @@ export const ELEMENT_CLASS_BASELINE: Readonly<Record<ElementClass, readonly Elem
 
 // ── Explicit exceptions ───────────────────────────────────────────────────────
 
-/** Why an Element legitimately omits the spatial baseline. Every omission has one of these; none is implicit. */
-export type CapabilityExceptionReason =
-  | 'follows-owner'
-  | 'fixed-text-slot'
-  | 'fixed-composite-block'
-  | 'fixed-backing'
-  | 'fixed-rule'
+/**
+ * Why an Element may legitimately omit the spatial baseline. ONLY a semantic relationship qualifies:
+ *  - follows-owner         its place is the place of its owner (text printed on a paper, a frame under its image, pins on a map);
+ *  - derived-geometry      its geometry is structurally derived from another Template unit;
+ *  - compound-relationship moving it alone would break an intentional compound Template relationship.
+ * "Not implemented yet", "deferred", "fixed in the current code" and "the component does not support it" are NOT reasons: an
+ * Element that merely lacks wiring gets the missing control (or its class is corrected), never an exception.
+ */
+export type CapabilityExceptionReason = 'follows-owner' | 'derived-geometry' | 'compound-relationship'
+export const SEMANTIC_EXCEPTION_REASONS: readonly CapabilityExceptionReason[] = ['follows-owner', 'derived-geometry', 'compound-relationship']
 
 export const CAPABILITY_EXCEPTION_EXPLANATIONS: Readonly<Record<CapabilityExceptionReason, string>> = {
-  'follows-owner': 'Takes the position, rotation, scale and opacity of its owner Element; it stays independent only in visibility and paint order.',
-  'fixed-text-slot': 'A single text slot aligned to the layout\'s text column: its place is Template grammar. A per-block authored position does not exist yet (recorded as deferred).',
-  'fixed-composite-block': 'A multi-part block (rows, icons, bullets, places) laid out as one unit by the Template grammar; moving or scaling it would break the arrangement of its parts.',
-  'fixed-backing': 'The paper backing fixed Template content that shares its box: moving it alone would detach it from the content printed on it.',
-  'fixed-rule': 'A rule that spans the layout\'s grammar (a divider between fixed blocks), not a free-standing visual.',
+  'follows-owner': "Its place is its owner Element's place: it takes the owner's position, rotation, scale and opacity, and stays independent only in visibility and paint order.",
+  'derived-geometry': 'Its geometry is structurally derived from another Template unit, so it has no placement of its own.',
+  'compound-relationship': 'Moving it alone would break an intentional compound Template relationship with another unit.',
 }
 
 /**
- * `control: { type: 'fixed' }` Elements, with the reason each one omits the spatial baseline. A fixed Element missing
- * here is a defect (resolver reports it as unclassified; the registry test fails) — adding a `fixed` Element requires
- * writing its reason.
+ * `control: { type: 'fixed' }` Elements that omit the spatial baseline, with the SEMANTIC relationship that justifies it
+ * (`evidence` names the Template unit it depends on). Deliberately EMPTY: the audit found every formerly fixed Element
+ * (Info Texto principal / Anotação / Faixa da chamada / Aba da marca, the `intro` / `kicker` / Itens / Legenda / Tópicos /
+ * Texto de apoio / Frase final text blocks, Encerramento's Linha pontilhada) was only unwired — Cover already positions the same
+ * roles through tuning and Grade's compound block through a transform channel — so each got its authored placement instead.
+ * A `fixed` Element without an entry here is reported by `missingBaseline` and fails the registry test.
  */
-export const FIXED_ELEMENT_EXCEPTIONS: Readonly<Record<string, CapabilityExceptionReason>> = {
-  // text slots
-  intro: 'fixed-text-slot', kicker: 'fixed-text-slot', annotation: 'fixed-text-slot', introText: 'fixed-text-slot',
-  bodyText: 'fixed-text-slot', body: 'fixed-text-slot', tagline: 'fixed-text-slot',
-  // composite blocks
-  items: 'fixed-composite-block', bullets: 'fixed-composite-block', legend: 'fixed-composite-block',
-  // papers backing fixed content, and the dotted rule
-  introBanner: 'fixed-backing', brandTab: 'fixed-backing',
-  divider: 'fixed-rule',
-}
+export const SEMANTIC_FIXED_EXCEPTIONS: Readonly<Record<string, { reason: Exclude<CapabilityExceptionReason, 'follows-owner'>; evidence: string }>> = {}
 
 /** The spatial capabilities an Element loses under an exception. Visibility and paint order are never omitted. */
 const SPATIAL: readonly ElementCapability[] = ['position', 'scale', 'rotation', 'opacity']
@@ -122,6 +118,12 @@ const TUNING_GROUP_FIELDS: Readonly<Record<TuningGroup, readonly TransformField[
   source: ['offsetX', 'offsetY', 'rotation'],
   kicker: ['offsetX', 'offsetY', 'rotation'],
   intro: ['offsetX', 'offsetY', 'rotation'],
+  body: ['offsetX', 'offsetY', 'rotation'],
+  annotation: ['offsetX', 'offsetY', 'rotation'],
+  items: ['offsetX', 'offsetY', 'rotation'],
+  legend: ['offsetX', 'offsetY', 'rotation'],
+  bullets: ['offsetX', 'offsetY', 'rotation'],
+  tagline: ['offsetX', 'offsetY', 'rotation'],
 }
 
 const FIELD_STEP: Readonly<Record<TransformField, number>> = { offsetX: 1, offsetY: 1, rotation: 0.1, scale: 0.01, opacity: 0.01 }
@@ -203,7 +205,7 @@ export function resolveElementCapabilities(definition: Pick<TemplateElementDefin
 
   const exceptionReason: CapabilityExceptionReason | null = definition.control.type === 'follows'
     ? 'follows-owner'
-    : definition.control.type === 'fixed' ? (FIXED_ELEMENT_EXCEPTIONS[definition.id] ?? null) : null
+    : definition.control.type === 'fixed' ? (SEMANTIC_FIXED_EXCEPTIONS[definition.id]?.reason ?? null) : null
   const exception = exceptionReason ? { reason: exceptionReason, explanation: CAPABILITY_EXCEPTION_EXPLANATIONS[exceptionReason] } : null
 
   // A spatial capability exists exactly when the Element's existing source can store it (so no control is ever offered
@@ -220,7 +222,7 @@ export function resolveElementCapabilities(definition: Pick<TemplateElementDefin
 
   const missingBaseline = baseline.filter((capability) => {
     if (capabilities[capability]) return false
-    // Omission is allowed only under a documented exception (a `fixed` Element with no written reason has none), and only for the spatial capabilities.
+    // Omission is allowed only under a documented exception (a `fixed` Element with no semantic entry has none), and only for the spatial capabilities.
     return !(exception && SPATIAL.includes(capability))
   })
   return { elementClass, capabilities, exception, missingBaseline }

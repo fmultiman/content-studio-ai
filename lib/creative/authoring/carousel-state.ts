@@ -42,7 +42,7 @@ import {
   type AuthoringVariant,
   AUTHORING_VARIANTS,
 } from './types'
-import { defaultContentForVariant, TUNING_BOUNDS, variantHasBrandLabel } from './authoring-state'
+import { copyAuthoredOptionalGroups, defaultContentForVariant, TUNING_BOUNDS, variantHasBrandLabel } from './authoring-state'
 import { PRIMITIVE_TRANSFORM_SLOTS } from '@/lib/creative/primitives/transforms'
 import {
   AUTHORING_ASSET_SLOT_IDS,
@@ -89,6 +89,10 @@ const primitiveTransformsBySlotSchema = z
     ornament: primitiveTransformValueSchema.optional(),
     note: primitiveTransformValueSchema.optional(),
     card1: primitiveTransformValueSchema.optional(),
+    // Exception audit — formerly fixed Template geometry; absent on older rows = Template default.
+    introBanner: primitiveTransformValueSchema.optional(),
+    brandTab: primitiveTransformValueSchema.optional(),
+    divider: primitiveTransformValueSchema.optional(),
   })
   .strict()
 
@@ -147,6 +151,13 @@ const tuningSchema = z
     kicker: positionTuningSchema.optional(),
     intro: positionTuningSchema.optional(),
     brand: brandTuningSchema.optional(),
+    // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit): the text Elements that used to be fixed Template geometry.
+    body: positionTuningSchema.optional(),
+    annotation: positionTuningSchema.optional(),
+    items: positionTuningSchema.optional(),
+    legend: positionTuningSchema.optional(),
+    bullets: positionTuningSchema.optional(),
+    tagline: positionTuningSchema.optional(),
   })
   .strict()
 
@@ -294,9 +305,7 @@ export function authoringStateToPersistedSlide(state: AuthoringState, id: string
     tuning: {
       hero: { ...state.tuning.hero }, title: { ...state.tuning.title }, source: { ...state.tuning.source },
       // Only an authored optional group is persisted; absence keeps following the Template position.
-      ...(state.tuning.kicker ? { kicker: { ...state.tuning.kicker } } : {}),
-      ...(state.tuning.intro ? { intro: { ...state.tuning.intro } } : {}),
-      ...(state.tuning.brand ? { brand: { ...state.tuning.brand } } : {}),
+      ...copyAuthoredOptionalGroups(state.tuning),
     },
     // Only an authored override is persisted; absence keeps following the template default.
     ...(state.elementOrder && layout ? { elementOrder: normalizeElementOrder(layout, state.elementOrder) } : {}),
@@ -366,9 +375,7 @@ export function persistedSlideToAuthoringState(
     tuning: slide.tuning
       ? {
         hero: withoutLegacyFrame(slide.tuning.hero), title: { ...slide.tuning.title }, source: { ...(slide.tuning.source ?? DEFAULT_TUNING.source) },
-        ...(slide.tuning.kicker ? { kicker: { ...slide.tuning.kicker } } : {}),
-        ...(slide.tuning.intro ? { intro: { ...slide.tuning.intro } } : {}),
-        ...(slide.tuning.brand ? { brand: { ...slide.tuning.brand } } : {}),
+        ...copyAuthoredOptionalGroups(slide.tuning),
       }
       : { hero: { ...DEFAULT_TUNING.hero }, title: { ...DEFAULT_TUNING.title }, source: { ...DEFAULT_TUNING.source } },
     debugPanelOpen: false,

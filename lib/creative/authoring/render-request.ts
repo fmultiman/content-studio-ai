@@ -60,6 +60,13 @@ export const documentaryCardPreviewTuningSchema = z.object({
   kicker: sourceTuningSchema.optional(),
   intro: sourceTuningSchema.optional(),
   brand: brandTuningSchema.optional(),
+  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit) — text Elements that used to be fixed Template geometry.
+  body: sourceTuningSchema.optional(),
+  annotation: sourceTuningSchema.optional(),
+  items: sourceTuningSchema.optional(),
+  legend: sourceTuningSchema.optional(),
+  bullets: sourceTuningSchema.optional(),
+  tagline: sourceTuningSchema.optional(),
 }).strict()
 
 
@@ -110,6 +117,10 @@ export const primitiveTransformsBySlotSchema = z.object({
   ornament: primitiveTransformsSchema.optional(),
   note: primitiveTransformsSchema.optional(),
   card1: primitiveTransformsSchema.optional(),
+  // Exception audit — formerly fixed Template geometry.
+  introBanner: primitiveTransformsSchema.optional(),
+  brandTab: primitiveTransformsSchema.optional(),
+  divider: primitiveTransformsSchema.optional(),
 }).strict()
 
 /** Template Foundation V1: which registered Template authored this slide (renderer identity stays manifest.template). */

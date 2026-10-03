@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, brandLogoPlacement, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, authoredPlacement, brandLogoPlacement, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 import { DocumentaryIcon } from './icons'
 
@@ -136,12 +136,12 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
         </div>
       ) : null}
       {content.intro ? (
-        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480), zIndex: z('intro', STACK_TOP_Z), ...hideStyle('intro'), ...localTypography(context, 'intro') }}>
+        <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(31), left: x(66), lineHeight: 1.36, top: y(446), transform: `translateY(${context.contentTranslateY}px)`, width: x(480), zIndex: z('intro', STACK_TOP_Z), ...hideStyle('intro'), ...localTypography(context, 'intro'), ...authoredPlacement(context.previewTuning?.intro, `translateY(${context.contentTranslateY}px)`) }}>
           {renderEmphasis(content.intro)}
           <div aria-hidden="true" style={{ background: gold, height: 2, marginTop: y(26), opacity: .85, width: x(200) }} />
         </div>
       ) : null}
-      <div style={{ ...fixedText, display: 'flex', flexDirection: 'column', gap: y(34), left: x(66), top: y(content.intro ? 686 : 470), transform: `translateY(${context.contentTranslateY}px)`, width: x(490), zIndex: z('items', STACK_TOP_Z), ...hideStyle('items') }} data-list-items={items.length}>
+      <div style={{ ...fixedText, display: 'flex', flexDirection: 'column', gap: y(34), left: x(66), top: y(content.intro ? 686 : 470), transform: `translateY(${context.contentTranslateY}px)`, width: x(490), zIndex: z('items', STACK_TOP_Z), ...hideStyle('items'), ...authoredPlacement(context.previewTuning?.items, `translateY(${context.contentTranslateY}px)`) }} data-list-items={items.length}>
         {items.map((item, index) => (
           <div key={index} style={{ alignItems: 'flex-start', display: 'flex', gap: x(26) }}>
             <div style={{ alignItems: 'center', border: `1.5px solid ${gold}`, borderRadius: '50%', display: 'flex', flexShrink: 0, height: x(76), justifyContent: 'center', width: x(76) }}>

@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardFactCard, DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
-import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, brandLogoPlacement, localTypography, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, authoredPlacement, brandLogoPlacement, elementTransform, localTypography, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -49,6 +49,10 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
   const transforms = context.primitiveTransforms
   const url = (name: Parameters<typeof materialUrl>[0]) => materialUrl(name, context.materialBaseUrl, context.materialUrls)
   const fixedText: CSSProperties = { opacity: context.contentOpacity, position: 'absolute', zIndex: STACK_TOP_Z }
+  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit): the banner's authored transform (the paper and the text printed on it
+  // share ONE channel) sits on a wrapper that is exactly the banner's box, so both rotate/scale about the banner's centre; the Template tilt stays inside.
+  const banner = transforms?.introBanner
+  const bannerTransform: CSSProperties = banner ? { ...elementTransform(0, banner), height: y(210), opacity: context.contentOpacity * banner.opacity, width: x(360) } : {}
 
   const titleTuning = context.previewTuning?.title
   const sourceTuning = context.previewTuning?.source
@@ -129,7 +133,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
           </div>
         </div>
       ) : null}
-      <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(29), left: x(168), lineHeight: 1.36, top: y(572), transform: `translateY(${context.contentTranslateY}px)`, width: x(420), zIndex: z('bodyText', STACK_TOP_Z), ...hideStyle('bodyText') }}>
+      <div style={{ ...fixedText, color: ink, fontFamily: body, fontSize: x(29), left: x(168), lineHeight: 1.36, top: y(572), transform: `translateY(${context.contentTranslateY}px)`, width: x(420), zIndex: z('bodyText', STACK_TOP_Z), ...hideStyle('bodyText'), ...authoredPlacement(context.previewTuning?.body, `translateY(${context.contentTranslateY}px)`) }}>
         {content.body_blocks.map((block, index) => (
           <div key={index}>
             {index > 0 ? <div aria-hidden="true" style={{ background: gold, height: 2, margin: `${y(26)}px 0 ${y(30)}px`, opacity: .8, transform: 'rotate(-1deg)', width: x(240) }} /> : null}
@@ -138,14 +142,14 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
         ))}
       </div>
       {content.annotation ? (
-        <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126), zIndex: z('annotation', STACK_TOP_Z), ...hideStyle('annotation') }}>{content.annotation}</div>
+        <div style={{ ...fixedText, color: isDark ? '#cdbf9f' : '#7a6d5a', fontFamily: body, fontSize: x(24), fontStyle: 'italic', fontWeight: 400, left: x(944), lineHeight: 1.3, top: y(262), transform: 'rotate(-6deg)', width: x(126), zIndex: z('annotation', STACK_TOP_Z), ...hideStyle('annotation'), ...authoredPlacement(context.previewTuning?.annotation, 'rotate(-6deg)') }}>{content.annotation}</div>
       ) : null}
       {/* Faixa da chamada (paper) + Chamada (its text): two Elements sharing the banner's fixed box. */}
-      <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introBanner', STACK_TOP_Z + 1), ...hideStyle('introBanner') }}>
+      <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introBanner', STACK_TOP_Z + 1), ...hideStyle('introBanner'), ...bannerTransform }}>
         <AssetLayer label="Faixa da chamada" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2} shadow />
       </div>
       {content.intro ? (
-        <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introText', STACK_TOP_Z + 1), ...hideStyle('introText') }}>
+        <div style={{ ...fixedText, left: x(760), top: y(1160), zIndex: z('introText', STACK_TOP_Z + 1), ...hideStyle('introText'), ...bannerTransform }}>
           <AssetTextLayer label="Chamada" metrics={materialMetrics('paperDark')} box={{ left: 0, top: 0, width: x(360), height: y(210) }} rotation={-2}>
             <div style={{ alignItems: 'center', color: '#d9c79b', display: 'flex', fontFamily: display.family, fontSize: x(19), inset: 0, justifyContent: 'center', letterSpacing: '.16em', lineHeight: 1.5, padding: `0 ${x(46)}px`, position: 'absolute', textAlign: 'center', textTransform: 'uppercase' }}>{content.intro}</div>
           </AssetTextLayer>
@@ -153,7 +157,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
       ) : null}
       {/* Aba da marca (paper) + Logo da marca (artwork): two Elements; the logo is the "logo" asset slot. */}
       <div style={{ ...fixedText, right: x(-16), top: y(-18), zIndex: z('brandTab', STACK_TOP_Z), ...hideStyle('brandTab') }}>
-        <AssetLayer label="Aba da marca" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
+        <AssetLayer label="Aba da marca" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} transform={transforms?.brandTab} shadow />
       </div>
       <div style={{ ...fixedText, right: x(-16), top: y(-18), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo') }}>
         <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58), ...brandLogoPlacement(context.previewTuning?.brand, { width: x(128), height: x(128), anchorX: 0.5, anchorY: 0.5 }) }} />
