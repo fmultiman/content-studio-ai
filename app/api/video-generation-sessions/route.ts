@@ -17,16 +17,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const productionId = new URL(req.url).searchParams.get('productionId')
-    if (!isUuid(productionId)) {
+    const url = new URL(req.url)
+    const all = url.searchParams.get('all') === 'true'
+    const productionId = url.searchParams.get('productionId')
+    if (!all && !isUuid(productionId)) {
       return NextResponse.json({ error: 'productionId must be a UUID.', code: 'INVALID_PRODUCTION_ID' }, { status: 400 })
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('video_generation_sessions')
       .select(SESSION_COLUMNS)
       .eq('user_id', user.id)
-      .eq('production_id', productionId)
+
+    if (productionId) {
+      query = query.eq('production_id', productionId)
+    }
+
+    const { data, error } = await query
       .order('updated_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(SESSION_LIMITS.listMax)

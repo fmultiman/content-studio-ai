@@ -76,6 +76,7 @@ function VideosPageContent() {
   const [projects, setProjects] = useState<Project[]>([])
   const [productions, setProductions] = useState<Production[]>([])
   const [drafts, setDrafts] = useState<VideoDraft[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
   const [generations, setGenerations] = useState<any[]>([])
   const [isDataReady, setIsDataReady] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -171,15 +172,17 @@ function VideosPageContent() {
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, providersResponse] = await Promise.all([
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, sessionsResponse, providersResponse] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('productions').select('*').order('updated_at', { ascending: false }),
           fetch('/api/video-drafts?limit=50'),
           fetch('/api/video-generations'),
+          fetch('/api/video-generation-sessions?all=true'),
           fetch('/api/settings/providers'),
         ])
         const draftsData = await draftsResponse.json()
         const generationsData = await generationsResponse.json()
+        const sessionsData = await sessionsResponse.json()
 
         if (cancelled) return
         if (projectsData) setProjects(projectsData)
@@ -189,6 +192,9 @@ function VideosPageContent() {
 
         if (generationsResponse.ok) setGenerations(generationsData.generations || [])
         else console.error('[v0] Video generations load error:', generationsData)
+
+        if (sessionsResponse.ok) setSessions(sessionsData.sessions || [])
+        else console.error('[v0] Video sessions load error:', sessionsData)
 
         if (providersResponse.ok) {
           const providersPayload = await providersResponse.json()
@@ -209,55 +215,92 @@ function VideosPageContent() {
   }, [legacyTarget, retryKey])
 
   const hubCards = buildVideoDraftHubCards({ drafts, projects, productions })
-  
-  const generationCards = generations.map((g) => {
-    const project = projects.find(p => p.id === g.project_id)
-    const production = productions.find(p => p.id === g.production_id)
+
+  const sessionCards = sessions.map((s) => {
+    const project = projects.find((p) => p.id === s.projectId)
+    const production = productions.find((p) => p.id === s.productionId)
+    const sessionGenerations = generations.filter((g) => g.session_id === s.id)
+    const latestAttempt = sessionGenerations[0] ?? null
+    const derivedStatus = latestAttempt ? latestAttempt.status : 'Sem tentativas'
+    const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
+    const sessionTime = new Date(s.updatedAt).getTime()
+    const recency = Math.max(sessionTime, latestTime)
+
     return {
-      id: g.id,
-      kind: 'generation' as const,
-      title: g.prompt || 'Geraçao IA',
-      meta: `IA: ${g.mode === 'image_to_video' ? 'I2V' : 'T2V'}`,
+      id: s.id,
+      kind: 'session' as const,
+      title: s.workingState?.prompt || 'Workspace de geração',
+      meta: `Sessão · ${sessionGenerations.length} tentativa${sessionGenerations.length !== 1 ? 's' : ''}`,
       projectName: project?.name || 'Projeto Desconhecido',
       productionName: production?.title || 'Produção Desconhecida',
-      status: g.status,
-      updatedAt: g.updated_at,
-      projectId: g.project_id || '',
-      productionId: g.production_id || '',
-      href: g.public_url || '#',
+      status: derivedStatus,
+      updatedAt: s.updatedAt,
+      recency,
+      projectId: s.projectId || '',
+      productionId: s.productionId || '',
+      href: `/videos/geracoes/${s.id}`,
       productionHref: production ? `/projetos/${project?.id}/producoes/${production.id}` : undefined,
-      generation: g
     }
   })
 
-  // Mixed list
-  const allCards = [
-    ...hubCards.map(c => ({ ...c, kind: 'draft' as const })),
-    ...generationCards
-  ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  
+  const legacyAttemptCards = generations
+    .filter((g) => g.session_id === null || g.session_id === undefined)
+    .map((g) => {
+      const project = projects.find((p) => p.id === g.project_id)
+      const production = productions.find((p) => p.id === g.production_id)
+      return {
+        id: g.id,
+        kind: 'generation' as const,
+        title: g.prompt || 'Geração IA',
+        meta: `Histórico · ${g.mode === 'image_to_video' ? 'I2V' : 'T2V'}`,
+        projectName: project?.name || 'Projeto Desconhecido',
+        productionName: production?.title || 'Produção Desconhecida',
+        status: g.status,
+        updatedAt: g.updated_at,
+        recency: new Date(g.created_at).getTime(),
+        projectId: g.project_id || '',
+        productionId: g.production_id || '',
+        href: g.public_url || '#',
+        productionHref: production ? `/projetos/${project?.id}/producoes/${production.id}` : undefined,
+        generation: g,
+      }
+    })
+
+  const aiCards = [...sessionCards, ...legacyAttemptCards].sort((a, b) => b.recency - a.recency)
+
+  const draftCards = hubCards.map((c) => ({
+    ...c,
+    kind: 'draft' as const,
+    recency: new Date(c.updatedAt).getTime(),
+  })).sort((a, b) => b.recency - a.recency)
+
   const hubFilteredProductions = hubProjectFilter === 'all'
     ? productions
     : productions.filter((production) => production.project_id === hubProjectFilter)
-  
-  // Custom filter for mixed content since filterDraftHubCards expects DraftHubCard format
-  const filteredHubCards = allCards.filter(card => {
+
+  const applyCardFilter = (card: { projectId?: string | null; productionId?: string | null; status: string; title: string; projectName?: string | null; productionName?: string | null }) => {
     if (hubProjectFilter !== 'all' && card.projectId !== hubProjectFilter) return false
     if (hubProductionFilter !== 'all' && card.productionId !== hubProductionFilter) return false
     if (hubStatusFilter !== 'all') {
-      if (hubStatusFilter === 'Rascunho' && card.kind !== 'draft') return false
-      // maybe map status
+      if (card.status !== hubStatusFilter) return false
     }
     if (hubSearch.trim()) {
       const q = hubSearch.toLowerCase()
-      if (!card.title.toLowerCase().includes(q) &&
-          !card.projectName.toLowerCase().includes(q) &&
-          (!card.productionName || !card.productionName.toLowerCase().includes(q))) {
+      if (
+        !card.title.toLowerCase().includes(q) &&
+        (!card.projectName || !card.projectName.toLowerCase().includes(q)) &&
+        (!card.productionName || !card.productionName.toLowerCase().includes(q))
+      ) {
         return false
       }
     }
     return true
-  })
+  }
+
+  const filteredAiCards = aiCards.filter(applyCardFilter)
+  const filteredDraftCards = draftCards.filter(applyCardFilter)
+  const allCards = [...aiCards, ...draftCards]
+  const filteredHubCards = [...filteredAiCards, ...filteredDraftCards]
   
   const hasHubFilters = hubProjectFilter !== 'all' || hubProductionFilter !== 'all' || hubStatusFilter !== 'all' || !!hubSearch.trim()
   const hubEmptyState = getDraftHubEmptyState({
@@ -304,6 +347,23 @@ function VideosPageContent() {
     setGenerations((previous) => previous.map((entry) => (entry.id === generationId ? { ...entry, library_file_id: libraryFileId } : entry)))
 
   const renderDraftActions = (item: (typeof filteredHubCards)[number], size: 'sm' | 'default') => {
+    if (item.kind === 'session') {
+      return (
+        <>
+          <Button size={size} onClick={() => router.push(item.href)} className="gap-1" data-testid="continue-session">
+            <Zap className="h-4 w-4" />
+            Continuar
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          {item.productionHref && (
+            <Button size={size} variant="outline" onClick={() => router.push(item.productionHref!)}>
+              Ver Production
+            </Button>
+          )}
+        </>
+      )
+    }
+
     if (item.kind === 'generation') {
       return (
         <>
@@ -313,9 +373,22 @@ function VideosPageContent() {
             } else {
               toast(describeGenerationNotReady(item.generation))
             }
-          }} className="gap-1">
+          }} className="gap-1" data-testid="watch-generation">
             <Video className="h-4 w-4" />
             {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
+          </Button>
+          <Button
+            size={size}
+            variant="outline"
+            onClick={() => {
+              const newSessionId = crypto.randomUUID()
+              const url = `/videos/geracoes/${newSessionId}?new=1&project=${encodeURIComponent(item.projectId)}&production=${encodeURIComponent(item.productionId)}&reuseGenerationId=${encodeURIComponent(item.id)}`
+              router.push(url)
+            }}
+            className="gap-1"
+            data-testid="reuse-generation-settings"
+          >
+            Reutilizar configurações
           </Button>
           <SaveGenerationToLibrary generation={item.generation} size={size} onSaved={markGenerationSaved} />
           {item.productionHref && (
@@ -476,9 +549,10 @@ function VideosPageContent() {
                         className="w-full gap-2 text-primary-foreground bg-primary hover:bg-primary/90"
                         onClick={() => router.push(`/videos/geracoes/${crypto.randomUUID()}?new=1&project=${hubCreateProjectId}&production=${hubCreateProductionId}`)}
                         disabled={!hubCreateProjectId || !hubCreateProductionId}
+                        data-testid="generate-ai-video-btn"
                       >
                         <Zap className="h-4 w-4" />
-                        Gerar vídeo com IA (Kling)
+                        Gerar vídeo com IA
                       </Button>
 
                       <Button
@@ -500,10 +574,10 @@ function VideosPageContent() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h2 id="video-draft-filters" className="text-lg font-semibold text-foreground">
-                      Rascunhos recentes
+                      Vídeos
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      Abra um rascunho no Creative Editor.
+                      Gerencie gerações de IA e edições de vídeo.
                     </p>
                   </div>
                   <ViewModeToggle value={hubViewMode} onValueChange={setHubViewMode} />
@@ -591,79 +665,199 @@ function VideosPageContent() {
                       </Button>
                     ) : null}
                   </div>
-                ) : hubViewMode === 'list' ? (
-                  <div role="list" className="space-y-2">
-                    {filteredHubCards.map((item) => (
-                      <Card
-                        key={`list-${item.kind}-${item.id}`}
-                        role="listitem"
-                        className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
-                      >
-                        <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-                          <div className="min-w-0 space-y-3">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
-                                <CardTitle className="truncate text-sm" title={item.title}>
-                                  {item.title}
-                                </CardTitle>
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
-                              {item.kind === 'generation' && (
-                                <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
-                              )}
-                            </div>
-                            <ContextMetadata
-                              dense
-                              items={[
-                                { label: 'Project', value: item.projectName, title: item.projectName },
-                                { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
-                                { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
-                              ]}
-                            />
-                          </div>
-                          <CardActions className="flex flex-wrap gap-2 md:justify-end">
-                            {renderDraftActions(item, 'sm')}
-                          </CardActions>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {filteredHubCards.map((item) => (
-                      <Card key={`grid-${item.kind}-${item.id}`} className="border-border/50 bg-card/30 backdrop-blur-sm">
-                        <CardContent className="space-y-4 p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
-                              <Video className="h-5 w-5 text-pink-300" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <CardTitle className="line-clamp-2 text-base" title={item.title}>
-                                {item.title}
-                              </CardTitle>
-                              <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
-                              {item.kind === 'generation' && (
-                                <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
-                              )}
-                            </div>
-                          </div>
-                          <ContextMetadata
-                            dense
-                            items={[
-                              { label: 'Project', value: item.projectName, title: item.projectName },
-                              { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                              { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
-                              { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
-                            ]}
-                          />
-                          <CardActions className="flex flex-wrap gap-2">
-                            {renderDraftActions(item, 'default')}
-                          </CardActions>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  <div className="space-y-8">
+                    {/* Gerações IA */}
+                    <div className="space-y-3" data-testid="ai-generations-group">
+                      <div>
+                        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                          <Zap className="h-4 w-4 text-primary" /> Gerações IA
+                        </h3>
+                        <p className="text-xs text-muted-foreground">Workspaces de geração e histórico de tentativas</p>
+                      </div>
+
+                      {filteredAiCards.length === 0 ? (
+                        <Card className="border-dashed" data-testid="ai-generations-empty">
+                          <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                            <Zap className="mb-2 h-8 w-8 opacity-40" />
+                            <p className="text-sm font-medium">Nenhuma geração IA encontrada.</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Inicie uma nova geração acima para começar.</p>
+                          </CardContent>
+                        </Card>
+                      ) : hubViewMode === 'list' ? (
+                        <div role="list" className="space-y-2">
+                          {filteredAiCards.map((item) => (
+                            <Card
+                              key={`list-${item.kind}-${item.id}`}
+                              role="listitem"
+                              className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
+                              data-testid={`card-${item.kind}-${item.id}`}
+                            >
+                              <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                                <div className="min-w-0 space-y-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      {item.kind === 'session' ? (
+                                        <Zap className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                                      ) : (
+                                        <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
+                                      )}
+                                      <CardTitle className="truncate text-sm" title={item.title}>
+                                        {item.title}
+                                      </CardTitle>
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                                    {item.kind === 'generation' && (
+                                      <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
+                                    )}
+                                  </div>
+                                  <ContextMetadata
+                                    dense
+                                    items={[
+                                      { label: 'Project', value: item.projectName, title: item.projectName },
+                                      { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
+                                    ]}
+                                  />
+                                </div>
+                                <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                                  {renderDraftActions(item, 'sm')}
+                                </CardActions>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {filteredAiCards.map((item) => (
+                            <Card key={`grid-${item.kind}-${item.id}`} className="border-border/50 bg-card/30 backdrop-blur-sm" data-testid={`card-${item.kind}-${item.id}`}>
+                              <CardContent className="space-y-4 p-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15">
+                                    {item.kind === 'session' ? (
+                                      <Zap className="h-5 w-5 text-primary" />
+                                    ) : (
+                                      <Video className="h-5 w-5 text-pink-300" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <CardTitle className="line-clamp-2 text-base" title={item.title}>
+                                      {item.title}
+                                    </CardTitle>
+                                    <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                                    {item.kind === 'generation' && (
+                                      <GenerationProvenance generation={(item as any).generation} connectionNames={connectionNames} />
+                                    )}
+                                  </div>
+                                </div>
+                                <ContextMetadata
+                                  dense
+                                  items={[
+                                    { label: 'Project', value: item.projectName, title: item.projectName },
+                                    { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
+                                  ]}
+                                />
+                                <CardActions className="flex flex-wrap gap-2">
+                                  {renderDraftActions(item, 'default')}
+                                </CardActions>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Edições */}
+                    <div className="space-y-3" data-testid="editions-group">
+                      <div>
+                        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                          <Clapperboard className="h-4 w-4 text-pink-400" /> Edições
+                        </h3>
+                        <p className="text-xs text-muted-foreground">Rascunhos recentes de composição e edição no Creative Editor</p>
+                      </div>
+
+                      {filteredDraftCards.length === 0 ? (
+                        <Card className="border-dashed" data-testid="editions-empty">
+                          <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                            <Clapperboard className="mb-2 h-8 w-8 opacity-40" />
+                            <p className="text-sm font-medium">Nenhuma edição encontrada.</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Crie um novo vídeo acima para compor cenas.</p>
+                          </CardContent>
+                        </Card>
+                      ) : hubViewMode === 'list' ? (
+                        <div role="list" className="space-y-2">
+                          {filteredDraftCards.map((item) => (
+                            <Card
+                              key={`list-${item.kind}-${item.id}`}
+                              role="listitem"
+                              className="border-border/50 bg-card/30 transition-colors hover:border-border hover:bg-card/50"
+                              data-testid={`card-${item.kind}-${item.id}`}
+                            >
+                              <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                                <div className="min-w-0 space-y-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <Clapperboard className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
+                                      <CardTitle className="truncate text-sm" title={item.title}>
+                                        {item.title}
+                                      </CardTitle>
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                                  </div>
+                                  <ContextMetadata
+                                    dense
+                                    items={[
+                                      { label: 'Project', value: item.projectName, title: item.projectName },
+                                      { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
+                                    ]}
+                                  />
+                                </div>
+                                <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                                  {renderDraftActions(item, 'sm')}
+                                </CardActions>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {filteredDraftCards.map((item) => (
+                            <Card key={`grid-${item.kind}-${item.id}`} className="border-border/50 bg-card/30 backdrop-blur-sm" data-testid={`card-${item.kind}-${item.id}`}>
+                              <CardContent className="space-y-4 p-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-500/15">
+                                    <Clapperboard className="h-5 w-5 text-pink-300" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <CardTitle className="line-clamp-2 text-base" title={item.title}>
+                                      {item.title}
+                                    </CardTitle>
+                                    <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                                  </div>
+                                </div>
+                                <ContextMetadata
+                                  dense
+                                  items={[
+                                    { label: 'Project', value: item.projectName, title: item.projectName },
+                                    { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
+                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
+                                  ]}
+                                />
+                                <CardActions className="flex flex-wrap gap-2">
+                                  {renderDraftActions(item, 'default')}
+                                </CardActions>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </section>

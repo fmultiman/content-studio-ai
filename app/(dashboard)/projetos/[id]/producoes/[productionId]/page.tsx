@@ -47,7 +47,16 @@ import {
   Link2Off,
   ExternalLink,
   Zap,
+  Clapperboard,
+  ChevronRight,
 } from 'lucide-react'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { GenerationProvenance } from '@/components/videos/generation-provenance'
+import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
+import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
+import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
+import type { VideoConnectionsResponse } from '@/lib/video-generation/capabilities'
+import { describeGenerationNotReady } from '@/lib/video-generation/status-refresh'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, ImageDraft, VideoDraft, EditorialContent, ChannelPiece } from '@/lib/types'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -120,6 +129,10 @@ export default function ProductionDetailPage() {
   // Workspace data
   const [imageDrafts, setImageDrafts] = useState<ImageDraft[]>([])
   const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
+  const [videoSessions, setVideoSessions] = useState<any[]>([])
+  const [videoGenerations, setVideoGenerations] = useState<any[]>([])
+  const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
+  const [connectionNames, setConnectionNames] = useState<ReadonlyMap<string, string>>(new Map())
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false)
 
   // Editorial contents state
@@ -192,19 +205,25 @@ export default function ProductionDetailPage() {
     const loadWorkspace = async () => {
       setIsLoadingWorkspace(true)
       try {
-        const [imgRes, vidRes, ecRes] = await Promise.all([
+        const [imgRes, vidRes, ecRes, vidSessionsRes, vidGenerationsRes] = await Promise.all([
           fetch(`/api/image-drafts?productionId=${productionId}`),
           fetch(`/api/video-drafts?productionId=${productionId}`),
           fetch(`/api/editorial-contents?productionId=${productionId}`),
+          fetch(`/api/video-generation-sessions?productionId=${productionId}`),
+          fetch(`/api/video-generations?productionId=${productionId}`),
         ])
-        const [imgData, vidData, ecData] = await Promise.all([
+        const [imgData, vidData, ecData, vidSessionsData, vidGenerationsData] = await Promise.all([
           imgRes.json(),
           vidRes.json(),
           ecRes.json(),
+          vidSessionsRes.json(),
+          vidGenerationsRes.json(),
         ])
         if (imgRes.ok) setImageDrafts(imgData.drafts || [])
         if (vidRes.ok) setVideoDrafts(vidData.drafts || [])
         if (ecRes.ok) setEditorialContents(ecData.editorialContents || [])
+        if (vidSessionsRes.ok) setVideoSessions(vidSessionsData.sessions || [])
+        if (vidGenerationsRes.ok) setVideoGenerations(vidGenerationsData.generations || [])
       } catch {
         // silently fail — workspace items are non-critical
       } finally {
@@ -213,6 +232,21 @@ export default function ProductionDetailPage() {
     }
     loadWorkspace()
   }, [production, productionId])
+
+  useEffect(() => {
+    const hasMcp = videoGenerations.some((g: any) => g.transport === 'mcp' && g.connection_id)
+    if (!hasMcp) return
+    let cancelled = false
+    fetch('/api/video-generations/connections')
+      .then((res) => (res.ok ? (res.json() as Promise<VideoConnectionsResponse>) : null))
+      .then((payload) => {
+        if (!cancelled && payload) setConnectionNames(connectionNamesById(payload.connections))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [videoGenerations])
 
   // Load channel pieces for all ECs of this production (independent of workspace load)
   useEffect(() => {
@@ -322,7 +356,45 @@ export default function ProductionDetailPage() {
     }
   }
 
-  const formatDate = (dateString: string) =>
+      const markGenerationSaved = (generationId: string, libraryFileId: string) =>
+        setVideoGenerations((prev) => prev.map((entry) => (entry.id === generationId ? { ...entry, library_file_id: libraryFileId } : entry)))
+
+      const standaloneGenerations = videoGenerations.filter((g) => g.session_id === null || g.session_id === undefined)
+
+      const productionAiCards = [
+        ...videoSessions.map((s) => {
+          const sessionGenerations = videoGenerations.filter((g) => g.session_id === s.id)
+          const latestAttempt = sessionGenerations[0] ?? null
+          const status = latestAttempt ? latestAttempt.status : 'Sem tentativas'
+          const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
+          const sessionTime = new Date(s.updatedAt).getTime()
+          const recency = Math.max(sessionTime, latestTime)
+
+          return {
+            id: s.id,
+            kind: 'session' as const,
+            title: s.workingState?.prompt || 'Workspace de geração',
+            meta: `Sessão · ${sessionGenerations.length} tentativa${sessionGenerations.length !== 1 ? 's' : ''}`,
+            status,
+            recency,
+            updatedAt: s.updatedAt,
+            href: `/videos/geracoes/${s.id}`,
+          }
+        }),
+        ...standaloneGenerations.map((g) => ({
+          id: g.id,
+          kind: 'generation' as const,
+          title: g.prompt || 'Geração IA',
+          meta: `Histórico · ${g.mode === 'image_to_video' ? 'I2V' : 'T2V'}`,
+          status: g.status,
+          recency: new Date(g.created_at).getTime(),
+          updatedAt: g.updated_at,
+          href: g.public_url || '#',
+          generation: g,
+        })),
+      ].sort((a, b) => b.recency - a.recency)
+
+      const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: 'long',
@@ -721,90 +793,199 @@ export default function ProductionDetailPage() {
 
             {/* Vídeos */}
             <TabsContent value="videos" className="mt-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    {videoDrafts.length === 0 ? 'Nenhum vídeo vinculado.' : `${videoDrafts.length} rascunho${videoDrafts.length > 1 ? 's' : ''} vinculado${videoDrafts.length > 1 ? 's' : ''}.`}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => void createVideoInCreativeEditor()}
-                    disabled={isCreatingVideo}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Criar Vídeo
-                  </Button>
+              <div className="space-y-6">
+                {/* Gerações IA */}
+                <div className="space-y-3" data-testid="production-ai-group">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-primary" /> Gerações IA
+                      </h3>
+                      <p className="text-xs text-muted-foreground">Workspaces de geração e tentativas desta Produção</p>
+                    </div>
+                  </div>
+
+                  {isLoadingWorkspace ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        {productionWorkspaceLoadingMessage('videos')}
+                      </p>
+                    </div>
+                  ) : productionAiCards.length === 0 ? (
+                    <Card className="border-dashed" data-testid="production-ai-empty">
+                      <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                        <Zap className="mb-2 h-8 w-8 opacity-40" />
+                        <p className="text-sm font-medium">Nenhuma geração IA nesta Produção.</p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2">
+                      {productionAiCards.map((item) => (
+                        <Card key={`ai-${item.kind}-${item.id}`} className="border-border/50 bg-card/30" data-testid={`production-card-${item.kind}-${item.id}`}>
+                          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                            <div className="min-w-0 space-y-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {item.kind === 'session' ? (
+                                    <Zap className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                                  ) : (
+                                    <Video className="h-4 w-4 shrink-0 text-pink-300" aria-hidden="true" />
+                                  )}
+                                  <CardTitle className="truncate text-sm" title={item.title}>
+                                    {item.title}
+                                  </CardTitle>
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                                {item.kind === 'generation' && (
+                                  <GenerationProvenance generation={item.generation} connectionNames={connectionNames} />
+                                )}
+                              </div>
+                              <ContextMetadata
+                                dense
+                                items={[
+                                  { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                  { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
+                                ]}
+                              />
+                            </div>
+                            <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                              {item.kind === 'session' ? (
+                                <Button size="sm" onClick={() => router.push(item.href)} className="gap-1" data-testid="production-continue-session">
+                                  <Zap className="h-4 w-4" />
+                                  Continuar
+                                  <ChevronRight className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      if (item.generation.status === 'succeeded') {
+                                        setSelectedVideoGeneration(item.generation)
+                                      } else {
+                                        toast(describeGenerationNotReady(item.generation))
+                                      }
+                                    }}
+                                    className="gap-1"
+                                    data-testid="production-watch-generation"
+                                  >
+                                    <Video className="h-4 w-4" />
+                                    {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const newSessionId = crypto.randomUUID()
+                                      const url = `/videos/geracoes/${newSessionId}?new=1&project=${encodeURIComponent(projectId)}&production=${encodeURIComponent(productionId)}&reuseGenerationId=${encodeURIComponent(item.id)}`
+                                      router.push(url)
+                                    }}
+                                    className="gap-1"
+                                    data-testid="production-reuse-generation"
+                                  >
+                                    Reutilizar configurações
+                                  </Button>
+                                  <SaveGenerationToLibrary generation={item.generation} size="sm" onSaved={markGenerationSaved} />
+                                </>
+                              )}
+                            </CardActions>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {isLoadingWorkspace ? (
-                  <div className="flex flex-col items-center justify-center gap-2 py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      {productionWorkspaceLoadingMessage('videos')}
-                    </p>
+                {/* Edições */}
+                <div className="space-y-3" data-testid="production-editions-group">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                        <Clapperboard className="h-4 w-4 text-pink-400" /> Edições
+                      </h3>
+                      <p className="text-xs text-muted-foreground">Rascunhos de composição e edição no Creative Editor</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => void createVideoInCreativeEditor()}
+                      disabled={isCreatingVideo}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Criar Vídeo
+                    </Button>
                   </div>
-                ) : videoDrafts.length === 0 ? (
-                  <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-10">
-                      <Video className="mb-3 h-10 w-10 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Nenhum vídeo vinculado a esta Produção.</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-2">
-                    {videoDrafts.map((draft) => (
-                      <Card key={draft.id} className="border-border/50 bg-card/30">
-                        <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-                          <div className="min-w-0 space-y-3">
-                            <CardTitle className="line-clamp-1 text-sm">{draft.name || 'Rascunho sem título'}</CardTitle>
-                            <ContextMetadata
-                              dense
-                              items={[
-                                {
-                                  label: 'Cenas',
-                                  value: `${draft.scenes?.length ?? 0} cena${(draft.scenes?.length ?? 0) !== 1 ? 's' : ''}`,
-                                },
-                                {
-                                  label: 'Atualizado',
-                                  value: new Date(draft.updated_at).toLocaleDateString('pt-BR'),
-                                },
-                              ]}
-                            />
-                          </div>
-                          <CardActions className="flex flex-wrap gap-2 md:justify-end">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1 text-xs"
-                              onClick={() => router.push(videoCreativeEditorHref(draft.id))}
-                              data-testid="production-open-video-draft"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Abrir
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1 text-xs text-muted-foreground hover:text-destructive"
-                              onClick={() =>
-                                setUnlinkTarget({
-                                  type: 'video',
-                                  id: draft.id,
-                                  name: draft.name || 'Rascunho',
-                                })
-                              }
-                            >
-                              <Link2Off className="h-3.5 w-3.5" />
-                              Desvincular
-                            </Button>
-                          </CardActions>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
+
+                  {isLoadingWorkspace ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        {productionWorkspaceLoadingMessage('videos')}
+                      </p>
+                    </div>
+                  ) : videoDrafts.length === 0 ? (
+                    <Card className="border-dashed" data-testid="production-editions-empty">
+                      <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                        <Clapperboard className="mb-2 h-8 w-8 opacity-40" />
+                        <p className="text-sm font-medium">Nenhuma edição de vídeo nesta Produção.</p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-2">
+                      {videoDrafts.map((draft) => (
+                        <Card key={draft.id} className="border-border/50 bg-card/30" data-testid={`production-card-draft-${draft.id}`}>
+                          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                            <div className="min-w-0 space-y-3">
+                              <CardTitle className="line-clamp-1 text-sm">{draft.name || 'Rascunho sem título'}</CardTitle>
+                              <ContextMetadata
+                                dense
+                                items={[
+                                  {
+                                    label: 'Cenas',
+                                    value: `${draft.scenes?.length ?? 0} cena${(draft.scenes?.length ?? 0) !== 1 ? 's' : ''}`,
+                                  },
+                                  {
+                                    label: 'Atualizado',
+                                    value: new Date(draft.updated_at).toLocaleDateString('pt-BR'),
+                                  },
+                                ]}
+                              />
+                            </div>
+                            <CardActions className="flex flex-wrap gap-2 md:justify-end">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-xs"
+                                onClick={() => router.push(videoCreativeEditorHref(draft.id))}
+                                data-testid="production-open-video-draft"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Abrir
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-xs text-muted-foreground hover:text-destructive"
+                                onClick={() =>
+                                  setUnlinkTarget({
+                                    type: 'video',
+                                    id: draft.id,
+                                    name: draft.name || 'Rascunho',
+                                  })
+                                }
+                              >
+                                <Link2Off className="h-3.5 w-3.5" />
+                                Desvincular
+                              </Button>
+                            </CardActions>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
 
@@ -1041,6 +1222,14 @@ export default function ProductionDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <VideoGenerationPreviewDialog
+        item={selectedVideoGeneration}
+        onOpenChange={(open) => {
+          if (!open) setSelectedVideoGeneration(null)
+        }}
+        onNavigate={(href) => router.push(href)}
+      />
     </>
   )
 }

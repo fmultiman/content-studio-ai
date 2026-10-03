@@ -539,4 +539,15 @@ describe('GET /api/video-generation-sessions?productionId — list', () => {
     signIn(makeDb(rows()))
     expect((await (await list(`?productionId=${FOREIGN_PRODUCTION}`)).json()).sessions).toEqual([])
   })
+
+  it('lists all caller Sessions across Productions when all=true, maintaining recency and tenant isolation', async () => {
+    const db = makeDb(rows())
+    signIn(db)
+    const response = await list('?all=true')
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    // USER_A has sessions in PRODUCTION and OTHER_PRODUCTION, but not FOREIGN_PRODUCTION (USER_B)
+    expect(body.sessions).toHaveLength(4)
+    expect(JSON.stringify(body)).not.toContain('B SECRET')
+  })
 })

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import WorkspacePage from '@/app/(dashboard)/videos/geracoes/[sessionId]/page'
@@ -728,6 +728,203 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
     await waitFor(() => {
       expect(screen.getByText('A futuristic cityscape at dusk')).toBeTruthy()
       expect(screen.getByTestId('attempt-watch-gen-001')).toBeTruthy()
+    })
+  })
+  it('24 & 25. Reuse Settings: fetches source securely and seeds workspace accurately without saving', async () => {
+    currentSearchParams.set('new', '1')
+    currentSearchParams.set('project', '00000000-0000-0000-0000-000000000010')
+    currentSearchParams.set('production', '00000000-0000-0000-0000-000000000020')
+    currentSearchParams.set('reuseGenerationId', '00000000-0000-0000-0000-000000000100')
+
+    let reuseFetched = false
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/connections')) {
+        return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
+      }
+      if (url.includes('/video-generation-sessions/')) {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }))
+      }
+      if (url.includes('/api/video-generations/00000000-0000-0000-0000-000000000100')) {
+        reuseFetched = true
+        // Simulating the server enforcing the query
+        if (!url.includes('projectId') || !url.includes('productionId')) {
+          return Promise.resolve(new Response(JSON.stringify({ error: 'Missing context' }), { status: 400 }))
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          generation: {
+            id: '00000000-0000-0000-0000-000000000100',
+            project_id: '00000000-0000-0000-0000-000000000010',
+            production_id: '00000000-0000-0000-0000-000000000020',
+            prompt: 'Seeded architectural render',
+            mode: 'image_to_video',
+            model: 'kling-v1',
+            transport: 'mcp',
+            connection_id: 'account-1',
+            source_library_file_id: 'library-file-123',
+            request_config: { duration: 5, resolution: '720p', aspect_ratio: '16:9' }
+          }
+        }), { status: 200 }))
+      }
+      if (url.includes('/video-generations?sessionId=')) {
+        return Promise.resolve(new Response(JSON.stringify({ generations: [] }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    render(<WorkspacePage />)
+
+    await waitFor(() => {
+      // Prompt should be seeded
+      expect(screen.getByDisplayValue('Seeded architectural render')).toBeTruthy()
+    })
+
+    expect(reuseFetched).toBe(true)
+
+    // Verify UI reflects the seed
+    expect(screen.getByTestId('video-duration-select').textContent).toContain('5 segundos')
+
+    // Confirm NO writes (PUT or PATCH) occurred simply by opening the reuse link
+    const writeCalls = fetchMock.mock.calls.filter((c: any) => c[1]?.method === 'PUT' || c[1]?.method === 'PATCH')
+    expect(writeCalls).toHaveLength(0)
+
+    // Save status is active (saving or saved) since it was a meaningful initialization, wait for autosave
+    await waitFor(() => {
+      expect(screen.getByTestId('save-status-saved')).toBeTruthy()
+    })
+
+    // Now it should have saved the new state
+    await waitFor(() => {
+      const afterWrites = fetchMock.mock.calls.filter((c: any) => c[1]?.method === 'PUT')
+      expect(afterWrites.length).toBeGreaterThan(0)
+    })
+    const finalWrites = fetchMock.mock.calls.filter((c: any) => c[1]?.method === 'PUT')
+    const putBody = JSON.parse(finalWrites[0][1].body)
+    expect(putBody.workingState.prompt).toBe('Seeded architectural render')
+    expect(putBody.workingState.source).toEqual({ type: 'library', id: 'library-file-123' })
+
+    // Zero VideoGeneration Attempt creation or provider calls (no POST to /api/video-generations)
+    const postCalls = fetchMock.mock.calls.filter((c: any) => c[0] === '/api/video-generations' && c[1]?.method === 'POST')
+    expect(postCalls).toHaveLength(0)
+
+    // Original Attempt receives NO mutation (no PATCH/PUT to /api/video-generations/000...)
+    const origAttemptMutations = fetchMock.mock.calls.filter((c: any) => c[0].includes('/api/video-generations/00000000-0000-0000-0000-000000000100') && c[1]?.method && c[1].method !== 'GET')
+    expect(origAttemptMutations).toHaveLength(0)
+  })
+
+  it('26. Existing persisted Session + reuseGenerationId: reuse param is ignored, hydration remains authority', async () => {
+    // Session already exists in DB
+    currentSearchParams.set('new', '1') // even if someone attempts ?new=1 with an existing session id
+    currentSearchParams.set('project', '00000000-0000-0000-0000-000000000010')
+    currentSearchParams.set('production', '00000000-0000-0000-0000-000000000020')
+    currentSearchParams.set('reuseGenerationId', '00000000-0000-0000-0000-000000000100')
+
+    let reuseEndpointCalled = false
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/connections')) {
+        return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
+      }
+      if (url.includes(`/api/video-generation-sessions/${currentSessionId}`)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              session: {
+                id: currentSessionId,
+                projectId: '00000000-0000-0000-0000-000000000010',
+                productionId: '00000000-0000-0000-0000-000000000020',
+                updatedAt: '2026-10-03T12:00:00.000Z',
+                workingState: {
+                  schemaVersion: 1,
+                  prompt: 'Existing stored session prompt',
+                  source: null,
+                  selection: {
+                    connectionRef: 'rest',
+                    operation: 'text_to_video',
+                    modelId: 'kling-v1',
+                    duration: 5,
+                    resolution: '720p',
+                    aspectRatio: '16:9',
+                    audio: 'off',
+                    multiShot: false,
+                    asmr: false,
+                    audioPrompt: null,
+                    musicPrompt: null,
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+      if (url.includes('/api/video-generations/00000000-0000-0000-0000-000000000100')) {
+        reuseEndpointCalled = true
+        return Promise.resolve(new Response(JSON.stringify({ error: 'should not be called' }), { status: 500 }))
+      }
+      if (url.includes('/video-generations?sessionId=')) {
+        return Promise.resolve(new Response(JSON.stringify({ generations: [] }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    render(<WorkspacePage />)
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Existing stored session prompt')).toBeTruthy()
+    })
+
+    // The reuse endpoint was NOT called because session already exists (200, not 404)
+    expect(reuseEndpointCalled).toBe(false)
+  })
+
+  it('27. Reuse Settings with T2V: stale source is cleared by attemptToWorkingState authority', async () => {
+    currentSearchParams.set('new', '1')
+    currentSearchParams.set('project', '00000000-0000-0000-0000-000000000010')
+    currentSearchParams.set('production', '00000000-0000-0000-0000-000000000020')
+    currentSearchParams.set('reuseGenerationId', '00000000-0000-0000-0000-000000000200')
+
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/connections')) {
+        return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
+      }
+      if (url.includes('/video-generation-sessions/')) {
+        return Promise.resolve(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }))
+      }
+      if (url.includes('/api/video-generations/00000000-0000-0000-0000-000000000200')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          generation: {
+            id: '00000000-0000-0000-0000-000000000200',
+            project_id: '00000000-0000-0000-0000-000000000010',
+            production_id: '00000000-0000-0000-0000-000000000020',
+            prompt: 'Text to video prompt',
+            mode: 'text_to_video',
+            model: 'kling-v1',
+            transport: 'rest',
+            connection_id: null,
+            // Even if database somehow had a source pointer on a t2v record, authority clears it
+            source_library_file_id: 'stale-file',
+            request_config: { duration: 5, resolution: '720p', aspect_ratio: '16:9' }
+          }
+        }), { status: 200 }))
+      }
+      if (url.includes('/video-generations?sessionId=')) {
+        return Promise.resolve(new Response(JSON.stringify({ generations: [] }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    render(<WorkspacePage />)
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Text to video prompt')).toBeTruthy()
+    })
+
+    // Autosave creates session with source null
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter((c: any) => c[1]?.method === 'PUT')
+      expect(putCalls.length).toBeGreaterThan(0)
+      const putBody = JSON.parse(putCalls[0][1].body)
+      expect(putBody.workingState.source).toBeNull()
+      expect(putBody.workingState.selection.operation).toBe('text_to_video')
     })
   })
 })

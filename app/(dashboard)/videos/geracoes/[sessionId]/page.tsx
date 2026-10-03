@@ -32,7 +32,7 @@ import { VideoGenerationPreviewDialog } from '@/components/videos/video-generati
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
-import type { VideoGenerationWorkingStateV1 } from '@/lib/video-generation/working-state'
+import { attemptToWorkingState, type VideoGenerationWorkingStateV1 } from '@/lib/video-generation/working-state'
 import type { SessionResponse } from '@/lib/video-generation/session'
 
 const AUTOSAVE_DEBOUNCE_MS = 800
@@ -54,6 +54,7 @@ function WorkspacePageContent() {
   const isNewParam = searchParams.get('new') === '1'
   const contextProjectId = searchParams.get('project')
   const contextProductionId = searchParams.get('production')
+  const reuseGenerationId = searchParams.get('reuseGenerationId')
 
   // DATA FETCHING
   const [connections, setConnections] = useState<VideoGenerationConnectionDescriptor[]>([])
@@ -188,6 +189,44 @@ function WorkspacePageContent() {
         } else if (res.status === 404) {
           if (isNewParam && contextProjectId && contextProductionId) {
             // Authorized new session entry
+            if (reuseGenerationId) {
+              const reuseRes = await fetch(`/api/video-generations/${encodeURIComponent(reuseGenerationId)}?projectId=${encodeURIComponent(contextProjectId)}&productionId=${encodeURIComponent(contextProductionId)}`)
+              if (reuseRes.ok) {
+                const reuseData = await reuseRes.json()
+                const attempt = reuseData.generation
+                // We rely on the server to have enforced the context match
+                const seeded = attemptToWorkingState(attempt)
+                setPrompt(seeded.prompt)
+                if (seeded.source) {
+                  setSourceSelection({
+                    source: seeded.source,
+                    summary: {
+                      category: seeded.source.type === 'library' ? 'library' : 'ai',
+                      label: 'Imagem reutilizada',
+                      thumbnailUrl: null,
+                      productionName: null,
+                      folder: null,
+                    },
+                  })
+                } else {
+                  setSourceSelection(null)
+                }
+
+                const reconciled = reconcileSelection(loadedConnections, seeded.selection)
+                setSelection(reconciled)
+
+                const selectionChanged = JSON.stringify(reconciled) !== JSON.stringify(seeded.selection)
+                if (selectionChanged) {
+                  setReconciledNotice('Algumas configurações salvas não estão mais disponíveis nesta conexão e foram ajustadas.')
+                }
+
+                setAttemptsLoading(false)
+                lastSavedStateRef.current = null // Let autosave pick it up as a meaningful change and save it
+                setIsHydrating(false)
+                return
+              }
+            }
+
             const initialSelection = reconcileSelection(loadedConnections, EMPTY_SELECTION)
             setSelection(initialSelection)
             setAttemptsLoading(false)
@@ -210,7 +249,7 @@ function WorkspacePageContent() {
     return () => {
       cancelled = true
     }
-  }, [sessionId, isNewParam, contextProjectId, contextProductionId, loadConnections, loadAttempts, forceRetry])
+  }, [sessionId, isNewParam, contextProjectId, contextProductionId, reuseGenerationId, loadConnections, loadAttempts, forceRetry])
 
   // Polling in-flight generations
   const hasInFlightGeneration = attempts.some(isInFlightGeneration)
