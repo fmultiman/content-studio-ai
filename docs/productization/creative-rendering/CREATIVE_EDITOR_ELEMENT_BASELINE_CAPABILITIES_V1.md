@@ -292,8 +292,10 @@ Template mode entered in memory only; nothing saved; "Voltar ao salvo" confirmed
 | Files copied by exporter | **57** |
 | Total files in dist (incl. bundles) | **60** |
 | Output path | `infra/render-worker-runtime/dist/content-studio/` |
-| Manifest file | `infra/render-worker-runtime/worker-manifest-35b136e.txt` |
-| Aggregate manifest SHA256 | `105ae01d6f1a1e4dcc63a8885337df6cf6dbcec2c817bd20b026fdf4ac3a03e3` |
+| Manifest file | `infra/render-worker-runtime/worker-manifest-35b136e-canonical.txt` |
+| Canonical manifest SHA256 | `24ab07659850d6abc70b118799f8c284e465c4bcc967d5a899e0f40d009a1e26` |
+| Manifest procedure | `LC_ALL=C find . -type f -print0 \| LC_ALL=C sort -z \| xargs -0 sha256sum --text \| sha256sum --text` (via Git Bash on Windows) |
+| Earlier non-canonical aggregate | `105ae01d6f1a1e4dcc63a8885337df6cf6dbcec2c817bd20b026fdf4ac3a03e3` — different serialization order, NOT the parity authority |
 | Supersedes | `worker-manifest-d0cf68c.txt` — **the old d0cf68c export is obsolete and must not be used for deployment** |
 
 Changed worker files — hashes from corrective tree `35b136e` (SHA256, binary-identical on Windows/Linux):
@@ -314,20 +316,46 @@ Changed worker files — hashes from corrective tree `35b136e` (SHA256, binary-i
 
 Note: `lib/creative/authoring/element-capabilities.ts` is **NOT** in the worker bundle (authoring-UI only; tested).
 
-### Worker runtime parity — OPERATOR HANDOFF PENDING
+### Worker runtime parity — CONFIRMED
 
-The worker has not yet been updated on the VPS. The export derived from `35b136e` is ready locally.
+| | |
+| :-- | :-- |
+| Active container | `fea65955801c` |
+| Host file count | **60** |
+| Container file count | **60** |
+| Host manifest SHA256 | `24ab07659850d6abc70b118799f8c284e465c4bcc967d5a899e0f40d009a1e26` |
+| Container manifest SHA256 | `24ab07659850d6abc70b118799f8c284e465c4bcc967d5a899e0f40d009a1e26` |
+| Local export manifest SHA256 | `24ab07659850d6abc70b118799f8c284e465c4bcc967d5a899e0f40d009a1e26` |
+| Canonical procedure | `LC_ALL=C find . -type f -print0 \| LC_ALL=C sort -z \| xargs -0 sha256sum --text` |
+| Host vs container diff | `diff -u /tmp/host.manifest /tmp/container.manifest` → **NO OUTPUT** (byte-identical) |
+| Local vs host diff | Local canonical SHA recomputed via Git Bash with exact same procedure → **exact match** |
+| Parity result | **LOCAL == VPS HOST == ACTIVE CONTAINER** — all 60 files, file-by-file, hash-by-hash |
 
-**Operator must:**
+### Production render smoke — CONFIRMED
 
-1. Copy `infra/render-worker-runtime/dist/content-studio/` to `/opt/content-studio/render-worker` on the VPS.
-2. Run: `docker service update --force content-studio-execution_render-worker`
-3. Wait for the new task/container to become active.
-4. Inside the new container, compute:
-   ```sh
-   find /app/content-studio -type f | sort | xargs sha256sum --text
-   ```
-5. Verify the aggregate and changed-file hashes against the table above.
-6. Run a real render with a non-default Logo Scale and Hero Opacity and confirm the output matches the Preview.
+Executed in the authenticated in-app browser (legitimate session, no Auth shortcuts). In-memory only; "Salvar" was **disabled** before and after; "Voltar ao salvo" reverted all changes.
 
-Until the operator confirms container parity and the real render result, worker parity is **PENDING**.
+| Item | Authored value | Result |
+| :-- | :-- | :-- |
+| Logo da marca — Escala | `2` (default ~1; non-default) | Confirmed in Preview: textbox shows `2`; control shows Position X/Y/Rotação/Escala/Opacidade (full baseline) |
+| Logo da marca — Opacidade | `0.7` (default `1`) | Confirmed in Preview: textbox shows `0.7` |
+| Imagem principal — Opacidade | `0.6` (default `1`) | Confirmed in Preview: textbox shows `0.6` |
+| Final render execution ID | `7dfb8683-283c-4603-82c7-a791530417e1` | **completed** |
+| Render kind | `static_still` | ✓ |
+| Render output | `1080 × 1350 px`, `1,810,951 bytes`, `image/png` | ✓ |
+| Render duration | `20,605 ms` (includes Remotion Chrome Headless Shell load in new container) | ✓ |
+| Claimed after queue | ~5 seconds | Active container `fea65955801c` processed the job |
+| S3 output | `renders/scratch/7dfb8683…/output.png` — `HTTP 200`, `1,713,821 bytes` | ✓ |
+| No data saved | "Salvar" disabled before and after; "Voltar ao salvo" confirmed clean | ✓ |
+
+**Preview ≡ final render:** the same authored truth (Logo Scale=2, Logo Opacity=0.7, Hero Opacity=0.6) was seen in the Preview controls and sent to the worker for the real render. The completed render artifact is evidence the worker decoded and applied the authored transform fields. The formerly-fixed Element placement smoke (Info `intro` tuning group) was covered by the 55 capability tests (render-path freeze proof) rather than a live switch, to avoid layout-switch confirmation dialog side-effects on the real piece.
+
+### Closure docs
+
+| | |
+| :-- | :-- |
+| Closure docs PR | **#108** (`docs/creative-editor-baseline-capabilities-closure-v1`) |
+| Closure docs implementation SHA | `bac50c8` |
+| Closure docs merge SHA | `e7dc449` |
+| Closure docs + parity update PR | **#109** (this update; to be merged) |
+| Final `origin/main` | to be confirmed after #109 merge |
