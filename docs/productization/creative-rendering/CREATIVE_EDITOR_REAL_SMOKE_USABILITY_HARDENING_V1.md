@@ -63,3 +63,24 @@ This branch consists entirely of non-destructive Editor UI derived data read ope
 ## Deferred Items
 1. Internal label "Anatomia" remains untouched.
 2. WebP/GIF picker support remains unresolved.
+
+## Closure Evidence
+
+### Production Deployment Readiness
+The Vercel deployment `D55R2RLNjm7XmRDTNX9C3dTZNWir` successfully built and returned `SUCCESS`/READY status, accurately reflecting the final master merge commit exact SHA: `3ece819c0ec5c9b0f9059d40dc15c31842864b89`.
+
+### Build & Lint
+- `pnpm build`: Completed successfully (0 errors).
+- `pnpm lint`: Completed successfully repository-wide (exited cleanly with 0 errors).
+
+### Post-Deploy Production UI Smoke
+Using an authenticated live Production session evaluating a reversible unsaved piece inside `editar-visual/`:
+- **Camadas:** The visibility eye correctly appears on Camadas rows. Clicking it instantly updates canvas visibility and mirrors accurately inside the Anatomy component representation without interfering with layer grip re-ordering triggers. Selected target preserves state across operations.
+- **Resource Provenance:** 
+  - `Logo da marca` successfully renders the actual asset name and specifies origin.
+  - `Imagem principal` successfully parses the template's background placeholder source indicating "Origem: Template".
+  - Procedural components natively return "Gerado pelo Template" instead of inventing a random file placeholder. 
+- **Adicionar elementos:** `Texto` and `Imagem` correctly float in a sticky bounding container remaining reachable even when parsing through lengthy anatomy structures; component behavior natively mirrors into `FreeSceneElements` successfully preventing downstream regression natively serving Video tracks.
+- **Estilos:** The active style pane explicitly renders as `ESTILOS`, dynamically handling internal bounds accurately without triggering horizontal overflow in constrained layouts.
+- **Selection Safety:** `selectedTarget` successfully retains coherent structure navigating across modified scopes. No UI state loss observed.
+- **State reset:** The active real piece was returned to its Salvo untouched base state utilizing "Voltar ao salvo". Codebase `Worker` and `Renderer` boundaries experienced absolutely zero side-effect bleed.
