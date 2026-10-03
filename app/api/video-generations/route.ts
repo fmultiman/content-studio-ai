@@ -6,6 +6,8 @@ import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { forceRefreshAccessToken, getValidAccessToken } from '@/lib/provider-connections/token-store'
 import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
 import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
+import { classifyExistingSubmission, generateRequestFingerprint, isClientRequestId, toClientGeneration } from '@/lib/video-generation/idempotency'
+import { isUuid } from '@/lib/video-generation/session'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 import { I2V_MEDIA_FAILURE_MESSAGE, loadTrustedI2vSourceImage, resolveI2vSource } from '@/lib/video-generation/i2v-source-media'
@@ -71,6 +73,41 @@ export async function POST(req: NextRequest) {
     const forbidden = FORBIDDEN_CLIENT_FIELDS.find((field) => field in body)
     if (forbidden) {
       return jsonError(400, 'UNSUPPORTED_FIELD', `"${forbidden}" cannot be set by the client.`)
+    }
+
+    // VIDEO_GENERATION_SESSION_PERSISTENCE_AND_API_V1
+    // `sessionId` is lineage/ownership ONLY. The body stays the single authority for what is generated: the
+    // Session's stored working state is never read to build a submission (a stale autosave must never bill
+    // the wrong prompt).
+    const { sessionId, clientRequestId } = body
+    if (sessionId !== undefined && sessionId !== null && !isUuid(sessionId)) {
+      return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be a UUID.')
+    }
+    if (clientRequestId !== undefined && clientRequestId !== null && !isClientRequestId(clientRequestId)) {
+      return jsonError(400, 'INVALID_CLIENT_REQUEST_ID', 'clientRequestId must be a UUID.')
+    }
+
+    // Server-owned idempotency: the same logical submit (same key) must never create - or pay for - a second
+    // attempt. Checked before any credential, source or provider work; the owner scope comes from the session.
+    const idempotencyKey: string | null = clientRequestId ?? null
+    const fingerprint = generateRequestFingerprint(body)
+    const replayFor = (existing: Record<string, any>) => {
+      const decision = classifyExistingSubmission(existing, fingerprint)
+      if (decision.kind === 'conflict') {
+        return jsonError(409, 'IDEMPOTENCY_KEY_REUSED', 'Esta chave de envio já foi usada para uma requisição diferente.')
+      }
+      return NextResponse.json({ generation: decision.generation, idempotentReplay: true, outcomeUnknown: decision.outcomeUnknown })
+    }
+    if (idempotencyKey) {
+      const { data: existing, error: lookupError } = await supabase
+        .from('video_generations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_request_id', idempotencyKey)
+        .maybeSingle()
+      // If the key cannot be checked, nothing is created: proceeding could submit (and bill) twice.
+      if (lookupError) return jsonError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar o envio agora. Tente novamente.')
+      if (existing) return replayFor(existing)
     }
 
     const rawControls = {
@@ -142,6 +179,26 @@ export async function POST(req: NextRequest) {
       return jsonError(403, 'PRODUCTION_NOT_FOUND', 'Production não encontrada neste projeto.')
     }
 
+    // Lineage: the Session must be THIS user's and belong to exactly this Project and Production (the database
+    // enforces the same with a composite FK). A missing, foreign or nonexistent id is simply "not found".
+    if (sessionId) {
+      const { data: ownedSession, error: sessionError } = await supabase
+        .from('video_generation_sessions')
+        .select('id,project_id,production_id')
+        .eq('id', sessionId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (sessionError) {
+        return jsonError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar a sessão agora. Tente novamente.')
+      }
+      if (!ownedSession) {
+        return jsonError(404, 'SESSION_NOT_FOUND', 'Sessão não encontrada.')
+      }
+      if (ownedSession.project_id !== projectId || ownedSession.production_id !== productionId) {
+        return jsonError(409, 'SESSION_SCOPE_MISMATCH', 'Esta sessão pertence a outro projeto ou production.')
+      }
+    }
+
     // Every write to video_generations is SERVER-owned: the user session can only read this table
     // (privileges revoked in scripts/043). The server has verified above that the project, production
     // and any source belong to this user, and always writes `user_id` from the verified session.
@@ -207,6 +264,10 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         project_id: projectId,
         production_id: productionId,
+        // Only present when used, so a caller without a Session or key inserts exactly the row it always did
+        // (and keeps working even before scripts/049 is applied).
+        ...(sessionId ? { session_id: sessionId } : {}),
+        ...(idempotencyKey ? { client_request_id: idempotencyKey, request_fingerprint: fingerprint } : {}),
         mode,
         prompt,
         source_image_id: sourceImageId || null,
@@ -231,6 +292,17 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
+    if (dbError?.code === '23505' && idempotencyKey) {
+      // A concurrent request with the same key won the insert: settle on ITS row. No provider call is made here.
+      const { data: winner, error: winnerError } = await supabase
+        .from('video_generations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_request_id', idempotencyKey)
+        .maybeSingle()
+      if (winnerError || !winner) return jsonError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar o envio agora. Tente novamente.')
+      return replayFor(winner)
+    }
     if (dbError || !generation) {
       throw new Error(`Failed to create generation record: ${dbError?.message}`)
     }
@@ -322,7 +394,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    return NextResponse.json({ generation: recorded.data })
+    return NextResponse.json({ generation: toClientGeneration(recorded.data) })
   } catch (error: any) {
     // Everything that reaches here happened BEFORE a provider call (the submit and the recording of its
     // result have their own handling above): a definitive failure, with a code and a generic message.
@@ -380,7 +452,32 @@ export async function GET(req: NextRequest) {
     const productionId = searchParams.get('productionId')
     const projectId = searchParams.get('projectId')
 
-    let query = supabase.from('video_generations').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    const sessionId = searchParams.get('sessionId')
+    if (sessionId !== null) {
+      if (!isUuid(sessionId)) return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be a UUID.')
+      // The attempts of a Session are only listed to the Session's owner; anything else is "not found".
+      const { data: ownedSession, error: sessionError } = await supabase
+        .from('video_generation_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (sessionError) return jsonError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar a sessão agora. Tente novamente.')
+      if (!ownedSession) return jsonError(404, 'SESSION_NOT_FOUND', 'Sessão não encontrada.')
+    }
+
+    // Newest first; `id` breaks created_at ties so the order is always deterministic (attempt numbers are
+    // derived from this order, never stored).
+    let query = supabase
+      .from('video_generations')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+
+    if (sessionId) {
+      query = query.eq('session_id', sessionId)
+    }
 
     if (productionId) {
       query = query.eq('production_id', productionId)
@@ -407,7 +504,7 @@ export async function GET(req: NextRequest) {
 
     const signedGenerations = await Promise.all(
       (generations || []).map(async (rawGen) => {
-        const gen = rawGen.library_file_id && !liveFileIds.has(rawGen.library_file_id) ? { ...rawGen, library_file_id: null } : rawGen
+        const gen = toClientGeneration(rawGen.library_file_id && !liveFileIds.has(rawGen.library_file_id) ? { ...rawGen, library_file_id: null } : rawGen)
         if (gen.status === 'succeeded' && gen.storage_path) {
           // Never sign (or echo the stored URL of) a path outside the owner's own namespace.
           if (!isTenantVideoStoragePath(gen.storage_path, gen)) {

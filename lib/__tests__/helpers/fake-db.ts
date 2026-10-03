@@ -15,6 +15,10 @@ export interface FakeDbOptions {
   generatedId?: string[]
   /** UNIQUE ... WHERE partial indexes: a row only counts toward (and is checked against) the index when `where` holds. */
   uniquePartial?: Record<string, Array<{ columns: string[]; where: (row: Record<string, any>) => boolean }>>
+  /** Column defaults / triggers: runs on a row just before it is inserted (e.g. updated_at DEFAULT). */
+  onInsert?: Record<string, (row: Record<string, any>) => void>
+  /** BEFORE UPDATE triggers: runs on every row an update touches, after the patch is applied (e.g. updated_at). */
+  onUpdate?: Record<string, (row: Record<string, any>) => void>
 }
 
 const DEFAULT_UNIQUE: Record<string, string[][]> = {
@@ -24,7 +28,13 @@ const DEFAULT_UNIQUE: Record<string, string[][]> = {
   provider_oauth_authorizations: [['state_hash']],
   user_settings: [['user_id']],
   video_generations: [['id']],
+  video_generation_sessions: [['id']],
   provider_usage_events: [['idempotency_key']],
+}
+
+// Partial unique indexes that exist in the real schema (scripts/049): one logical Generate submit per (user, key).
+const DEFAULT_UNIQUE_PARTIAL: Record<string, Array<{ columns: string[]; where: (row: Record<string, any>) => boolean }>> = {
+  video_generations: [{ columns: ['user_id', 'client_request_id'], where: (row) => row.client_request_id !== null && row.client_request_id !== undefined }],
 }
 
 const DEFAULT_GENERATED_ID = ['provider_connections', 'provider_oauth_clients', 'video_generations', 'provider_usage_events']
@@ -40,6 +50,7 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
   const tables: Record<string, Row[]> = {}
   for (const [table, rows] of Object.entries(options.seed ?? {})) tables[table] = rows.map((row) => ({ ...row }))
   const unique = { ...DEFAULT_UNIQUE, ...(options.unique ?? {}) }
+  const uniquePartial = { ...DEFAULT_UNIQUE_PARTIAL, ...(options.uniquePartial ?? {}) }
   const generatedId = options.generatedId ?? DEFAULT_GENERATED_ID
   const log: string[] = []
 
@@ -68,7 +79,7 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
         (existing) => existing !== ignore && cols.every((col) => candidate[col] !== undefined && existing[col] === candidate[col]),
       ),
     ) ||
-    (options.uniquePartial?.[table] ?? []).some(
+    (uniquePartial[table] ?? []).some(
       ({ columns, where }) =>
         where(candidate) &&
         rowsOf(table).some((existing) => existing !== ignore && where(existing) && columns.every((col) => existing[col] === candidate[col])),
@@ -81,19 +92,30 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     let ignoreDuplicates = false
     const filters: Array<[string, string, any]> = []
     let returning = false
+    const orderBy: Array<[string, boolean]> = []
 
     const execute = (): { data: Row[] | null; error: any } => {
       log.push(`${op}:${table}`)
       const rows = rowsOf(table)
 
       if (op === 'select') {
-        return { data: rows.filter((row) => matches(row, filters)).map((row) => ({ ...row })), error: null }
+        const selected = rows.filter((row) => matches(row, filters)).map((row) => ({ ...row }))
+        // Honors .order(); without it rows keep insertion order, as before.
+        selected.sort((a, b) => {
+          for (const [column, ascending] of orderBy) {
+            if (a[column] === b[column]) continue
+            return (a[column] < b[column] ? -1 : 1) * (ascending ? 1 : -1)
+          }
+          return 0
+        })
+        return { data: selected, error: null }
       }
 
       if (op === 'insert' || op === 'upsert') {
         const row: Row = { ...payload }
         if (generatedId.includes(table) && row.id === undefined) row.id = randomUUID()
         row.created_at ??= new Date().toISOString()
+        options.onInsert?.[table]?.(row)
 
         if (op === 'upsert' && onConflict.length > 0) {
           const existing = rows.find((candidate) => onConflict.every((col) => candidate[col] === row[col]))
@@ -111,7 +133,10 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
 
       if (op === 'update') {
         const targets = rows.filter((row) => matches(row, filters))
-        for (const row of targets) Object.assign(row, payload)
+        for (const row of targets) {
+          Object.assign(row, payload)
+          options.onUpdate?.[table]?.(row)
+        }
         return { data: returning ? targets.map((row) => ({ ...row })) : null, error: null }
       }
 
@@ -186,7 +211,8 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
         filters.push([column, 'contains', value])
         return builder
       },
-      order() {
+      order(column: string, opts?: { ascending?: boolean }) {
+        orderBy.push([column, opts?.ascending !== false])
         return builder
       },
       limit() {
