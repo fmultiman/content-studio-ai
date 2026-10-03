@@ -19,7 +19,12 @@
  * data; this module is Editor-only and never read by the renderer.
  */
 import type { AuthoringAction } from './reducer'
-import { TUNING_BOUNDS, resetTuningGroup, setTuningField, type TuningGroup } from './authoring-state'
+import { resetTuningGroup, setTuningField, type TuningGroup } from './authoring-state'
+import {
+  MATERIAL_TRANSFORM_POLICY,
+  policyForTuningField,
+  type NumericRangePolicy,
+} from './numeric-policy'
 import { DEFAULT_PRIMITIVE_TRANSFORMS, type AuthoringState } from './types'
 import type { TemplateElementControl, TemplateElementDefinition } from '@/lib/creative/templates/template-definitions'
 
@@ -95,22 +100,60 @@ const SPATIAL: readonly ElementCapability[] = ['position', 'scale', 'rotation', 
 
 export type TransformField = 'offsetX' | 'offsetY' | 'rotation' | 'scale' | 'opacity'
 export const TRANSFORM_FIELDS: readonly TransformField[] = ['offsetX', 'offsetY', 'rotation', 'scale', 'opacity']
-export type TransformFieldSpec = { min: number; max: number; step: number }
+export type TransformFieldSpec = {
+  /** Soft slider minimum for comfortable UI manipulation. */
+  sliderMin: number
+  /** Soft slider maximum for comfortable UI manipulation. */
+  sliderMax: number
+  /** Hard safety minimum: rejects invalid values, protects renderer/schema stability. */
+  hardMin: number
+  /** Hard safety maximum: protects renderer/schema stability, layout bounds. */
+  hardMax: number
+  /** Slider step increment. */
+  step: number
+  /** Decimal precision for numeric display/input (0 = integer, 1, 2). */
+  precision: number
+  /** Backwards compatibility alias for sliderMin. */
+  min: number
+  /** Backwards compatibility alias for sliderMax. */
+  max: number
+}
 export type TransformFieldSpecs = Readonly<Partial<Record<TransformField, TransformFieldSpec>>>
 
 /**
- * UI ranges of a material transform channel — the same bounds `primitiveTransformsBySlotSchema` enforces on the render
- * request. Slider range policy as a whole is a separate slice; this module only states what exists today.
+ * CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1
+ * Material transform channels: soft slider ranges for comfortable interaction,
+ * wide hard bounds for safety and stability.
  */
 const TRANSFORM_CHANNEL_SPECS: TransformFieldSpecs = {
-  offsetX: { min: -120, max: 120, step: 1 },
-  offsetY: { min: -120, max: 120, step: 1 },
-  rotation: { min: -15, max: 15, step: 0.5 },
-  scale: { min: 0.5, max: 2, step: 0.01 },
-  opacity: { min: 0, max: 1, step: 0.01 },
+  offsetX: {
+    ...MATERIAL_TRANSFORM_POLICY.offsetX,
+    min: MATERIAL_TRANSFORM_POLICY.offsetX.sliderMin,
+    max: MATERIAL_TRANSFORM_POLICY.offsetX.sliderMax,
+  },
+  offsetY: {
+    ...MATERIAL_TRANSFORM_POLICY.offsetY,
+    min: MATERIAL_TRANSFORM_POLICY.offsetY.sliderMin,
+    max: MATERIAL_TRANSFORM_POLICY.offsetY.sliderMax,
+  },
+  rotation: {
+    ...MATERIAL_TRANSFORM_POLICY.rotation,
+    min: MATERIAL_TRANSFORM_POLICY.rotation.sliderMin,
+    max: MATERIAL_TRANSFORM_POLICY.rotation.sliderMax,
+  },
+  scale: {
+    ...MATERIAL_TRANSFORM_POLICY.scale,
+    min: MATERIAL_TRANSFORM_POLICY.scale.sliderMin,
+    max: MATERIAL_TRANSFORM_POLICY.scale.sliderMax,
+  },
+  opacity: {
+    ...MATERIAL_TRANSFORM_POLICY.opacity,
+    min: MATERIAL_TRANSFORM_POLICY.opacity.sliderMin,
+    max: MATERIAL_TRANSFORM_POLICY.opacity.sliderMax,
+  },
 }
 
-/** Which authored fields each tuning group stores. Bounds come from TUNING_BOUNDS — the same ones the persistence schemas use. */
+/** Which authored fields each tuning group stores. */
 const TUNING_GROUP_FIELDS: Readonly<Record<TuningGroup, readonly TransformField[]>> = {
   hero: ['offsetX', 'offsetY', 'rotation', 'scale', 'opacity'],
   brand: ['offsetX', 'offsetY', 'rotation', 'scale', 'opacity'],
@@ -126,15 +169,19 @@ const TUNING_GROUP_FIELDS: Readonly<Record<TuningGroup, readonly TransformField[
   tagline: ['offsetX', 'offsetY', 'rotation'],
 }
 
-const FIELD_STEP: Readonly<Record<TransformField, number>> = { offsetX: 1, offsetY: 1, rotation: 0.1, scale: 0.01, opacity: 0.01 }
-
 function tuningSpecs(group: TuningGroup): TransformFieldSpecs {
-  const bounds = TUNING_BOUNDS[group] as Record<string, { min: number; max: number } | undefined>
   return Object.fromEntries(
     TUNING_GROUP_FIELDS[group].map((field) => {
-      const bound = bounds[field]
-      if (!bound) throw new Error(`TUNING_BOUNDS.${group}.${field} is missing`)
-      return [field, { min: bound.min, max: bound.max, step: FIELD_STEP[field] }]
+      const policy = policyForTuningField(group, field)
+      if (!policy) throw new Error(`policyForTuningField is missing for ${group}.${field}`)
+      return [
+        field,
+        {
+          ...policy,
+          min: policy.sliderMin,
+          max: policy.sliderMax,
+        },
+      ]
     }),
   )
 }

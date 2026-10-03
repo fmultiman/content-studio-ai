@@ -120,12 +120,15 @@ describe('TemplateElementPanel', () => {
     expect((screen.getByLabelText('Escala') as HTMLInputElement).value).toBe('1')
   })
 
-  it('Hero: Opacidade is stored in tuning.hero and reset drops it; Escala keeps its existing range', () => {
+  it('Hero: Opacidade is stored in tuning.hero and reset drops it; Escala uses soft slider 0.5–2 and supports numeric input', () => {
     render(<Harness elementId="hero" />)
     const scale = screen.getByLabelText('Escala') as HTMLInputElement
-    expect([scale.min, scale.max]).toEqual(['0.9', '1.15'])
+    expect([scale.min, scale.max]).toEqual(['0.5', '2'])
     fireEvent.change(screen.getByLabelText('Opacidade'), { target: { value: '0.4' } })
     expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 0.4 })
+    // Numeric input allows values outside the soft slider range (e.g. 2.5)
+    fireEvent.change(screen.getByLabelText('Escala (valor numérico)'), { target: { value: '2.5' } })
+    expect(tuning().hero.scale).toBe(2.5)
     fireEvent.click(screen.getByText('Restaurar elemento'))
     expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 })
   })

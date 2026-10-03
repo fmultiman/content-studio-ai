@@ -384,8 +384,8 @@ describe('Persistence, backward compatibility and the render contract', () => {
 
   it('the bounds of the new groups are the same bounded position as the title/source', () => {
     for (const group of ['kicker', 'intro'] as const) expect(TUNING_BOUNDS[group]).toEqual(TUNING_BOUNDS.source)
-    // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: the brand keeps that same bounded position and adds the visual baseline's Size and Opacity.
-    expect(TUNING_BOUNDS.brand).toEqual({ ...TUNING_BOUNDS.source, scale: { min: 0.5, max: 3 }, opacity: { min: 0, max: 1 } })
+    // CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1: the brand keeps that same bounded position and adds the visual baseline's Size and Opacity.
+    expect(TUNING_BOUNDS.brand).toEqual({ ...TUNING_BOUNDS.source, scale: { min: 0.1, max: 5 }, opacity: { min: 0, max: 1 } })
     expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, intro: { offsetX: 999, offsetY: 0, rotation: 0 } } }).success).toBe(false)
   })
 

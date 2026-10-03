@@ -19,37 +19,39 @@ import { AUTHORING_ASSET_SLOT_IDS, isRegisteredTemplateId, type AuthoringAssetSl
 import { MAX_ELEMENT_ORDER_LENGTH } from '@/lib/creative/templates/element-stack'
 import { TITLE_LINE_HEIGHT_BOUNDS } from '@/lib/creative/templates/template-definitions'
 import { FONT_SIZE_PX_BOUNDS, RUNTIME_FONT_FAMILY_NAMES, type RuntimeFontFamilyName as RuntimeFontFamily } from '@/lib/schemas/creative/runtime-font-families'
+import { TUNING_BOUNDS } from './authoring-state'
+import { MATERIAL_TRANSFORM_POLICY } from './numeric-policy'
 
 const heroTuningSchema = z.object({
-  offsetX: z.number().finite().min(-120).max(120),
-  offsetY: z.number().finite().min(-120).max(120),
-  rotation: z.number().finite().min(-4).max(4),
-  scale: z.number().finite().min(0.9).max(1.15),
+  offsetX: z.number().finite().min(TUNING_BOUNDS.hero.offsetX.min).max(TUNING_BOUNDS.hero.offsetX.max),
+  offsetY: z.number().finite().min(TUNING_BOUNDS.hero.offsetY.min).max(TUNING_BOUNDS.hero.offsetY.max),
+  rotation: z.number().finite().min(TUNING_BOUNDS.hero.rotation.min).max(TUNING_BOUNDS.hero.rotation.max),
+  scale: z.number().finite().min(TUNING_BOUNDS.hero.scale.min).max(TUNING_BOUNDS.hero.scale.max),
   // LEGACY Hero frame toggle: accepted from older clients; the renderer reads it as a hidden 'heroFrame'.
   frame: z.boolean().optional(),
   // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — optional content-image opacity; absent = fully opaque.
-  opacity: z.number().finite().min(0).max(1).optional(),
+  opacity: z.number().finite().min(TUNING_BOUNDS.hero.opacity.min).max(TUNING_BOUNDS.hero.opacity.max).optional(),
 }).strict()
 
 const titleTuningSchema = z.object({
-  offsetX: z.number().finite().min(-60).max(60),
-  offsetY: z.number().finite().min(-60).max(60),
-  rotation: z.number().finite().min(-2).max(2),
+  offsetX: z.number().finite().min(TUNING_BOUNDS.title.offsetX.min).max(TUNING_BOUNDS.title.offsetX.max),
+  offsetY: z.number().finite().min(TUNING_BOUNDS.title.offsetY.min).max(TUNING_BOUNDS.title.offsetY.max),
+  rotation: z.number().finite().min(TUNING_BOUNDS.title.rotation.min).max(TUNING_BOUNDS.title.rotation.max),
   // Static Detail Polish V1 — "Entrelinha" override; absent = the Template layout's title line-height.
   lineHeight: z.number().finite().min(TITLE_LINE_HEIGHT_BOUNDS.min).max(TITLE_LINE_HEIGHT_BOUNDS.max).optional(),
 }).strict()
 
 // Bounded position shape (no line-height) — Info variant's independent source/credit line.
 const sourceTuningSchema = z.object({
-  offsetX: z.number().finite().min(-60).max(60),
-  offsetY: z.number().finite().min(-60).max(60),
-  rotation: z.number().finite().min(-2).max(2),
+  offsetX: z.number().finite().min(TUNING_BOUNDS.source.offsetX.min).max(TUNING_BOUNDS.source.offsetX.max),
+  offsetY: z.number().finite().min(TUNING_BOUNDS.source.offsetY.min).max(TUNING_BOUNDS.source.offsetY.max),
+  rotation: z.number().finite().min(TUNING_BOUNDS.source.rotation.min).max(TUNING_BOUNDS.source.rotation.max),
 }).strict()
 
 // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca: position + the visual baseline's optional Size and Opacity.
 const brandTuningSchema = sourceTuningSchema.extend({
-  scale: z.number().finite().min(0.5).max(3).optional(),
-  opacity: z.number().finite().min(0).max(1).optional(),
+  scale: z.number().finite().min(TUNING_BOUNDS.brand.scale.min).max(TUNING_BOUNDS.brand.scale.max).optional(),
+  opacity: z.number().finite().min(TUNING_BOUNDS.brand.opacity.min).max(TUNING_BOUNDS.brand.opacity.max).optional(),
 }).strict()
 
 export const documentaryCardPreviewTuningSchema = z.object({
@@ -94,11 +96,11 @@ export const primitiveSelectionSchema = z.object({
 }).strict()
 
 const primitiveTransformsSchema = z.object({
-  offsetX: z.number().finite().min(-120).max(120),
-  offsetY: z.number().finite().min(-120).max(120),
-  rotation: z.number().finite().min(-15).max(15),
-  scale: z.number().finite().min(0.5).max(2),
-  opacity: z.number().finite().min(0).max(1),
+  offsetX: z.number().finite().min(MATERIAL_TRANSFORM_POLICY.offsetX.hardMin).max(MATERIAL_TRANSFORM_POLICY.offsetX.hardMax),
+  offsetY: z.number().finite().min(MATERIAL_TRANSFORM_POLICY.offsetY.hardMin).max(MATERIAL_TRANSFORM_POLICY.offsetY.hardMax),
+  rotation: z.number().finite().min(MATERIAL_TRANSFORM_POLICY.rotation.hardMin).max(MATERIAL_TRANSFORM_POLICY.rotation.hardMax),
+  scale: z.number().finite().min(MATERIAL_TRANSFORM_POLICY.scale.hardMin).max(MATERIAL_TRANSFORM_POLICY.scale.hardMax),
+  opacity: z.number().finite().min(MATERIAL_TRANSFORM_POLICY.opacity.hardMin).max(MATERIAL_TRANSFORM_POLICY.opacity.hardMax),
 }).strict()
 
 export const primitiveTransformsBySlotSchema = z.object({

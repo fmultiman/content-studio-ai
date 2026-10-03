@@ -409,59 +409,114 @@ export function deriveElementOrderRequest(state: AuthoringState, templateId: str
 
 // ── Tuning bounds ─────────────────────────────────────────────────────────────
 
-/** The bounded position every text Element's tuning group shares (the same bounds as the Title/Source/Introdução). */
-const TEXT_POSITION_BOUNDS = {
-  offsetX: { min: -60, max: 60 },
-  offsetY: { min: -60, max: 60 },
-  rotation: { min: -2, max: 2 },
+/**
+ * CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1
+ * The HARD safety bounds of authored tuning fields. These enforce technical/domain safety
+ * (preventing NaN, infinite, or pathological layout bounds), NOT UI slider ergonomics.
+ *
+ * SOFT UI RANGE != SAFE AUTHORED VALUE RANGE != TRUE TECHNICAL / DOMAIN SAFETY BOUND
+ */
+const TEXT_POSITION_HARD_BOUNDS = {
+  offsetX: { min: -300, max: 300 },
+  offsetY: { min: -300, max: 300 },
+  rotation: { min: -15, max: 15 },
 } as const
 
 export const TUNING_BOUNDS = {
   hero: {
-    offsetX: { min: -120, max: 120 },
-    offsetY: { min: -120, max: 120 },
-    rotation: { min: -4, max: 4 },
-    scale: { min: 0.9, max: 1.15 },
+    offsetX: { min: -600, max: 600 },
+    offsetY: { min: -600, max: 600 },
+    rotation: { min: -20, max: 20 },
+    scale: { min: 0.1, max: 5 },
     opacity: { min: 0, max: 1 },
   },
   title: {
-    offsetX: { min: -60, max: 60 },
-    offsetY: { min: -60, max: 60 },
-    rotation: { min: -2, max: 2 },
+    offsetX: { min: -300, max: 300 },
+    offsetY: { min: -300, max: 300 },
+    rotation: { min: -15, max: 15 },
     lineHeight: TITLE_LINE_HEIGHT_BOUNDS,
   },
-  // Same bounds as title — no parallel positioning system for the source/credit line.
   source: {
-    offsetX: { min: -60, max: 60 },
-    offsetY: { min: -60, max: 60 },
-    rotation: { min: -2, max: 2 },
+    offsetX: { min: -300, max: 300 },
+    offsetY: { min: -300, max: 300 },
+    rotation: { min: -15, max: 15 },
   },
-  // COVER_ELEMENT_COMPLETENESS_V1 — same bounded position as the title/source: no parallel positioning system.
   kicker: {
-    offsetX: { min: -60, max: 60 },
-    offsetY: { min: -60, max: 60 },
-    rotation: { min: -2, max: 2 },
+    offsetX: { min: -300, max: 300 },
+    offsetY: { min: -300, max: 300 },
+    rotation: { min: -15, max: 15 },
   },
   intro: {
-    offsetX: { min: -60, max: 60 },
-    offsetY: { min: -60, max: 60 },
-    rotation: { min: -2, max: 2 },
+    offsetX: { min: -300, max: 300 },
+    offsetY: { min: -300, max: 300 },
+    rotation: { min: -15, max: 15 },
   },
-  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit) — the text Elements that used to be fixed Template geometry.
-  body: TEXT_POSITION_BOUNDS,
-  annotation: TEXT_POSITION_BOUNDS,
-  items: TEXT_POSITION_BOUNDS,
-  legend: TEXT_POSITION_BOUNDS,
-  bullets: TEXT_POSITION_BOUNDS,
-  tagline: TEXT_POSITION_BOUNDS,
-  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca gains the visual baseline's Size and Opacity.
-  // The Size range is the NEW field's own initial range; range policy as a whole is a separate, later slice.
+  body: TEXT_POSITION_HARD_BOUNDS,
+  annotation: TEXT_POSITION_HARD_BOUNDS,
+  items: TEXT_POSITION_HARD_BOUNDS,
+  legend: TEXT_POSITION_HARD_BOUNDS,
+  bullets: TEXT_POSITION_HARD_BOUNDS,
+  tagline: TEXT_POSITION_HARD_BOUNDS,
   brand: {
-    offsetX: { min: -60, max: 60 },
-    offsetY: { min: -60, max: 60 },
-    rotation: { min: -2, max: 2 },
-    scale: { min: 0.5, max: 3 },
+    offsetX: { min: -300, max: 300 },
+    offsetY: { min: -300, max: 300 },
+    rotation: { min: -15, max: 15 },
+    scale: { min: 0.1, max: 5 },
     opacity: { min: 0, max: 1 },
+  },
+} as const
+
+/**
+ * CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1
+ * The SOFT slider ranges for comfortable, common UI manipulation.
+ * These govern the range slider endpoints, NOT the maximum authored value.
+ */
+const TEXT_POSITION_SLIDER_BOUNDS = {
+  offsetX: { min: -60, max: 60, step: 1 },
+  offsetY: { min: -60, max: 60, step: 1 },
+  rotation: { min: -2, max: 2, step: 0.1 },
+} as const
+
+export const TUNING_SLIDER_BOUNDS = {
+  hero: {
+    offsetX: { min: -120, max: 120, step: 1 },
+    offsetY: { min: -120, max: 120, step: 1 },
+    rotation: { min: -4, max: 4, step: 0.1 },
+    scale: { min: 0.5, max: 2, step: 0.01 },
+    opacity: { min: 0, max: 1, step: 0.01 },
+  },
+  title: {
+    offsetX: { min: -60, max: 60, step: 1 },
+    offsetY: { min: -60, max: 60, step: 1 },
+    rotation: { min: -2, max: 2, step: 0.1 },
+  },
+  source: {
+    offsetX: { min: -60, max: 60, step: 1 },
+    offsetY: { min: -60, max: 60, step: 1 },
+    rotation: { min: -2, max: 2, step: 0.1 },
+  },
+  kicker: {
+    offsetX: { min: -60, max: 60, step: 1 },
+    offsetY: { min: -60, max: 60, step: 1 },
+    rotation: { min: -2, max: 2, step: 0.1 },
+  },
+  intro: {
+    offsetX: { min: -60, max: 60, step: 1 },
+    offsetY: { min: -60, max: 60, step: 1 },
+    rotation: { min: -2, max: 2, step: 0.1 },
+  },
+  body: TEXT_POSITION_SLIDER_BOUNDS,
+  annotation: TEXT_POSITION_SLIDER_BOUNDS,
+  items: TEXT_POSITION_SLIDER_BOUNDS,
+  legend: TEXT_POSITION_SLIDER_BOUNDS,
+  bullets: TEXT_POSITION_SLIDER_BOUNDS,
+  tagline: TEXT_POSITION_SLIDER_BOUNDS,
+  brand: {
+    offsetX: { min: -60, max: 60, step: 1 },
+    offsetY: { min: -60, max: 60, step: 1 },
+    rotation: { min: -2, max: 2, step: 0.1 },
+    scale: { min: 0.5, max: 2, step: 0.01 },
+    opacity: { min: 0, max: 1, step: 0.01 },
   },
 } as const
 
