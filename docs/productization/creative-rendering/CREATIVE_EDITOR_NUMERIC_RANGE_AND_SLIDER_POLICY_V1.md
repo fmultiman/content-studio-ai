@@ -105,3 +105,39 @@ During test runs, 6 failures were observed and classified strictly per the missi
 - **Full Vitest Suite**:
   - **4204 PASS / 2 FAIL (pre-existing "Estilos" drift) / 4206 total**
 - **Production Build (`pnpm build`)**: **PASS / exit 0** (compiled in 73s, TypeScript in 116s, 54/54 static pages generated).
+
+---
+
+## 6. Delivery Evidence
+
+| | |
+| :-- | :-- |
+| Implementation PR | **#110** (`feat/creative-editor-numeric-range-slider-policy-v1`) |
+| Implementation SHA | `d0a33dc` |
+| Merge commit SHA | `7df3715f01147f31dcaab9335ea58c7684429b6a` |
+| Production deployment ID | `6828977130` |
+| Production deployment SHA | `7df3715f01147f31dcaab9335ea58c7684429b6a` |
+| Production deployment status | **success** (`2026-10-03T14:44:07Z`) |
+| Environment | `Production` |
+
+### Production Smoke Evidence
+- **Hero Image (Imagem principal)**:
+  - Initial value: Scale `1.15`, slider `0.5 – 2`, numeric input `0.1 – 5`.
+  - Authored Scale `2.0`: Slider moved to `2`; Canvas preview rendered `transform: ... scale(2)`.
+  - Authored Scale `2.5` (outside soft range): Slider visually pinned at `2`; numeric input retained `2.50`; Canvas rendered `transform: ... scale(2.5)`.
+  - Reset (`Restaurar elemento`): Restored Template default `scale(1)`.
+- **Brand Logo (Logo da marca)**:
+  - Slider soft range `0.5 – 2`, numeric hard range `0.1 – 5`.
+  - Authored Scale `3.0`: Displayed `3.00` in numeric input; slider pinned at `2`.
+  - Reset (`Restaurar elemento`): Restored Template default `1.00`.
+- **Integrity**:
+  - Reverted all changes via `Voltar ao salvo`.
+  - Verified `Salvar` is disabled; zero persistent changes left behind on user piece.
+
+---
+
+## 7. Deferred Next Slices
+- `CREATIVE_EDITOR_IMAGE_INSERTION_GEOMETRY_V1` (aspect ratio preservation on Free Image staging insertion).
+- `CREATIVE_EDITOR_FREE_LAYER_DRAG_PARITY_V1`.
+- `CREATIVE_EDITOR_INSPECTOR_ELEMENTS_SHELL_V1`.
+
