@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardFactCard, DocumentaryCardInfoContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
-import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, localTypography, materialMetrics, materialUrl, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandMark, GrainOverlay, brandLogoPlacement, localTypography, materialMetrics, materialUrl, type CardPalette } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -156,7 +156,7 @@ export function InfoVariant({ context, palette }: { context: DocumentaryCardVisu
         <AssetLayer label="Aba da marca" url={url('paperDark')} metrics={materialMetrics('paperDark')} contain={context.materialContain?.paperDark} box={{ left: -x(300), top: 0, width: x(310), height: y(230) }} rotation={4} shadow />
       </div>
       <div style={{ ...fixedText, right: x(-16), top: y(-18), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo') }}>
-        <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58) }} />
+        <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, accent: gold }} tokens={context.tokens} logoSize={x(128)} style={{ position: 'absolute', right: x(84), top: y(58), ...brandLogoPlacement(context.previewTuning?.brand, { width: x(128), height: x(128), anchorX: 0.5, anchorY: 0.5 }) }} />
       </div>
     </>
   )

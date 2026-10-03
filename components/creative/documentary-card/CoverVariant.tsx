@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import type { DocumentaryCardCoverContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandLogo, GrainOverlay, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandLogo, GrainOverlay, brandLogoPlacement, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 
 /**
@@ -123,7 +123,8 @@ export function CoverVariant({ context, palette }: { context: DocumentaryCardVis
         </div>
       ) : null}
       {/* Assinatura = Logo da marca: ONE Element, the COMPLETE logo asset (slot "logo"). The file already carries the brand name, so no name text is drawn. */}
-      <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} width={x(400)} height={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandLogo', context.previewTuning?.brand) }} />
+      {/* CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: Size/Opacity come from the same `brand` tuning as its position; the signature is bottom-left anchored, so a larger logo grows up and to the right. */}
+      <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: text, accent: gold }} width={x(400)} height={x(118)} style={{ ...fixedText, bottom: y(58), left: x(110), ...positioned('brandLogo', context.previewTuning?.brand), ...brandLogoPlacement(context.previewTuning?.brand, { width: context.assets.logo ? x(400) : x(118), height: x(118), anchorX: 0, anchorY: 1 }, context.contentOpacity) }} />
     </>
   )
 }

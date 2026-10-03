@@ -343,7 +343,7 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
     { id: 'introBanner', label: 'Faixa da chamada', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
     { id: 'introText', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: { above: 'introBanner' } },
     { id: 'brandTab', label: 'Aba da marca', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
-    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'tape1', 'tape2', 'botanical', 'card1', 'card1Text', 'pin', 'paper', 'card2Text', 'pin2', 'tape3', 'paperStrip', 'paperDark', 'title', 'source', 'bodyText', 'annotation', 'introBanner', 'introText', 'brandTab', 'brandLogo'],
 }
@@ -376,7 +376,7 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
     { id: 'items', label: 'Itens da lista', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'heroFrame', 'hero', 'tape1', 'botanical', 'callout', 'calloutText', 'note', 'noteText', 'tape2', 'paperStrip', 'title', 'intro', 'items', 'brandLogo'],
 }
@@ -496,7 +496,7 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
     { id: 'body', label: 'Texto de apoio', kind: 'text', control: FIXED, stackPlacement: 'front' },
     { id: 'items', label: 'Itens do encerramento', kind: 'text', control: FIXED, stackPlacement: 'front' },
     { id: 'divider', label: 'Linha pontilhada', kind: 'shape', control: FIXED, stackPlacement: 'front' },
-    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: FIXED, stackPlacement: 'front' },
+    { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
     { id: 'tagline', label: 'Frase final', kind: 'text', control: FIXED, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'inviteText', 'tape1', 'title', 'body', 'items', 'divider', 'brandLogo', 'tagline'],

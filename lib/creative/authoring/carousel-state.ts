@@ -110,6 +110,8 @@ const heroTuningSchema = z
     scale: z.number().finite().min(TUNING_BOUNDS.hero.scale.min).max(TUNING_BOUNDS.hero.scale.max),
     // LEGACY toggle (COVER_ELEMENT_COMPLETENESS_V1), read-only: migrated to a hidden 'heroFrame' Element on load, never written.
     frame: z.boolean().optional(),
+    // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: optional; absent = fully opaque.
+    opacity: z.number().finite().min(TUNING_BOUNDS.hero.opacity.min).max(TUNING_BOUNDS.hero.opacity.max).optional(),
   })
   .strict()
 
@@ -120,6 +122,12 @@ const positionTuningSchema = z
     rotation: z.number().finite().min(TUNING_BOUNDS.title.rotation.min).max(TUNING_BOUNDS.title.rotation.max),
   })
   .strict()
+
+// CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: the Logo da marca also carries the visual baseline's optional Size and Opacity.
+const brandTuningSchema = positionTuningSchema.extend({
+  scale: z.number().finite().min(TUNING_BOUNDS.brand.scale.min).max(TUNING_BOUNDS.brand.scale.max).optional(),
+  opacity: z.number().finite().min(TUNING_BOUNDS.brand.opacity.min).max(TUNING_BOUNDS.brand.opacity.max).optional(),
+}).strict()
 
 // Static Detail Polish V1: the title also carries an optional "Entrelinha"
 // override (absent on every row persisted before it = Template default).
@@ -138,7 +146,7 @@ const tuningSchema = z
     // COVER_ELEMENT_COMPLETENESS_V1: Cover's Chamada / Introdução / Assinatura positions. Absent = Template position.
     kicker: positionTuningSchema.optional(),
     intro: positionTuningSchema.optional(),
-    brand: positionTuningSchema.optional(),
+    brand: brandTuningSchema.optional(),
   })
   .strict()
 

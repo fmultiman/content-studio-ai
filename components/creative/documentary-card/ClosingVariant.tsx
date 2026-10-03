@@ -1,5 +1,5 @@
 import type { DocumentaryCardClosingContent } from '@/lib/schemas/creative/documentary-card'
-import { AssetLayer, AssetTextLayer, BrandLogo, localTypography, materialMetrics, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandLogo, brandLogoPlacement, localTypography, materialMetrics, type CardPalette } from './primitives'
 import { DocumentaryIcon } from './icons'
 import { LayoutBackground, SequenceBadge, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
@@ -70,7 +70,7 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
       ) : null}
       <div aria-hidden="true" style={{ ...kit.fixedAtom('divider'), borderTop: `2px dotted ${gold}`, left: x(70), opacity: .7, top: y(808), width: x(940) }} />
       {/* Assinatura = Logo da marca: ONE Element, the COMPLETE logo asset (it already carries the brand name; no name text is drawn). */}
-      <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} width={x(480)} height={x(140)} style={{ ...kit.fixedAtom('brandLogo'), left: x(96), top: y(1124) }} />
+      <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} width={x(480)} height={x(140)} style={{ ...kit.fixedAtom('brandLogo'), left: x(96), top: y(1124), ...brandLogoPlacement(context.previewTuning?.brand, { width: context.assets.logo ? x(480) : x(140), height: x(140), anchorX: 0, anchorY: 0.5 }, context.contentOpacity) }} />
       {content.tagline ? (
         <div style={{ ...kit.fixedAtom('tagline'), color: gold, fontFamily: body, fontSize: x(22), fontWeight: 600, left: 0, letterSpacing: '.28em', textAlign: 'center', textTransform: 'uppercase', top: y(1296), width: x(1080) }}>{content.tagline}</div>
       ) : null}

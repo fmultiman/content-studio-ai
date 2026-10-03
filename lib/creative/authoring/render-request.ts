@@ -27,6 +27,8 @@ const heroTuningSchema = z.object({
   scale: z.number().finite().min(0.9).max(1.15),
   // LEGACY Hero frame toggle: accepted from older clients; the renderer reads it as a hidden 'heroFrame'.
   frame: z.boolean().optional(),
+  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — optional content-image opacity; absent = fully opaque.
+  opacity: z.number().finite().min(0).max(1).optional(),
 }).strict()
 
 const titleTuningSchema = z.object({
@@ -44,6 +46,12 @@ const sourceTuningSchema = z.object({
   rotation: z.number().finite().min(-2).max(2),
 }).strict()
 
+// CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca: position + the visual baseline's optional Size and Opacity.
+const brandTuningSchema = sourceTuningSchema.extend({
+  scale: z.number().finite().min(0.5).max(3).optional(),
+  opacity: z.number().finite().min(0).max(1).optional(),
+}).strict()
+
 export const documentaryCardPreviewTuningSchema = z.object({
   hero: heroTuningSchema,
   title: titleTuningSchema,
@@ -51,7 +59,7 @@ export const documentaryCardPreviewTuningSchema = z.object({
   // COVER_ELEMENT_COMPLETENESS_V1 — optional bounded positions of Cover's Chamada / Introdução / Assinatura.
   kicker: sourceTuningSchema.optional(),
   intro: sourceTuningSchema.optional(),
-  brand: sourceTuningSchema.optional(),
+  brand: brandTuningSchema.optional(),
 }).strict()
 
 
