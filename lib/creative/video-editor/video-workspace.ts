@@ -22,7 +22,7 @@ export const VIDEO_INSPECTOR_SECTIONS: readonly { value: VideoInspectorSection; 
   { value: 'template', label: 'Template', compactLabel: 'Tpl.' },
   { value: 'content', label: 'Conteúdo', compactLabel: 'Cont.' },
   { value: 'assets', label: 'Assets', compactLabel: 'Assets' },
-  { value: 'style', label: 'Estilo', compactLabel: 'Estilo' },
+  { value: 'style', label: 'Estilos', compactLabel: 'Estilos' },
   { value: 'element', label: 'Elementos', compactLabel: 'Elem.' },
   { value: 'motion', label: 'Motion', compactLabel: 'Motion' },
 ]

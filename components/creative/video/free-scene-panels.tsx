@@ -109,7 +109,11 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
   const listed = [...elements].reverse()
   return (
     <div className="space-y-2" data-testid="free-scene-elements">
-      {hideAddActions ? null : <FreeElementAddActions full={full} addImageLabel={wording.addImageLabel} onAddText={onAddText} onAddImage={onAddImage} />}
+      {hideAddActions ? null : (
+        <div className="sticky top-0 z-10 -mx-1 bg-background/95 pb-2 pt-1 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <FreeElementAddActions full={full} addImageLabel={wording.addImageLabel} onAddText={onAddText} onAddImage={onAddImage} />
+        </div>
+      )}
       {elements.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{emptyMessage ?? `${wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.`}</p>
       ) : (

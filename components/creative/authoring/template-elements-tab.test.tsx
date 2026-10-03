@@ -77,17 +77,19 @@ describe('anatomy tree per Layout', () => {
 describe('existing Template Element capabilities are preserved', () => {
   it('an open row renders its own control panel; row/eye use the existing callbacks', () => {
     const { spies } = setup('cover', { openId: 'hero' })
+    const anatomy = within(screen.getByTestId('template-anatomy-tree'))
     expect(screen.getByTestId('panel-hero').textContent).toBe('controles de hero')
     const titleRow = within(sectionEl('title-block')).getByText('Título').closest('button') as HTMLElement
     fireEvent.click(titleRow)
     expect(spies.onToggle).toHaveBeenCalledWith('title')
-    fireEvent.click(screen.getByRole('button', { name: 'Ocultar Imagem principal' }))
+    fireEvent.click(anatomy.getByRole('button', { name: 'Ocultar Imagem principal' }))
     expect(spies.onToggleVisibility).toHaveBeenCalledWith('hero')
   })
 
   it('a hidden Element stays listed and offers "Mostrar"', () => {
     setup('cover', { hiddenIds: ['tape1'] })
-    expect(screen.getByRole('button', { name: 'Mostrar Fita da imagem' })).toBeTruthy()
+    const anatomy = within(screen.getByTestId('template-anatomy-tree'))
+    expect(anatomy.getByRole('button', { name: 'Mostrar Fita da imagem' })).toBeTruthy()
   })
 
   it('adds no lock affordance and no invented controls to any row', () => {
@@ -126,7 +128,7 @@ console.log(order.innerHTML)
     const last = expected.length - 1
     ;[expected[last], expected[last - 1]] = [expected[last - 1], expected[last]]
     expect(spies.onReorder).toHaveBeenCalledWith(expected)
-    expect(order.querySelector('[data-layer-eye]')).toBeNull()
+    expect(order.querySelector('[data-layer-eye]')).not.toBeNull()
   })
 })
 

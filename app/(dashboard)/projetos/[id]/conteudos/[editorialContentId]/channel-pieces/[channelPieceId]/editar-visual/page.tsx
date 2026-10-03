@@ -793,7 +793,11 @@ export default function StaticAuthoringProductPage() {
   /** The open element's own controls — exactly what its Template control contract supports. */
   function renderElementPanel(id: string) {
     if (!state) return null
-    return <TemplateElementPanel elementId={id} state={state} layout={layout} elements={elements} dispatch={dispatch} />
+    const element = elements.find((e) => e.key === id)
+    const slotId = element?.assetSlot
+    const slot = slotId ? slotsInUse.find(s => s.slot.id === slotId)?.slot : undefined
+    const resource = slot ? resolveSlotResource(slot, state, projectImages, context?.primitives ?? []) : undefined
+    return <TemplateElementPanel elementId={id} state={state} layout={layout} elements={elements} dispatch={dispatch} resource={resource} />
   }
 
   // Structured layouts (Lista, Grade, Mapa, Rede, Citação, Encerramento) edit through their field descriptors.

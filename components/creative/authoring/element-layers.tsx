@@ -75,8 +75,9 @@ export function ElementLayers({
   note?: ReactNode
   /**
    * STATIC_TEMPLATE_ANATOMY_TREE_V1: the paint-order editor alone. Rows keep the grip (drag /
-   * ArrowUp / ArrowDown) but drop the eye and the disclosure, because the anatomy tree already
-   * owns visibility and the element panels. Order semantics are unchanged.
+   * ArrowUp / ArrowDown) and the eye (CREATIVE_EDITOR_REAL_SMOKE_USABILITY_HARDENING_V1), but
+   * drop the disclosure, because the anatomy tree already owns the element panels.
+   * Order semantics are unchanged.
    */
   orderOnly?: boolean
   title?: string
@@ -184,6 +185,20 @@ export function ElementLayers({
                   >
                     <GripVertical className="h-3.5 w-3.5" />
                   </button>
+                  {onToggleVisibility ? (
+                    <button
+                      type="button"
+                      data-layer-eye
+                      aria-label={isHidden ? `Mostrar ${label}` : `Ocultar ${label}`}
+                      aria-pressed={!isHidden}
+                      title={isHidden ? 'Mostrar elemento' : 'Ocultar elemento'}
+                      className={`flex h-7 w-6 shrink-0 items-center justify-center rounded-sm hover:bg-muted ${isHidden ? 'text-muted-foreground/60' : 'text-muted-foreground'}`}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => { event.stopPropagation(); onToggleVisibility(id) }}
+                    >
+                      {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  ) : null}
                   <span className={`min-w-0 flex-1 truncate py-1 pr-2 ${isHidden ? 'italic text-muted-foreground' : ''}`}>{label}</span>
                 </div>
               </li>
