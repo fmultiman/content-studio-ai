@@ -259,27 +259,27 @@ describe('deriveManifestFromState', () => {
 // ── Tuning bounds ─────────────────────────────────────────────────────────────
 
 describe('clampTuningValue', () => {
-  it('clamps hero offsetX to ±120', () => {
-    expect(clampTuningValue('hero', 'offsetX', 200)).toBe(TUNING_BOUNDS.hero.offsetX.max)
-    expect(clampTuningValue('hero', 'offsetX', -200)).toBe(TUNING_BOUNDS.hero.offsetX.min)
-    expect(clampTuningValue('hero', 'offsetX', 50)).toBe(50)
+  it('clamps hero offsetX to hard bounds ±600', () => {
+    expect(clampTuningValue('hero', 'offsetX', 1000)).toBe(TUNING_BOUNDS.hero.offsetX.max)
+    expect(clampTuningValue('hero', 'offsetX', -1000)).toBe(TUNING_BOUNDS.hero.offsetX.min)
+    expect(clampTuningValue('hero', 'offsetX', 200)).toBe(200)
   })
 
-  it('clamps hero rotation to ±4', () => {
-    expect(clampTuningValue('hero', 'rotation', 10)).toBe(TUNING_BOUNDS.hero.rotation.max)
-    expect(clampTuningValue('hero', 'rotation', -10)).toBe(TUNING_BOUNDS.hero.rotation.min)
-    expect(clampTuningValue('hero', 'rotation', 2)).toBe(2)
+  it('clamps hero rotation to hard bounds ±20', () => {
+    expect(clampTuningValue('hero', 'rotation', 30)).toBe(TUNING_BOUNDS.hero.rotation.max)
+    expect(clampTuningValue('hero', 'rotation', -30)).toBe(TUNING_BOUNDS.hero.rotation.min)
+    expect(clampTuningValue('hero', 'rotation', 10)).toBe(10)
   })
 
-  it('clamps hero scale to 0.9–1.15', () => {
-    expect(clampTuningValue('hero', 'scale', 2)).toBe(TUNING_BOUNDS.hero.scale.max)
-    expect(clampTuningValue('hero', 'scale', 0.1)).toBe(TUNING_BOUNDS.hero.scale.min)
-    expect(clampTuningValue('hero', 'scale', 1)).toBe(1)
+  it('clamps hero scale to hard bounds 0.1–5', () => {
+    expect(clampTuningValue('hero', 'scale', 10)).toBe(TUNING_BOUNDS.hero.scale.max)
+    expect(clampTuningValue('hero', 'scale', 0.05)).toBe(TUNING_BOUNDS.hero.scale.min)
+    expect(clampTuningValue('hero', 'scale', 2)).toBe(2)
   })
 
-  it('clamps title rotation to ±2', () => {
-    expect(clampTuningValue('title', 'rotation', 5)).toBe(TUNING_BOUNDS.title.rotation.max)
-    expect(clampTuningValue('title', 'rotation', -5)).toBe(TUNING_BOUNDS.title.rotation.min)
+  it('clamps title rotation to hard bounds ±15', () => {
+    expect(clampTuningValue('title', 'rotation', 30)).toBe(TUNING_BOUNDS.title.rotation.max)
+    expect(clampTuningValue('title', 'rotation', -30)).toBe(TUNING_BOUNDS.title.rotation.min)
   })
 
   it('returns value unchanged for unknown field', () => {

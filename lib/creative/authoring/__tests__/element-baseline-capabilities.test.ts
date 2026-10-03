@@ -214,10 +214,10 @@ describe('capability model — class baseline, exceptions and the registry', () 
     for (const { definition } of ALL_ELEMENTS.filter(({ definition }) => definition.control.type === 'transform')) {
       expect(transformBindingFor(definition.control)!.fields, definition.id).toMatchObject(Object.fromEntries(TRANSFORM_FIELDS.map((field) => [field, expect.any(Object)])))
     }
-    // Every existing authored range is unchanged (range policy is a later slice).
-    expect(TUNING_BOUNDS.hero.scale).toEqual({ min: 0.9, max: 1.15 })
-    expect(TUNING_BOUNDS.title.offsetX).toEqual({ min: -60, max: 60 })
-    expect(transformBindingFor({ type: 'transform', key: 'tape1' })!.fields.scale).toEqual({ min: 0.5, max: 2, step: 0.01 })
+    // CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1 — hard bounds govern authored state; soft bounds govern slider UI.
+    expect(TUNING_BOUNDS.hero.scale).toEqual({ min: 0.1, max: 5 })
+    expect(TUNING_BOUNDS.title.offsetX).toEqual({ min: -300, max: 300 })
+    expect(transformBindingFor({ type: 'transform', key: 'tape1' })!.fields.scale).toMatchObject({ min: 0.5, max: 2, step: 0.01, hardMin: 0.1, hardMax: 5 })
   })
 })
 
@@ -338,7 +338,7 @@ describe('visual baseline — representative classes', () => {
     expect(tagOf(untouched, 'aria-label="Imagem principal"')).not.toContain('opacity')
     const faded = render(edit(slide('cover'), 'cover', 'hero', 'opacity', 0.4))
     expect(tagOf(faded, 'aria-label="Imagem principal"')).toContain('opacity:0.4')
-    expect(transformBindingFor(definitionOf('cover', 'hero').control)!.fields.scale).toEqual({ min: 0.9, max: 1.15, step: 0.01 })
+    expect(transformBindingFor(definitionOf('cover', 'hero').control)!.fields.scale).toMatchObject({ min: 0.5, max: 2, step: 0.01, hardMin: 0.1, hardMax: 5 })
     // Lista / Citação: the frame under the image follows the image's opacity (it is the same plate).
     const listFaded = render(edit(slide('list'), 'list', 'hero', 'opacity', 0.5))
     expect(tagOf(listFaded, 'data-element="Moldura"')).toContain('opacity:0.5')
@@ -394,9 +394,9 @@ describe('Text safety — the baseline is a floor, typography and Estilos are un
       expect(caps(layoutId, id).capabilities, `${layoutId}.${id}`).toMatchObject({ position: true, rotation: true })
       expect(Object.keys(transformBindingFor(definitionOf(layoutId, id).control)!.fields).sort()).toEqual(['offsetX', 'offsetY', 'rotation'])
     }
-    // Existing ranges of the Text groups are exactly what they were.
-    for (const group of ['title', 'source', 'kicker', 'intro'] as const) expect(TUNING_BOUNDS[group].offsetX).toEqual({ min: -60, max: 60 })
-    expect(transformBindingFor({ type: 'tuning', group: 'title' })!.fields.rotation).toEqual({ min: -2, max: 2, step: 0.1 })
+    // CREATIVE_EDITOR_NUMERIC_RANGE_AND_SLIDER_POLICY_V1: text groups have hard position bounds ±300.
+    for (const group of ['title', 'source', 'kicker', 'intro'] as const) expect(TUNING_BOUNDS[group].offsetX).toEqual({ min: -300, max: 300 })
+    expect(transformBindingFor({ type: 'tuning', group: 'title' })!.fields.rotation).toMatchObject({ min: -2, max: 2, step: 0.1, hardMin: -15, hardMax: 15 })
   })
 
   it('22/25. typography behaviour is unchanged: the capability model does not read or write typography/Estilos state', () => {
@@ -659,7 +659,8 @@ describe('exception audit — the 18 formerly "fixed" Elements (14 text blocks, 
       expect(PersistedAuthoredSlideSchema.safeParse(persisted).success, layoutId).toBe(true)
       expect(renderFull(persistedSlideToAuthoringState(persisted, productContext, 'portrait')), layoutId).toBe(renderFull(full(layoutId)))
     }
-    expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, items: { offsetX: 61, offsetY: 0, rotation: 0 } } }).success).toBe(false)
+    expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, items: { offsetX: 301, offsetY: 0, rotation: 0 } } }).success).toBe(false)
+    expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, items: { offsetX: 61, offsetY: 0, rotation: 0 } } }).success).toBe(true)
     expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, tagline: { offsetX: 60, offsetY: -60, rotation: 2 } } }).success).toBe(true)
   })
 })
