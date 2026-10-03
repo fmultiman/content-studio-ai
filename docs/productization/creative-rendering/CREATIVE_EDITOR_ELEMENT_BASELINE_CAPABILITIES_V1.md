@@ -242,4 +242,92 @@ justified: Template direct manipulation, crop / focal point, Anatomy naming, Sta
 
 ## 14. Delivery evidence
 
-_Filled at closure: validation counts, implementation SHA, PR, merge SHA, Production deployment SHA, worker parity, Production smoke._
+### Validation
+
+| Gate | Result |
+| :-- | :-- |
+| Focused capability tests | **55 PASS** (36 capability + 5 panel + 14 render-path assertions) |
+| Full Vitest suite | **4180 PASS / 2 FAIL (pre-existing) / 4182 total** |
+| Pre-existing failures | `editor-workspace.test.ts` and `video-editor/__tests__/static-parity.test.ts` — label `"Estilo"` vs `"Estilos"`. Fail identically on clean `origin/main` `1393c43`. Out of scope and untouched. |
+| `pnpm tsc --noEmit` | **CLEAN** |
+| `pnpm lint` | **0 errors / 43 warnings** (same warnings as baseline) |
+| `pnpm build` | **PASS / exit 0** |
+
+### Delivery
+
+| | |
+| :-- | :-- |
+| Original implementation PR | **#106** |
+| Original implementation SHA | `9a7b012` |
+| Original merge SHA | `d0cf68c` |
+| Corrective audit PR | **#107** (`fix/creative-editor-baseline-exception-audit-v1`) |
+| Corrective implementation SHA | `8a0494f` |
+| Final corrective merge SHA | **`35b136e`** |
+| `origin/main` after merge | `35b136e` (main did NOT advance after the corrective merge) |
+| Production deployment ID | `6826037243` |
+| Production deployment SHA | `35b136ee7561b2d0beb7d6a1caa47f31d07fe98f` |
+| Production deployment status | **success** (`2026-10-03T09:43:32Z`) |
+| Production deployment environment | `Production` (not Preview) |
+| Docs file | `docs/productization/creative-rendering/CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1.md` (this file; updated by corrective PR #107) |
+
+### Production UI smoke (pre-corrective PR — d0cf68c)
+
+Executed in the authenticated in-app browser against the user's real saved carousel piece.
+Template mode entered in memory only; nothing saved; "Voltar ao salvo" confirmed clean.
+
+| Smoke | Result |
+| :-- | :-- |
+| Cover Logo da marca Escala | Slider shown (0.5–3); Scale 2× doubled logo box from 181px → 363px; single brand mark preserved |
+| Cover Logo da marca Opacidade | Slider shown; opacity applied; Restaurar elemento restored default |
+| Cover Imagem principal Opacidade | Slider shown; applied; reset |
+| Info Logo da marca | 5 controls shown (X, Y, Rotação, Escala, Opacidade); 1.5× scale grew from 58px → 87px |
+| Fixed text slot (Info) | No sliders; exception reason shown inline |
+
+### Worker export (source SHA: 35b136e)
+
+| | |
+| :-- | :-- |
+| Export command | `node infra/render-worker-runtime/export.mjs` |
+| Source SHA | `35b136ee7561b2d0beb7d6a1caa47f31d07fe98f` |
+| Files copied by exporter | **57** |
+| Total files in dist (incl. bundles) | **60** |
+| Output path | `infra/render-worker-runtime/dist/content-studio/` |
+| Manifest file | `infra/render-worker-runtime/worker-manifest-35b136e.txt` |
+| Aggregate manifest SHA256 | `105ae01d6f1a1e4dcc63a8885337df6cf6dbcec2c817bd20b026fdf4ac3a03e3` |
+| Supersedes | `worker-manifest-d0cf68c.txt` — **the old d0cf68c export is obsolete and must not be used for deployment** |
+
+Changed worker files — hashes from corrective tree `35b136e` (SHA256, binary-identical on Windows/Linux):
+
+| File | SHA256 |
+| :-- | :-- |
+| `components/creative/documentary-card/primitives.tsx` | `f4b3ac5313e731d2de6bf6182d83cf480e7c71e8a584bdf00fcf33847268b1e2` |
+| `components/creative/documentary-card/CoverVariant.tsx` | `68034496e922f6aa94b2543160eb72918857abad7be6b21259409adc8ccd052b` |
+| `components/creative/documentary-card/InfoVariant.tsx` | `6a21830840aa8596ebc00ba58306127832a71df567441a185895b15cd73bc5dd` |
+| `components/creative/documentary-card/ListVariant.tsx` | `68aac30952aaf5d83ee8f1048099bf816d8d114b0471763f8915cb8d35b0a43e` |
+| `components/creative/documentary-card/ClosingVariant.tsx` | `fbf78b83627d9e03c1f20684eec48b4f9bbef85c02ca081f6041e5fc6dd764a0` |
+| `components/creative/documentary-card/GridVariant.tsx` | `aebd93e59dab536664652902185856c37dd0510ed07f55899389b834732e02f1` |
+| `components/creative/documentary-card/MapVariant.tsx` | `db6ebaba7b6b3209592ab7c5f9d61fec00401f869fba35ce5ed59fe041f9a464` |
+| `components/creative/documentary-card/NetworkVariant.tsx` | `9a1b711ca65cb6cb0c70b4051c5844d4d6416d80f0d5db6dc63c3f8be575b549` |
+| `components/creative/documentary-card/QuoteVariant.tsx` | `fe51c130b473d161d03573476456019478f2efdedc2d9c3e10a9ebccfc8f6da3` |
+| `components/creative/documentary-card/layout-kit.tsx` | `9fd6bb500f56c092b5861f455c6dc0dd8a8cd971b268a9d93ce8ab0d5380f335` |
+| `lib/creative/templates/template-definitions.ts` | `a7a94650152c35bba3967438c9f4f4253e10ce7ed824f93f13c706400bd2d16f` |
+
+Note: `lib/creative/authoring/element-capabilities.ts` is **NOT** in the worker bundle (authoring-UI only; tested).
+
+### Worker runtime parity — OPERATOR HANDOFF PENDING
+
+The worker has not yet been updated on the VPS. The export derived from `35b136e` is ready locally.
+
+**Operator must:**
+
+1. Copy `infra/render-worker-runtime/dist/content-studio/` to `/opt/content-studio/render-worker` on the VPS.
+2. Run: `docker service update --force content-studio-execution_render-worker`
+3. Wait for the new task/container to become active.
+4. Inside the new container, compute:
+   ```sh
+   find /app/content-studio -type f | sort | xargs sha256sum --text
+   ```
+5. Verify the aggregate and changed-file hashes against the table above.
+6. Run a real render with a non-default Logo Scale and Hero Opacity and confirm the output matches the Preview.
+
+Until the operator confirms container parity and the real render result, worker parity is **PENDING**.
