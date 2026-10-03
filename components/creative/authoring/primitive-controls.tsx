@@ -2,6 +2,7 @@
 
 import type { PrimitiveListItem } from '@/lib/creative/primitives/discovery'
 import type { PrimitiveTransforms, PrimitiveTransformSlot } from '@/lib/creative/primitives/transforms'
+import type { ElementCapability, TransformField, TransformFieldSpecs } from '@/lib/creative/authoring/element-capabilities'
 
 export function PrimitivePicker({ slot, label, primitives, selectedKey, onSelect, onReset }: { slot: 'paper' | 'tape'; label: string; primitives: PrimitiveListItem[]; selectedKey?: string; onSelect: (key: string | undefined) => void; onReset: () => void }) {
   const available = primitives.filter((primitive) => primitive.category === slot)
@@ -40,14 +41,41 @@ export function HeroTuningControls({ tuning, onChange, onReset }: { tuning: { of
 /** COVER_ELEMENT_COMPLETENESS_V1 — a semantic child of a spatial owner: it moves with its owner and has no spatial control of its own. */
 /** An atom that takes its anchor's POSITION only: it stays its own Element (own visibility, own place in Camadas). */
 export function FollowsOwnerNote({ ownerLabel, content }: { ownerLabel: string; content?: string }) {
-  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="follows-owner-note">Acompanha a posição, a rotação e a escala de “{ownerLabel}”, mas é um elemento independente: ocultar “{ownerLabel}” não oculta este, e ocultar este não oculta “{ownerLabel}”.{content ? ` O texto se edita em Conteúdo (${content}).` : ''}</p>
+  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="follows-owner-note">Acompanha a posição, a rotação, a escala e a opacidade de “{ownerLabel}”, mas é um elemento independente: ocultar “{ownerLabel}” não oculta este, e ocultar este não oculta “{ownerLabel}”.{content ? ` O texto se edita em Conteúdo (${content}).` : ''}</p>
 }
 /** An atom whose position is Template geometry: own visibility and paint order, no spatial control. */
-export function FixedElementNote({ isText }: { isText: boolean }) {
-  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="fixed-element-note">Posição fixa do Template: este elemento tem visibilidade e ordem próprias, mas não tem ajuste de posição.{isText ? ' O texto se edita em Conteúdo.' : ''}</p>
+export function FixedElementNote({ isText, reason }: { isText: boolean; reason?: string }) {
+  return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="fixed-element-note" data-exception-reason={reason} title={reason}>Posição fixa do Template: este elemento tem visibilidade e ordem próprias, mas não tem ajuste de posição.{isText ? ' O texto se edita em Conteúdo.' : ''}</p>
 }
 
 /** COVER_ELEMENT_COMPLETENESS_V1 — the brand block's authored facts: what it shows and where each part comes from. */
 export function BrandOwnershipNote({ projectName }: { projectName?: string }) {
   return <p className="text-[11px] leading-snug text-muted-foreground" data-testid="brand-ownership-note">O logo vem do Template e pode ser trocado em Assets (Logo da marca); o nome{projectName ? ` (“${projectName}”)` : ''} vem do Projeto e é um elemento à parte (Nome da marca).</p>
+}
+
+const ELEMENT_TRANSFORM_ROWS: readonly { field: TransformField; capability: Extract<ElementCapability, 'position' | 'rotation' | 'scale' | 'opacity'>; label: string }[] = [
+  { field: 'offsetX', capability: 'position', label: 'Posição X' },
+  { field: 'offsetY', capability: 'position', label: 'Posição Y' },
+  { field: 'rotation', capability: 'rotation', label: 'Rotação' },
+  { field: 'scale', capability: 'scale', label: 'Escala' },
+  { field: 'opacity', capability: 'opacity', label: 'Opacidade' },
+]
+
+/**
+ * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — the ONE placement control set of a Template Element: always in the same
+ * order (Posição X/Y, Rotação, Escala, Opacidade), offering exactly the capabilities the registry resolved for it. The values
+ * and ranges come from the Element's own existing source (its binding); this component stores nothing.
+ */
+export function ElementTransformControls({ capabilities, fields, values, onChange, onReset }: {
+  capabilities: Readonly<Record<ElementCapability, boolean>>
+  fields: TransformFieldSpecs
+  values: Readonly<Record<TransformField, number>>
+  onChange: (field: TransformField, value: number) => void
+  onReset: () => void
+}) {
+  return <div className="space-y-2" data-testid="element-transform-controls">{ELEMENT_TRANSFORM_ROWS.map(({ field, capability, label }) => {
+    const spec = fields[field]
+    if (!capabilities[capability] || !spec) return null
+    return <Slider key={field} label={label} value={values[field]} min={spec.min} max={spec.max} step={spec.step} onChange={(value) => onChange(field, value)} />
+  })}<div className="pt-1"><button type="button" className="text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={onReset}>Restaurar elemento</button></div></div>
 }

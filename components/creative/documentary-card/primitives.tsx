@@ -121,6 +121,31 @@ export function elementTransform(rotation: number, transform?: PrimitiveTransfor
 }
 
 /**
+ * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — the authored placement of Logo da marca (`previewTuning.brand`):
+ * bounded offset + rotation, plus the visual baseline's optional Size (`scale`) and `opacity`. Absent scale/opacity paint
+ * exactly what the Element always painted, so slides authored before serialize and render unchanged.
+ *
+ * The box is the logo's own laid-out box (px) and the anchor the point of it that must stay put while Size changes
+ * (0..1 on each axis): a bottom-left signature grows upward and to the right, a centred mark grows from its centre.
+ * The rotation pivot stays the box's top-left, as before.
+ */
+export function brandLogoPlacement(
+  tuning: { offsetX: number; offsetY: number; rotation: number; scale?: number; opacity?: number } | undefined,
+  box: { width: number; height: number; anchorX: number; anchorY: number },
+  baseOpacity = 1,
+): CSSProperties {
+  // Never authored: the Element keeps painting its Template placement byte-for-byte (no transform at all).
+  if (!tuning) return {}
+  const scale = tuning.scale ?? 1
+  const grow = scale === 1 ? '' : ` translate(${-(scale - 1) * box.width * box.anchorX}px, ${-(scale - 1) * box.height * box.anchorY}px) scale(${scale})`
+  return {
+    transform: `translate(${tuning.offsetX}px, ${tuning.offsetY}px) rotate(${tuning.rotation}deg)${grow}`,
+    transformOrigin: 'top left',
+    ...(tuning.opacity !== undefined ? { opacity: baseOpacity * tuning.opacity } : {}),
+  }
+}
+
+/**
  * Creative Editor Template Foundation V1 — one transparent Pack B asset
  * placed by its VISIBLE (alpha) bounds, so layout coordinates describe what
  * the eye sees, not the PNG's transparent padding. Children (text on a
@@ -238,7 +263,7 @@ export function AssetTextLayer({
 
 /** Canvas-space box + base rotation of a content-image plate (the photo and its frame share it). */
 export type PlateGeometry = { left: number; top: number; width: number; height: number; padding: number; rotation: number }
-type PlateTuning = { offsetX: number; offsetY: number; rotation: number; scale: number } | undefined
+type PlateTuning = { offsetX: number; offsetY: number; rotation: number; scale: number; opacity?: number } | undefined
 
 /**
  * Both halves of a framed content image use THESE inline styles verbatim (height/width + padding stay
@@ -255,6 +280,8 @@ function plateStyle(geometry: PlateGeometry, tuning: PlateTuning, zIndex: number
     zIndex,
     transform: `translate(${tuning?.offsetX ?? 0}px, ${tuning?.offsetY ?? 0}px) rotate(${geometry.rotation + (tuning?.rotation ?? 0)}deg) scale(${tuning?.scale ?? 1})`,
     transformOrigin: 'center',
+    // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: the content image's authored opacity (absent = opaque). A frame sharing the plate follows it.
+    ...(tuning?.opacity !== undefined ? { opacity: tuning.opacity } : {}),
   }
 }
 

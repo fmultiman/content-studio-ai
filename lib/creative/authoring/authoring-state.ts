@@ -415,6 +415,7 @@ export const TUNING_BOUNDS = {
     offsetY: { min: -120, max: 120 },
     rotation: { min: -4, max: 4 },
     scale: { min: 0.9, max: 1.15 },
+    opacity: { min: 0, max: 1 },
   },
   title: {
     offsetX: { min: -60, max: 60 },
@@ -439,10 +440,14 @@ export const TUNING_BOUNDS = {
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
   },
+  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca gains the visual baseline's Size and Opacity.
+  // The Size range is the NEW field's own initial range; range policy as a whole is a separate, later slice.
   brand: {
     offsetX: { min: -60, max: 60 },
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
+    scale: { min: 0.5, max: 3 },
+    opacity: { min: 0, max: 1 },
   },
 } as const
 

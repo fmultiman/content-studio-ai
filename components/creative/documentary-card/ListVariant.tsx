@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { DocumentaryCardListContent } from '@/lib/schemas/creative/documentary-card'
 import { STACK_TOP_Z } from '@/lib/creative/templates/element-stack'
 import { layoutTitleLineHeight } from '@/lib/creative/templates/template-definitions'
-import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
+import { AssetLayer, AssetSurface, AssetTextLayer, BrandMark, GrainOverlay, brandLogoPlacement, PlateFrame, PlateImage, Sparkle, localTypography, materialMetrics, materialUrl, type CardPalette, type PlateGeometry } from './primitives'
 import type { DocumentaryCardVisualContext } from './types'
 import { DocumentaryIcon } from './icons'
 
@@ -151,7 +151,7 @@ export function ListVariant({ context, palette }: { context: DocumentaryCardVisu
           </div>
         ))}
       </div>
-      <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} tokens={context.tokens} logoSize={x(96)} style={{ ...fixedText, right: x(48), top: y(36), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo') }} />
+      <BrandMark show="logo" asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} tokens={context.tokens} logoSize={x(96)} style={{ ...fixedText, right: x(48), top: y(36), zIndex: z('brandLogo', STACK_TOP_Z), ...hideStyle('brandLogo'), ...brandLogoPlacement(context.previewTuning?.brand, { width: x(96), height: x(96), anchorX: 0.5, anchorY: 0.5 }, context.contentOpacity) }} />
     </>
   )
 }

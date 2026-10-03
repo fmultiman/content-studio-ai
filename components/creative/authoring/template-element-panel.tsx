@@ -1,21 +1,24 @@
 'use client'
 
-import { BrandOwnershipNote, FixedElementNote, FollowsOwnerNote, HeroTuningControls, PrimitiveTransformControls, TitleTuningControls } from '@/components/creative/authoring/primitive-controls'
-import { DEFAULT_POSITION_TUNING, DEFAULT_PRIMITIVE_TRANSFORMS, resetTuningGroup, setTuningField, type AuthoringAction, type AuthoringState, type TuningGroup } from '@/lib/creative/authoring'
+import { BrandOwnershipNote, ElementTransformControls, FixedElementNote, FollowsOwnerNote } from '@/components/creative/authoring/primitive-controls'
+import { resolveElementCapabilities, transformBindingFor } from '@/lib/creative/authoring/element-capabilities'
+import type { AuthoringAction, AuthoringState } from '@/lib/creative/authoring'
 import type { EditorElement } from '@/lib/creative/authoring/editor-workspace'
 import { STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { getLayoutElement, type TemplateLayoutDefinition } from '@/lib/creative/templates/template-definitions'
 import { SLOT_ORIGIN_LABELS, type SlotResource } from '@/lib/creative/authoring/asset-slots'
 
 /**
- * The open Template Element's own controls: exactly what its Template control contract supports
- * (COVER_ELEMENT_COMPLETENESS_V1 extracted this from the Static editor page so the same code is
- * testable). Nothing here is offered that the renderer/authored state cannot honour:
+ * The open Template Element's own controls — resolved from its CLASS, not wired per Element
+ * (CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1; extracted from the Static editor page by COVER_ELEMENT_COMPLETENESS_V1).
+ *
+ * `resolveElementCapabilities` decides WHICH controls exist (class baseline + safe extras the Element's source supports +
+ * explicit exceptions); the Element's existing binding decides WHERE each value is stored (a material transform channel or a
+ * tuning group). Nothing is offered that the authored state and the renderer cannot honour:
  *  - `follows`   an atom anchored to another (a text on its paper, a frame under its image): no spatial control, it takes its
  *                anchor's position and stays an independent Element (own visibility, own paint order);
- *  - `fixed`     Template geometry (STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1): visibility and order only;
- *  - `tuning`    bounded X/Y/rotation (Entrelinha lives in Estilos);
- *  - `transform` the material sliders.
+ *  - `fixed`     Template geometry with a written reason (see FIXED_ELEMENT_EXCEPTIONS): visibility and order only;
+ *  - otherwise   Posição X/Y, Rotação, Escala and Opacidade as far as the Element's source stores them (Entrelinha lives in Estilos).
  */
 export function TemplateElementPanel({ elementId, state, layout, elements, dispatch, resource }: {
   elementId: string
@@ -29,66 +32,57 @@ export function TemplateElementPanel({ elementId, state, layout, elements, dispa
   if (!control) return null
 
   const definition = layout ? getLayoutElement(layout, elementId) : null
-  const isText = definition?.kind === 'text'
+  const resolved = resolveElementCapabilities(definition ?? { id: elementId, kind: 'material', control })
+  const isText = resolved.elementClass === 'text'
 
   const provenance = (() => {
     if (isText) return null // Do NOT pretend text has a media asset.
-    if (resource) {
+    if (!resolved.capabilities.assetReplace) {
+      // A procedural Template unit: no file, no Library identity — and no fake replace control.
       return (
         <div className="border-t border-border/60 pt-3 mt-3">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground block mb-1.5">Recurso usado</span>
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground block mb-1.5">Recurso</span>
           <div className="flex flex-col gap-0.5 rounded-md border border-border/40 bg-muted/20 p-2 text-[11px]">
-             <span className="font-medium text-foreground truncate" title={resource.name}>{resource.name}</span>
-             <span className="text-muted-foreground flex gap-1">
-               Origem: {SLOT_ORIGIN_LABELS[resource.origin] ?? resource.origin}
-             </span>
-             <span className="text-muted-foreground pt-1.5 italic">— Pode ser trocado em Assets</span>
+             <span className="font-medium text-foreground">Gerado pelo Template</span>
           </div>
         </div>
       )
     }
-    // No resource, not text -> Procedural Template element
+    if (!resource) return null
     return (
       <div className="border-t border-border/60 pt-3 mt-3">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground block mb-1.5">Recurso</span>
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground block mb-1.5">Recurso usado</span>
         <div className="flex flex-col gap-0.5 rounded-md border border-border/40 bg-muted/20 p-2 text-[11px]">
-           <span className="font-medium text-foreground">Gerado pelo Template</span>
+           <span className="font-medium text-foreground truncate" title={resource.name}>{resource.name}</span>
+           <span className="text-muted-foreground flex gap-1">
+             Origem: {SLOT_ORIGIN_LABELS[resource.origin] ?? resource.origin}
+           </span>
+           <span className="text-muted-foreground pt-1.5 italic">— Pode ser trocado em Assets</span>
         </div>
       </div>
     )
   })()
 
-  // Inner controls rendering
   const renderInner = () => {
-    const set = (group: TuningGroup, field: string, value: number) => dispatch({ type: 'SET_TUNING', tuning: setTuningField(state.tuning, group, field, value) })
-    const reset = (group: TuningGroup) => dispatch({ type: 'SET_TUNING', tuning: resetTuningGroup(state.tuning, group) })
-
-    if (control.type === 'fixed') return <FixedElementNote isText={isText} />
+    if (control.type === 'fixed') return <FixedElementNote isText={isText} reason={resolved.exception?.reason} />
     if (control.type === 'follows') {
       const owner = elements.find((element) => element.key === control.parent)
       const field = state.variant === 'cover' && elementId === 'noteText' ? STATIC_COVER_CONTENT_FIELDS.find((descriptor) => descriptor.key === 'detail_note') : undefined
       return <FollowsOwnerNote ownerLabel={owner?.label ?? control.parent} content={field?.label} />
     }
-    if (control.type === 'tuning' && control.group === 'hero') {
-      return <HeroTuningControls tuning={state.tuning.hero} onChange={(field, value) => set('hero', field, value)} onReset={() => reset('hero')} />
-    }
-    if (control.type === 'tuning') {
-      const group = control.group
-      return (
-        <div className="space-y-2">
-          <TitleTuningControls tuning={{ ...DEFAULT_POSITION_TUNING, ...state.tuning[group] }} onChange={(field, value) => set(group, field, value)} onReset={() => reset(group)} />
-          {group === 'brand' ? <BrandOwnershipNote projectName={state.productContext?.projectName} /> : null}
-        </div>
-      )
-    }
-    const key = control.key
+    const binding = transformBindingFor(control)
+    if (!binding) return null
     return (
-      <PrimitiveTransformControls
-        slot={key}
-        transforms={state.primitiveTransforms[key] ?? DEFAULT_PRIMITIVE_TRANSFORMS}
-        onChange={(field, value) => dispatch({ type: 'SET_PRIMITIVE_TRANSFORM', slot: key, field, value })}
-        onReset={() => dispatch({ type: 'RESET_PRIMITIVE_TRANSFORMS', slot: key })}
-      />
+      <div className="space-y-2">
+        <ElementTransformControls
+          capabilities={resolved.capabilities}
+          fields={binding.fields}
+          values={binding.read(state)}
+          onChange={(field, value) => dispatch(binding.write(state, field, value))}
+          onReset={() => dispatch(binding.reset(state))}
+        />
+        {resolved.elementClass === 'brandAsset' ? <BrandOwnershipNote projectName={state.productContext?.projectName} /> : null}
+      </div>
     )
   }
 

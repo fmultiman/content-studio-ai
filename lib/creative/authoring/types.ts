@@ -161,6 +161,11 @@ export interface HeroTuning {
    * saved 'heroFrame' id, names nothing and is ignored. Lista / Citação keep their frame.
    */
   frame?: boolean
+  /**
+   * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — the content image's opacity (visual baseline). OPTIONAL: absent
+   * (every slide authored before) = fully opaque; a reset drops it. Bounded 0..1 (TUNING_BOUNDS.hero.opacity).
+   */
+  opacity?: number
 }
 
 export interface TitleTuning {
@@ -186,6 +191,16 @@ export interface PositionTuning {
 
 export const DEFAULT_POSITION_TUNING: PositionTuning = { offsetX: 0, offsetY: 0, rotation: 0 }
 
+/**
+ * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca: the position tuning plus the visual baseline's
+ * Size (`scale`, a multiplier) and `opacity`. Both OPTIONAL: absent = the Template's logo size / fully opaque, so every
+ * slide authored before serializes exactly as it did.
+ */
+export interface BrandTuning extends PositionTuning {
+  scale?: number
+  opacity?: number
+}
+
 export interface DocumentaryCardPreviewTuning {
   hero: HeroTuning
   title: TitleTuning
@@ -202,7 +217,7 @@ export interface DocumentaryCardPreviewTuning {
    */
   kicker?: PositionTuning
   intro?: PositionTuning
-  brand?: PositionTuning
+  brand?: BrandTuning
 }
 
 export const DEFAULT_TUNING: DocumentaryCardPreviewTuning = {

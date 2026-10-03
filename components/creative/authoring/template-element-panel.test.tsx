@@ -15,6 +15,7 @@ import { elementsForVariant } from '@/lib/creative/authoring/editor-workspace'
 import { STATIC_COVER_CONTENT_FIELDS } from '@/lib/creative/authoring/layout-content-fields'
 import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE as TEMPLATE, getTemplateLayout } from '@/lib/creative/templates/template-definitions'
 import { DocumentaryCardCoverContentSchema } from '@/lib/schemas/creative/documentary-card'
+import type { SlotResource } from '@/lib/creative/authoring/asset-slots'
 
 afterEach(cleanup)
 
@@ -37,9 +38,9 @@ function Harness({ elementId }: { elementId: string }) {
 const tuning = () => JSON.parse(screen.getByTestId('tuning').textContent as string)
 
 describe('TemplateElementPanel', () => {
-  it('Hero: position sliders only — the frame is its own Element now, so there is no frame toggle inside the Hero panel', () => {
+  it('Hero: the visual baseline (position, rotation, size, opacity) — the frame is its own Element now, so there is no frame toggle inside the Hero panel', () => {
     render(<Harness elementId="hero" />)
-    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala'])
+    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala', 'Opacidade'])
     expect(screen.queryByTestId('hero-frame-toggle')).toBeNull()
     expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 })
   })
@@ -76,14 +77,68 @@ describe('TemplateElementPanel', () => {
     expect(screen.queryByLabelText('Entrelinha')).toBeNull()
   })
 
-  it('Logo da marca: positioned, and says where each part comes from (logo = Template, replaceable in Assets; name = Project); the panel itself has no replace button', () => {
+  it('Logo da marca: the full visual baseline incl. Escala, and says where each part comes from (logo = Template, replaceable in Assets; name = Project); the panel itself has no replace button', () => {
     render(<Harness elementId="brandLogo" />)
-    expect(screen.getAllByRole('slider')).toHaveLength(3)
+    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala', 'Opacidade'])
     const note = screen.getByTestId('brand-ownership-note').textContent as string
     expect(note).toContain('Portal Comunidades Alternativas')
     expect(note).toContain('O logo vem do Template e pode ser trocado em Assets')
     expect(note).toContain('vem do Projeto')
     expect(screen.queryByRole('button', { name: /trocar/i })).toBeNull()
+  })
+
+  it('Logo da marca: moving the Escala slider stores Size in the existing brand tuning; Restaurar elemento removes it entirely (CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1)', () => {
+    render(<Harness elementId="brandLogo" />)
+    const scale = screen.getByLabelText('Escala') as HTMLInputElement
+    expect(scale.value).toBe('1')
+    expect(Number(scale.max)).toBeGreaterThan(1)
+    fireEvent.change(scale, { target: { value: '1.8' } })
+    expect(tuning().brand).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1.8 })
+    expect((screen.getByLabelText('Escala') as HTMLInputElement).value).toBe('1.8')
+    fireEvent.change(screen.getByLabelText('Opacidade'), { target: { value: '0.5' } })
+    expect(tuning().brand).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1.8, opacity: 0.5 })
+    fireEvent.click(screen.getByText('Restaurar elemento'))
+    expect(tuning()).not.toHaveProperty('brand')
+    expect((screen.getByLabelText('Escala') as HTMLInputElement).value).toBe('1')
+  })
+
+  it('Hero: Opacidade is stored in tuning.hero and reset drops it; Escala keeps its existing range', () => {
+    render(<Harness elementId="hero" />)
+    const scale = screen.getByLabelText('Escala') as HTMLInputElement
+    expect([scale.min, scale.max]).toEqual(['0.9', '1.15'])
+    fireEvent.change(screen.getByLabelText('Opacidade'), { target: { value: '0.4' } })
+    expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 0.4 })
+    fireEvent.click(screen.getByText('Restaurar elemento'))
+    expect(tuning().hero).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 })
+  })
+
+  it('resource section follows the class: image/brand/material say which resource is used; procedural says it is Template-generated (no replace); text shows none', () => {
+    const resource = { name: 'Logo completo.png', origin: 'project' } as unknown as SlotResource
+    const { unmount } = render(<TemplateElementPanel elementId="brandLogo" state={initial()} layout={getTemplateLayout(TEMPLATE, 'cover')} elements={elementsForVariant('cover')} dispatch={() => {}} resource={resource} />)
+    expect(screen.getByText('Recurso usado')).toBeTruthy()
+    expect(screen.getByText('Logo completo.png')).toBeTruthy()
+    unmount()
+    const list = getTemplateLayout(TEMPLATE, 'list')!
+    const listState = { ...initial(), variant: 'list' as const }
+    const { unmount: unmountFrame } = render(<TemplateElementPanel elementId="heroFrame" state={listState} layout={list} elements={elementsForVariant('list')} dispatch={() => {}} />)
+    expect(screen.getByText('Gerado pelo Template')).toBeTruthy()
+    expect(screen.queryByText('Recurso usado')).toBeNull()
+    unmountFrame()
+    const { unmount: unmountMap } = render(<TemplateElementPanel elementId="map" state={{ ...initial(), variant: 'map' as const }} layout={getTemplateLayout(TEMPLATE, 'map')} elements={elementsForVariant('map')} dispatch={() => {}} />)
+    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação', 'Escala', 'Opacidade'])
+    expect(screen.getByText('Gerado pelo Template')).toBeTruthy()
+    unmountMap()
+    render(<Harness elementId="title" />)
+    expect(screen.queryByText('Recurso usado')).toBeNull()
+    expect(screen.queryByText('Gerado pelo Template')).toBeNull()
+  })
+
+  it('a fixed Element shows its written exception reason; a follows Element names its owner and shares its opacity', () => {
+    render(<TemplateElementPanel elementId="items" state={{ ...initial(), variant: 'list' as const }} layout={getTemplateLayout(TEMPLATE, 'list')} elements={elementsForVariant('list')} dispatch={() => {}} />)
+    expect(screen.getByTestId('fixed-element-note').getAttribute('data-exception-reason')).toBe('fixed-composite-block')
+    cleanup()
+    render(<Harness elementId="noteText" />)
+    expect(screen.getByTestId('follows-owner-note').textContent).toContain('a opacidade de “Papel da nota”')
   })
 
   it('there is no separate Nome da marca Element: the signature is the one complete logo', () => {
