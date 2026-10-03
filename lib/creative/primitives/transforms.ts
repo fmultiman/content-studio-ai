@@ -37,13 +37,17 @@ export interface PrimitiveTransformsBySlot {
   ornament: PrimitiveTransforms
   note: PrimitiveTransforms
   card1: PrimitiveTransforms
+  /** CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit): formerly fixed Template geometry. */
+  introBanner: PrimitiveTransforms
+  brandTab: PrimitiveTransforms
+  divider: PrimitiveTransforms
 }
 
 /** Every per-element transform channel, legacy `tape` fallback included. */
 export type PrimitiveTransformSlot = keyof PrimitiveTransformsBySlot
 export const PRIMITIVE_TRANSFORM_SLOTS: readonly PrimitiveTransformSlot[] = [
   'paper', 'paperStrip', 'tape', 'tape1', 'tape2', 'tape3', 'botanical', 'pin',
-  'paperDark', 'botanicalLeaf', 'pin2', 'archival', 'ornament', 'note', 'card1',
+  'paperDark', 'botanicalLeaf', 'pin2', 'archival', 'ornament', 'note', 'card1', 'introBanner', 'brandTab', 'divider',
 ]
 
 export const DEFAULT_PRIMITIVE_TRANSFORMS_STATE: PrimitiveTransformsBySlot = {
@@ -62,4 +66,7 @@ export const DEFAULT_PRIMITIVE_TRANSFORMS_STATE: PrimitiveTransformsBySlot = {
   ornament: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
   note: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
   card1: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  introBanner: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  brandTab: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
+  divider: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1, opacity: 1 },
 }

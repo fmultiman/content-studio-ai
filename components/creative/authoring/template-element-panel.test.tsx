@@ -49,12 +49,30 @@ describe('TemplateElementPanel', () => {
     expect(getTemplateLayout(TEMPLATE, 'cover')!.elements.some((element) => element.id === 'heroFrame')).toBe(false)
   })
 
-  it('a fixed-geometry atom (Info: Texto principal) offers visibility/order only and points the text to Conteúdo', () => {
-    const info = getTemplateLayout(TEMPLATE, 'info')!
-    render(<TemplateElementPanel elementId="bodyText" state={{ ...initial(), variant: 'info' }} layout={info} elements={elementsForVariant('info')} dispatch={() => {}} />)
+  it('a formerly fixed text (Info: Texto principal) now has Posição X/Y + Rotação in tuning.body; Restaurar removes it', () => {
+    function InfoHarness() {
+      const [state, dispatch] = useReducer(authoringReducer, undefined, () => ({ ...initial(), variant: 'info' as const }))
+      return (
+        <div>
+          <TemplateElementPanel elementId="bodyText" state={state} layout={getTemplateLayout(TEMPLATE, 'info')} elements={elementsForVariant('info')} dispatch={dispatch} />
+          <pre data-testid="tuning">{JSON.stringify(state.tuning)}</pre>
+        </div>
+      )
+    }
+    render(<InfoHarness />)
+    expect(screen.getAllByRole('slider').map((slider) => slider.getAttribute('aria-label'))).toEqual(['Posição X', 'Posição Y', 'Rotação'])
+    expect(screen.queryByTestId('fixed-element-note')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Posição Y'), { target: { value: '9' } })
+    expect(tuning().body).toEqual({ offsetX: 0, offsetY: 9, rotation: 0 })
+    fireEvent.click(screen.getByText('Restaurar elemento'))
+    expect(tuning()).not.toHaveProperty('body')
+  })
+
+  it('the panel has no fixed-geometry branch left in the Template: a (hypothetical) fixed control still renders only its note and offers no control', () => {
+    const elements = [{ key: 'x', label: 'X', control: { type: 'fixed' as const } }]
+    render(<TemplateElementPanel elementId="x" state={initial()} layout={null} elements={elements} dispatch={() => {}} />)
     expect(screen.queryAllByRole('slider')).toHaveLength(0)
     expect(screen.getByTestId('fixed-element-note').textContent).toContain('Posição fixa do Template')
-    expect(screen.getByTestId('fixed-element-note').textContent).toContain('Conteúdo')
   })
 
   it('Introdução / Chamada: only X, Y and rotation (no scale, opacity, size or Entrelinha); the change creates the optional group, Restaurar removes it', () => {
@@ -133,10 +151,7 @@ describe('TemplateElementPanel', () => {
     expect(screen.queryByText('Gerado pelo Template')).toBeNull()
   })
 
-  it('a fixed Element shows its written exception reason; a follows Element names its owner and shares its opacity', () => {
-    render(<TemplateElementPanel elementId="items" state={{ ...initial(), variant: 'list' as const }} layout={getTemplateLayout(TEMPLATE, 'list')} elements={elementsForVariant('list')} dispatch={() => {}} />)
-    expect(screen.getByTestId('fixed-element-note').getAttribute('data-exception-reason')).toBe('fixed-composite-block')
-    cleanup()
+  it('a follows Element names its owner and shares its opacity (the only kind of exception the Template has)', () => {
     render(<Harness elementId="noteText" />)
     expect(screen.getByTestId('follows-owner-note').textContent).toContain('a opacidade de “Papel da nota”')
   })

@@ -146,6 +146,16 @@ export function brandLogoPlacement(
 }
 
 /**
+ * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit) — the authored placement of a text Element
+ * (`previewTuning.<group>`): bounded offset + rotation about its top-left, composed AFTER the Element's own `base` transform
+ * (a motion translate, a template tilt). Unauthored = no style at all, so the Element paints its Template placement exactly as before.
+ */
+export function authoredPlacement(tuning: { offsetX: number; offsetY: number; rotation: number } | undefined, base = ''): CSSProperties {
+  if (!tuning) return {}
+  return { transform: `${base ? `${base} ` : ''}translate(${tuning.offsetX}px, ${tuning.offsetY}px) rotate(${tuning.rotation}deg)`, transformOrigin: 'top left' }
+}
+
+/**
  * Creative Editor Template Foundation V1 — one transparent Pack B asset
  * placed by its VISIBLE (alpha) bounds, so layout coordinates describe what
  * the eye sees, not the PNG's transparent padding. Children (text on a

@@ -141,10 +141,10 @@ export function NetworkVariant({ context }: { context: DocumentaryCardVisualCont
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
       {content.kicker ? (
-        <div style={{ ...kit.fixedAtom('kicker'), color: gold, fontFamily: body, fontSize: x(27), fontWeight: 700, left: x(70), letterSpacing: '.04em', top: y(424), textTransform: 'uppercase', ...kit.localType('kicker') }}>{content.kicker}</div>
+        <div style={{ ...kit.fixedAtom('kicker'), color: gold, fontFamily: body, fontSize: x(27), fontWeight: 700, left: x(70), letterSpacing: '.04em', top: y(424), textTransform: 'uppercase', ...kit.localType('kicker'), ...kit.placed('kicker') }}>{content.kicker}</div>
       ) : null}
       {content.intro ? (
-        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(28), left: x(70), lineHeight: 1.34, top: y(content.kicker ? 468 : 430), width: x(920), ...kit.localType('intro') }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(28), left: x(70), lineHeight: 1.34, top: y(content.kicker ? 468 : 430), width: x(920), ...kit.localType('intro'), ...kit.placed('intro') }}>{renderEmphasis(content.intro)}</div>
       ) : null}
     </>
   )

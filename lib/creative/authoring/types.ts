@@ -218,6 +218,18 @@ export interface DocumentaryCardPreviewTuning {
   kicker?: PositionTuning
   intro?: PositionTuning
   brand?: BrandTuning
+  /**
+   * CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit) — the text Elements that used to be fixed Template
+   * geometry: Info's Texto principal (`body`) and Anotação, Lista / Encerramento's Itens (`items`), Mapa's Legenda,
+   * Citação's Tópicos (`bullets`), Encerramento's Texto de apoio (`body`) and Frase final (`tagline`). Same bounded
+   * position shape as `intro`; OPTIONAL — absent (every slide authored before) = the Template position.
+   */
+  body?: PositionTuning
+  annotation?: PositionTuning
+  items?: PositionTuning
+  legend?: PositionTuning
+  bullets?: PositionTuning
+  tagline?: PositionTuning
 }
 
 export const DEFAULT_TUNING: DocumentaryCardPreviewTuning = {
@@ -282,6 +294,10 @@ export interface AuthoringPrimitiveTransforms {
   ornament?: PrimitiveTransforms
   note?: PrimitiveTransforms
   card1?: PrimitiveTransforms
+  /** Exception audit — Info's Faixa da chamada / Aba da marca and Encerramento's Linha pontilhada (were fixed geometry). */
+  introBanner?: PrimitiveTransforms
+  brandTab?: PrimitiveTransforms
+  divider?: PrimitiveTransforms
 }
 
 /** Runtime-only context for product authoring; never persisted as a domain entity. */

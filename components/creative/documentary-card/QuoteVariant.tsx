@@ -62,10 +62,10 @@ export function QuoteVariant({ context, palette }: { context: DocumentaryCardVis
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
       {content.intro ? (
-        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(29), left: x(70), lineHeight: 1.36, top: y(430), width: x(480), ...kit.localType('intro') }}>{renderEmphasis(content.intro)}</div>
+        <div style={{ ...kit.fixedAtom('intro'), color: ink, fontFamily: body, fontSize: x(29), left: x(70), lineHeight: 1.36, top: y(430), width: x(480), ...kit.localType('intro'), ...kit.placed('intro') }}>{renderEmphasis(content.intro)}</div>
       ) : null}
       {bullets.length > 0 ? (
-        <div style={{ ...kit.fixedAtom('bullets'), display: kit.hidden('bullets') ? 'none' : 'flex', flexDirection: 'column', gap: y(18), left: x(70), top: y(bulletsTop), width: x(470) }}>
+        <div style={{ ...kit.fixedAtom('bullets'), display: kit.hidden('bullets') ? 'none' : 'flex', flexDirection: 'column', gap: y(18), left: x(70), top: y(bulletsTop), width: x(470), ...kit.placed('bullets') }}>
           {bullets.map((bullet, index) => (
             <div key={index} style={{ alignItems: 'flex-start', color: ink, display: 'flex', fontFamily: body, fontSize: x(25), gap: x(20), lineHeight: 1.32 }}>
               <span aria-hidden="true" style={{ background: kit.isDark ? '#c9a45c' : green, borderRadius: '50%', flexShrink: 0, height: x(16), marginTop: y(9), width: x(16) }} />

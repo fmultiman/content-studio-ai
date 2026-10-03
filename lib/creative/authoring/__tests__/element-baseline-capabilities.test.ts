@@ -14,7 +14,7 @@ import { DocumentaryCard, documentaryCardPropsFromResolvedInput } from '@/compon
 import { PersistedAuthoredSlideSchema, authoringStateToPersistedSlide, createTemplateSlide, persistedSlideToAuthoringState } from '../carousel-state'
 import { deriveHiddenElementsRequest, derivePrimitiveTransformsRequest, deriveTuningOverrides, resolvePreviewInput, TUNING_BOUNDS } from '../authoring-state'
 import {
-  CAPABILITY_EXCEPTION_EXPLANATIONS, ELEMENT_CLASS_BASELINE, FIXED_ELEMENT_EXCEPTIONS, TRANSFORM_FIELDS, elementClassOf, resolveElementCapabilities, transformBindingFor,
+  CAPABILITY_EXCEPTION_EXPLANATIONS, ELEMENT_CLASS_BASELINE, SEMANTIC_EXCEPTION_REASONS, SEMANTIC_FIXED_EXCEPTIONS, TRANSFORM_FIELDS, elementClassOf, resolveElementCapabilities, transformBindingFor,
   type ElementCapability, type ElementClass, type TransformField,
 } from '../element-capabilities'
 import { hasLayoutOwnedAuthoredWork } from '../layout-switch'
@@ -23,6 +23,7 @@ import { authoringRenderOverridesSchema, authoringRenderRequestSchema } from '..
 import { DEFAULT_TUNING } from '../types'
 import type { AuthoringProductContext, AuthoringState } from '../types'
 import { EDITORIAL_DOCUMENTARY_COLLAGE_TEMPLATE as TEMPLATE, getTemplateLayout, layoutAssetSlots, type TemplateElementDefinition } from '@/lib/creative/templates/template-definitions'
+import { resolveElementStack } from '@/lib/creative/templates/element-stack'
 import { resolveTemplateBinding } from '@/lib/creative/templates/component-resolver'
 import { buildStaticRenderExecutionSnapshot, parseStaticRenderExecutionSnapshot } from '@/lib/render-execution/static-snapshot'
 import type { FreeSceneElement } from '@/lib/types'
@@ -113,31 +114,70 @@ describe('capability model — class baseline, exceptions and the registry', () 
     for (const [elementClass, signatures] of byClass) expect(signatures.size, `${elementClass} has one capability set`).toBe(1)
   })
 
-  it('3. exceptions are deliberate metadata: a follows Element names its owner rule, a fixed one has a written reason — omission by wiring is a reported gap', () => {
-    for (const { layoutId, definition } of ALL_ELEMENTS) {
+  // Phrases that describe an IMPLEMENTATION state, never a Template meaning. They can never justify an exception.
+  const IMPLEMENTATION_EXCUSES = /deferred|not (yet )?(implemented|wired|supported)|no (authored )?(state|position) (exists )?yet|does not (exist|support|wire)|doesn't|currently|current code|forgot|unwired|todo|limitation|for now|later slice/i
+
+  it('3. every exception is a SEMANTIC relationship, with evidence in the Template layout (never an implementation state)', () => {
+    const exceptions = ALL_ELEMENTS.filter(({ definition }) => resolveElementCapabilities(definition).exception)
+    expect(exceptions.length).toBeGreaterThan(0)
+    for (const { layoutId, definition } of exceptions) {
       const resolved = resolveElementCapabilities(definition)
-      if (definition.control.type === 'follows') expect(resolved.exception?.reason, `${layoutId}.${definition.id}`).toBe('follows-owner')
-      else if (definition.control.type === 'fixed') {
-        expect(FIXED_ELEMENT_EXCEPTIONS[definition.id], `${layoutId}.${definition.id} needs a written reason`).toBeDefined()
-        expect(resolved.exception?.explanation.length).toBeGreaterThan(20)
-      } else expect(resolved.exception, `${layoutId}.${definition.id}`).toBeNull()
-      if (resolved.exception) {
-        // An exception removes the spatial baseline only — visibility is never omitted.
-        expect(resolved.capabilities).toMatchObject({ visibility: true, position: false, scale: false, rotation: false, opacity: false })
-      }
+      const where = `${layoutId}.${definition.id}`
+      expect(SEMANTIC_EXCEPTION_REASONS, where).toContain(resolved.exception!.reason)
+      // An exception removes the spatial baseline only — visibility is never omitted.
+      expect(resolved.capabilities, where).toMatchObject({ visibility: true, position: false, scale: false, rotation: false, opacity: false })
+      // Evidence from the Template: the Element follows an owner that exists in the SAME layout, that owner is itself spatial, and the
+      // layout paints the follower directly against it (text ON its paper, frame UNDER its image, pins ABOVE their map, links UNDER their cards).
+      expect(definition.control.type, `${where} is a follows Element (the Template has no other kind of exception)`).toBe('follows')
+      if (definition.control.type !== 'follows') continue
+      const owner = layoutOf(layoutId).elements.find((element) => element.id === (definition.control as { parent: string }).parent)
+      expect(owner, `${where} owner exists`).toBeDefined()
+      expect(['transform', 'tuning'], `${where} owner is spatial, not itself an exception`).toContain(owner!.control.type)
+      const placement = definition.stackPlacement
+      const anchor = typeof placement === 'object' ? ('above' in placement ? placement.above : placement.below) : undefined
+      expect(anchor, `${where} is painted against its owner`).toBe(owner!.id)
     }
-    // Every written reason names a real fixed Element (no stale entries) and a defined explanation.
-    const fixedIds = new Set(ALL_ELEMENTS.filter(({ definition }) => definition.control.type === 'fixed').map(({ definition }) => definition.id))
-    for (const [id, reason] of Object.entries(FIXED_ELEMENT_EXCEPTIONS)) {
-      expect(fixedIds.has(id), `${id} is a fixed Element`).toBe(true)
-      expect(CAPABILITY_EXCEPTION_EXPLANATIONS[reason]).toBeTruthy()
+    // Every explanation is a meaning, not an excuse; every reason is on the semantic list.
+    for (const [reason, explanation] of Object.entries(CAPABILITY_EXCEPTION_EXPLANATIONS)) {
+      expect(SEMANTIC_EXCEPTION_REASONS).toContain(reason)
+      expect(explanation, reason).not.toMatch(IMPLEMENTATION_EXCUSES)
+      expect(explanation.length).toBeGreaterThan(30)
     }
-    // A fixed Element WITHOUT a reason is not silently accepted: the resolver reports the omitted baseline.
-    const unreasoned = resolveElementCapabilities({ id: 'someNewFixedImage', kind: 'image', assetSlot: 'hero', control: { type: 'fixed' } })
-    expect(unreasoned.exception).toBeNull()
-    expect(unreasoned.missingBaseline).toEqual(expect.arrayContaining(['position', 'scale', 'rotation', 'opacity']))
-    // A source that cannot store a baseline field is reported the same way (no silent gap).
-    expect(resolveElementCapabilities({ id: 'someTextWithTitleSource', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'title' } }).missingBaseline).toEqual(expect.arrayContaining(['scale', 'opacity']))
+    for (const [id, entry] of Object.entries(SEMANTIC_FIXED_EXCEPTIONS)) {
+      expect(SEMANTIC_EXCEPTION_REASONS, id).toContain(entry.reason)
+      expect(entry.reason, id).not.toBe('follows-owner')
+      expect(entry.evidence, id).not.toMatch(IMPLEMENTATION_EXCUSES)
+      expect(ALL_ELEMENTS.some(({ definition }) => definition.id === id && definition.control.type === 'fixed'), `${id} is a real fixed Element`).toBe(true)
+    }
+  })
+
+  it('3b. the audit outcome (18 former `fixed` Elements, all implementation gaps): NO Template Element is "fixed" any more — every former fixed unit has an authored placement, so no implementation gap lives on as an exception', () => {
+    expect(ALL_ELEMENTS.filter(({ definition }) => definition.control.type === 'fixed')).toEqual([])
+    expect(Object.keys(SEMANTIC_FIXED_EXCEPTIONS)).toEqual([])
+    // The `follows` set is exactly the units whose place IS another unit's place.
+    expect(ALL_ELEMENTS.filter(({ definition }) => definition.control.type === 'follows').map(({ layoutId, definition }) => `${layoutId}.${definition.id}`).sort()).toEqual([
+      'closing.inviteText', 'cover.noteText', 'grid.ideasText', 'info.card1Text', 'info.card2Text', 'info.introText', 'list.calloutText', 'list.heroFrame', 'list.noteText',
+      'map.mapPins', 'map.noteText', 'network.calloutText', 'network.cardsText', 'network.links', 'quote.calloutText', 'quote.heroFrame', 'quote.quoteText',
+    ].sort())
+  })
+
+  it('3c. an implementation gap can never silently become an exception: it is a reported, failing gap', () => {
+    // A fixed unit (any class) with no semantic entry omits the baseline WITHOUT an exception → missingBaseline reports it.
+    const fixedImage = resolveElementCapabilities({ id: 'someNewFixedImage', kind: 'image', assetSlot: 'hero', control: { type: 'fixed' } })
+    expect(fixedImage.exception).toBeNull()
+    expect(fixedImage.missingBaseline).toEqual(expect.arrayContaining(['position', 'scale', 'rotation', 'opacity']))
+    const fixedText = resolveElementCapabilities({ id: 'someNewFixedText', kind: 'text', control: { type: 'fixed' } })
+    expect(fixedText.exception).toBeNull()
+    expect(fixedText.missingBaseline).toEqual(expect.arrayContaining(['position', 'rotation']))
+    const fixedShape = resolveElementCapabilities({ id: 'someNewFixedRule', kind: 'shape', control: { type: 'fixed' } })
+    expect(fixedShape.missingBaseline).toEqual(expect.arrayContaining(['position', 'scale', 'rotation', 'opacity']))
+    // A source that cannot store a baseline field is reported the same way (class baseline enforcement is not bypassable by wiring).
+    expect(resolveElementCapabilities({ id: 'someLogoOnATitleSource', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'title' } }).missingBaseline).toEqual(expect.arrayContaining(['scale', 'opacity']))
+    expect(resolveElementCapabilities({ id: 'someMaterialOnAHeroSource', kind: 'material', assetSlot: 'tape', control: { type: 'tuning', group: 'intro' } }).missingBaseline).toEqual(expect.arrayContaining(['scale', 'opacity']))
+    // The excuse filter itself catches the phrases the audit rejected.
+    for (const excuse of ['deferred until per-block position exists', 'not implemented yet', 'fixed in the current code', 'the component does not support it', 'currently unwired']) expect(excuse).toMatch(IMPLEMENTATION_EXCUSES)
+    // …and a registered exception can only name a semantic reason (a different reason is a type error and fails here at runtime too).
+    expect(SEMANTIC_EXCEPTION_REASONS).toEqual(['follows-owner', 'derived-geometry', 'compound-relationship'])
   })
 
   it('no control is offered that the Element\'s authored source cannot store (preview and render honour every capability)', () => {
@@ -501,5 +541,125 @@ describe('36. Preview and final render consume the same authored truth (frozen s
     for (const file of ['components/creative/documentary-card/primitives.tsx', 'components/creative/documentary-card/CoverVariant.tsx', 'components/creative/documentary-card/InfoVariant.tsx', 'components/creative/documentary-card/ListVariant.tsx', 'components/creative/documentary-card/ClosingVariant.tsx', 'lib/creative/templates/template-definitions.ts']) {
       expect(readFileSync(join(process.cwd(), ...file.split('/')), 'utf-8'), file).not.toMatch(/element-capabilities/)
     }
+  })
+})
+
+describe('exception audit — the 18 formerly "fixed" Elements (14 text blocks, 3 visuals, 1 follower) are real, rendered, authored placements', () => {
+  /** Content that makes every optional unit of a layout exist, so each Element has something to paint. */
+  const FULL: Record<string, Record<string, unknown>> = {
+    info: { intro: 'Chamada do info', annotation: 'Anotação do info', source_line: 'Fonte do info' },
+    list: { intro: 'Introdução da lista', image_caption: 'Legenda', callout: 'Destaque' },
+    grid: { intro: 'Introdução da grade' },
+    map: { intro: 'Introdução do mapa', places_more: 'e outros', note: 'Nota do mapa' },
+    network: { kicker: 'Chamada da rede', intro: 'Introdução da rede' },
+    quote: { intro: 'Introdução da citação', bullets: ['Tópico um', 'Tópico dois'], callout: 'Destaque' },
+    closing: { cta_title: 'Convite', cta_text: 'Texto', contact: 'a@b.org', tagline: 'Frase final', items: [{ icon: 'leaf', label: 'Item um' }, { icon: 'leaf', label: 'Item dois' }] },
+  }
+  const full = (layoutId: LayoutId): AuthoringState => ({ ...slide(layoutId), contentOverride: { ...(slide(layoutId).contentOverride as object), ...FULL[layoutId] } as never })
+  const toggle = (state: AuthoringState, id: string) => authoringReducer(state, { type: 'TOGGLE_ELEMENT_VISIBILITY', id })
+
+  /** The worker path: authored state -> frozen snapshot -> claim-time binding props -> the same DocumentaryCard. */
+  function finalRenderFor(state: AuthoringState): string {
+    const input = resolvePreviewInput(state)
+    const snapshot = parseStaticRenderExecutionSnapshot(JSON.parse(JSON.stringify(buildStaticRenderExecutionSnapshot({
+      manifest: { ...input.manifest, sequence: { index: 1, total: 3 } }, identitySnapshot: productContext.identitySnapshot, overrides: deriveTuningOverrides(state), templateId: TEMPLATE.id,
+      hiddenElements: deriveHiddenElementsRequest(state, TEMPLATE.id), slide: null,
+    }))))
+    if (!snapshot.ok) throw new Error('snapshot did not parse')
+    const binding = resolveTemplateBinding('editorial.documentary-card')!
+    const props = binding.createProps({
+      variant: state.variant, appearance: state.appearance, content: input.manifest.content, assets: input.resolvedAssets as never, tokens: input.tokens, canvas: input.manifest.canvas,
+      sequence: { index: 1, total: 3 }, primitiveTransforms: derivePrimitiveTransformsRequest(state), templateId: TEMPLATE.id, elementOrder: state.elementOrder, hiddenElements: deriveHiddenElementsRequest(state, TEMPLATE.id),
+    } as never, { mode: 'still', overrides: snapshot.snapshot.overrides })
+    return renderToStaticMarkup(createElement(DocumentaryCard, props as never))
+  }
+  /** Same as `render`, but with the content the layout needs to paint every unit. */
+  const renderFull = (state: AuthoringState) => render(state)
+
+  // [layout, element, tuning group] — text Elements positioned through the existing bounded tuning shape.
+  const TEXT_ELEMENTS: [LayoutId, string, string][] = [
+    ['info', 'bodyText', 'body'], ['info', 'annotation', 'annotation'], ['list', 'intro', 'intro'], ['list', 'items', 'items'], ['grid', 'intro', 'intro'],
+    ['map', 'intro', 'intro'], ['map', 'legend', 'legend'], ['network', 'kicker', 'kicker'], ['network', 'intro', 'intro'], ['quote', 'intro', 'intro'],
+    ['quote', 'bullets', 'bullets'], ['closing', 'body', 'body'], ['closing', 'items', 'items'], ['closing', 'tagline', 'tagline'],
+  ]
+
+  it.each(TEXT_ELEMENTS)('%s.%s: Posição X/Y + Rotação (tuning.%s) reach the Preview and the final render; untouched = unchanged', (layoutId, elementId, group) => {
+    const resolved = caps(layoutId, elementId)
+    expect(resolved.exception).toBeNull()
+    expect(resolved.missingBaseline).toEqual([])
+    expect(resolved.capabilities).toMatchObject({ visibility: true, position: true, rotation: true })
+    expect(definitionOf(layoutId, elementId).control).toEqual({ type: 'tuning', group })
+    const base = full(layoutId)
+    const moved = edit(edit(base, layoutId, elementId, 'offsetX', 11), layoutId, elementId, 'rotation', 1)
+    expect(moved.tuning[group as 'intro']).toEqual({ offsetX: 11, offsetY: 0, rotation: 1 })
+    // The Canvas moves exactly this Element: one painted unit carries the authored transform, and the untouched slide has none.
+    const html = renderFull(moved)
+    expect((html.match(/translate\(11px, 0px\) rotate\(1deg\)/g) ?? []).length, 'moved exactly one unit').toBe(1)
+    expect(renderFull(base)).not.toContain('translate(11px')
+    // Preview ≡ the worker path (frozen snapshot -> binding -> renderer).
+    expect(finalRenderFor(moved)).toBe(html)
+    // Restaurar elemento removes the optional group; the slide serializes and renders like a never-adjusted one.
+    const reset = resetElement(moved, layoutId, elementId)
+    expect(reset.tuning).toEqual(base.tuning)
+    expect(renderFull(reset)).toBe(renderFull(base))
+    expect(authoringStateToPersistedSlide(reset, 's', 0).tuning).toEqual(authoringStateToPersistedSlide(base, 's', 0).tuning)
+    // Saved -> reloaded keeps it; a layout switch drops it (layout-owned).
+    const reloaded = persistedSlideToAuthoringState(JSON.parse(JSON.stringify(authoringStateToPersistedSlide(moved, 's', 0))), productContext, 'portrait')
+    expect(reloaded.tuning).toEqual(moved.tuning)
+    const other = layoutId === 'cover' ? 'info' : 'cover'
+    expect(authoringReducer(moved, { type: 'SET_VARIANT', variant: other }).tuning).toEqual(slide(other).tuning)
+  })
+
+  it('info: Faixa da chamada (owner) + Chamada (follows it) and Aba da marca are full material transforms; the text printed on the banner moves WITH it', () => {
+    expect(definitionOf('info', 'introBanner').control).toEqual({ type: 'transform', key: 'introBanner' })
+    expect(definitionOf('info', 'introText').control).toEqual({ type: 'follows', parent: 'introBanner' })
+    expect(definitionOf('info', 'brandTab').control).toEqual({ type: 'transform', key: 'brandTab' })
+    for (const id of ['introBanner', 'brandTab']) expect(caps('info', id).capabilities).toEqual({ visibility: true, position: true, scale: true, rotation: true, opacity: true, assetReplace: true })
+    const base = full('info')
+    const authored = edit(edit(base, 'info', 'introBanner', 'scale', 1.2), 'info', 'introBanner', 'opacity', 0.5)
+    const html = renderFull(authored)
+    // The banner and the text printed on it carry the SAME authored transform (each painted unit keeps its own z-index).
+    const z = resolveElementStack(TEMPLATE.id, 'info', undefined).zIndex
+    for (const id of ['introBanner', 'introText']) {
+      const tag = new RegExp(`<div[^>]*style="[^"]*z-index:${z[id]}(?:;|")[^"]*"[^>]*>`).exec(html)?.[0] ?? ''
+      expect(tag, id).toContain('scale(1.2)')
+      expect(tag, id).toMatch(/opacity:0.5/)
+    }
+    expect(tagOf(html, 'data-element="Aba da marca"')).not.toContain('scale(1.2)')
+    const tab = renderFull(edit(base, 'info', 'brandTab', 'offsetX', 9))
+    expect(tagOf(tab, 'data-element="Aba da marca"')).toContain('translate(9px, 0px)')
+    expect(tagOf(tab, 'data-element="Faixa da chamada"')).not.toContain('translate(9px')
+    // Visibility stays independent: hiding the banner leaves its text, as for every follower.
+    expect(renderFull(toggle(authored, 'introBanner'))).toContain('data-element="Chamada"')
+    expect(renderFull(resetElement(authored, 'info', 'introBanner'))).toBe(renderFull(base))
+    expect(finalRenderFor(authored)).toBe(html)
+  })
+
+  it('closing: Linha pontilhada is a procedural visual with the full baseline (its 0.7 look stays the Template default)', () => {
+    expect(caps('closing', 'divider').capabilities).toEqual({ visibility: true, position: true, scale: true, rotation: true, opacity: true, assetReplace: false })
+    const base = full('closing')
+    const divider = (html: string) => /<div aria-hidden="true" style="([^"]*border-top:2px dotted[^"]*)"/.exec(html)?.[1] ?? ''
+    expect(divider(renderFull(base))).toContain('opacity:0.7')
+    expect(divider(renderFull(base))).not.toContain('transform')
+    const authored = edit(edit(edit(base, 'closing', 'divider', 'opacity', 0.5), 'closing', 'divider', 'scale', 1.1), 'closing', 'divider', 'offsetY', 8)
+    const html = renderFull(authored)
+    expect(divider(html)).toContain('opacity:0.35')
+    expect(divider(html)).toContain('translate(0px, 8px) rotate(0deg) scale(1.1)')
+    expect(renderFull(resetElement(authored, 'closing', 'divider'))).toBe(renderFull(base))
+    expect(authoringStateToPersistedSlide(authored, 's', 0).primitiveTransforms.divider).toEqual({ offsetX: 0, offsetY: 8, rotation: 0, scale: 1.1, opacity: 0.5 })
+    expect(PersistedAuthoredSlideSchema.safeParse(JSON.parse(JSON.stringify(authoringStateToPersistedSlide(authored, 's', 0)))).success).toBe(true)
+    expect(authoringRenderRequestSchema.safeParse({ manifest: resolvePreviewInput(authored).manifest, primitiveTransforms: derivePrimitiveTransformsRequest(authored), templateId: TEMPLATE.id }).success).toBe(true)
+    expect(finalRenderFor(authored)).toBe(html)
+  })
+
+  it('a slide saved before these fields existed still loads and renders exactly as before; the new groups keep the text bounds', () => {
+    for (const layoutId of ['info', 'list', 'closing'] as const) {
+      const persisted = JSON.parse(JSON.stringify(authoringStateToPersistedSlide(full(layoutId), 's', 0)))
+      for (const key of ['introBanner', 'brandTab', 'divider']) delete persisted.primitiveTransforms[key]
+      expect(PersistedAuthoredSlideSchema.safeParse(persisted).success, layoutId).toBe(true)
+      expect(renderFull(persistedSlideToAuthoringState(persisted, productContext, 'portrait')), layoutId).toBe(renderFull(full(layoutId)))
+    }
+    expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, items: { offsetX: 61, offsetY: 0, rotation: 0 } } }).success).toBe(false)
+    expect(authoringRenderOverridesSchema.safeParse({ documentaryCard: { ...DEFAULT_TUNING, tagline: { offsetX: 60, offsetY: -60, rotation: 2 } } }).success).toBe(true)
   })
 })

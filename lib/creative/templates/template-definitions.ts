@@ -97,9 +97,12 @@ export type ElementTransformKey =
   | 'ornament'
   | 'note'
   | 'card1'
+  | 'introBanner'
+  | 'brandTab'
+  | 'divider'
 
 /** `tuning` groups an Element can be positioned by (DocumentaryCardPreviewTuning keys). */
-export type TemplateTuningGroup = 'hero' | 'title' | 'source' | 'intro' | 'kicker' | 'brand'
+export type TemplateTuningGroup = 'hero' | 'title' | 'source' | 'intro' | 'kicker' | 'brand' | 'body' | 'annotation' | 'items' | 'legend' | 'bullets' | 'tagline'
 
 export type TemplateElementControl =
   | { type: 'transform'; key: ElementTransformKey }
@@ -111,9 +114,11 @@ export type TemplateElementControl =
    */
   | { type: 'follows'; parent: string }
   /**
-   * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — fixed Template geometry: the Element is an independent
-   * visible unit (own visibility + paint order) whose position is part of the layout, so it has no
-   * spatial control. Not a Group and not a parent.
+   * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — fixed Template geometry: an independent visible unit (own visibility +
+   * paint order) with no spatial control. CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1: NO Element uses this today —
+   * "the component does not wire it yet" is not a reason, and every former fixed Element now has an authored placement.
+   * It remains only for a unit whose geometry is semantically derived from another Template unit; using it requires an
+   * entry in the Editor's capability registry (SEMANTIC_FIXED_EXCEPTIONS) stating that relationship.
    */
   | { type: 'fixed' }
 
@@ -269,7 +274,6 @@ const ASSET_SLOTS: Readonly<Record<AssetSlotId, AssetSlotDefinition>> = {
 
 const t = (key: ElementTransformKey): TemplateElementControl => ({ type: 'transform', key })
 const follows = (parent: string): TemplateElementControl => ({ type: 'follows', parent })
-const FIXED: TemplateElementControl = { type: 'fixed' }
 
 /*
  * STATIC_TEMPLATE_ATOMIC_VISUAL_ELEMENTS_V1 — every meaningful independent visible unit of a layout is
@@ -338,11 +342,11 @@ const INFO_LAYOUT: TemplateLayoutDefinition = {
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
     // Fixed-layer units (they used to paint on the top layer with no identity).
-    { id: 'bodyText', label: 'Texto principal', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'annotation', label: 'Anotação', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'introBanner', label: 'Faixa da chamada', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
-    { id: 'introText', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: { above: 'introBanner' } },
-    { id: 'brandTab', label: 'Aba da marca', kind: 'material', assetSlot: 'paperDark', control: FIXED, stackPlacement: 'front' },
+    { id: 'bodyText', label: 'Texto principal', kind: 'text', control: { type: 'tuning', group: 'body' }, stackPlacement: 'front' },
+    { id: 'annotation', label: 'Anotação', kind: 'text', control: { type: 'tuning', group: 'annotation' }, stackPlacement: 'front' },
+    { id: 'introBanner', label: 'Faixa da chamada', kind: 'material', assetSlot: 'paperDark', control: t('introBanner'), stackPlacement: 'front' },
+    { id: 'introText', label: 'Chamada', kind: 'text', control: follows('introBanner'), stackPlacement: { above: 'introBanner' } },
+    { id: 'brandTab', label: 'Aba da marca', kind: 'material', assetSlot: 'paperDark', control: t('brandTab'), stackPlacement: 'front' },
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'tape1', 'tape2', 'botanical', 'card1', 'card1Text', 'pin', 'paper', 'card2Text', 'pin2', 'tape3', 'paperStrip', 'paperDark', 'title', 'source', 'bodyText', 'annotation', 'introBanner', 'introText', 'brandTab', 'brandLogo'],
@@ -374,8 +378,8 @@ const LIST_LAYOUT: TemplateLayoutDefinition = {
     // Completion V1 (Slide 5): optional closing callout on dark paper.
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
-    { id: 'items', label: 'Itens da lista', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
+    { id: 'items', label: 'Itens da lista', kind: 'text', control: { type: 'tuning', group: 'items' }, stackPlacement: 'front' },
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'heroFrame', 'hero', 'tape1', 'botanical', 'callout', 'calloutText', 'note', 'noteText', 'tape2', 'paperStrip', 'title', 'intro', 'items', 'brandLogo'],
@@ -405,7 +409,7 @@ const GRID_LAYOUT: TemplateLayoutDefinition = {
     { id: 'ideasText', label: 'Ideias transversais', kind: 'text', control: follows('note'), stackPlacement: { above: 'note' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'archival', label: 'Fragmento de arquivo', kind: 'material', assetSlot: 'archival', control: t('archival') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 31 } } },
   ],
   defaultStackOrder: ['archival', 'botanicalLeaf', 'tiles', 'note', 'ideasText', 'paperStrip', 'tape1', 'title', 'intro'],
 }
@@ -426,8 +430,8 @@ const MAP_LAYOUT: TemplateLayoutDefinition = {
     { id: 'tape1', label: 'Fita da nota', kind: 'material', assetSlot: 'tape', control: t('tape1') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 30 } } },
-    { id: 'legend', label: 'Legenda dos lugares', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 30 } } },
+    { id: 'legend', label: 'Legenda dos lugares', kind: 'text', control: { type: 'tuning', group: 'legend' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['botanicalLeaf', 'map', 'mapPins', 'botanical', 'note', 'noteText', 'tape1', 'paperStrip', 'title', 'intro', 'legend'],
 }
@@ -447,8 +451,8 @@ const NETWORK_LAYOUT: TemplateLayoutDefinition = {
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark') },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
-    { id: 'kicker', label: 'Chamada', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 27 } } },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 28 } } },
+    { id: 'kicker', label: 'Chamada', kind: 'text', control: { type: 'tuning', group: 'kicker' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 27 } } },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 28 } } },
   ],
   defaultStackOrder: ['ornament', 'links', 'cards', 'cardsText', 'callout', 'calloutText', 'paperStrip', 'title', 'kicker', 'intro'],
 }
@@ -473,8 +477,8 @@ const QUOTE_LAYOUT: TemplateLayoutDefinition = {
     { id: 'callout', label: 'Caixa de destaque', kind: 'material', assetSlot: 'paperDark', control: t('paperDark'), timing: { companions: ['calloutText'] } },
     { id: 'calloutText', label: 'Texto do destaque', kind: 'text', control: follows('callout'), stackPlacement: { above: 'callout' } },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
-    { id: 'intro', label: 'Introdução', kind: 'text', control: FIXED, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 29 } } },
-    { id: 'bullets', label: 'Tópicos', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'intro', label: 'Introdução', kind: 'text', control: { type: 'tuning', group: 'intro' }, stackPlacement: 'front', typography: { local: { role: 'body', fontSizePx: 29 } } },
+    { id: 'bullets', label: 'Tópicos', kind: 'text', control: { type: 'tuning', group: 'bullets' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['botanicalLeaf', 'heroFrame', 'hero', 'callout', 'calloutText', 'quote', 'quoteText', 'tape1', 'paperStrip', 'title', 'intro', 'bullets'],
 }
@@ -493,11 +497,11 @@ const CLOSING_LAYOUT: TemplateLayoutDefinition = {
     { id: 'ornament', label: 'Ornamento celeste', kind: 'material', assetSlot: 'ornament', control: t('ornament') },
     { id: 'botanicalLeaf', label: 'Ramo de folhas', kind: 'material', assetSlot: 'botanicalLeaf', control: t('botanicalLeaf') },
     { id: 'botanical', label: 'Botânica seca', kind: 'material', assetSlot: 'botanical', control: t('botanical') },
-    { id: 'body', label: 'Texto de apoio', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'items', label: 'Itens do encerramento', kind: 'text', control: FIXED, stackPlacement: 'front' },
-    { id: 'divider', label: 'Linha pontilhada', kind: 'shape', control: FIXED, stackPlacement: 'front' },
+    { id: 'body', label: 'Texto de apoio', kind: 'text', control: { type: 'tuning', group: 'body' }, stackPlacement: 'front' },
+    { id: 'items', label: 'Itens do encerramento', kind: 'text', control: { type: 'tuning', group: 'items' }, stackPlacement: 'front' },
+    { id: 'divider', label: 'Linha pontilhada', kind: 'shape', control: t('divider'), stackPlacement: 'front' },
     { id: 'brandLogo', label: 'Logo da marca', kind: 'image', assetSlot: 'logo', control: { type: 'tuning', group: 'brand' }, stackPlacement: 'front' },
-    { id: 'tagline', label: 'Frase final', kind: 'text', control: FIXED, stackPlacement: 'front' },
+    { id: 'tagline', label: 'Frase final', kind: 'text', control: { type: 'tuning', group: 'tagline' }, stackPlacement: 'front' },
   ],
   defaultStackOrder: ['ornament', 'botanicalLeaf', 'botanical', 'note', 'inviteText', 'tape1', 'title', 'body', 'items', 'divider', 'brandLogo', 'tagline'],
 }
@@ -624,5 +628,5 @@ export function layoutElementsFrontFirst(layout: TemplateLayoutDefinition): Temp
 }
 
 export const ELEMENT_TRANSFORM_KEYS: readonly ElementTransformKey[] = [
-  'paper', 'paperStrip', 'paperDark', 'tape1', 'tape2', 'tape3', 'botanical', 'botanicalLeaf', 'pin', 'pin2', 'archival', 'ornament', 'note', 'card1',
+  'paper', 'paperStrip', 'paperDark', 'tape1', 'tape2', 'tape3', 'botanical', 'botanicalLeaf', 'pin', 'pin2', 'archival', 'ornament', 'note', 'card1', 'introBanner', 'brandTab', 'divider',
 ]

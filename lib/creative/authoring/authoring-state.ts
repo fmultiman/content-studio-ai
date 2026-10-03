@@ -409,6 +409,13 @@ export function deriveElementOrderRequest(state: AuthoringState, templateId: str
 
 // ── Tuning bounds ─────────────────────────────────────────────────────────────
 
+/** The bounded position every text Element's tuning group shares (the same bounds as the Title/Source/Introdução). */
+const TEXT_POSITION_BOUNDS = {
+  offsetX: { min: -60, max: 60 },
+  offsetY: { min: -60, max: 60 },
+  rotation: { min: -2, max: 2 },
+} as const
+
 export const TUNING_BOUNDS = {
   hero: {
     offsetX: { min: -120, max: 120 },
@@ -440,6 +447,13 @@ export const TUNING_BOUNDS = {
     offsetY: { min: -60, max: 60 },
     rotation: { min: -2, max: 2 },
   },
+  // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 (exception audit) — the text Elements that used to be fixed Template geometry.
+  body: TEXT_POSITION_BOUNDS,
+  annotation: TEXT_POSITION_BOUNDS,
+  items: TEXT_POSITION_BOUNDS,
+  legend: TEXT_POSITION_BOUNDS,
+  bullets: TEXT_POSITION_BOUNDS,
+  tagline: TEXT_POSITION_BOUNDS,
   // CREATIVE_EDITOR_ELEMENT_BASELINE_CAPABILITIES_V1 — Logo da marca gains the visual baseline's Size and Opacity.
   // The Size range is the NEW field's own initial range; range policy as a whole is a separate, later slice.
   brand: {
@@ -452,8 +466,24 @@ export const TUNING_BOUNDS = {
 } as const
 
 /** Groups a Template Element can be positioned by (its `control: { type: 'tuning', group }`). */
-export type TuningGroup = 'hero' | 'title' | 'source' | 'kicker' | 'intro' | 'brand'
-const OPTIONAL_TUNING_GROUPS: readonly TuningGroup[] = ['kicker', 'intro', 'brand']
+/**
+ * Position groups that are OPTIONAL in authored state: absent (every slide authored before) = the Template position, and a
+ * reset removes the key so a reset slide serializes exactly like one never adjusted.
+ */
+export const OPTIONAL_POSITION_GROUPS = ['kicker', 'intro', 'body', 'annotation', 'items', 'legend', 'bullets', 'tagline'] as const
+export type OptionalPositionGroup = typeof OPTIONAL_POSITION_GROUPS[number]
+export type TuningGroup = 'hero' | 'title' | 'source' | 'brand' | OptionalPositionGroup
+const OPTIONAL_TUNING_GROUPS: readonly TuningGroup[] = [...OPTIONAL_POSITION_GROUPS, 'brand']
+
+/** The authored optional groups of a tuning (copies), for persistence: an unauthored group is never written. */
+export function copyAuthoredOptionalGroups(tuning: Partial<DocumentaryCardPreviewTuning>): Partial<Pick<DocumentaryCardPreviewTuning, OptionalPositionGroup | 'brand'>> {
+  const copy: Record<string, unknown> = {}
+  for (const group of OPTIONAL_TUNING_GROUPS) {
+    const value = tuning[group as OptionalPositionGroup | 'brand']
+    if (value) copy[group] = { ...value }
+  }
+  return copy
+}
 
 /** One bounded value of a group. An optional group (Cover's Chamada/Introdução/Assinatura) starts from the neutral position. */
 export function setTuningField(tuning: DocumentaryCardPreviewTuning, group: TuningGroup, field: string, value: number): DocumentaryCardPreviewTuning {
@@ -467,7 +497,7 @@ export function setTuningField(tuning: DocumentaryCardPreviewTuning, group: Tuni
  */
 export function resetTuningGroup(tuning: DocumentaryCardPreviewTuning, group: TuningGroup): DocumentaryCardPreviewTuning {
   if (OPTIONAL_TUNING_GROUPS.includes(group)) {
-    const { [group as 'kicker' | 'intro' | 'brand']: _removed, ...rest } = tuning
+    const { [group as OptionalPositionGroup | 'brand']: _removed, ...rest } = tuning
     void _removed
     return rest as DocumentaryCardPreviewTuning
   }

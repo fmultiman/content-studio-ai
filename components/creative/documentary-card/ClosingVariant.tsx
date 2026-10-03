@@ -1,5 +1,5 @@
 import type { DocumentaryCardClosingContent } from '@/lib/schemas/creative/documentary-card'
-import { AssetLayer, AssetTextLayer, BrandLogo, brandLogoPlacement, localTypography, materialMetrics, type CardPalette } from './primitives'
+import { AssetLayer, AssetTextLayer, BrandLogo, brandLogoPlacement, elementTransform, localTypography, materialMetrics, type CardPalette } from './primitives'
 import { DocumentaryIcon } from './icons'
 import { LayoutBackground, SequenceBadge, layoutKit } from './layout-kit'
 import { renderEmphasis } from './ListVariant'
@@ -55,11 +55,11 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
 
       {/* Template text (fixed layer). */}
       <SequenceBadge context={context} kit={kit} />
-      <div style={{ ...kit.fixedAtom('body'), color: ink, display: kit.hidden('body') ? 'none' : 'flex', flexDirection: 'column', fontFamily: body, fontSize: x(29), gap: y(16), left: x(70), lineHeight: 1.38, top: y(430), width: x(860) }}>
+      <div style={{ ...kit.fixedAtom('body'), color: ink, display: kit.hidden('body') ? 'none' : 'flex', flexDirection: 'column', fontFamily: body, fontSize: x(29), gap: y(16), left: x(70), lineHeight: 1.38, top: y(430), width: x(860), ...kit.placed('body') }}>
         {(content.body ?? []).map((paragraph, index) => <p key={index} style={{ margin: 0 }}>{renderEmphasis(paragraph)}</p>)}
       </div>
       {items.length > 0 ? (
-        <div style={{ ...kit.fixedAtom('items'), display: kit.hidden('items') ? 'none' : 'flex', justifyContent: 'space-between', left: x(50), top: y(640), width: x(980) }}>
+        <div style={{ ...kit.fixedAtom('items'), display: kit.hidden('items') ? 'none' : 'flex', justifyContent: 'space-between', left: x(50), top: y(640), width: x(980), ...kit.placed('items') }}>
           {items.map((item, index) => (
             <div key={index} style={{ alignItems: 'center', color: ink, display: 'flex', flexDirection: 'column', gap: y(10), width: `${100 / items.length}%` }}>
               <DocumentaryIcon icon={item.icon} color={gold} size={x(66)} strokeWidth={2} />
@@ -68,11 +68,11 @@ export function ClosingVariant({ context, palette }: { context: DocumentaryCardV
           ))}
         </div>
       ) : null}
-      <div aria-hidden="true" style={{ ...kit.fixedAtom('divider'), borderTop: `2px dotted ${gold}`, left: x(70), opacity: .7, top: y(808), width: x(940) }} />
+      <div aria-hidden="true" style={{ ...kit.fixedAtom('divider'), borderTop: `2px dotted ${gold}`, left: x(70), opacity: .7, top: y(808), width: x(940), ...(transforms?.divider ? { ...elementTransform(0, transforms.divider), opacity: .7 * transforms.divider.opacity } : {}) }} />
       {/* Assinatura = Logo da marca: ONE Element, the COMPLETE logo asset (it already carries the brand name; no name text is drawn). */}
       <BrandLogo asset={context.assets.logo} palette={{ ...palette, foreground: ink, accent: gold }} width={x(480)} height={x(140)} style={{ ...kit.fixedAtom('brandLogo'), left: x(96), top: y(1124), ...brandLogoPlacement(context.previewTuning?.brand, { width: context.assets.logo ? x(480) : x(140), height: x(140), anchorX: 0, anchorY: 0.5 }, context.contentOpacity) }} />
       {content.tagline ? (
-        <div style={{ ...kit.fixedAtom('tagline'), color: gold, fontFamily: body, fontSize: x(22), fontWeight: 600, left: 0, letterSpacing: '.28em', textAlign: 'center', textTransform: 'uppercase', top: y(1296), width: x(1080) }}>{content.tagline}</div>
+        <div style={{ ...kit.fixedAtom('tagline'), color: gold, fontFamily: body, fontSize: x(22), fontWeight: 600, left: 0, letterSpacing: '.28em', textAlign: 'center', textTransform: 'uppercase', top: y(1296), width: x(1080), ...kit.placed('tagline') }}>{content.tagline}</div>
       ) : null}
     </>
   )
