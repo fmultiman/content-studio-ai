@@ -31,6 +31,7 @@ import {
 } from '@/lib/video-generation/capabilities'
 import { I2vSourcePicker } from '@/components/videos/i2v-source-picker'
 import { i2vSourceFields, reconcileI2vSource, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import { VideoGenerationForm } from '@/components/videos/video-generation-form'
 import { parseConnectionRef } from '@/lib/video-generation/connection-ref'
 import { connectionDisplayName, spendingSourceCopy, transportBadge } from '@/lib/video-generation/connection-presentation'
 import {
@@ -505,273 +506,17 @@ export function CreateVideoGenerationDialog({
             )}
 
             {operationChoices.length > 0 && selection.operation && model && (
-              <Tabs
-                value={selection.operation}
-                onValueChange={(value) => {
-                  change({ operation: value as VideoOperation })
-                }}
-                className="w-full"
-              >
-                {/* OPERATION */}
-                <TabsList className={`grid w-full ${operationChoices.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  {operationChoices.map((operation) => (
-                    <TabsTrigger key={operation} value={operation} className="gap-2" data-testid={`operation-${operation}`}>
-                      {operation === 'image_to_video' ? <ImageIcon className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-                      {OPERATION_LABEL[operation]}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                {/* MODEL */}
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label htmlFor="video-model">Modelo</Label>
-                    {connections.length > 0 && (
-                      <div
-                        className="flex items-center gap-1"
-                        role="radiogroup"
-                        aria-label="Conexão de geração"
-                        data-testid="video-connection-toggle"
-                      >
-                        {connections.map((entry) => {
-                          const badge = transportBadge(entry.transport)
-                          const isSelected = entry.ref === connection.ref
-                          return (
-                            <button
-                              key={entry.ref}
-                              type="button"
-                              role="radio"
-                              aria-checked={isSelected}
-                              aria-label={`${connectionDisplayName(entry)} (${badge})`}
-                              data-testid={`video-connection-option-${badge.toLowerCase()}`}
-                              data-selected={isSelected}
-                              onClick={() => change({ connectionRef: entry.ref })}
-                              className={cn(
-                                'rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide outline-none transition-colors',
-                                'focus-visible:border-[var(--border-focus)] focus-visible:ring-2 focus-visible:ring-[color:var(--control-focus)]',
-                                isSelected
-                                  ? 'border-transparent bg-[var(--action-primary)] text-[var(--action-primary-foreground)]'
-                                  : 'border-[var(--control-border)] bg-transparent text-muted-foreground hover:bg-[var(--control-background-hover)]',
-                              )}
-                            >
-                              {badge}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <Select value={selection.modelId ?? undefined} onValueChange={(modelId) => change({ modelId })}>
-                    <SelectTrigger id="video-model" className="w-full" data-testid="video-model-select">
-                      <SelectValue placeholder="Escolha um modelo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {modelChoices.map((entry) => (
-                        <SelectItem key={entry.id} value={entry.id}>
-                          {entry.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground" data-testid="video-connection-detail" data-transport={transportBadge(connection.transport)}>
-                    {spendingSourceCopy(connection.funding)}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground" data-testid="video-model-summary">
-                    {model.durations.map((d) => `${d}s`).join('/')} · {model.resolutions.join('/')}{model.audio ? ' · áudio' : ''}{model.multiShot ? ' · multi-shot' : ''}
-                  </p>
-                </div>
-
-                <TabsContent value="image_to_video" className="space-y-4 pt-4">
-                  <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={i2vSelection} onChange={setSourceSelection} />
-
-                  <div className="space-y-2">
-                    <Label>Motion Prompt (Dicas de animação)</Label>
-                    <Textarea
-                      placeholder="Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      className="min-h-[100px]"
-                    />
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="text_to_video" className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label>Prompt</Label>
-                    <Textarea
-                      placeholder="Descreva a cena do vídeo detalhadamente..."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      className="min-h-[140px]"
-                    />
-                  </div>
-                </TabsContent>
-
-                {/* CONTROLS — only what the selected model offers, in a stable order */}
-                <div className="mt-6 grid grid-cols-1 gap-4 rounded-md bg-secondary/20 p-4 sm:grid-cols-2" data-testid="video-controls">
-                  <div className="space-y-2">
-                    <Label htmlFor="video-duration">Duração</Label>
-                    <Select
-                      value={selection.duration !== null ? String(selection.duration) : undefined}
-                      onValueChange={(value) => change({ duration: Number(value) })}
-                    >
-                      <SelectTrigger id="video-duration" data-testid="video-duration-select">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {model.durations.map((value) => (
-                          <SelectItem key={value} value={String(value)}>
-                            {value} segundos
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="video-resolution">Qualidade / Resolução</Label>
-                    <Select
-                      value={selection.resolution ?? undefined}
-                      onValueChange={(value) => change({ resolution: value as VideoResolution })}
-                    >
-                      <SelectTrigger id="video-resolution" data-testid="video-resolution-select">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {model.resolutions.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {RESOLUTION_LABEL[value]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {controls.aspectRatio && (
-                    <div className="space-y-2">
-                      <Label htmlFor="video-aspect">Proporção</Label>
-                      <Select
-                        value={selection.aspectRatio ?? undefined}
-                        onValueChange={(value) => change({ aspectRatio: value as VideoAspectRatio })}
-                      >
-                        <SelectTrigger id="video-aspect" data-testid="video-aspect-select">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {model.aspectRatios.map((value) => (
-                            <SelectItem key={value} value={value}>
-                              {ASPECT_LABEL[value]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {controls.audio && selection.audio !== null && (
-                    <div className="space-y-2">
-                      <Label htmlFor="video-audio">Áudio automático</Label>
-                      <Select value={selection.audio} onValueChange={(value) => change({ audio: value as VideoAudio })}>
-                        <SelectTrigger id="video-audio" data-testid="video-audio-select">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="off">{AUDIO_LABEL.off}</SelectItem>
-                          <SelectItem value="on" disabled={!audioAllowedAt(model, selection.resolution ?? model.resolutions[0])}>
-                            {AUDIO_LABEL.on}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {model.audioRequiresResolution && (
-                        <p className="text-[10px] text-muted-foreground">
-                          Neste modelo o áudio só está disponível em {RESOLUTION_LABEL[model.audioRequiresResolution]}.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {controls.multiShot && selection.multiShot !== null ? (
-                    <div className="space-y-2">
-                      <Label htmlFor="video-multishot">Multi-shot</Label>
-                      <Select
-                        value={selection.multiShot ? 'true' : 'false'}
-                        onValueChange={(value) => change({ multiShot: value === 'true' })}
-                      >
-                        <SelectTrigger id="video-multishot" data-testid="video-multishot-select">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="false">Desligado</SelectItem>
-                          <SelectItem value="true">Ligado (multi-shot)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : !controls.multiShot ? (
-                    <div className="space-y-1.5" data-testid="video-multishot-unsupported-note">
-                      <Label htmlFor="video-multishot" className="text-muted-foreground">Multi-shot</Label>
-                      <p className="text-xs text-muted-foreground pt-1">
-                        {model.label} não oferece Multi-shot neste modo.
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {heavier && (
-                    <p className="text-[10px] text-muted-foreground sm:col-span-2">
-                      Maior duração ou resolução pode aumentar o consumo de {consumptionNoun}.
-                    </p>
-                  )}
-                </div>
-
-                {/* ADVANCED SECTION (MCP only) */}
-                {(controls.asmr || controls.audioPrompt || controls.musicPrompt) && connection.transport === 'mcp' && (
-                  <div className="mt-4 space-y-4 rounded-md border border-border/60 bg-background p-4" data-testid="video-advanced-controls">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configurações Avançadas</p>
-                    {controls.asmr && selection.asmr !== null && (
-                      <div className="space-y-2">
-                        <Label htmlFor="video-asmr">ASMR</Label>
-                        <Select
-                          value={selection.asmr ? 'true' : 'false'}
-                          onValueChange={(value) => change({ asmr: value === 'true' })}
-                        >
-                          <SelectTrigger id="video-asmr" data-testid="video-asmr-select">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="false">Desligado</SelectItem>
-                            <SelectItem value="true">Ligado</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {controls.audioPrompt && selection.audioPrompt !== null && (
-                      <div className="space-y-2">
-                        <Label htmlFor="video-audio-prompt">Prompt de Áudio (Efeitos)</Label>
-                        <Textarea
-                          id="video-audio-prompt"
-                          data-testid="video-audio-prompt-textarea"
-                          placeholder="Ex: Sons da natureza, o vento soprando."
-                          value={selection.audioPrompt}
-                          onChange={(e) => change({ audioPrompt: e.target.value })}
-                          className="min-h-[80px]"
-                        />
-                      </div>
-                    )}
-                    {controls.musicPrompt && selection.musicPrompt !== null && (
-                      <div className="space-y-2">
-                        <Label htmlFor="video-music-prompt">Prompt de Música</Label>
-                        <Textarea
-                          id="video-music-prompt"
-                          data-testid="video-music-prompt-textarea"
-                          placeholder="Ex: Uma melodia calma e relaxante de piano."
-                          value={selection.musicPrompt}
-                          onChange={(e) => change({ musicPrompt: e.target.value })}
-                          className="min-h-[80px]"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Tabs>
+              <VideoGenerationForm
+                projectId={projectId}
+                productionId={productionId}
+                connections={connections}
+                selection={selection}
+                onSelectionChange={change}
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                sourceSelection={i2vSelection}
+                onSourceSelectionChange={setSourceSelection}
+              />
             )}
           </div>
         )}
@@ -789,3 +534,4 @@ export function CreateVideoGenerationDialog({
     </Dialog>
   )
 }
+

@@ -61,7 +61,6 @@ import {
 } from '@/lib/draft-hub'
 import { legacyVideoAuthoringRedirect } from '@/lib/creative/video-editor/video-routes'
 import { createVideoDraftForCreativeEditor } from '@/lib/creative/video-editor/video-draft-entry'
-import { CreateVideoGenerationDialog } from '@/components/videos/create-video-generation-dialog'
 import { GenerationProvenance } from '@/components/videos/generation-provenance'
 import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
@@ -94,7 +93,6 @@ function VideosPageContent() {
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
   const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
-  const [showAiModal, setShowAiModal] = useState(false)
   const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
 
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — names of the account connections, only so
@@ -476,7 +474,7 @@ function VideosPageContent() {
                     <div className="flex flex-col gap-2 mt-4">
                       <Button
                         className="w-full gap-2 text-primary-foreground bg-primary hover:bg-primary/90"
-                        onClick={() => setShowAiModal(true)}
+                        onClick={() => router.push(`/videos/geracoes/${crypto.randomUUID()}?new=1&project=${hubCreateProjectId}&production=${hubCreateProductionId}`)}
                         disabled={!hubCreateProjectId || !hubCreateProductionId}
                       >
                         <Zap className="h-4 w-4" />
@@ -695,14 +693,7 @@ function VideosPageContent() {
         sourceLabel={publicationDraft?.name || undefined}
       />
       
-      <CreateVideoGenerationDialog 
-        open={showAiModal}
-        onOpenChange={setShowAiModal}
-        projectId={hubCreateProjectId}
-        productionId={hubCreateProductionId}
-        onSuccess={() => setRetryKey((k) => k + 1)}
-      />
-          <VideoGenerationPreviewDialog
+      <VideoGenerationPreviewDialog
         item={selectedVideoGeneration}
         onOpenChange={(open) => {
           if (!open) setSelectedVideoGeneration(null)
