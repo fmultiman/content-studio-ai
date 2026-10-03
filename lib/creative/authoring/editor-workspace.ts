@@ -84,7 +84,7 @@ export const INSPECTOR_SECTIONS: readonly { value: InspectorSection; label: stri
   { value: 'template', label: 'Composição', compactLabel: 'Comp.' },
   { value: 'content', label: 'Conteúdo', compactLabel: 'Cont.' },
   { value: 'assets', label: 'Assets', compactLabel: 'Assets' },
-  { value: 'style', label: 'Estilo', compactLabel: 'Estilo' },
+  { value: 'style', label: 'Estilos', compactLabel: 'Estilos' },
   { value: 'element', label: 'Elementos', compactLabel: 'Elem.' },
 ]
 

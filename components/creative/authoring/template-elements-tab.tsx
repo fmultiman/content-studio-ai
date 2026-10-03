@@ -67,6 +67,11 @@ export function TemplateElementsTab({
           <TabsTrigger value="camadas" data-testid="tab-camadas">Camadas</TabsTrigger>
         </TabsList>
 
+        <section className="sticky top-0 z-10 mt-3 -mx-1 bg-background/95 pb-2 pt-1 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/60" aria-labelledby="add-elements-heading" data-testid="add-elements">
+          <h3 id="add-elements-heading" className="sr-only">Adicionar elementos</h3>
+          <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
+        </section>
+
         <TabsContent value="anatomia" className={`mt-3 space-y-4 ${activeTab === "anatomia" ? "" : "hidden"}`} forceMount data-testid="template-anatomy">
           <section className="space-y-2">
             <h3 className="sr-only">Anatomia do template</h3>
@@ -74,11 +79,6 @@ export function TemplateElementsTab({
               O que compõe o layout {layoutLabel}. Os grupos organizam a estrutura lógica, sem interferir na ordem de desenho final.
             </p>
             <TemplateAnatomyTree key={sections.map((section) => section.id).join('|')} sections={sections} labels={labels} openId={openId} hidden={hidden} onToggle={onToggle} onToggleVisibility={onToggleVisibility} renderPanel={renderPanel} />
-          </section>
-
-          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="add-elements-heading" data-testid="add-elements">
-            <h3 id="add-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Adicionar elementos</h3>
-            <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
           </section>
 
           <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
@@ -104,6 +104,7 @@ export function TemplateElementsTab({
                  onRestoreDefault={onRestoreDefault}
                  renderPanel={renderPanel}
                  hidden={hidden}
+                 onToggleVisibility={onToggleVisibility}
                />
              </div>
           </section>
