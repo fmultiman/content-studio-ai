@@ -117,6 +117,35 @@ describe('Video Generation Working State Core', () => {
       }
       expect(() => VideoGenerationWorkingStateV1Schema.parse(state)).toThrow()
     })
+
+    it('rejects malformed connectionRef via canonical parseConnectionRef', () => {
+      const state = {
+        schemaVersion: 1,
+        prompt: 'test',
+        source: null,
+        selection: {
+          connectionRef: 'invalid:garbage:ref', // Rejected by parseConnectionRef
+          operation: 'text_to_video',
+          modelId: 'model',
+          duration: 5,
+          resolution: '1080p',
+          aspectRatio: '16:9',
+          audio: 'off',
+          multiShot: false,
+          asmr: false,
+          audioPrompt: '',
+          musicPrompt: '',
+        },
+      }
+      expect(() => VideoGenerationWorkingStateV1Schema.parse(state)).toThrow('Invalid connection reference format')
+
+      // Also confirm canonical valid formats pass
+      state.selection.connectionRef = REST_CONNECTION_REF
+      expect(VideoGenerationWorkingStateV1Schema.parse(state)).toBeTruthy()
+
+      state.selection.connectionRef = accountConnectionRef('123e4567-e89b-12d3-a456-426614174000')
+      expect(VideoGenerationWorkingStateV1Schema.parse(state)).toBeTruthy()
+    })
   })
 
   describe('attemptToWorkingState', () => {

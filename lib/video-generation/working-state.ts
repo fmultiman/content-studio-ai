@@ -8,12 +8,14 @@ import {
   type VideoOperation,
   type VideoResolution
 } from './capabilities'
-import { REST_CONNECTION_REF, accountConnectionRef } from './connection-ref'
+import { REST_CONNECTION_REF, accountConnectionRef, parseConnectionRef } from './connection-ref'
 import type { VideoFormSelection } from './form-selection'
 import type { I2vSource } from './i2v-source'
 
 export const VideoFormSelectionSchema = z.object({
-  connectionRef: z.string().nullable(),
+  connectionRef: z.string().nullable().refine((val) => val === null || parseConnectionRef(val) !== null, {
+    message: 'Invalid connection reference format',
+  }),
   operation: z.enum(VIDEO_OPERATIONS).nullable(),
   modelId: z.string().nullable(),
   duration: z.number().nullable(),
