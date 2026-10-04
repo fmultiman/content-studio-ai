@@ -60,19 +60,28 @@ export function TemplateElementsTab({
   const customFull = freeElements(custom.scene).length >= MAX_FREE_ELEMENTS
   
   return (
-    <div className="space-y-4" data-testid="template-elements-tab">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'anatomia' | 'camadas')} defaultValue="anatomia">
-        <TabsList className="grid w-full grid-cols-2">
+    <div className="flex h-full min-h-0 flex-col" data-testid="template-elements-tab">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'anatomia' | 'camadas')} defaultValue="anatomia" className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 space-y-3 pb-3">
+          <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="anatomia" data-testid="tab-anatomia">Anatomia</TabsTrigger>
           <TabsTrigger value="camadas" data-testid="tab-camadas">Camadas</TabsTrigger>
         </TabsList>
 
-        <section className="sticky top-0 z-10 mt-3 -mx-1 bg-background/95 pb-2 pt-1 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/60" aria-labelledby="add-elements-heading" data-testid="add-elements">
+          <section aria-labelledby="add-elements-heading" data-testid="add-elements">
           <h3 id="add-elements-heading" className="sr-only">Adicionar elementos</h3>
           <FreeElementAddActions full={customFull} addImageLabel="Imagem" onAddText={custom.onAddText} onAddImage={custom.onAddImage} />
-        </section>
+          </section>
+        </div>
 
-        <TabsContent value="anatomia" className={`mt-3 space-y-4 ${activeTab === "anatomia" ? "" : "hidden"}`} forceMount data-testid="template-anatomy">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
+
+        <TabsContent value="anatomia" className={`space-y-4 ${activeTab === "anatomia" ? "" : "hidden"}`} forceMount data-testid="template-anatomy">
+          <section className="space-y-2 border-b border-border/60 pb-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
+            <h3 id="added-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</h3>
+            <FreeSceneElements {...custom} hideAddActions emptyMessage="Nenhum elemento adicionado a esta arte. O que você adicionar aparecerá aqui e também sobre o Template original." />
+          </section>
+
           <section className="space-y-2">
             <h3 className="sr-only">Anatomia do template</h3>
             <p className="text-[11px] leading-snug text-muted-foreground">
@@ -80,14 +89,14 @@ export function TemplateElementsTab({
             </p>
             <TemplateAnatomyTree key={sections.map((section) => section.id).join('|')} sections={sections} labels={labels} openId={openId} hidden={hidden} onToggle={onToggle} onToggleVisibility={onToggleVisibility} renderPanel={renderPanel} />
           </section>
-
-          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-heading" data-testid="added-elements">
-            <h3 id="added-elements-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Elementos adicionados</h3>
-            <FreeSceneElements {...custom} hideAddActions emptyMessage="Nenhum elemento adicionado a esta arte. O que você adicionar aparecerá aqui e também sobre o Template original." />
-          </section>
         </TabsContent>
 
-        <TabsContent value="camadas" className={`mt-3 space-y-4 ${activeTab === "camadas" ? "" : "hidden"}`} forceMount data-testid="template-layers">
+        <TabsContent value="camadas" className={`space-y-4 ${activeTab === "camadas" ? "" : "hidden"}`} forceMount data-testid="template-layers">
+          <section className="space-y-2 border-b border-border/60 pb-4" aria-labelledby="added-elements-layers-heading" data-testid="added-elements-layers">
+            <h3 id="added-elements-layers-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sobreposição</h3>
+            <FreeSceneElements {...custom} hideAddActions emptyMessage="Você ainda não adicionou elementos sobre o template. Eles apareceriam aqui, posicionados livremente (sempre à frente do Template)." />
+          </section>
+
           <section className="space-y-2">
              <h3 className="sr-only">Camadas</h3>
              <p className="text-[11px] leading-snug text-muted-foreground">A ordem de pintura do Template (frente no topo). O botão ≡ arrasta a camada de posição. Elementos adicionados livres ficam sempre acima destas.</p>
@@ -108,12 +117,8 @@ export function TemplateElementsTab({
                />
              </div>
           </section>
-
-          <section className="space-y-2 border-t border-border/60 pt-4" aria-labelledby="added-elements-layers-heading" data-testid="added-elements-layers">
-            <h3 id="added-elements-layers-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sobreposição</h3>
-            <FreeSceneElements {...custom} hideAddActions emptyMessage="Você ainda não adicionou elementos sobre o template. Eles apareceriam aqui, posicionados livremente." />
-          </section>
         </TabsContent>
+        </div>
       </Tabs>
     </div>
   )
