@@ -59,7 +59,7 @@ A comprehensive catalog audit verified the status of migrations associated with 
 1. **Future Tooling Adoption:**
    If the engineering team transitions to native Supabase CLI migration workflows in CI/CD, the historical numbering discrepancy must be accounted for during baseline initialization to prevent the migration engine from attempting to re-apply historical DDL.
 2. **Disaster Recovery & Environment Bootstrapping:**
-   Bootstrapping a brand new database from scratch requires sequential execution of the scripts in `scripts/` rather than relying on `supabase db push`.
+   Under the current historical state, reconstructing a database from zero still depends on legacy scripts and operational knowledge. Future adoption of the canonical migration workflow must also define a reproducible bootstrap/rebuild procedure so scripts/*.sql does not remain the long-term migration authority.
 3. **Operator Understanding:**
    Operators inspecting the Supabase Dashboard "Migrations" tab must understand that historical migrations 039, 045, and 049 are present in the database schema despite being unlisted in the UI ledger.
 
