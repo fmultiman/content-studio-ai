@@ -812,7 +812,7 @@ export default function StaticAuthoringProductPage() {
     : state?.elements ?? []
 
   const freeInspector = currentFreeSlide ? (
-    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)} className="flex h-full min-h-0 flex-col">
       <TabsList className="flex w-full">
         {INSPECTOR_SECTIONS.map((section) => (
           <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label} aria-label={section.label}>
@@ -866,7 +866,7 @@ export default function StaticAuthoringProductPage() {
   ) : null
 
   const templateInspector = state ? (
-    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)}>
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as InspectorSection)} className="flex h-full min-h-0 flex-col">
       <TabsList className="flex w-full">
         {INSPECTOR_SECTIONS.map((section) => (
           <TabsTrigger key={section.value} value={section.value} className="min-w-0 flex-auto px-1 text-[11px]" title={section.label} aria-label={section.label}>
@@ -1235,7 +1235,7 @@ export default function StaticAuthoringProductPage() {
     </Dialog></>
 
   if (!floating) {
-    return <DashboardPage><div className="min-w-0 px-4 py-3">{header}{receivedMedia}<StackedWorkbench canvas={canvas} inspector={inspector} />{restoreDialog}</div></DashboardPage>
+    return <DashboardPage><div className="min-w-0 px-4 py-3">{header}{receivedMedia}<StackedWorkbench canvas={canvas} inspector={inspector} inspectorClassName="static-creative-inspector-shell" />{restoreDialog}</div></DashboardPage>
   }
 
   // Desktop: the editor owns exactly the viewport below the global top bar — no page scroll in the edit loop.
@@ -1244,7 +1244,7 @@ export default function StaticAuthoringProductPage() {
       <div className="flex h-[calc(100dvh-var(--studio-shell-top-bar-height))] min-h-0 min-w-0 flex-col px-[var(--studio-shell-page-padding)] pb-3 pt-2">
         {header}
         {receivedMedia}
-        <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} />
+        <CreativeWorkbench className="flex-1 overflow-hidden rounded-lg border border-border/50 bg-background" canvas={canvas} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={setInspectorOpen} inspectorClassName="static-creative-inspector-shell" />
         {restoreDialog}
       </div>
     </DashboardPage>

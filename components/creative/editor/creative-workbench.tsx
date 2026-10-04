@@ -36,6 +36,7 @@ type WorkbenchSlots = {
   minimized: boolean
   toggleMinimized: () => void
   closeInspector: () => void
+  inspectorClassName?: string
 }
 
 const WorkbenchSlotsContext = createContext<WorkbenchSlots | null>(null)
@@ -51,8 +52,9 @@ function CanvasPanel() {
 }
 
 function InspectorPanel() {
-  const { inspector, minimized } = useWorkbenchSlots()
-  return minimized ? null : <div className="creative-editor-inspector-body" data-testid="inspector-body">{inspector}</div>
+  const slots = useWorkbenchSlots()
+  const { inspector, minimized } = slots
+  return minimized ? null : <div className={cn('creative-editor-inspector-body', slots.inspectorClassName)} data-testid="inspector-body">{inspector}</div>
 }
 
 /**
@@ -174,6 +176,7 @@ type CreativeWorkbenchProps = {
   canvas: ReactNode
   inspector: ReactNode
   className?: string
+  inspectorClassName?: string
   /**
    * Static Detail Polish V1 — Inspector open/closed is WORKSPACE UI state (never
    * authoring state). Controlled by the page so its bottom toolbar can offer the
@@ -183,7 +186,7 @@ type CreativeWorkbenchProps = {
   onInspectorOpenChange?: (open: boolean) => void
 }
 
-export function CreativeWorkbench({ canvas, inspector, className, inspectorOpen = true, onInspectorOpenChange }: CreativeWorkbenchProps) {
+export function CreativeWorkbench({ canvas, inspector, className, inspectorOpen = true, onInspectorOpenChange, inspectorClassName }: CreativeWorkbenchProps) {
   const [minimized, setMinimized] = useState(false)
   // Last useful palette bounds, remembered in memory for this editor session only.
   const lastBoxRef = useRef<PaletteBox | null>(null)
@@ -289,7 +292,7 @@ export function CreativeWorkbench({ canvas, inspector, className, inspectorOpen 
   }, [inspectorGroup])
 
   return (
-    <WorkbenchSlotsContext.Provider value={{ canvas, inspector, minimized, toggleMinimized, closeInspector }}>
+    <WorkbenchSlotsContext.Provider value={{ canvas, inspector, minimized, toggleMinimized, closeInspector, inspectorClassName }}>
       <div ref={hostRef} className={cn('creative-editor-workbench relative min-h-0', className)} data-testid="creative-workbench">
         <DockviewReact
           className="creative-editor-dockview h-full w-full"
@@ -309,13 +312,13 @@ export function CreativeWorkbench({ canvas, inspector, className, inspectorOpen 
 }
 
 /** Narrow-viewport fallback: no floating window, Inspector stacked under the Canvas. */
-export function StackedWorkbench({ canvas, inspector }: Pick<CreativeWorkbenchProps, 'canvas' | 'inspector'>) {
+export function StackedWorkbench({ canvas, inspector, inspectorClassName }: Pick<CreativeWorkbenchProps, 'canvas' | 'inspector' | 'inspectorClassName'>) {
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="creative-workbench-stacked">
       <div className="min-w-0 overflow-hidden rounded-lg border border-border/50 bg-background">{canvas}</div>
       <section aria-label={INSPECTOR_TITLE} className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card">
         <h2 className="border-b border-border/60 px-3 py-2 text-sm font-semibold">{INSPECTOR_TITLE}</h2>
-        <div className="creative-editor-inspector-body">{inspector}</div>
+        <div className={cn('creative-editor-inspector-body', inspectorClassName)}>{inspector}</div>
       </section>
     </div>
   )

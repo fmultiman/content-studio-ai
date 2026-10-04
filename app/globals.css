@@ -900,3 +900,26 @@
   .creative-editor-inspector-body [data-inspector-tabs='6'] .inspector-tab-full { display: none; }
   .creative-editor-inspector-body [data-inspector-tabs='6'] .inspector-tab-compact { display: inline; }
 }
+
+/* STATIC_CREATIVE_INSPECTOR_SHELL_V1: The Static Inspector takes full structural scroll ownership. */
+.creative-editor-inspector-body.static-creative-inspector-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.creative-editor-inspector-body.static-creative-inspector-shell > [data-slot='tabs'] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.creative-editor-inspector-body.static-creative-inspector-shell > [data-slot='tabs'] > [data-slot='tabs-list'] {
+  flex-shrink: 0;
+}
+.creative-editor-inspector-body.static-creative-inspector-shell > [data-slot='tabs'] > [data-slot='tabs-content'] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 0.75rem;
+}
