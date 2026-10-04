@@ -1,6 +1,6 @@
 ---
 title: "Creative Editor Image Insertion Geometry V1"
-status: "in progress"
+status: "complete"
 ---
 
 # Creative Editor Image Insertion Geometry V1
@@ -14,6 +14,10 @@ status: "in progress"
 - Renderer change: none; the existing Free renderer consumes the authored `box`.
 - Worker change: none.
 - Video authoring impact: none. The shared helper keeps the old behavior when no intrinsic-dimension argument is supplied; Static is the only caller that supplies runtime evidence.
+- Implementation commit: `83ceaa244eafb73c8789f85b4d88b3c1713413a8`.
+- Implementation PR: #119.
+- Merge/final `origin/main`: `87f5412d3b4fa902c38126dca904306fe8d81451`.
+- Production deployment: Vercel deployment `6843321976`, exact SHA `87f5412d3b4fa902c38126dca904306fe8d81451`, status `success`.
 
 ## Phase 0 intake-path audit
 
@@ -97,7 +101,13 @@ The derived box is written in the same state mutation as the new element, so ins
 
 Focused geometry coverage includes portrait, landscape, square, very tall, very wide, centering, stage bounds, missing-dimension fallback, replacement frame preservation and fit preservation. Existing unified picker, Static Free entry, Template custom-element and Static custom-image render tests remain covered.
 
-Current focused result: 5 test files, 102 tests passed. Typecheck and ESLint for changed files pass. Full suite, build, production smoke and final render evidence are recorded at closure.
+Current focused result: 5 test files, 102 tests passed; geometry file 34/34; handoff wiring 10/10. Full current suite: 4235 passed, 2 failed, 4237 total. The two failures are the pre-existing `Estilo`/`Estilos` expectation drift in `editor-workspace.test.ts` and `video-editor/__tests__/static-parity.test.ts`, reproduced against current main. No failure from this mission remains. `pnpm typecheck` passes, changed-file ESLint passes, and `pnpm build` passes.
+
+## Production smoke and cleanup
+
+Authenticated Production editor smoke used the real Static editor at 1440, 1024, 768 and 390 CSS pixel widths. `scrollWidth === clientWidth` at each width. A real Library portrait (`tavares-1985-cip-page.jpg`) was inserted through Elementos → Imagem → Arquivos, produced a dirty authored mutation, showed a centered bounded portrait box (`X 15%`, `Y 10%`, `Largura 70%`, `Altura 80%`), saved, and remained present after reload. The element was then removed and the cleanup save completed; the final editor state reported `Salvo` with no added element. A PNG generation action was initiated from the unchanged Template state. The production content was left clean.
+
+The production path exercised a Template custom visual element backed by the same Free image element model. The focused replacement tests prove portrait↔landscape replacement preserves the authored frame and fit. Template content/hero and brand/asset replacement remain resource-only `assetOverrides`; their slot geometry was not changed by this mission.
 
 ## Known limitations and next slice
 
