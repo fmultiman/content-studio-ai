@@ -413,3 +413,103 @@ describe('connection switching keeps the form truthful', () => {
     expect(body.duration).toBe(5)
   })
 })
+
+describe('VIDEO_GENERATION_CALLER_WIDE_IDEMPOTENCY_HARDENING_V1 — CreateVideoGenerationDialog clientRequestId lifecycle', () => {
+  it('always sends clientRequestId as a valid UUID, with no sessionId attached', async () => {
+    await renderReady()
+    await fillPrompt('A scenic coastal drive at sunset')
+
+    fireEvent.click(generateButton())
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    const body = JSON.parse(posts()[0][1].body as string)
+
+    expect(body.clientRequestId).toBeDefined()
+    expect(body.clientRequestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    // Legacy dialog does not invent or require a Session
+    expect(body.sessionId).toBeUndefined()
+  })
+
+  it('retains the same clientRequestId across an ambiguous network outcome and across dialog close/reopen', async () => {
+    // Hangs or drops the connection on first submit -> ambiguous
+    fetchMock.mockImplementation((url, init) => {
+      if (url === '/api/video-generations/connections') return Promise.resolve(new Response(JSON.stringify({ connections }), { status: 200 }))
+      if (url === '/api/video-generations' && init?.method === 'POST') {
+        return Promise.reject(new Error('Network disconnected'))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    const view = await renderReady()
+    await fillPrompt('Ambiguous submission test')
+
+    fireEvent.click(generateButton())
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    const firstBody = JSON.parse(posts()[0][1].body as string)
+    const initialKey = firstBody.clientRequestId
+    expect(initialKey).toBeDefined()
+
+    // Form is locked to prevent double billing
+    await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
+    expect(generateButton().hasAttribute('disabled')).toBe(true)
+
+    // Close and reopen the dialog while ambiguous outcome is unresolved
+    view.rerender(<CreateVideoGenerationDialog open={false} onOpenChange={view.onOpenChange} {...props} />)
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={view.onOpenChange} {...props} />)
+
+    // Lock and unconfirmed warning persist; key is NOT rotated to a new UUID; submit remains disabled
+    await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
+    expect(generateButton().hasAttribute('disabled')).toBe(true)
+
+    // Re-triggering or programmatic activation preserves lock and cannot emit a second key
+    fireEvent.click(generateButton())
+    expect(posts()).toHaveLength(1)
+  })
+
+  it('rotates to a new clientRequestId after an accepted generation when reopened', async () => {
+    let callCount = 0
+    fetchMock.mockImplementation((url, init) => {
+      if (url === '/api/video-generations/connections') return Promise.resolve(new Response(JSON.stringify({ connections }), { status: 200 }))
+      if (url === '/api/video-generations' && init?.method === 'POST') {
+        callCount++
+        return Promise.resolve(new Response(JSON.stringify({ generation: { id: `gen-${callCount}`, status: 'submitted' } }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    const view = await renderReady()
+    await fillPrompt('First deliberate submit')
+
+    fireEvent.click(generateButton())
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    const firstKey = JSON.parse(posts()[0][1].body as string).clientRequestId
+
+    // Reopen dialog for next deliberate generation
+    view.rerender(<CreateVideoGenerationDialog open={false} onOpenChange={view.onOpenChange} {...props} />)
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={view.onOpenChange} {...props} />)
+    await waitFor(() => expect(screen.getByTestId('video-controls')).toBeTruthy())
+
+    await fillPrompt('Second deliberate submit')
+    fireEvent.click(generateButton())
+    await waitFor(() => expect(posts()).toHaveLength(2))
+    const secondKey = JSON.parse(posts()[1][1].body as string).clientRequestId
+
+    expect(firstKey).toBeDefined()
+    expect(secondKey).toBeDefined()
+    expect(firstKey).not.toBe(secondKey)
+  })
+
+  it('validation failure before fetch does not rotate the key', async () => {
+    await renderReady()
+    // Empty prompt -> fails client validation before fetch
+    fireEvent.click(generateButton())
+    expect(posts()).toHaveLength(0)
+
+    // Now fill prompt and submit -> successfully emits key
+    await fillPrompt('Valid prompt after validation fix')
+    fireEvent.click(generateButton())
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    const body = JSON.parse(posts()[0][1].body as string)
+    expect(body.clientRequestId).toBeDefined()
+    expect(body.clientRequestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  })
+})

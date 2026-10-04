@@ -75,10 +75,10 @@ export async function POST(req: NextRequest) {
       return jsonError(400, 'UNSUPPORTED_FIELD', `"${forbidden}" cannot be set by the client.`)
     }
 
-    // VIDEO_GENERATION_SESSION_PERSISTENCE_AND_API_V1
-    // `sessionId` is lineage/ownership ONLY. The body stays the single authority for what is generated: the
-    // Session's stored working state is never read to build a submission (a stale autosave must never bill
-    // the wrong prompt).
+    // VIDEO_GENERATION_SESSION_PERSISTENCE_AND_API_V1 / VIDEO_GENERATION_CALLER_WIDE_IDEMPOTENCY_HARDENING_V1
+    // `sessionId` is lineage/ownership ONLY. The body stays the single authority for what is generated.
+    // Idempotency policy: all first-party product callers MUST supply clientRequestId for paid generation.
+    // The API boundary retains optional compatibility (POLICY A) for external/script callers without idempotency.
     const { sessionId, clientRequestId } = body
     if (sessionId !== undefined && sessionId !== null && !isUuid(sessionId)) {
       return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be a UUID.')

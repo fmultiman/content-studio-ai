@@ -182,6 +182,7 @@ export function CreateVideoGenerationDialog({
   // (network drop, gateway timeout, unreadable response, unrecorded task): the form stays
   // locked — until the page is reloaded after checking — so it cannot be resubmitted by mistake.
   const [unconfirmedSubmission, setUnconfirmedSubmission] = useState<string | null>(null)
+  const currentClientRequestId = useRef<string>(crypto.randomUUID())
   const [isBusy, setIsBusy] = useState<'refresh' | 'authorize' | null>(null)
 
   const applyConnections = useCallback((list: VideoGenerationConnectionDescriptor[]) => {
@@ -222,6 +223,7 @@ export function CreateVideoGenerationDialog({
     if (!open || !acceptedRef.current) return
     acceptedRef.current = false
     submitLockRef.current = false
+    currentClientRequestId.current = crypto.randomUUID()
     setAccepted(false)
     setPrompt('')
     setChosenSource(null)
@@ -355,6 +357,7 @@ export function CreateVideoGenerationDialog({
           body: JSON.stringify({
             projectId,
             productionId,
+            clientRequestId: currentClientRequestId.current,
             prompt,
             // Exactly one of sourceImageId / sourceLibraryFileId for image_to_video, none otherwise.
             ...i2vSourceFields(selection.operation, source),
@@ -402,6 +405,7 @@ export function CreateVideoGenerationDialog({
       // (animation, parent state), it shows a stable success state instead of an armed button.
       keepLocked = true
       acceptedRef.current = true
+      currentClientRequestId.current = crypto.randomUUID()
       setAccepted(true)
       toast({ title: 'Geração iniciada!', description: 'O vídeo está sendo gerado pela IA (Kling)' })
       onOpenChange(false)
