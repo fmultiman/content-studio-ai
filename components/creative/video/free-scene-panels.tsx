@@ -11,7 +11,8 @@
  * generic over its HOST (a Video Scene or a Static free slide) — the same free
  * composition and helpers; only Video passes `onTiming`.
  */
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock, Eye, EyeOff, ImagePlus, Trash2, Type } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock, Eye, EyeOff, GripVertical, ImagePlus, Trash2, Type } from 'lucide-react'
+import { useLayerDrag } from '@/components/creative/authoring/element-layers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,7 +44,7 @@ function PrecisionDisclosure({ children, title = 'Precisão' }: { children: Reac
 }
 
 import {
-  MAX_FREE_ELEMENTS, MAX_FREE_TEXT_LENGTH, freeElements, moveFreeElement, removeFreeElement, setFreeElementBox, setFreeElementHidden,
+  MAX_FREE_ELEMENTS, MAX_FREE_TEXT_LENGTH, freeElements, moveFreeElement, reorderFreeElements, removeFreeElement, setFreeElementBox, setFreeElementHidden,
   updateFreeElement, type FreeHost, type FreeImagePatch, type FreeTextPatch,
 } from '@/lib/creative/video-editor/free-composition'
 
@@ -84,6 +85,8 @@ type ElementsProps<T extends FreeHost & { id: string }> = {
    */
   hideAddActions?: boolean
   emptyMessage?: string
+  /** Static Camadas parity: use the shared Template drag handle for Free order. */
+  reorderable?: boolean
   /**
    * CREATIVE_EDITOR_CONTEXTUAL_STYLES_AND_TYPOGRAPHY_V1: the Static editor edits a text's font role and size in ESTILOS
    * (same fields, one source of truth), so Elementos leaves them out. Absent = the unchanged Video panel.
@@ -102,11 +105,16 @@ export function FreeElementAddActions({ full, addImageLabel = 'Imagem da Bibliot
 }
 
 /** Elementos tab of a free composition: the only authoring surface for its elements (list = paint order, front on top). */
-export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, hideAddActions = false, emptyMessage, typographyInStyles = false, wording = VIDEO_WORDING }: ElementsProps<T>) {
+export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, fileNames, openId, onOpen, onEdit, onAddText, onAddImage, onReplaceImage, onTiming, onRemoved, hideAddActions = false, emptyMessage, reorderable = false, typographyInStyles = false, wording = VIDEO_WORDING }: ElementsProps<T>) {
   const elements = freeElements(scene)
   const full = elements.length >= MAX_FREE_ELEMENTS
   // Shown front-most first (like Camadas); stored back -> front.
   const listed = [...elements].reverse()
+  const layerDrag = useLayerDrag({
+    order: elements.map((element) => element.id),
+    onReorder: (order) => onEdit((current) => reorderFreeElements(current, order)),
+  })
+  const listedIds = reorderable ? layerDrag.shown : listed.map((element) => element.id)
   return (
     <div className="space-y-2" data-testid="free-scene-elements">
       {hideAddActions ? null : (
@@ -117,22 +125,41 @@ export function FreeSceneElements<T extends FreeHost & { id: string }>({ scene, 
       {elements.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/60 p-2 text-[11px] text-muted-foreground" data-testid="free-scene-empty">{emptyMessage ?? `${wording.unit === 'cena' ? 'Cena' : wording.unit === 'slide' ? 'Slide' : 'Arte'} em branco (composição livre). Adicione um texto ou uma imagem, ou escolha um template na aba Template.`}</p>
       ) : (
-        <ol className="space-y-1" aria-label={`Elementos ${wording.unit === 'slide' ? 'do slide' : `da ${wording.unit}`} (frente no topo)`}>
-          {listed.map((element) => {
+        <ol ref={reorderable ? layerDrag.listRef : undefined} className="space-y-1" aria-label={`Elementos ${wording.unit === 'slide' ? 'do slide' : `da ${wording.unit}`} (frente no topo)`} data-dragging={reorderable && layerDrag.drag ? 'true' : undefined}>
+          {listedIds.map((elementId, displayIndex) => {
+            const element = elements.find((candidate) => candidate.id === elementId)
+            if (!element) return null
             const index = elements.indexOf(element)
             const open = openId === element.id
             const label = freeElementLabel(element, element.kind === 'image' ? fileNames.get(element.library_file_id) : undefined)
+            const dragging = reorderable && layerDrag.drag?.id === element.id
             return (
-              <li key={element.id} className={cn('rounded-md border', open ? 'border-primary/60' : 'border-border/60')} data-testid="free-element" data-element-id={element.id} data-kind={element.kind} data-hidden={element.hidden === true}>
+              <li key={element.id} className={cn('rounded-md border', open ? 'border-primary/60' : 'border-border/60', dragging && 'opacity-70 ring-1 ring-primary')} data-testid="free-element" data-element-id={element.id} data-kind={element.kind} data-hidden={element.hidden === true}>
                 <div className="flex items-center gap-1 px-1.5 py-1">
+                  {reorderable ? (
+                    <button
+                      type="button"
+                      data-layer-grip
+                      aria-label={`Mover ${label} (setas para cima/baixo)`}
+                      title="Arraste para reordenar"
+                      className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+                      onPointerDown={(event) => layerDrag.onPointerDown(event, element.id, displayIndex)}
+                      onPointerMove={layerDrag.onPointerMove}
+                      onPointerUp={layerDrag.onPointerUp}
+                      onPointerCancel={layerDrag.onPointerCancel}
+                      onKeyDown={(event) => layerDrag.onGripKeyDown(event, displayIndex)}
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left text-xs" onClick={() => onOpen(open ? null : element.id)} aria-expanded={open} data-testid="free-element-toggle">
                     {open ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
                     <span className="shrink-0 text-[10px] uppercase text-muted-foreground">{element.kind === 'text' ? 'Texto' : 'Imagem'}</span>
                     <span className={cn('truncate', element.hidden && 'text-muted-foreground line-through')}>{label}</span>
                   </button>
-                  <Button size="icon-sm" variant="ghost" aria-label={element.hidden ? 'Mostrar' : 'Ocultar'} title={element.hidden ? 'Mostrar' : 'Ocultar'} onClick={() => onEdit((current) => setFreeElementHidden(current, element.id, !element.hidden))} data-testid="free-element-visibility">{element.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</Button>
-                  <Button size="icon-sm" variant="ghost" aria-label="Trazer para frente" title="Trazer para frente" disabled={index === elements.length - 1} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'forward'))} data-testid="free-element-forward"><ArrowUp className="h-3.5 w-3.5" /></Button>
-                  <Button size="icon-sm" variant="ghost" aria-label="Enviar para trás" title="Enviar para trás" disabled={index === 0} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'backward'))} data-testid="free-element-backward"><ArrowDown className="h-3.5 w-3.5" /></Button>
+                  <Button size="icon-sm" variant="ghost" aria-label={element.hidden ? 'Mostrar' : 'Ocultar'} title={element.hidden ? 'Mostrar' : 'Ocultar'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onEdit((current) => setFreeElementHidden(current, element.id, !element.hidden)) }} data-testid="free-element-visibility">{element.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</Button>
+                  {reorderable ? null : <Button size="icon-sm" variant="ghost" aria-label="Trazer para frente" title="Trazer para frente" disabled={index === elements.length - 1} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'forward'))} data-testid="free-element-forward"><ArrowUp className="h-3.5 w-3.5" /></Button>}
+                  {reorderable ? null : <Button size="icon-sm" variant="ghost" aria-label="Enviar para trás" title="Enviar para trás" disabled={index === 0} onClick={() => onEdit((current) => moveFreeElement(current, element.id, 'backward'))} data-testid="free-element-backward"><ArrowDown className="h-3.5 w-3.5" /></Button>}
                   <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" aria-label="Remover elemento" title="Remover elemento (o arquivo da Biblioteca não é apagado)" onClick={() => { onEdit((current) => removeFreeElement(current, element.id)); if (open) onOpen(null); onRemoved?.(element.id) }} data-testid="free-element-remove"><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
                 {open ? (

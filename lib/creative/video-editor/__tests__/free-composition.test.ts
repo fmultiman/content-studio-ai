@@ -16,7 +16,7 @@ import type { VideoTimeline } from '../temporal-items'
 import { VIDEO_CANVAS_PRESETS, videoDraftCanvasSupport } from '../video-canvas'
 import {
   MIN_FREE_BOX, addFreeImageElement, addFreeTextElement, clampFreeBox, createFreeScene, deriveFreeSegment, freeElements, initialFreeImageBox,
-  freeImageLibraryFileIds, isFreeComposition, isFreeScene, moveFreeElement, removeFreeElement, setFreeElementBox,
+  freeImageLibraryFileIds, isFreeComposition, isFreeScene, moveFreeElement, removeFreeElement, reorderFreeElements, setFreeElementBox,
   setFreeElementHidden, updateFreeElement, validateFreeCompositionShape,
 } from '../free-composition'
 
@@ -176,6 +176,14 @@ describe('Free element identity, geometry and style', () => {
     const reloaded = normalizeLoadedScenes(JSON.parse(JSON.stringify([reordered])))
     expect(freeElements(reloaded[0]).map((element) => element.id)).toEqual([I1, T1])
     expect(addFreeTextElement(scene, T1)).toBe(scene) // an existing id is never reused
+  })
+
+  it('reorders the existing Free array without changing element payloads or accepting a foreign order', () => {
+    const scene = freeScene()
+    const reordered = reorderFreeElements(scene, [I1, T1])
+    expect(freeElements(reordered).map((element) => element.id)).toEqual([I1, T1])
+    expect(freeElements(reordered)[0]).toEqual(freeElements(scene)[1])
+    expect(reorderFreeElements(scene, [T1, 'foreign'])).toBe(scene)
   })
 
   it('rejects duplicate ids, missing ids, bad kinds and unknown keys', () => {

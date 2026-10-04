@@ -294,6 +294,16 @@ export function moveFreeElement<T extends FreeHost>(scene: T, elementId: string,
   return withElements(scene, next)
 }
 
+/** Reorders the existing Free elements without changing any element payload. */
+export function reorderFreeElements<T extends FreeHost>(scene: T, order: readonly string[]): T {
+  const elements = freeElements(scene)
+  if (order.length !== elements.length || new Set(order).size !== elements.length) return scene
+  if (order.every((id, index) => elements[index]?.id === id)) return scene
+  const byId = new Map(elements.map((element) => [element.id, element]))
+  if (order.some((id) => !byId.has(id))) return scene
+  return withElements(scene, order.map((id) => byId.get(id)!))
+}
+
 // ── Neutral render preparation (derived, never stored) ───────────────────────
 
 export function freeAssetKey(libraryFileId: string): string {

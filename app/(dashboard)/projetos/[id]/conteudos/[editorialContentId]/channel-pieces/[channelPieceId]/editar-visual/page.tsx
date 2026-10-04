@@ -858,6 +858,7 @@ export default function StaticAuthoringProductPage() {
           onReplaceImage={(elementId) => setFreeImagePicker({ mode: 'replace', elementId })}
           onRemoved={(id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current))}
           wording={freeWording}
+          reorderable
           typographyInStyles
         />
       </TabsContent>
@@ -957,6 +958,7 @@ export default function StaticAuthoringProductPage() {
               onReplaceImage: (elementId) => setFreeImagePicker({ mode: 'replace', elementId }),
               onRemoved: (id) => setSelectedTarget((current) => (current?.kind === 'free-element' && current.elementId === id ? null : current)),
               wording: freeWording,
+              reorderable: true,
               typographyInStyles: true,
             }}
           />
