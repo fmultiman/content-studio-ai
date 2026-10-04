@@ -157,6 +157,36 @@ function withElements<T extends FreeHost>(scene: T, elements: FreeSceneElement[]
 export const DEFAULT_FREE_TEXT_BOX: FreeElementBox = { x: 0.08, y: 0.1, width: 0.84, height: 0.2 }
 export const DEFAULT_FREE_IMAGE_BOX: FreeElementBox = { x: 0.1, y: 0.35, width: 0.8, height: 0.45 }
 
+/**
+ * The initial frame is a stage-relative policy, not a browser-viewport size.
+ * Keep the largest side at 80% of the authored Canvas and preserve the source
+ * ratio while centering the result. The existing 2% minimum box domain is the
+ * only intentional limit for pathological aspect ratios.
+ */
+export type FreeImageIntrinsicDimensions = { width: number; height: number }
+
+export function initialFreeImageBox(intrinsic: FreeImageIntrinsicDimensions | null | undefined, canvas: { width: number; height: number }): FreeElementBox {
+  const sourceWidth = intrinsic && Number.isFinite(intrinsic.width) && intrinsic.width > 0 ? intrinsic.width : null
+  const sourceHeight = intrinsic && Number.isFinite(intrinsic.height) && intrinsic.height > 0 ? intrinsic.height : null
+  if (!sourceWidth || !sourceHeight || !Number.isFinite(canvas.width) || !Number.isFinite(canvas.height) || canvas.width <= 0 || canvas.height <= 0) {
+    return { x: 0.2, y: 0.2, width: 0.6, height: 0.6 }
+  }
+
+  const maxWidth = canvas.width * 0.8
+  const maxHeight = canvas.height * 0.8
+  const aspect = sourceWidth / sourceHeight
+  let width = aspect >= maxWidth / maxHeight ? maxWidth : maxHeight * aspect
+  let height = width / aspect
+  if (height > maxHeight) { height = maxHeight; width = height * aspect }
+
+  // Existing Free validation requires each side to be >= 2% of the stage.
+  // For an extreme ratio this is the smallest representable frame; `contain`
+  // or `cover` then keeps pixels undistorted inside the authored frame.
+  width = Math.max(MIN_FREE_BOX, Math.min(1, width / canvas.width))
+  height = Math.max(MIN_FREE_BOX, Math.min(1, height / canvas.height))
+  return { x: round((1 - width) / 2), y: round((1 - height) / 2), width: round(width), height: round(height) }
+}
+
 export function addFreeTextElement<T extends FreeHost>(scene: T, id: string): T {
   const elements = freeElements(scene)
   if (!isFreeScene(scene) || elements.length >= MAX_FREE_ELEMENTS || elements.some((element) => element.id === id)) return scene
@@ -164,10 +194,19 @@ export function addFreeTextElement<T extends FreeHost>(scene: T, id: string): T 
   return withElements(scene, [...elements, element])
 }
 
-export function addFreeImageElement<T extends FreeHost>(scene: T, id: string, libraryFileId: string): T {
+export function addFreeImageElement<T extends FreeHost>(scene: T, id: string, libraryFileId: string, intrinsic?: FreeImageIntrinsicDimensions | null, canvas: { width: number; height: number } = { width: 1080, height: 1350 }): T {
   const elements = freeElements(scene)
   if (!isFreeScene(scene) || elements.length >= MAX_FREE_ELEMENTS || elements.some((element) => element.id === id)) return scene
-  const element: FreeImageElement = { id, kind: 'image', box: { ...DEFAULT_FREE_IMAGE_BOX }, library_file_id: libraryFileId, fit: 'cover' }
+  const hasDimensionEvidence = intrinsic !== undefined
+  const element: FreeImageElement = {
+    id,
+    kind: 'image',
+    box: hasDimensionEvidence ? initialFreeImageBox(intrinsic, canvas) : { ...DEFAULT_FREE_IMAGE_BOX },
+    library_file_id: libraryFileId,
+    // A selected image with no dimensions gets a non-destructive fallback;
+    // legacy callers that omit the argument retain the established `cover`.
+    fit: hasDimensionEvidence && !intrinsic ? 'contain' : 'cover',
+  }
   return withElements(scene, [...elements, element])
 }
 
