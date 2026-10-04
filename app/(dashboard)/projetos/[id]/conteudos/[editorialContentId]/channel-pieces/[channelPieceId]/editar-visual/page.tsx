@@ -60,7 +60,7 @@ import { CompositionModePanel } from '@/components/creative/authoring/compositio
 import { FreeSceneElements, freeElementLabel } from '@/components/creative/video/free-scene-panels'
 import { FreeElementsOverlay } from '@/components/creative/video/free-scene-overlay'
 import { FreeStage } from '@/components/creative/free/free-stage'
-import { addFreeImageElement, addFreeTextElement, deriveFreeSegment, freeElements, setFreeElementBox, updateFreeElement, type FreeHost } from '@/lib/creative/video-editor/free-composition'
+import { addFreeImageElement, addFreeTextElement, deriveFreeSegment, freeElements, setFreeElementBox, updateFreeElement, type FreeHost, type FreeImageIntrinsicDimensions } from '@/lib/creative/video-editor/free-composition'
 import type { FreeSceneComposition } from '@/lib/types'
 import { DEFAULT_PREVIEW_INTERACTION_MODE, type PreviewInteractionMode } from '@/lib/creative/video-editor/free-manipulation'
 import { createFreeStaticSlide, freeCompositionHasContent, type FreeStaticSlide, type StaticCompositionMode } from '@/lib/creative/authoring/free-static'
@@ -1125,14 +1125,32 @@ export default function StaticAuthoringProductPage() {
    * handoff's "Mídia recebida" both call it: GENERATED_MEDIA_TO_CREATIVE_EDITOR_HANDOFF_V1 adds no second path.
    * Authored state only (dirty until Salvar/autosave); it never creates a ChannelPieceMedia.
    */
-  function applyLibraryImageToComposition(file: SlotLibraryFile, picker: { mode: 'add' } | { mode: 'replace'; elementId: string } | null) {
+  async function readIntrinsicDimensions(file: SlotLibraryFile): Promise<FreeImageIntrinsicDimensions | null> {
+    const source = file.thumbnail_url || file.public_url
+    if (!source || typeof Image === 'undefined') return null
+    return await new Promise((resolve) => {
+      const image = new Image()
+      const timeout = window.setTimeout(() => resolve(null), 1500)
+      image.onload = () => {
+        window.clearTimeout(timeout)
+        resolve(image.naturalWidth > 0 && image.naturalHeight > 0 ? { width: image.naturalWidth, height: image.naturalHeight } : null)
+      }
+      image.onerror = () => { window.clearTimeout(timeout); resolve(null) }
+      image.src = source
+    })
+  }
+
+  async function applyLibraryImageToComposition(file: SlotLibraryFile, picker: { mode: 'add' } | { mode: 'replace'; elementId: string } | null) {
     setProjectImages((current) => new Map(current).set(file.id, file))
+    // Intrinsic dimensions are runtime evidence only. Replacement keeps the
+    // authored box; only a new Free/Custom image uses this result.
+    const intrinsic = picker?.mode === 'add' ? await readIntrinsicDimensions(file) : null
     if (mode === 'template') {
       if (picker?.mode === 'replace') editCurrentCustomElements((host) => updateFreeElement(host, picker.elementId, { library_file_id: file.id }))
-      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentCustomElements((host) => addFreeImageElement(host, id, file.id as string, intrinsic, { width: canvasW, height: canvasH })); setSelectedTarget({ kind: 'free-element', elementId: id }) }
     } else {
       if (picker?.mode === 'replace') editCurrentFree((slide) => updateFreeElement(slide, picker.elementId, { library_file_id: file.id }))
-      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id as string)); setSelectedTarget({ kind: 'free-element', elementId: id }) }
+      else if (picker?.mode === 'add') { const id = crypto.randomUUID(); editCurrentFree((slide) => addFreeImageElement(slide, id, file.id as string, intrinsic, { width: canvasW, height: canvasH })); setSelectedTarget({ kind: 'free-element', elementId: id }) }
     }
   }
   // Static accepts image LibraryFiles only (the server already refused any other kind for this editor).
@@ -1171,7 +1189,7 @@ export default function StaticAuthoringProductPage() {
       title="Imagem da composição livre"
       description="Escolha uma imagem do Projeto. Ela será referenciada (não copiada) e posicionada dentro do formato da peça."
       onSelect={(file) => {
-        applyLibraryImageToComposition(file, freeImagePicker)
+        void applyLibraryImageToComposition(file, freeImagePicker)
         setFreeImagePicker(null)
       }}
     />

@@ -15,7 +15,7 @@ import { sceneHasTemporalElements, sceneTimingRows, setSceneElementTiming } from
 import type { VideoTimeline } from '../temporal-items'
 import { VIDEO_CANVAS_PRESETS, videoDraftCanvasSupport } from '../video-canvas'
 import {
-  MIN_FREE_BOX, addFreeImageElement, addFreeTextElement, clampFreeBox, createFreeScene, deriveFreeSegment, freeElements,
+  MIN_FREE_BOX, addFreeImageElement, addFreeTextElement, clampFreeBox, createFreeScene, deriveFreeSegment, freeElements, initialFreeImageBox,
   freeImageLibraryFileIds, isFreeComposition, isFreeScene, moveFreeElement, removeFreeElement, setFreeElementBox,
   setFreeElementHidden, updateFreeElement, validateFreeCompositionShape,
 } from '../free-composition'
@@ -68,6 +68,52 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8')
 /** Every object key, recursively (to prove no Template identity field exists anywhere). */
 const keysOf = (value: unknown): string[] => (value && typeof value === 'object' ? Object.entries(value).flatMap(([key, child]) => [key, ...keysOf(child)]) : [])
 const TEMPLATE_KEYS = ['template', 'template_id', 'templateId', 'layout', 'variant', 'component_key', 'appearance', 'element_order', 'hidden_elements']
+
+describe('Free image insertion geometry', () => {
+  const canvas = { width: 1080, height: 1350 }
+
+  it.each([
+    ['portrait', { width: 800, height: 1200 }, 0.8 / 0.6],
+    ['landscape', { width: 1200, height: 800 }, 0.6 / 0.8],
+    ['square', { width: 1000, height: 1000 }, 0.8 / (0.8 * 1350 / 1080)],
+  ])('%s preserves source aspect ratio and centers the bounded frame', (_name, dimensions, _expected) => {
+    const box = initialFreeImageBox(dimensions, canvas)
+    expect(box.x).toBeCloseTo((1 - box.width) / 2, 3)
+    expect(box.y).toBeCloseTo((1 - box.height) / 2, 3)
+    expect(box.width).toBeLessThanOrEqual(0.8 + 1e-6)
+    expect(box.height).toBeLessThanOrEqual(0.8 + 1e-6)
+    expect((box.width * canvas.width) / (box.height * canvas.height)).toBeCloseTo(dimensions.width / dimensions.height, 3)
+  })
+
+  it('handles very tall and very wide sources without exceeding the Canvas', () => {
+    for (const dimensions of [{ width: 100, height: 3000 }, { width: 3000, height: 100 }]) {
+      const box = initialFreeImageBox(dimensions, canvas)
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(1)
+      expect(box.y + box.height).toBeLessThanOrEqual(1)
+      expect(box.width).toBeGreaterThanOrEqual(MIN_FREE_BOX)
+      expect(box.height).toBeGreaterThanOrEqual(MIN_FREE_BOX)
+    }
+  })
+
+  it('uses a deterministic centered square when intrinsic dimensions are unavailable', () => {
+    expect(initialFreeImageBox(null, canvas)).toEqual({ x: 0.2, y: 0.2, width: 0.6, height: 0.6 })
+    const scene = addFreeImageElement(createFreeScene(1, 'free-fallback', 2), I1, IMG, null, canvas)
+    expect(freeElements(scene)[0]).toMatchObject({ box: { x: 0.2, y: 0.2, width: 0.6, height: 0.6 }, fit: 'contain' })
+  })
+
+  it('replacement keeps the authored frame and unrelated state because the patch changes identity only', () => {
+    let scene = createFreeScene(1, 'free', 2)
+    scene = addFreeImageElement(scene, I1, IMG, { width: 800, height: 1200 }, canvas)
+    scene = setFreeElementBox(scene, I1, { x: 0.31, y: 0.22, width: 0.27, height: 0.41 })
+    const before = freeElements(scene)[0]
+    expect(before.kind).toBe('image')
+    if (before.kind !== 'image') throw new Error('expected image')
+    const replaced = updateFreeElement(scene, I1, { library_file_id: IMG2 })
+    expect(freeElements(replaced)[0]).toMatchObject({ library_file_id: IMG2, box: before.box, fit: before.fit })
+  })
+})
 
 describe('Legacy and Template Scenes are untouched', () => {
   it('an absent composition stays the legacy Template Cover (never Blank)', () => {
