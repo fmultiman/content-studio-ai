@@ -429,7 +429,7 @@ describe('VIDEO_GENERATION_CALLER_WIDE_IDEMPOTENCY_HARDENING_V1 — CreateVideoG
     expect(body.sessionId).toBeUndefined()
   })
 
-  it('retains the same clientRequestId across an ambiguous network outcome', async () => {
+  it('retains the same clientRequestId across an ambiguous network outcome and across dialog close/reopen', async () => {
     // Hangs or drops the connection on first submit -> ambiguous
     fetchMock.mockImplementation((url, init) => {
       if (url === '/api/video-generations/connections') return Promise.resolve(new Response(JSON.stringify({ connections }), { status: 200 }))
@@ -439,7 +439,7 @@ describe('VIDEO_GENERATION_CALLER_WIDE_IDEMPOTENCY_HARDENING_V1 — CreateVideoG
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    await renderReady()
+    const view = await renderReady()
     await fillPrompt('Ambiguous submission test')
 
     fireEvent.click(generateButton())
@@ -449,6 +449,14 @@ describe('VIDEO_GENERATION_CALLER_WIDE_IDEMPOTENCY_HARDENING_V1 — CreateVideoG
     expect(initialKey).toBeDefined()
 
     // Form is locked to prevent double billing
+    await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
+    expect(generateButton().hasAttribute('disabled')).toBe(true)
+
+    // Close and reopen the dialog while ambiguous outcome is unresolved
+    view.rerender(<CreateVideoGenerationDialog open={false} onOpenChange={view.onOpenChange} {...props} />)
+    view.rerender(<CreateVideoGenerationDialog open onOpenChange={view.onOpenChange} {...props} />)
+
+    // Lock and unconfirmed warning persist; key is NOT rotated to a new UUID; submit remains disabled
     await waitFor(() => expect(screen.getByTestId('video-submission-unconfirmed')).toBeTruthy())
     expect(generateButton().hasAttribute('disabled')).toBe(true)
 
