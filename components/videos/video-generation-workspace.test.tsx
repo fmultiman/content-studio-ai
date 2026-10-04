@@ -661,6 +661,14 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
 
     // Generate button is locked
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
+
+    // Verify key was retained and double-activation cannot emit a different key
+    const initialKey = JSON.parse(fetchMock.mock.calls.find((c: any) => c[0] === '/api/video-generations' && c[1]?.method === 'POST')[1].body).clientRequestId
+    expect(initialKey).toBeDefined()
+    expect(initialKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    fireEvent.click(generateBtn)
+    const postCalls = fetchMock.mock.calls.filter((c: any) => c[0] === '/api/video-generations' && c[1]?.method === 'POST')
+    expect(postCalls).toHaveLength(1)
   })
 
   it('22 & 23. Attempts load by session and display in timeline', async () => {
