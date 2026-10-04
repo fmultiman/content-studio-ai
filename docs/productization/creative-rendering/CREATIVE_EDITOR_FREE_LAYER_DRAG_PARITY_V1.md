@@ -1,93 +1,116 @@
 # CREATIVE_EDITOR_FREE_LAYER_DRAG_PARITY_V1
 
-Status: implementation complete on the feature branch; production closure is recorded below after merge and smoke.
+Status: complete and merged to Production.
 
-## Starting point and scope
+## Closure identity
 
-- Starting `origin/main`: `a4c0d740c6d50d7bf5c45e400cb433bd67ce7bab`.
-- Feature worktree: `D:/Traycer/worktrees/fmultiman__content-studio-ai/feat-creative-editor-free-layer-drag-parity-v1`.
-- Feature branch: `feat/creative-editor-free-layer-drag-parity-v1`.
-- Implementation commit: `557dfff` (`feat(creative-editor): add free layer drag parity`).
-- The protected historical checkout was not used.
-- Scope is Static Creative Editor Free/Custom layer interaction. Video Scene reorder remains unchanged.
-
-This slice changes the interaction language only. It does not create a new ordering model, z-index field, grouping model, cross-boundary capability, or DnD architecture.
+- Starting origin/main: a4c0d740c6d50d7bf5c45e400cb433bd67ce7bab.
+- Feature worktree: D:/Traycer/worktrees/fmultiman__content-studio-ai/feat-creative-editor-free-layer-drag-parity-v1.
+- Feature branch: feat/creative-editor-free-layer-drag-parity-v1.
+- Implementation commit: 557dfff.
+- Implementation PR: #121 (https://github.com/fmultiman/content-studio-ai/pull/121).
+- Implementation merge / Production commit: 03eb908af8d38b61192b6b12f95c4cc7ae332a99.
+- Production deployment: Vercel deployment 6844594176, commit 03eb908af8d38b61192b6b12f95c4cc7ae332a99.
+- Documentation closure is this commit; the final docs PR and merge SHA are reported with the mission closure.
+- The protected historical checkout was not used or modified.
 
 ## Phase 0 audit
 
 ### Free/Custom ordering authority
 
-Free order is the existing `composition.elements` array in `FreeSceneComposition`, stored back-to-front. Static Free mode uses this composition on the current Free slide. Template mode stores user-added overlay elements in the existing `AuthoringState.elements` field and derives the same Free composition for the overlay. Element ids are stable and remain attached to their complete element payload.
+Static Free mode persists the existing composition.elements array in FreeSceneComposition, back-to-front. Template mode persists user-added overlays in the existing AuthoringState.elements field and derives the same Free composition for that overlay. Element ids remain stable and stay attached to the complete element payload.
 
-The legacy `Trazer para frente` and `Enviar para trás` buttons call `moveFreeElement`. That helper swaps one element with its immediate neighbour in the Free array. The domain is the Free array only; it never reaches Template-owned elements.
+The legacy Trazer para frente and Enviar para trás controls call moveFreeElement. That helper swaps one element with its immediate neighbour inside the Free array. Its domain is Free elements only; it never reaches Template-owned elements.
 
-`FreeStage` and `deriveFreeSegment` consume the same array order. The renderer assigns increasing local z-index values while traversing back-to-front, so the last Free array item is visually front-most. The list reverses this array, therefore the top row is front and the bottom row is back.
+FreeStage and deriveFreeSegment consume the same array. The renderer assigns increasing local z-index values while traversing back-to-front, so the last Free array item is visually front-most. Camadas reverses the array for display, making the top row front and the bottom row back.
 
 ### Template Camadas authority
 
-Template layers use the existing persisted `AuthoringState.elementOrder` field, normalized by `resolveElementStack` and persisted through the existing reducer/save/render request path. The order is also back-to-front. `ElementLayers` displays the reverse, with front at the top. `moveElementInOrder` moves an item to a valid position in this same order.
+Template layers use the existing persisted AuthoringState.elementOrder, normalized by resolveElementStack and saved through the existing reducer/state path. The order is also back-to-front. ElementLayers displays the reverse, with front at the top. moveElementInOrder moves an item to a valid position in that same order.
 
-The existing Template drag primitive is pointer-event based: the grip captures the pointer, live row rectangles determine the drop target, movement previews the displayed order, and only a changed drop calls `onReorder`. The grip also supports ArrowUp/ArrowDown. Eye, row disclosure, and panel controls stop their own events. Anatomy remains derived structure and is not reorderable.
+The proven Template interaction is pointer-event based: the grip captures the pointer, live row rectangles determine the target, movement previews the displayed order, and only a changed drop calls onReorder. The grip also supports ArrowUp/ArrowDown. Eye, row disclosure, and panel controls stop their own events. Anatomy remains derived semantic structure and is not reorderable.
 
-### Shared media/renderer boundary
+### Compatibility matrix
 
-No renderer-facing source was changed. No worker source was changed and no worker deployment is required. The existing Static Preview and final render already consume the authored Free array order. No database migration or new persisted field is required.
-
-## Geometry/order ownership matrix
-
-| Surface | Persisted authority | Valid reorder domain | Display order | Template boundary |
+| Surface | Persisted authority | Valid reorder domain | Display order | Boundary |
 | --- | --- | --- | --- | --- |
-| Template Camadas | `elementOrder` | Template-owned stack | front → back | protected by Template grammar/normalization |
-| Static Free/Custom | existing Free `elements` array | Free elements only | front → back | Custom overlays remain above Template |
-| Video Free Scene | existing Free `composition.elements` array | Free elements only | front → back | unchanged in this mission |
+| Template Camadas | elementOrder | Template-owned stack | front -> back | Template grammar remains protected |
+| Static Free/Custom | existing Free elements array | Free elements only | front -> back | Custom overlays remain above Template |
+| Video Free Scene | existing Free composition.elements array | unchanged | front -> back | Video UI unchanged |
 | Anatomy | derived Template sections | none | semantic structure | never reorderable |
 
-The two reorder domains are compatible in interaction shape and deliberately remain separate in persisted state. A Free drag cannot enter the Template stack, reorder Anatomy, or alter Template-owned order.
+The domains are compatible in interaction shape but remain separate in persisted state. A Free drag cannot enter the Template stack, reorder Anatomy, or alter protected Template order.
 
 ## Implemented behavior
 
-`useLayerDrag` in `components/creative/authoring/element-layers.tsx` now contains the proven Template pointer/keyboard interaction and is reused by Static Free rows. `FreeSceneElements` accepts an explicit `reorderable` flag. Static entry points pass the flag; Video does not.
+useLayerDrag in components/creative/authoring/element-layers.tsx now contains the existing Template pointer/keyboard interaction and is reused by Static Free rows. FreeSceneElements accepts an explicit reorderable flag. Static entry points pass it; Video does not.
 
-When enabled, a Free row is ordered:
+When enabled, each Free row is ordered as:
 
 1. drag grip;
 2. visibility eye;
 3. element label/disclosure;
 4. remove action.
 
-The normal Static Free/Custom UI removes the duplicate +/-1 arrows because the grip and keyboard arrows provide the same authoring capability. Video retains its existing arrows because Video is out of scope.
+The normal Static Free/Custom Camadas UI removes the duplicate +/-1 arrows because the grip and keyboard arrows provide the same capability. Video retains its arrows because Video is out of scope.
 
-The drop calls `reorderFreeElements`, which validates the same element-id set and returns the existing Free payloads in the requested order. A no-op returns the original host. Geometry, rotation-equivalent element payload fields, opacity-equivalent fields, visibility, text, fit, and asset identity are not rewritten.
+The drop calls reorderFreeElements, which validates the existing element-id set and returns the existing payloads in the requested order. A no-op or invalid order returns the original scene. Geometry, rotation, opacity, visibility, text, fit, and asset identity are not rewritten.
 
-The eye stops pointer propagation and toggles visibility only. The grip stops propagation and starts reorder only. Row disclosure remains selection/open-state behavior. Remove remains removal only. Dragging does not call `onOpen`, so the existing selected element identity stays coherent.
+The eye stops pointer propagation and toggles visibility only. The grip stops propagation and starts reorder only. Row disclosure remains selection/open behavior. Remove remains removal only. Dragging does not call onOpen, so the selected element identity remains coherent.
 
 ## Dirty, save, reload, and render parity
 
-Pointer down, pointer movement, live preview, cancellation, and a drop in the original position do not call the authored `onEdit` path. A successful changed drop calls that path once. The host then uses the existing Static save/revert state flow. The resulting existing `elements` array is what persistence, Preview, and the final Static render consume. Loading does not recalculate or migrate any existing order.
+Pointer down, movement, live preview, cancellation, and a drop in the original position do not call the authored onEdit path. A successful changed drop calls that path once. Existing save, revert, and reload state flow persists the same elements array. Existing saved elements are not recalculated or migrated on load.
+
+Preview and final Static rendering consume the resulting array. Focused render-projection tests prove the top Camadas row is front-most. A real Production PNG was generated after the clean-state smoke and reached PNG pronto for slide 1 of 10, with the editor still reporting Salvo.
 
 ## Accessibility and input status
 
-The reused grip has an accessible label and title and supports ArrowUp/ArrowDown as the existing Template control does. The eye has its existing pressed state and accessible show/hide label. Pointer capture plus `touch-none` supports mouse and pointer/touch input without HTML5 drag-and-drop. No keyboard-shortcut framework or generalized DnD rewrite was introduced.
+The reused grip has an accessible label/title and supports ArrowUp/ArrowDown as the Template control does. The eye retains its pressed state and show/hide label. Pointer capture plus touch-none supports pointer and touch-capable browsers without HTML5 drag-and-drop. No keyboard-shortcut framework or generalized DnD rewrite was introduced.
 
-## Focused validation
+## Validation
 
-The focused layer, Free panel, Template panel, Static custom-element, render-projection, geometry, and numeric-policy run passed: 194 tests in 11 files. The full current suite finished with 4,238 passing tests and 2 failing tests out of 4,240. Both failures are the existing `Estilo` versus `Estilos` expectation drift in `lib/creative/authoring/__tests__/editor-workspace.test.ts` and `lib/creative/video-editor/__tests__/static-parity.test.ts`; neither file is changed by this branch and `git diff --quiet origin/main` confirms both are unchanged from current main.
+- Focused layer, Free panel, Template panel, Static custom-element, render-projection, image-geometry, and numeric-policy tests: 194 passed in 11 files.
+- Full pnpm test: 4,238 passed, 2 failed, 4,240 total. The two failures are unchanged baseline Estilo/Estilos expectation drift in lib/creative/authoring/__tests__/editor-workspace.test.ts and lib/creative/video-editor/__tests__/static-parity.test.ts; both paths are unchanged from current main.
+- pnpm typecheck: passed.
+- pnpm exec tsc --noEmit: passed.
+- ESLint on all changed/versioned implementation, test, and page files: passed.
+- pnpm build: passed; Next.js generated 54 static pages.
+- git diff --check: passed.
 
-New coverage verifies:
+The focused run also covers Template Camadas drag, selection/visibility isolation, Anatomy-vs-Camadas separation, Add Text/Add Image paths, Image Insertion Geometry, Numeric Range behavior, Template switching/reset, and render order.
 
-- multi-element Free reorder and front/back direction;
-- existing payload preservation and invalid-order rejection;
-- no-op drop does not edit;
-- eye action remains independent;
-- arrows disappear only in Static reorderable mode;
-- existing Template drag, keyboard, scroll-targeting, disclosure, and eye behavior remain passing;
-- existing Free image geometry and render order remain passing;
-- `pnpm typecheck` passes;
-- ESLint passes for all changed/versioned source and test files;
-- `pnpm build` passes (Next.js production build, 54 static pages generated).
+## Production smoke
 
-The current Production deployment before this feature is `a4c0d740c6d50d7bf5c45e400cb433bd67ce7bab` (GitHub deployment `6843605588`). Authenticated Production smoke and final render evidence are appended after the merged feature deployment.
+Authenticated Static Editor smoke used the canonical Production editor with temporary overlapping Free text elements A and B.
 
-## Known limitations and next slice
+- Initial Camadas order was A above B.
+- Dragging the selected A grip across B changed the list to B above A; selection stayed on A.
+- Toggling the B eye changed it to hidden and did not initiate a drag.
+- Save reported Salvo.
+- Reload restored B above A, with B hidden and A visible.
+- The temporary Free elements were removed by restoring Template mode.
+- Cleanup was saved and reloaded as Template with no test elements, ten slides, disabled Save/Revert controls, and Salvo.
+- A final PNG render reached PNG pronto without changing authored state.
 
-This does not add arbitrary z-index authoring, cross-boundary ordering, grouping, nesting, Anatomy reorder, Video parity, crop/focal-point behavior, or undo/redo. The next queued slice remains `CREATIVE_EDITOR_INSPECTOR_ELEMENTS_SHELL_V1` after the separate Free layer drag parity closure.
+The pre-smoke canonical text content was not available as a separate versioned snapshot because the authoring endpoint is overwrite-only. Cleanup restored a clean Template composition and ten-slide sequence; the current saved state is the authority and contains no temporary smoke elements.
+
+## Responsive smoke
+
+Read-only viewport checks used the authenticated editor at 1440, 1024, 768, and 390 CSS pixels. Each measured document.documentElement.scrollWidth === window.innerWidth and document.body.scrollWidth === window.innerWidth; no page-level horizontal overflow was observed. At 390, the Canvas, Slides controls, Adicionar slide, zoom controls, Template Inspector tabs, and layer-independent Inspector controls remained reachable in the accessibility tree. The viewport override was reset after the checks.
+
+## Scope and impact
+
+- Migration: none.
+- New persisted field/order entity: none.
+- Renderer source change: none; existing renderers consume the reordered authored array.
+- Worker change or redeploy: none.
+- Video impact: none; Video keeps the legacy arrow UI and behavior.
+- Anatomy reorder: none.
+- Template cross-boundary reorder: none.
+
+Known limitations are the existing baseline label-drift failures, the lack of a new keyboard shortcut framework beyond the reused ArrowUp/ArrowDown path, and pointer/touch behavior being limited to the existing browser pointer implementation. Crop/focal-point, grouping, nesting, arbitrary z-index, Undo/Redo, Video Timeline, and Inspector shell redesign remain out of scope.
+
+Recommended next slice: CREATIVE_EDITOR_INSPECTOR_ELEMENTS_SHELL_V1.
+
+CREATIVE_EDITOR_FREE_LAYER_DRAG_PARITY_V1_COMPLETE
