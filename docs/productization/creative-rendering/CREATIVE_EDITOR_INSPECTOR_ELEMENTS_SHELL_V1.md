@@ -7,9 +7,9 @@ Status: complete and merged to Production.
 - Starting origin/main: ee5605feb296b8b9e576a2e8e65cdf8945adead9.
 - Feature worktree: D:/Traycer/worktrees/fmultiman__content-studio-ai/feat-creative-editor-inspector-elements-shell-v1.
 - Feature branch: feat/creative-editor-inspector-elements-shell-v1.
-- Implementation commit: [to be inserted].
-- Implementation PR: [to be inserted].
-- Implementation merge / Production commit: [to be inserted].
+- Implementation commit: 7180d98.
+- Implementation PR: #123 (https://github.com/fmultiman/content-studio-ai/pull/123).
+- Implementation merge / Production commit: 1f1109da93a754de749bf503713135dfc0d8be11.
 - Documentation closure is this commit; the final docs PR and merge SHA are reported with the mission closure.
 
 ## Phase 0 DOM/shell audit & Sticky root cause
