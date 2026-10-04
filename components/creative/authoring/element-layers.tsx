@@ -4,6 +4,76 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode
 import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { moveElementInOrder } from '@/lib/creative/templates/element-stack'
 
+export type LayerDragState = { id: string; from: number; to: number }
+
+/**
+ * Shared pointer/keyboard interaction for a front-first Camadas list.
+ * `order` remains the persisted paint order (back -> front); only the
+ * displayed order is reversed. Consumers may render their own row chrome while
+ * keeping the exact Template drag semantics and event isolation.
+ */
+export function useLayerDrag({ order, onReorder }: { order: readonly string[]; onReorder: (order: string[]) => void }) {
+  const listRef = useRef<HTMLOListElement>(null)
+  const [drag, setDrag] = useState<LayerDragState | null>(null)
+  const display = [...order].reverse()
+  const shown = drag ? moveElementInOrder(display, drag.from, drag.to) : display
+
+  function commitDisplayMove(from: number, to: number) {
+    if (from === to) return
+    onReorder(moveElementInOrder(order, orderIndex(order.length, from), orderIndex(order.length, to)))
+  }
+
+  function onPointerDown(event: PointerEvent<HTMLButtonElement>, id: string, index: number) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDrag({ id, from: index, to: index })
+  }
+
+  function targetIndexAt(clientY: number, fallback: number): number {
+    const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLLIElement>(':scope > li')] : []
+    if (rows.length === 0) return fallback
+    for (let index = 0; index < rows.length; index++) {
+      const rect = rows[index].getBoundingClientRect()
+      if (clientY < rect.top) return index
+      if (clientY <= rect.bottom) return index
+    }
+    return rows.length - 1
+  }
+
+  function onPointerMove(event: PointerEvent<HTMLButtonElement>) {
+    if (!drag) return
+    event.stopPropagation()
+    const to = targetIndexAt(event.clientY, drag.to)
+    if (to !== drag.to) setDrag({ ...drag, to })
+  }
+
+  function onPointerUp(event: PointerEvent<HTMLButtonElement>) {
+    if (!drag) return
+    event.stopPropagation()
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    commitDisplayMove(drag.from, targetIndexAt(event.clientY, drag.to))
+    setDrag(null)
+  }
+
+  function onPointerCancel(event?: PointerEvent<HTMLButtonElement>) {
+    event?.stopPropagation()
+    setDrag(null)
+  }
+
+  function onGripKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    event.preventDefault()
+    const to = event.key === 'ArrowUp' ? index - 1 : index + 1
+    if (to < 0 || to >= display.length) return
+    commitDisplayMove(index, to)
+    requestAnimationFrame(() => listRef.current?.querySelectorAll<HTMLButtonElement>('[data-layer-grip]')[to]?.focus())
+  }
+
+  return { listRef, drag, shown, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onGripKeyDown }
+}
+
 /** Paint order (back -> front) index for a row shown at `displayIndex` in the front-first list. */
 function orderIndex(length: number, displayIndex: number): number {
   return length - 1 - displayIndex
@@ -82,66 +152,7 @@ export function ElementLayers({
   orderOnly?: boolean
   title?: string
 }) {
-  const listRef = useRef<HTMLOListElement>(null)
-  const [drag, setDrag] = useState<{ id: string; from: number; to: number } | null>(null)
-  const display = [...order].reverse()
-  // While dragging, preview the prospective order so the list reflows live.
-  const shown = drag ? moveElementInOrder(display, drag.from, drag.to) : display
-
-  function commitDisplayMove(from: number, to: number) {
-    if (from === to) return
-    onReorder(moveElementInOrder(order, orderIndex(order.length, from), orderIndex(order.length, to)))
-  }
-
-  function onPointerDown(event: PointerEvent<HTMLButtonElement>, id: string, index: number) {
-    if (event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setDrag({ id, from: index, to: index })
-  }
-
-  /**
-   * Target = the row currently under the pointer (by live row rects), not a
-   * clientY delta from the press: the list may scroll mid-drag (wheel, or
-   * auto-scroll), which moves rows under a stationary pointer.
-   */
-  function targetIndexAt(clientY: number, fallback: number): number {
-    const rows = listRef.current ? [...listRef.current.querySelectorAll<HTMLLIElement>(':scope > li')] : []
-    if (rows.length === 0) return fallback
-    for (let index = 0; index < rows.length; index++) {
-      const rect = rows[index].getBoundingClientRect()
-      // In a gap above this row (or above the first row): land here.
-      if (clientY < rect.top) return index
-      if (clientY <= rect.bottom) return index
-    }
-    return rows.length - 1
-  }
-
-  function onPointerMove(event: PointerEvent<HTMLButtonElement>) {
-    if (!drag) return
-    event.stopPropagation()
-    const to = targetIndexAt(event.clientY, drag.to)
-    if (to !== drag.to) setDrag({ ...drag, to })
-  }
-
-  function onPointerUp(event: PointerEvent<HTMLButtonElement>) {
-    if (!drag) return
-    event.stopPropagation()
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    commitDisplayMove(drag.from, targetIndexAt(event.clientY, drag.to))
-    setDrag(null)
-  }
-
-  function onGripKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-    event.preventDefault()
-    const to = event.key === 'ArrowUp' ? index - 1 : index + 1
-    if (to < 0 || to >= display.length) return
-    commitDisplayMove(index, to)
-    // Keep focus on the moved row's grip.
-    requestAnimationFrame(() => listRef.current?.querySelectorAll<HTMLButtonElement>('[data-layer-grip]')[to]?.focus())
-  }
+  const { listRef, drag, shown, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onGripKeyDown } = useLayerDrag({ order, onReorder })
 
   return (
     <section className="space-y-1.5" aria-label={title} data-testid="element-layers">
@@ -180,7 +191,7 @@ export function ElementLayers({
                     onPointerDown={(event) => onPointerDown(event, id, index)}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
-                    onPointerCancel={() => setDrag(null)}
+                    onPointerCancel={onPointerCancel}
                     onKeyDown={(event) => onGripKeyDown(event, index)}
                   >
                     <GripVertical className="h-3.5 w-3.5" />
@@ -216,7 +227,7 @@ export function ElementLayers({
                   onPointerDown={(event) => onPointerDown(event, id, index)}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
-                  onPointerCancel={() => setDrag(null)}
+                  onPointerCancel={onPointerCancel}
                   onKeyDown={(event) => onGripKeyDown(event, index)}
                 >
                   <GripVertical className="h-3.5 w-3.5" />
