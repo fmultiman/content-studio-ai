@@ -1,5 +1,6 @@
 import { StudioShell } from '@/components/layout/studio-shell'
 import { ThemePreferenceBootstrap } from '@/components/theme-preference-bootstrap'
+import { GenerationSessionNavigationProvider } from '@/components/generation-session/session-navigation-guard'
 
 export default function DashboardLayout({
   children,
@@ -9,7 +10,9 @@ export default function DashboardLayout({
   return (
     <div className="h-screen overflow-hidden bg-transparent">
       <ThemePreferenceBootstrap />
-      <StudioShell>{children}</StudioShell>
+      <GenerationSessionNavigationProvider>
+        <StudioShell>{children}</StudioShell>
+      </GenerationSessionNavigationProvider>
     </div>
   )
 }
