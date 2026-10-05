@@ -241,6 +241,10 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // VIDEO_GENERATION_SESSION_PERSISTENCE_AND_API_V1: Session writes are server-owned (the user session only has
       // SELECT, scripts/049); the route proves ownership and validates the document, then writes as the verified user.
       path === 'app/api/video-generation-sessions/[id]/route.ts' ||
+      // IMAGE_GENERATION_SESSION_AND_ATTEMPT_FOUNDATION_V1: Image session and attempt writes are server-owned;
+      // the authenticated route scopes every service-role operation to the verified user/session lineage.
+      path.startsWith('app/api/image-generation-sessions/') ||
+      path.startsWith('app/api/image-generation-attempts/') ||
       // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
       path === 'app/api/video-generations/[id]/save-to-library/route.ts' ||
       // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
