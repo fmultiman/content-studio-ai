@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ATTEMPT_COLUMNS, type ImageGenerationAttemptRow } from '@/lib/image-generation/attempt'
+import { syncNanoImageAttempt, ImageSubmissionError } from '@/lib/image-generation/execution'
 
 export async function GET(
   request: NextRequest,
@@ -26,6 +28,27 @@ export async function GET(
       return NextResponse.json({ error: 'Task não encontrada' }, { status: 404 })
     }
 
+    // Canonical workspace tasks are bound to an immutable Attempt. Legacy
+    // callers still receive the original task response below.
+    const { data: attempt } = await supabase
+      .from('image_generation_attempts')
+      .select(ATTEMPT_COLUMNS)
+      .eq('provider_task_id', task.id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const attemptRow = attempt as unknown as ImageGenerationAttemptRow | null
+    let canonical: Awaited<ReturnType<typeof syncNanoImageAttempt>> | null = null
+    if (attemptRow) {
+      try {
+        canonical = await syncNanoImageAttempt(attemptRow)
+      } catch (syncError) {
+        if (syncError instanceof ImageSubmissionError) {
+          return NextResponse.json({ error: syncError.message, code: syncError.code, attemptId: attemptRow.id }, { status: syncError.status })
+        }
+        throw syncError
+      }
+    }
+
     return NextResponse.json({
       id: task.id,
       status: task.status,
@@ -33,6 +56,10 @@ export async function GET(
       errorMessage: task.error_message,
       createdAt: task.created_at,
       updatedAt: task.updated_at,
+      attemptId: attemptRow?.id || null,
+      attemptStatus: canonical?.status || attemptRow?.status || null,
+      image: canonical?.image || null,
+      replayed: canonical?.replayed || false,
     })
 
   } catch (error) {

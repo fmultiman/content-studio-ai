@@ -27,6 +27,7 @@ interface ImageInputSectionProps {
   isGeneratingPrompt: boolean
   onSaveDraft: () => void
   isSavingDraft: boolean
+  canonical?: boolean
   onNewImage?: () => void
   generatedPrompt?: string
   automationEnabled?: boolean
@@ -44,6 +45,7 @@ export function ImageInputSection({
   isGeneratingPrompt,
   onSaveDraft,
   isSavingDraft,
+  canonical = false,
   onNewImage,
   generatedPrompt = '',
   automationEnabled = false,
@@ -132,19 +134,15 @@ export function ImageInputSection({
 
           {/* Buttons */}
           <div className="flex flex-wrap gap-2">
-            <Button
+            {!canonical && <Button
               variant="outline"
               onClick={onSaveDraft}
               disabled={!canSaveDraft || isSavingDraft}
               className="gap-2"
             >
-              {isSavingDraft ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
+              {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar Rascunho
-            </Button>
+            </Button>}
             <Button
               onClick={onGeneratePrompt}
               disabled={!userInput.trim() || isGeneratingPrompt}

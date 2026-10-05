@@ -61,12 +61,15 @@ type GeneratedImageResult = {
   thumbnailPath?: string | null
   fileSize?: number | null
   mimeType?: string | null
+  image?: ImageType | null
+  attemptId?: string | null
 }
 
-function ImagesPageContent() {
+export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?: string } = {}) {
   const { toast } = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const canonicalWorkspace = Boolean(canonicalSessionId)
   
   const [projects, setProjects] = useState<Project[]>([])
   const [productions, setProductions] = useState<Production[]>([])
@@ -75,7 +78,13 @@ function ImagesPageContent() {
   const [productionTitle, setProductionTitle] = useState<string | null>(null)
   const [productionProjectId, setProductionProjectId] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
+  const [sessionRevision, setSessionRevision] = useState<number | null>(null)
+  const sessionSaveInFlight = useRef<Promise<void> | null>(null)
+  const sessionSaveQueued = useRef(false)
+  const sessionRevisionRef = useRef<number | null>(null)
+  const canonicalSnapshotRef = useRef<{ workingPrompt: string; workingState: Record<string, unknown> } | null>(null)
   
   // Input state
   const [userInput, setUserInput] = useState('')
@@ -238,6 +247,134 @@ function ImagesPageContent() {
     return data.draft as ImageDraft
   }
 
+  const buildCanonicalWorkingState = () => ({
+    schemaVersion: 1 as const,
+    generatedPrompt: generatedPrompt || null,
+    generatedPromptPt: generatedPromptPt || null,
+    promptDetails,
+    autoMode,
+    selectedModel,
+    imageStatus,
+    currentAttempt,
+    currentImageId: currentImage?.id || null,
+    sourceReferences: [],
+    generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
+    legacyImageUrl: getPersistableImageUrl(imageUrl),
+  })
+
+  useEffect(() => {
+    canonicalSnapshotRef.current = { workingPrompt: userInput, workingState: buildCanonicalWorkingState() }
+  }, [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, selectedModel, imageStatus, currentAttempt, currentImage?.id, imageUrl])
+
+  const saveCanonicalSession = async () => {
+    if (!canonicalSessionId || sessionRevisionRef.current === null) return
+    if (!userInput.trim() && !generatedPrompt.trim() && !currentImage) return
+    sessionSaveQueued.current = true
+    if (sessionSaveInFlight.current) return sessionSaveInFlight.current
+    const run = (async () => {
+      try {
+        while (sessionSaveQueued.current) {
+          sessionSaveQueued.current = false
+          const expectedRevision = sessionRevisionRef.current
+          if (expectedRevision === null) return
+          const snapshot = canonicalSnapshotRef.current
+          if (!snapshot) return
+          setIsSavingDraft(true)
+          const response = await fetch(`/api/image-generation-sessions/${canonicalSessionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expectedRevision, ...snapshot }),
+          })
+          const payload = await response.json()
+          if (!response.ok) {
+            if (response.status === 409 && payload.session) {
+              // Do not retry local state against a newer server revision. The
+              // reliability mission will add explicit conflict resolution.
+              sessionRevisionRef.current = null
+              setSessionRevision(null)
+            }
+            throw new Error(payload.error || 'Não foi possível salvar a geração.')
+          }
+          const revision = payload.session?.revision
+          if (typeof revision === 'number') {
+            sessionRevisionRef.current = revision
+            setSessionRevision(revision)
+          }
+        }
+      } finally {
+        setIsSavingDraft(false)
+        sessionSaveInFlight.current = null
+      }
+    })()
+    sessionSaveInFlight.current = run
+    return run
+  }
+
+  const applyCanonicalSessionState = async (session: any, attempts: any[]) => {
+    const state = session.workingState || {}
+    const imageIds = Array.from(new Set([
+      session.currentImageId,
+      ...attempts.map((attempt) => attempt.resultImageId),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0)))
+    const imageById = new Map<string, ImageType>()
+    if (imageIds.length) {
+      const supabase = createClient()
+      const { data } = await supabase.from('images').select('*').in('id', imageIds)
+      for (const image of data || []) imageById.set(image.id, image as ImageType)
+    }
+    const current = session.currentImageId ? imageById.get(session.currentImageId) || null : null
+    setCurrentDraftId(null)
+    setSessionRevision(session.revision)
+    sessionRevisionRef.current = session.revision
+    setSelectedProject(session.projectId || null)
+    setProductionId(session.productionId || null)
+    setGeneratedPrompt(state.generatedPrompt || '')
+    setGeneratedPromptPt(state.generatedPromptPt || '')
+    setPromptDetails(state.promptDetails || null)
+    setAutoMode(Boolean(state.autoMode))
+    if (state.selectedModel) setSelectedModel(normalizeImageModel(state.selectedModel))
+    setCurrentAttempt(state.currentAttempt || 1)
+    setImageStatus(state.imageStatus || 'draft')
+    setCurrentImage(current)
+    setImageUrl(await getDisplayUrlForImage(current) || state.legacyImageUrl || null)
+    setCurrentEvaluation(session.legacyCurrentEvaluation || null)
+    const history = await Promise.all(attempts.map(async (attempt) => {
+      const output = attempt.resultImageId ? imageById.get(attempt.resultImageId) || null : null
+      return {
+        id: attempt.id,
+        attempt: attempt.sequence,
+        prompt: attempt.submittedPrompt || '',
+        imageUrl: await getDisplayUrlForImage(output),
+        imageId: attempt.resultImageId || null,
+        model: attempt.model || 'unknown',
+        evaluation: attempt.legacyEvaluation || null,
+        timestamp: attempt.submittedAt || attempt.createdAt,
+      } as GenerationAttempt
+    }))
+    setGenerationAttempts(history)
+    if (session.productionId) {
+      fetch(`/api/productions/${session.productionId}`).then((r) => r.ok ? r.json() : null).then((payload) => {
+        if (payload?.production) {
+          setProductionTitle(payload.production.title || null)
+          setProductionProjectId(payload.production.project_id || null)
+        }
+      }).catch(() => null)
+    }
+  }
+
+  const reloadCanonicalSession = async () => {
+    if (!canonicalSessionId) return
+    const [sessionResponse, attemptsResponse] = await Promise.all([
+      fetch(`/api/image-generation-sessions/${canonicalSessionId}`),
+      fetch(`/api/image-generation-attempts?sessionId=${canonicalSessionId}`),
+    ])
+    const sessionPayload = await sessionResponse.json()
+    const attemptsPayload = await attemptsResponse.json()
+    if (sessionResponse.ok && attemptsResponse.ok && sessionPayload.session) {
+      await applyCanonicalSessionState(sessionPayload.session, attemptsPayload.attempts || [])
+    }
+  }
+
   const applyDraftState = async (draft: ImageDraft) => {
     const draftAttempts = draft.generation_attempts || []
     const imageIds = Array.from(
@@ -308,7 +445,7 @@ function ImagesPageContent() {
 
   // Auto save do rascunho de imagem
   useEffect(() => {
-    if (!isDataReady) return
+    if (!isDataReady || canonicalWorkspace) return
 
     const autoSaveDraft = async () => {
       if (!productionId) return
@@ -355,7 +492,18 @@ function ImagesPageContent() {
     selectedModel,
     currentDraftId,
     isDataReady,
+    canonicalWorkspace,
   ])
+
+  // Canonical Session autosave keeps the current route resumable while the
+  // dedicated reliability mission hardens debounce/route-exit guarantees.
+  useEffect(() => {
+    if (!isDataReady || !canonicalWorkspace || sessionRevision === null) return
+    const timeoutId = window.setTimeout(() => {
+      saveCanonicalSession().catch((error) => console.error('[image-session] save error', error))
+    }, 800)
+    return () => window.clearTimeout(timeoutId)
+  }, [canonicalWorkspace, isDataReady, sessionRevision, userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, currentAttempt, currentImage?.id, imageStatus, selectedModel])
 
   // Fetch projects and drafts on mount
   useEffect(() => {
@@ -365,8 +513,8 @@ function ImagesPageContent() {
     const fetchData = async () => {
       // Apply URL params before any await so the banner and project selector
       // are visible even when subsequent async fetches fail.
-      const projectId = searchParams.get('project')
-      const prodId = searchParams.get('production')
+      const projectId = canonicalWorkspace ? null : searchParams.get('project')
+      const prodId = canonicalWorkspace ? null : searchParams.get('production')
       if (projectId) setSelectedProject(projectId)
       if (prodId) setProductionId(prodId)
 
@@ -426,9 +574,27 @@ function ImagesPageContent() {
             console.error('[v0] Image drafts load error:', draftsPayload)
           }
         }
+        const sessionsResponse = await fetch('/api/image-generation-sessions')
+        const sessionsPayload = await sessionsResponse.json()
+        if (!cancelled && sessionsResponse.ok) setSessions(sessionsPayload.sessions || [])
+
+        if (canonicalSessionId && !cancelled) {
+          const sessionResponse = await fetch(`/api/image-generation-sessions/${canonicalSessionId}`)
+          const sessionPayload = await sessionResponse.json()
+          if (!sessionResponse.ok || !sessionPayload.session) throw new Error(sessionPayload.error || 'Geração não encontrada')
+          const attemptsResponse = await fetch(`/api/image-generation-attempts?sessionId=${canonicalSessionId}`)
+          const attemptsPayload = await attemptsResponse.json()
+          if (!attemptsResponse.ok) throw new Error(attemptsPayload.error || 'Histórico indisponível')
+          await applyCanonicalSessionState(sessionPayload.session, attemptsPayload.attempts || [])
+        }
 
         const draftId = searchParams.get('draft')
-        if (draftId && !cancelled) {
+        if (draftId && !canonicalWorkspace && !cancelled) {
+          const sessionLookup = await fetch(`/api/image-generation-sessions?legacyImageDraftId=${draftId}`)
+          const sessionLookupPayload = await sessionLookup.json()
+          if (sessionLookup.ok && sessionLookupPayload.sessions?.[0]) {
+            router.replace(`/imagens/geracoes/${sessionLookupPayload.sessions[0].id}`)
+          }
           const draftResponse = await fetch(`/api/image-drafts?id=${draftId}`)
           const draftPayload = await draftResponse.json()
 
@@ -463,7 +629,7 @@ function ImagesPageContent() {
 
     fetchData()
     return () => { cancelled = true }
-  }, [searchParams, retryKey])
+  }, [searchParams, retryKey, canonicalSessionId, canonicalWorkspace])
 
   // Save draft handler
   const handleSaveDraft = async () => {
@@ -558,6 +724,28 @@ function ImagesPageContent() {
   }
 
   const handleNewImage = async () => {
+    if (canonicalWorkspace) {
+      const response = await fetch('/api/image-generation-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedProject,
+          productionId,
+          workingPrompt: '',
+          workingState: {
+            schemaVersion: 1, generatedPrompt: null, generatedPromptPt: null,
+            promptDetails: null, autoMode: false, selectedModel,
+            imageStatus: 'draft', currentAttempt: 1, currentImageId: null,
+            sourceReferences: [],
+            generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
+            legacyImageUrl: null,
+          },
+        }),
+      })
+      const payload = await response.json()
+      if (response.ok && payload.session?.id) router.push(`/imagens/geracoes/${payload.session.id}`)
+      return
+    }
     try {
       await saveImageDraft()
     } catch (error) {
@@ -764,7 +952,7 @@ function ImagesPageContent() {
     }
   }
 
-  const generateOpenAIImage = async (prompt: string, model: ImageModel) => {
+  const generateOpenAIImage = async (prompt: string, model: ImageModel, clientRequestId?: string) => {
     const response = await fetch('/api/openai/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -773,6 +961,7 @@ function ImagesPageContent() {
         model,
         size: '1024x1024',
         quality: 'medium',
+        ...(canonicalSessionId && clientRequestId ? { sessionId: canonicalSessionId, clientRequestId } : {}),
       }),
     })
 
@@ -795,6 +984,8 @@ function ImagesPageContent() {
       thumbnailPath: data.thumbnailPath || null,
       fileSize: data.fileSize || null,
       mimeType: data.mimeType || null,
+      image: data.image || null,
+      attemptId: data.attemptId || null,
     } satisfies GeneratedImageResult
   }
 
@@ -920,6 +1111,7 @@ function ImagesPageContent() {
       const modelVersion = model === 'nanobanana-v2' ? 'v2' : 'v1'
       
       // 1. Enviar requisição para gerar (retorna taskId)
+      const clientRequestId = canonicalSessionId ? crypto.randomUUID() : undefined
       const response = await fetch('/api/nanobanana/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -928,6 +1120,7 @@ function ImagesPageContent() {
           aspectRatio: '1:1',
           projectId: selectedProject,
           model: modelVersion,
+          ...(canonicalSessionId && clientRequestId ? { sessionId: canonicalSessionId, clientRequestId } : {}),
         }),
       })
 
@@ -958,6 +1151,15 @@ function ImagesPageContent() {
         const statusData = await statusRes.json()
 
         if (statusData.status === 'completed' && statusData.imageUrl) {
+          if (canonicalSessionId && statusData.image) {
+            setCurrentImage(statusData.image as ImageType)
+            setImageUrl(statusData.imageUrl)
+            setImageStatus('draft')
+            await reloadCanonicalSession()
+            setIsGeneratingNanoBanana(false)
+            toast({ title: 'Imagem gerada!', description: 'Sua imagem foi criada com sucesso.' })
+            return
+          }
           const storageResponse = await fetch('/api/storage/upload-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1151,6 +1353,18 @@ function ImagesPageContent() {
       
       if (!user) throw new Error('Usuário não autenticado')
 
+      if (canonicalSessionId) {
+        const clientRequestId = crypto.randomUUID()
+        const generatedImage = await generateOpenAIImage(prompt, model, clientRequestId)
+        if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
+        setCurrentImage(generatedImage.image)
+        setImageUrl(generatedImage.imageUrl)
+        setImageStatus('draft')
+        await reloadCanonicalSession()
+        toast({ title: 'Imagem criada!', description: 'A imagem foi gerada com sucesso.' })
+        return
+      }
+
       // Create image record in database
       const { data: imageData, error: insertError } = await supabase
         .from('images')
@@ -1220,7 +1434,17 @@ function ImagesPageContent() {
         return
       }
 
-      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel)
+      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel, canonicalSessionId ? crypto.randomUUID() : undefined)
+
+      if (canonicalSessionId) {
+        if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
+        setCurrentImage(generatedImage.image)
+        setImageUrl(generatedImage.imageUrl)
+        setImageStatus('draft')
+        await reloadCanonicalSession()
+        toast({ title: 'Imagem regenerada!', description: 'Uma nova variação foi criada.' })
+        return
+      }
 
       const savedImage = await saveGeneratedImageRecord(
         generatedImage,
@@ -1353,9 +1577,31 @@ function ImagesPageContent() {
     hasError: !!loadError,
   })
   const hubCreateProductions = getProductionsForProject(productions, hubCreateProjectId)
-  const openImageWorkspace = () => {
+  const openImageWorkspace = async () => {
     if (!hubCreateProjectId || !hubCreateProductionId) return
-    router.push(`/imagens?project=${hubCreateProjectId}&production=${hubCreateProductionId}`)
+    const response = await fetch('/api/image-generation-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: hubCreateProjectId,
+        productionId: hubCreateProductionId,
+        workingPrompt: '',
+        workingState: {
+          schemaVersion: 1, generatedPrompt: null, generatedPromptPt: null,
+          promptDetails: null, autoMode: false, selectedModel,
+          imageStatus: 'draft', currentAttempt: 1, currentImageId: null,
+          sourceReferences: [],
+          generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
+          legacyImageUrl: null,
+        },
+      }),
+    })
+    const payload = await response.json()
+    if (!response.ok || !payload.session?.id) {
+      toast({ title: 'Erro', description: payload.error || 'Não foi possível abrir a geração.', variant: 'destructive' })
+      return
+    }
+    router.push(`/imagens/geracoes/${payload.session.id}`)
   }
   const clearHubFilters = () => {
     setHubProjectFilter('all')
@@ -1440,6 +1686,32 @@ function ImagesPageContent() {
             </Button>
           </div>
         </div>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="image-generation-sessions">
+        <div>
+          <h2 id="image-generation-sessions" className="text-lg font-semibold text-foreground">Gerações recentes</h2>
+          <p className="text-sm text-muted-foreground">Continue uma geração salva pelo novo workspace.</p>
+        </div>
+        {sessions.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-sm text-muted-foreground">Nenhuma geração iniciada ainda.</div>
+        ) : (
+          <div className="space-y-2">
+            {sessions.slice(0, 20).map((session) => {
+              const project = projects.find((item) => item.id === session.projectId)
+              const production = productions.find((item) => item.id === session.productionId)
+              return <Card key={session.id} className="border-border/50 bg-card/30">
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{session.workingPrompt || session.name || 'Geração sem descrição'}</p>
+                    <p className="text-xs text-muted-foreground">{project?.name || 'Sem Project'} · {production?.title || 'Sem Production'} · {new Date(session.updatedAt).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <Button size="sm" onClick={() => router.push(`/imagens/geracoes/${session.id}`)} className="gap-1">Continuar <ChevronRight className="h-4 w-4" /></Button>
+                </CardContent>
+              </Card>
+            })}
+          </div>
+        )}
       </section>
 
       <section className="space-y-4" aria-labelledby="image-draft-filters">
@@ -1631,7 +1903,7 @@ function ImagesPageContent() {
 
   return (
     <DashboardPage>
-      {productionId && (
+      {canonicalWorkspace && (
         <DashboardPageBar>
           <div className="flex items-center gap-3">
           <Button
@@ -1659,7 +1931,7 @@ function ImagesPageContent() {
         </DashboardPageBar>
       )}
       <DashboardPageContent width="4xl" className="space-y-6">
-          {!productionId && (
+          {!canonicalWorkspace && (
             <PageHeader
               context="Criação"
               title="Imagens"
@@ -1678,7 +1950,7 @@ function ImagesPageContent() {
             />
           )}
           {/* Drafts Section */}
-          {productionId && !isLoadingDrafts && drafts.length > 0 && (
+          {!canonicalWorkspace && productionId && !isLoadingDrafts && drafts.length > 0 && (
             <Card className="border-border/50 bg-card/30 backdrop-blur-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -1729,7 +2001,7 @@ function ImagesPageContent() {
                 {draftLoadingMessage('image', !!requestedDraftId)}
               </h3>
             </div>
-          ) : !productionId ? (
+          ) : !canonicalWorkspace ? (
             renderImageHub()
           ) : (
             <>
@@ -1793,6 +2065,7 @@ function ImagesPageContent() {
                 isGeneratingPrompt={isGeneratingPrompt}
                 onSaveDraft={handleSaveDraft}
                 isSavingDraft={isSavingDraft}
+                canonical={canonicalWorkspace}
                 onNewImage={handleNewImage}
                 generatedPrompt={generatedPrompt}
                 automationEnabled={automationEnabled}
@@ -1853,14 +2126,18 @@ function ImagesPageContent() {
   )
 }
 
-export default function ImagesPage() {
+export function ImagesPageShell({ canonicalSessionId }: { canonicalSessionId?: string } = {}) {
   return (
     <Suspense fallback={
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     }>
-      <ImagesPageContent />
+      <ImagesPageContent canonicalSessionId={canonicalSessionId} />
     </Suspense>
   )
+}
+
+export default function ImagesPage() {
+  return <ImagesPageShell />
 }

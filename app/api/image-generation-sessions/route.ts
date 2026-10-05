@@ -30,12 +30,14 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url)
     const projectId = url.searchParams.get('projectId')
     const productionId = url.searchParams.get('productionId')
-    if ((projectId && !isUuid(projectId)) || (productionId && !isUuid(productionId))) {
-      return errorResponse(400, 'INVALID_SCOPE_ID', 'projectId and productionId must be UUIDs.')
+    const legacyImageDraftId = url.searchParams.get('legacyImageDraftId')
+    if ((projectId && !isUuid(projectId)) || (productionId && !isUuid(productionId)) || (legacyImageDraftId && !isUuid(legacyImageDraftId))) {
+      return errorResponse(400, 'INVALID_SCOPE_ID', 'projectId, productionId and legacyImageDraftId must be UUIDs.')
     }
     let query = supabase.from('image_generation_sessions').select(SESSION_COLUMNS).eq('user_id', user.id)
     if (projectId) query = query.eq('project_id', projectId)
     if (productionId) query = query.eq('production_id', productionId)
+    if (legacyImageDraftId) query = query.eq('legacy_image_draft_id', legacyImageDraftId)
     const { data, error } = await query.order('updated_at', { ascending: false }).order('id', { ascending: false }).limit(IMAGE_SESSION_LIMITS.listMax)
     if (error) return errorResponse(503, 'STORE_UNAVAILABLE', 'Sessions could not be loaded.')
     return NextResponse.json({ sessions: ((data ?? []) as unknown as ImageGenerationSessionRow[]).map(toSessionResponse) })
