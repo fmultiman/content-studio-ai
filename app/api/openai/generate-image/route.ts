@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, ImageSubmissionError } from '@/lib/image-generation/execution'
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
@@ -11,6 +12,99 @@ const ALLOWED_IMAGE_MODELS = new Set([
   'gpt-image-1',
   'gpt-image-1-mini',
 ])
+
+async function runCanonicalOpenAI(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  sessionId: string
+  clientRequestId: string
+  prompt: string
+  model: string
+  size: string
+  quality: string
+}) {
+  let frozen
+  try {
+    frozen = await freezeAndClaimImageAttempt({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      clientRequestId: input.clientRequestId,
+      prompt: input.prompt.trim(),
+      provider: 'openai',
+      model: input.model,
+      config: { size: input.size, quality: input.quality },
+    })
+    if (!frozen.claimed) return imageAttemptReplay(frozen.attempt)
+
+    const execution = await resolveProviderExecution(input.supabase, { userId: input.userId, provider: 'openai' })
+    if (execution.status !== 'ready') {
+      await failImageAttempt(frozen.attempt, 'API Key da OpenAI não configurada')
+      throw new ImageSubmissionError(400, 'PROVIDER_NOT_CONFIGURED', 'API Key da OpenAI não configurada')
+    }
+
+    let response: Response
+    try {
+      response = await fetch(OPENAI_IMAGES_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${execution.secret}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: input.model, prompt: input.prompt.trim(), size: input.size, quality: input.quality, n: 1 }),
+      })
+    } catch (error) {
+      await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha de rede na OpenAI', true)
+      throw new ImageSubmissionError(502, 'PROVIDER_UNAVAILABLE', 'Não foi possível concluir a geração na OpenAI.')
+    }
+
+    const responseText = await response.text()
+    let data: { data?: Array<{ b64_json?: string; url?: string }>; error?: { message?: string } }
+    try { data = JSON.parse(responseText) } catch {
+      await failImageAttempt(frozen.attempt, 'Resposta inválida da OpenAI', true)
+      throw new ImageSubmissionError(502, 'INVALID_PROVIDER_RESPONSE', 'Resposta inválida da OpenAI')
+    }
+    if (!response.ok) {
+      await failImageAttempt(frozen.attempt, data.error?.message || `Erro na OpenAI: ${response.status}`)
+      throw new ImageSubmissionError(response.status, 'PROVIDER_ERROR', data.error?.message || `Erro na OpenAI: ${response.status}`)
+    }
+
+    const firstImage = data.data?.[0]
+    const imageDataUrl = firstImage?.b64_json ? `data:image/png;base64,${firstImage.b64_json}` : firstImage?.url
+    let imageUrl = imageDataUrl
+    let storage: Awaited<ReturnType<typeof uploadImageToS3>> = null
+    if (firstImage?.b64_json) {
+      storage = await uploadImageToS3({ userId: input.userId, folder: 'images', dataUrl: imageDataUrl })
+      if (storage) imageUrl = await createPresignedReadUrl(storage.storagePath) || storage.imageUrl
+    }
+    if (!imageUrl) {
+      await failImageAttempt(frozen.attempt, 'A OpenAI não retornou uma imagem')
+      throw new ImageSubmissionError(502, 'EMPTY_PROVIDER_RESULT', 'A OpenAI não retornou uma imagem')
+    }
+    const image = await linkImageOutput(frozen.attempt, {
+      imageUrl,
+      publicUrl: storage?.imageUrl || null,
+      thumbnailUrl: storage?.thumbnailUrl || null,
+      storageProvider: storage?.storageProvider || null,
+      storagePath: storage?.storagePath || null,
+      thumbnailPath: storage?.thumbnailPath || null,
+      fileSize: storage?.fileSize || null,
+      mimeType: storage?.mimeType || null,
+    })
+    return {
+      imageUrl,
+      publicUrl: storage?.imageUrl || null,
+      thumbnailUrl: storage?.thumbnailUrl || null,
+      storageProvider: storage?.storageProvider || null,
+      storagePath: storage?.storagePath || null,
+      thumbnailPath: storage?.thumbnailPath || null,
+      fileSize: storage?.fileSize || null,
+      mimeType: storage?.mimeType || null,
+      provider: 'openai', model: input.model, attemptId: frozen.attempt.id, sessionId: input.sessionId,
+      image, replayed: false,
+    }
+  } catch (error) {
+    if (error instanceof ImageSubmissionError) throw error
+    try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha na geração', true) } catch { /* preserve original error */ }
+    throw new ImageSubmissionError(500, 'GENERATION_FAILED', error instanceof Error ? error.message : 'Erro interno')
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +123,8 @@ export async function POST(request: Request) {
       model = process.env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL,
       size = '1024x1024',
       quality = 'medium',
+      sessionId,
+      clientRequestId,
     } = await request.json()
 
     if (!prompt?.trim()) {
@@ -40,6 +136,18 @@ export async function POST(request: Request) {
         { error: 'Modelo de imagem OpenAI invalido' },
         { status: 400 },
       )
+    }
+
+    if (sessionId || clientRequestId) {
+      if (typeof sessionId !== 'string' || typeof clientRequestId !== 'string') {
+        return NextResponse.json({ error: 'sessionId e clientRequestId são obrigatórios', code: 'SESSION_REQUEST_ID_REQUIRED' }, { status: 400 })
+      }
+      try {
+        return NextResponse.json(await runCanonicalOpenAI({ supabase, userId: user.id, sessionId, clientRequestId, prompt, model, size, quality }))
+      } catch (error) {
+        if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+        throw error
+      }
     }
 
     const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'openai' })

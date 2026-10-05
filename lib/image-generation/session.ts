@@ -112,6 +112,8 @@ export function toSessionResponse(row: ImageGenerationSessionRow) {
     currentImageId: row.current_image_id,
     status: row.status,
     revision: row.revision,
+    legacyImageDraftId: row.legacy_image_draft_id,
+    legacyCurrentEvaluation: row.legacy_current_evaluation,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

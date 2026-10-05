@@ -245,6 +245,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // the authenticated route scopes every service-role operation to the verified user/session lineage.
       path.startsWith('app/api/image-generation-sessions/') ||
       path.startsWith('app/api/image-generation-attempts/') ||
+      // IMAGE_GENERATION_ROUTE_CONVERGENCE_V1: provider adapters delegate
+      // Attempt/output lifecycle writes to this server-only execution helper.
+      path === 'lib/image-generation/execution.ts' ||
       // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
       path === 'app/api/video-generations/[id]/save-to-library/route.ts' ||
       // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
