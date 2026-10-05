@@ -49,8 +49,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!body.success) return errorResponse(400, 'INVALID_BODY', 'Invalid session body.', { issues: formatValidationIssues(body.error) })
     const state = parseWorkingState(body.data.workingState)
     if (!state.success) return errorResponse(400, 'INVALID_WORKING_STATE', 'The Image generation working state is invalid.', { issues: formatValidationIssues(state.error) })
+    const currentBefore = await ownSession(supabase, user.id, id)
+    if (currentBefore.error) return errorResponse(503, 'STORE_UNAVAILABLE', 'Session could not be loaded.')
+    if (!currentBefore.data) return errorResponse(404, 'SESSION_NOT_FOUND', 'Session not found.')
+    const currentRow = currentBefore.data as unknown as ImageGenerationSessionRow
+    if (currentRow.revision !== body.data.expectedRevision) {
+      return errorResponse(409, 'SESSION_VERSION_CONFLICT', 'The session changed before this save.', { session: toSessionResponse(currentRow) })
+    }
+    const currentState = parseWorkingState(currentRow.working_state)
+    const lifecycle = currentState.success ? currentState.data : null
+    const workingState = {
+      ...state.data,
+      imageStatus: lifecycle?.imageStatus ?? state.data.imageStatus,
+      currentAttempt: lifecycle?.currentAttempt ?? state.data.currentAttempt,
+      currentImageId: currentRow.current_image_id ?? lifecycle?.currentImageId ?? null,
+      legacyImageUrl: lifecycle?.legacyImageUrl ?? state.data.legacyImageUrl,
+    }
     const { data, error } = await createServiceRoleSupabase().from('image_generation_sessions')
-      .update({ working_prompt: body.data.workingPrompt, working_state: state.data, current_image_id: state.data.currentImageId, revision: body.data.expectedRevision + 1 })
+      .update({ working_prompt: body.data.workingPrompt, working_state: workingState, current_image_id: currentRow.current_image_id, revision: body.data.expectedRevision + 1 })
       .eq('id', id).eq('user_id', user.id).eq('revision', body.data.expectedRevision)
       .select(SESSION_COLUMNS).maybeSingle()
     if (error) return errorResponse(503, 'STORE_UNAVAILABLE', 'Session could not be saved.')

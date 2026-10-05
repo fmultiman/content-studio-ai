@@ -1,8 +1,8 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, RefreshCw, Loader2, Save, XCircle, FileWarning, Zap, Video, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Loader2, XCircle, FileWarning, Zap, Video, AlertTriangle } from 'lucide-react'
 import { DashboardPage, DashboardPageBar, DashboardPageContent } from '@/components/layout/dashboard-page'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -34,11 +34,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
 import { attemptToWorkingState, type VideoGenerationWorkingStateV1 } from '@/lib/video-generation/working-state'
 import type { SessionResponse } from '@/lib/video-generation/session'
-
-const AUTOSAVE_DEBOUNCE_MS = 800
+import { useGenerationSessionAutosave } from '@/hooks/use-generation-session-autosave'
+import { SessionSaveStatus } from '@/components/generation-session/session-save-status'
+import { useGenerationSessionNavigation } from '@/components/generation-session/session-navigation-guard'
+import type { GenerationSessionAutosaveAdapter } from '@/lib/generation-session/autosave'
 
 type ConnectionState = 'loading' | 'ready' | 'failed'
-type SaveState = 'saved' | 'saving' | 'error' | 'conflict'
+type AutosaveTransportError = {
+  kind: 'network' | 'server' | 'auth' | 'validation' | 'conflict'
+  code?: string
+  server?: SessionResponse | { workingState?: VideoGenerationWorkingStateV1; updatedAt?: string }
+}
 
 function WorkspacePageContent() {
   const params = useParams<{ sessionId: string }>()
@@ -69,15 +75,117 @@ function WorkspacePageContent() {
   const [selection, setSelection] = useState<VideoFormSelection>(EMPTY_SELECTION)
   const [sourceSelection, setSourceSelection] = useState<I2vSourceSelection | null>(null)
 
-  // AUTOSAVE & SYNC
-  const [saveState, setSaveState] = useState<SaveState>('saved')
-  const [conflictServerData, setConflictServerData] = useState<SessionResponse | null>(null)
+  const currentWorkingState = useMemo<VideoGenerationWorkingStateV1>(() => ({
+    schemaVersion: 1,
+    prompt,
+    source: sourceSelection?.source ?? null,
+    selection,
+  }), [prompt, selection, sourceSelection])
 
-  const expectedUpdatedAtRef = useRef<string | null>(null)
-  const lastSavedStateRef = useRef<string | null>(null)
-  const isSavingRef = useRef(false)
-  const pendingStateRef = useRef<VideoGenerationWorkingStateV1 | null>(null)
-  const saveWaitersRef = useRef<Array<(success: boolean) => void>>([])
+  const sessionContextRef = useRef<{
+    sessionData: SessionResponse | null
+    projectId: string | null
+    productionId: string | null
+    onCreated: ((session: SessionResponse) => void) | null
+  }>({ sessionData: null, projectId: null, productionId: null, onCreated: null })
+  sessionContextRef.current.sessionData = sessionData
+  sessionContextRef.current.projectId = contextProjectId
+  sessionContextRef.current.productionId = contextProductionId
+  sessionContextRef.current.onCreated = (session) => {
+    sessionContextRef.current.sessionData = session
+    setSessionData(session)
+    routerRef.current.replace(`/videos/geracoes/${session.id}`, { scroll: false })
+  }
+
+  const videoAutosaveAdapterRef = useRef<GenerationSessionAutosaveAdapter<VideoGenerationWorkingStateV1, string> | null>(null)
+  if (!videoAutosaveAdapterRef.current) {
+    videoAutosaveAdapterRef.current = {
+      serialize: (value) => JSON.parse(JSON.stringify(value)) as VideoGenerationWorkingStateV1,
+      fingerprint: (value) => JSON.stringify(value),
+      save: async ({ snapshot, expectedToken }) => {
+        const context = sessionContextRef.current
+        const hasSession = Boolean(context.sessionData?.updatedAt)
+        const response = await fetch(`/api/video-generation-sessions/${encodeURIComponent(sessionId)}`, {
+          method: hasSession ? 'PATCH' : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(hasSession
+            ? { expectedUpdatedAt: expectedToken, workingState: snapshot }
+            : {
+                projectId: context.sessionData?.projectId ?? context.projectId,
+                productionId: context.sessionData?.productionId ?? context.productionId,
+                workingState: snapshot,
+              }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || !data.session?.updatedAt) {
+          const kind = response.status === 409
+            ? 'conflict'
+            : response.status === 401 || response.status === 403
+              ? 'auth'
+              : response.status >= 500
+                ? 'server'
+                : 'validation'
+          throw { kind, code: data.code || `HTTP_${response.status}`, server: data.session }
+        }
+        if (!hasSession && data.created === false && JSON.stringify(data.session.workingState) !== JSON.stringify(snapshot)) {
+          throw { kind: 'conflict', code: 'SESSION_CREATE_RACE', server: data.session }
+        }
+        if (!hasSession) context.onCreated?.(data.session as SessionResponse)
+        return {
+          ok: true,
+          snapshot: (data.session.workingState || snapshot) as VideoGenerationWorkingStateV1,
+          token: data.session.updatedAt as string,
+        }
+      },
+      classify: (error, snapshot, token) => {
+        const typed = error as AutosaveTransportError
+        const server = typed?.server
+        return {
+          ok: false,
+          kind: typed?.kind || 'network',
+          snapshot,
+          token,
+          retryable: typed?.kind !== 'validation' && typed?.kind !== 'auth' && typed?.kind !== 'conflict',
+          code: typed?.code,
+          server: server?.workingState && server?.updatedAt
+            ? { snapshot: server.workingState as VideoGenerationWorkingStateV1, token: server.updatedAt as string }
+            : undefined,
+        }
+      },
+      fetchCurrent: async () => {
+        const response = await fetch(`/api/video-generation-sessions/${encodeURIComponent(sessionId)}`)
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || !data.session?.updatedAt || !data.session.workingState) {
+          throw { kind: response.status >= 500 ? 'server' : 'network', code: data.code || `HTTP_${response.status}` }
+        }
+        return {
+          snapshot: data.session.workingState as VideoGenerationWorkingStateV1,
+          token: data.session.updatedAt as string,
+        }
+      },
+    }
+  }
+
+  const autosave = useGenerationSessionAutosave({
+    sessionKey: `video:${sessionId}`,
+    initial: { snapshot: currentWorkingState, token: null },
+    adapter: videoAutosaveAdapterRef.current,
+    canPersist: (snapshot, token) => Boolean(token) || snapshot.prompt.trim().length > 0 || snapshot.source !== null,
+    debounceMs: 800,
+  })
+  const saveState = autosave.state
+  const navigation = useGenerationSessionNavigation()
+
+  useEffect(() => navigation.register({
+    sessionKey: `video:${sessionId}`,
+    getState: () => autosave.state,
+    flush: async () => (await autosave.controller.flush()).ok,
+  }), [autosave.controller, autosave.state, navigation, sessionId])
+
+  const navigateSafely = useCallback((target: string) => {
+    void navigation.runBeforeNavigate(target, () => routerRef.current.push(target))
+  }, [navigation])
+
   const [forceRetry, setForceRetry] = useState(0)
 
   // Generate / Submit
@@ -136,7 +244,6 @@ function WorkspacePageContent() {
           const data = await res.json()
           const session = data.session as SessionResponse
           setSessionData(session)
-          expectedUpdatedAtRef.current = session.updatedAt
 
           if (session.workingState) {
             setPrompt(session.workingState.prompt)
@@ -163,22 +270,23 @@ function WorkspacePageContent() {
               setReconciledNotice('Algumas configurações salvas não estão mais disponíveis nesta conexão e foram ajustadas.')
             }
 
-            // Hydrate writes nothing to DB: match the reconciled state so opening remains clean
-            lastSavedStateRef.current = JSON.stringify({
+            // Hydrate establishes the server baseline. Reconciliation is kept
+            // as local working state and is persisted only by the controller.
+            autosave.controller.resetAcknowledged({
               schemaVersion: 1,
               prompt: session.workingState.prompt,
               source: session.workingState.source ?? null,
               selection: reconciled,
-            } satisfies VideoGenerationWorkingStateV1)
+            } satisfies VideoGenerationWorkingStateV1, session.updatedAt)
           } else {
             const initialSelection = reconcileSelection(loadedConnections, EMPTY_SELECTION)
             setSelection(initialSelection)
-            lastSavedStateRef.current = JSON.stringify({
+            autosave.controller.resetAcknowledged({
               schemaVersion: 1,
               prompt: '',
               source: null,
               selection: initialSelection,
-            } satisfies VideoGenerationWorkingStateV1)
+            } satisfies VideoGenerationWorkingStateV1, session.updatedAt)
           }
 
           if (isNewParam) {
@@ -221,7 +329,13 @@ function WorkspacePageContent() {
                 }
 
                 setAttemptsLoading(false)
-                lastSavedStateRef.current = null // Let autosave pick it up as a meaningful change and save it
+                autosave.controller.resetAcknowledged({
+                  schemaVersion: 1,
+                  prompt: '',
+                  source: null,
+                  selection: reconcileSelection(loadedConnections, EMPTY_SELECTION),
+                }, null)
+                autosave.controller.setLocal(seeded)
                 setIsHydrating(false)
                 return
               }
@@ -231,7 +345,12 @@ function WorkspacePageContent() {
             setSelection(initialSelection)
             setAttemptsLoading(false)
             // Stays uncreated until first meaningful edit or generate
-            lastSavedStateRef.current = null
+            autosave.controller.resetAcknowledged({
+              schemaVersion: 1,
+              prompt: '',
+              source: null,
+              selection: initialSelection,
+            }, null)
           } else {
             setFatalError('Sessão não encontrada.')
           }
@@ -294,206 +413,63 @@ function WorkspacePageContent() {
     return () => clearInterval(timer)
   }, [hasInFlightGeneration, sessionId])
 
-  // SINGLE-FLIGHT COALESCING SAVE ENGINE
-  const executeSaveLoop = useCallback(async (initialTarget: VideoGenerationWorkingStateV1) => {
-    if (isSavingRef.current) {
-      pendingStateRef.current = initialTarget
-      return
-    }
-
-    isSavingRef.current = true
-    setSaveState('saving')
-    let currentTarget: VideoGenerationWorkingStateV1 | null = initialTarget
-
-    while (currentTarget) {
-      const stateToSave = currentTarget
-      const toSaveStr = JSON.stringify(stateToSave)
-      let ok = false
-
-      try {
-        let res: Response
-        if (!expectedUpdatedAtRef.current) {
-          // PUT create
-          res = await fetch(`/api/video-generation-sessions/${encodeURIComponent(sessionId)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectId: sessionData?.projectId ?? contextProjectId,
-              productionId: sessionData?.productionId ?? contextProductionId,
-              workingState: stateToSave,
-            }),
-          })
-        } else {
-          // PATCH update
-          res = await fetch(`/api/video-generation-sessions/${encodeURIComponent(sessionId)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              expectedUpdatedAt: expectedUpdatedAtRef.current,
-              workingState: stateToSave,
-            }),
-          })
-        }
-
-        const data = await res.json().catch(() => ({}))
-
-        if (!res.ok) {
-          if (res.status === 409 && data.session) {
-            setConflictServerData(data.session)
-            setSaveState('conflict')
-            pendingStateRef.current = null
-            const waiters = saveWaitersRef.current
-            saveWaitersRef.current = []
-            waiters.forEach((cb) => cb(false))
-            break
-          }
-          throw new Error(data.error || 'Autosave falhou')
-        }
-
-        expectedUpdatedAtRef.current = data.session.updatedAt
-        lastSavedStateRef.current = toSaveStr
-          if (!sessionData) {
-            setSessionData(data.session)
-            routerRef.current.replace(`/videos/geracoes/${sessionId}`, { scroll: false })
-          }
-
-        ok = true
-      } catch {
-        setSaveState('error')
-        const waiters = saveWaitersRef.current
-        saveWaitersRef.current = []
-        waiters.forEach((cb) => cb(false))
-        break
-      }
-
-      // Check for coalesced newer state
-      if (pendingStateRef.current && JSON.stringify(pendingStateRef.current) !== lastSavedStateRef.current) {
-        currentTarget = pendingStateRef.current
-        pendingStateRef.current = null
-      } else {
-        currentTarget = null
-        if (ok) {
-          setSaveState('saved')
-          const waiters = saveWaitersRef.current
-          saveWaitersRef.current = []
-          waiters.forEach((cb) => cb(true))
-        }
-      }
-    }
-
-    isSavingRef.current = false
-  }, [sessionId, sessionData, contextProjectId, contextProductionId])
-
-  // Explicit flush function to guarantee current state is persisted before generation or exit
-  const flushSave = useCallback(async (): Promise<boolean> => {
-    if (saveState === 'conflict') return false
-
-    const currentState: VideoGenerationWorkingStateV1 = {
-      schemaVersion: 1,
-      prompt,
-      source: sourceSelection?.source ?? null,
-      selection,
-    }
-
-    if (JSON.stringify(currentState) === lastSavedStateRef.current && saveState === 'saved') {
-      return true
-    }
-
-    return new Promise<boolean>((resolve) => {
-      saveWaitersRef.current.push(resolve)
-      void executeSaveLoop(currentState)
-    })
-  }, [prompt, selection, sourceSelection, saveState, executeSaveLoop])
-
-  // Debounced Autosave Effect
+  // The shared controller owns debounce, single-flight, CAS, conflict, and
+  // stale-response behavior. The page only projects form state into it.
   useEffect(() => {
     if (isHydrating || fatalError || connectionsState !== 'ready') return
+    autosave.controller.setLocal(currentWorkingState)
+  }, [autosave.controller, connectionsState, currentWorkingState, fatalError, isHydrating])
 
-    const currentState: VideoGenerationWorkingStateV1 = {
-      schemaVersion: 1,
-      prompt,
-      source: sourceSelection?.source ?? null,
-      selection,
-    }
-
-    const stateStr = JSON.stringify(currentState)
-    if (stateStr === lastSavedStateRef.current) {
-      return
-    }
-
-    const isMeaningful = prompt.trim().length > 0 || sourceSelection !== null
-    if (!expectedUpdatedAtRef.current && !isMeaningful) {
-      return
-    }
-
-    if (saveState === 'conflict') {
-      return
-    }
-
-    const timer = setTimeout(() => {
-      void executeSaveLoop(currentState)
-    }, AUTOSAVE_DEBOUNCE_MS)
-
-    return () => clearTimeout(timer)
-  }, [prompt, selection, sourceSelection, isHydrating, fatalError, connectionsState, saveState, executeSaveLoop])
-
-  // Best-effort flush on page hide or tab switch
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        void flushSave()
-      }
+    const handleLifecycle = () => {
+      if (document.visibilityState === 'hidden') autosave.controller.flushLifecycle()
     }
-    window.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('pagehide', handleVisibilityChange)
+    document.addEventListener('visibilitychange', handleLifecycle)
+    window.addEventListener('pagehide', handleLifecycle)
     return () => {
-      window.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('pagehide', handleVisibilityChange)
+      document.removeEventListener('visibilitychange', handleLifecycle)
+      window.removeEventListener('pagehide', handleLifecycle)
     }
-  }, [flushSave])
+  }, [autosave.controller])
 
-  const performConflictResolution = async (mode: 'reload_server' | 'keep_local') => {
-    if (!conflictServerData) return
-    if (mode === 'reload_server') {
-      expectedUpdatedAtRef.current = conflictServerData.updatedAt
-      if (conflictServerData.workingState) {
-        setPrompt(conflictServerData.workingState.prompt)
-        setSourceSelection(
-          conflictServerData.workingState.source
-            ? {
-                source: conflictServerData.workingState.source,
-                summary: {
-                  category: conflictServerData.workingState.source.type === 'library' ? 'library' : 'ai',
-                  label: 'Imagem selecionada',
-                  thumbnailUrl: null,
-                  productionName: null,
-                  folder: null,
-                },
-              }
-            : null,
-        )
-        const reconciled = reconcileSelection(connections, conflictServerData.workingState.selection)
-        setSelection(reconciled)
-        lastSavedStateRef.current = JSON.stringify({
-          schemaVersion: 1,
-          prompt: conflictServerData.workingState.prompt,
-          source: conflictServerData.workingState.source ?? null,
-          selection: reconciled,
-        } satisfies VideoGenerationWorkingStateV1)
-      }
-      setConflictServerData(null)
-      setSaveState('saved')
-    } else {
-      // Keep local version: adopt the newer concurrency token and immediately save local state
-      expectedUpdatedAtRef.current = conflictServerData.updatedAt
-      setConflictServerData(null)
-      const localState: VideoGenerationWorkingStateV1 = {
-        schemaVersion: 1,
-        prompt,
-        source: sourceSelection?.source ?? null,
-        selection,
-      }
-      void executeSaveLoop(localState)
+  const applyVideoWorkingState = (workingState: VideoGenerationWorkingStateV1) => {
+    setPrompt(workingState.prompt)
+    setSourceSelection(
+      workingState.source
+        ? {
+            source: workingState.source,
+            summary: {
+              category: workingState.source.type === 'library' ? 'library' : 'ai',
+              label: 'Imagem selecionada',
+              thumbnailUrl: null,
+              productionName: null,
+              folder: null,
+            },
+          }
+        : null,
+    )
+    setSelection(reconcileSelection(connections, workingState.selection))
+  }
+
+  const flushSave = useCallback(async (snapshot: VideoGenerationWorkingStateV1 = currentWorkingState) => {
+    return (await autosave.controller.flushSnapshot(snapshot)).ok
+  }, [autosave.controller, currentWorkingState])
+
+  const performConflictResolution = async (mode: 'reload_server' | 'keep_local' | 'discard_local') => {
+    if (mode === 'keep_local') {
+      await autosave.controller.resolveConflict('keep_local')
+      return
+    }
+    try {
+      const response = await fetch(`/api/video-generation-sessions/${encodeURIComponent(sessionId)}`)
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.session?.workingState) return
+      const serverState = data.session.workingState as VideoGenerationWorkingStateV1
+      if (mode !== 'discard_local') applyVideoWorkingState(serverState)
+      autosave.controller.resetAcknowledged(serverState, data.session.updatedAt as string)
+      setSessionData(data.session as SessionResponse)
+    } catch {
+      // Keep the conflict visible and local state intact.
     }
   }
 
@@ -545,8 +521,10 @@ function WorkspacePageContent() {
 
     setIsGenerating(true)
 
-    // Save working state before generation to guarantee lineage & resumability
-    const saved = await flushSave()
+    // Capture the exact request before awaiting persistence. Later edits cannot
+    // change the Attempt payload while this submission is being prepared.
+    const submittedState = currentWorkingState
+    const saved = await flushSave(submittedState)
     if (!saved) {
       setIsGenerating(false)
       toast({
@@ -571,9 +549,9 @@ function WorkspacePageContent() {
             productionId: effectiveProductionId,
             sessionId,
             clientRequestId: currentClientRequestId.current,
-            prompt,
-            ...i2vSourceFields(selection.operation, sourceSelection?.source ?? null),
-            ...toSubmitControls(selection),
+            prompt: submittedState.prompt,
+            ...i2vSourceFields(submittedState.selection.operation, submittedState.source),
+            ...toSubmitControls(submittedState.selection),
           }),
         })
       } catch {
@@ -627,34 +605,20 @@ function WorkspacePageContent() {
             variant="ghost"
             size="sm"
             className="gap-2 text-muted-foreground hover:text-foreground"
-            onClick={() => router.push(backTarget)}
+            onClick={() => navigateSafely(backTarget)}
           >
             <ArrowLeft className="h-4 w-4" />
             Voltar para a Produção
           </Button>
 
-          <div className="flex items-center gap-2 pr-4 text-xs font-medium" data-testid="workspace-save-status">
-            {saveState === 'saved' && (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400" data-testid="save-status-saved">
-                <Save className="h-3.5 w-3.5" /> Salvo
-              </span>
-            )}
-            {saveState === 'saving' && (
-              <span className="flex items-center gap-1.5 text-muted-foreground" data-testid="save-status-saving">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Salvando...
-              </span>
-            )}
-            {saveState === 'error' && (
-              <span className="flex items-center gap-1.5 text-destructive" data-testid="save-status-error">
-                <FileWarning className="h-3.5 w-3.5" /> Erro ao salvar
-              </span>
-            )}
-            {saveState === 'conflict' && (
-              <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold" data-testid="save-status-conflict">
-                <AlertTriangle className="h-3.5 w-3.5" /> Conflito
-              </span>
-            )}
-          </div>
+          <SessionSaveStatus
+            state={saveState}
+            className="pr-4"
+            onRetry={() => void autosave.controller.retry()}
+            onReloadServer={() => void performConflictResolution('reload_server')}
+            onKeepLocal={() => void performConflictResolution('keep_local')}
+            onDiscardLocal={() => void performConflictResolution('discard_local')}
+          />
         </div>
       </DashboardPageBar>
 
@@ -673,7 +637,7 @@ function WorkspacePageContent() {
           </div>
         )}
 
-        {saveState === 'conflict' && conflictServerData && (
+        {saveState === 'conflict' && (
           <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-5 space-y-3" role="alert" data-testid="conflict-banner">
             <h3 className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2">
               <FileWarning className="w-5 h-5" /> Conflito de Autoria
@@ -696,7 +660,7 @@ function WorkspacePageContent() {
           <div className="flex flex-col items-center justify-center p-12 text-center border rounded-md bg-destructive/10" data-testid="workspace-fatal-error">
             <XCircle className="w-8 h-8 mb-4 text-destructive" />
             <p className="font-semibold">{fatalError}</p>
-            <Button className="mt-4" variant="outline" onClick={() => router.push('/videos')}>
+            <Button className="mt-4" variant="outline" onClick={() => navigateSafely('/videos')}>
               Voltar aos vídeos
             </Button>
           </div>
@@ -830,7 +794,7 @@ function WorkspacePageContent() {
           onOpenChange={(open) => {
             if (!open) setSelectedVideoGeneration(null)
           }}
-          onNavigate={(href) => router.push(href)}
+          onNavigate={(href) => navigateSafely(href)}
         />
       </DashboardPageContent>
     </DashboardPage>

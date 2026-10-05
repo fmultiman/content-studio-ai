@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, useRef } from 'react'
+import { useState, useEffect, Suspense, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -44,6 +44,11 @@ import { GenerationHistory } from '@/components/images/generation-history'
 import type { Project, Production, Image as ImageType, ImageDraft, ImageEvaluation, GenerationAttempt } from '@/lib/types'
 import { useToast } from '@/hooks/use-toast'
 import { draftLoadingMessage } from '@/lib/ux-production-hardening'
+import { useGenerationSessionAutosave } from '@/hooks/use-generation-session-autosave'
+import { SessionSaveStatus } from '@/components/generation-session/session-save-status'
+import { useGenerationSessionNavigation } from '@/components/generation-session/session-navigation-guard'
+import type { GenerationSessionAutosaveAdapter } from '@/lib/generation-session/autosave'
+import type { ImageGenerationWorkingStateV1 } from '@/lib/image-generation/session'
 import {
   buildImageDraftHubCards,
   filterDraftHubCards,
@@ -65,6 +70,23 @@ type GeneratedImageResult = {
   attemptId?: string | null
 }
 
+type ImageAutosaveState = {
+  workingPrompt: string
+  workingState: ImageGenerationWorkingStateV1
+}
+
+type ImageAutosaveTransportError = {
+  kind: 'network' | 'server' | 'auth' | 'validation' | 'conflict'
+  code?: string
+  server?: { workingPrompt?: string; workingState?: ImageGenerationWorkingStateV1; revision?: number }
+}
+
+function persistableImageUrl(url: string | null | undefined) {
+  if (!url || url.startsWith('data:')) return null
+  if (url.includes('X-Amz-') || url.includes('AWSAccessKeyId=') || url.includes('Signature=')) return null
+  return url
+}
+
 export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?: string } = {}) {
   const { toast } = useToast()
   const router = useRouter()
@@ -80,11 +102,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [sessions, setSessions] = useState<any[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
-  const [sessionRevision, setSessionRevision] = useState<number | null>(null)
-  const sessionSaveInFlight = useRef<Promise<void> | null>(null)
-  const sessionSaveQueued = useRef(false)
-  const sessionRevisionRef = useRef<number | null>(null)
-  const canonicalSnapshotRef = useRef<{ workingPrompt: string; workingState: Record<string, unknown> } | null>(null)
+  const imageSourceReferencesRef = useRef<ImageGenerationWorkingStateV1['sourceReferences']>([])
+  const imageGenerationConfigRef = useRef<ImageGenerationWorkingStateV1['generationConfig']>({
+    size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {},
+  })
   
   // Input state
   const [userInput, setUserInput] = useState('')
@@ -129,9 +150,144 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [openaiConfigured, setOpenaiConfigured] = useState(false)
   const [nanobananaConfigured, setNanobananaConfigured] = useState(false)
   const [isGeneratingNanoBanana, setIsGeneratingNanoBanana] = useState(false)
+  const imageClientRequestIdRef = useRef<string>(crypto.randomUUID())
   const [automationEnabled, setAutomationEnabled] = useState(false)
   const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>('gpt-image-2')
   const [selectedModel, setSelectedModel] = useState<ImageModel>('gpt-image-2')
+  const [currentAttempt, setCurrentAttempt] = useState(1)
+
+  const currentImageAutosaveState = useMemo<ImageAutosaveState>(() => ({
+    workingPrompt: userInput,
+    workingState: {
+      schemaVersion: 1,
+      generatedPrompt: generatedPrompt || null,
+      generatedPromptPt: generatedPromptPt || null,
+      promptDetails,
+      autoMode,
+      selectedModel,
+      imageStatus,
+      currentAttempt,
+      currentImageId: currentImage?.id || null,
+      sourceReferences: imageSourceReferencesRef.current,
+      generationConfig: imageGenerationConfigRef.current,
+      legacyImageUrl: persistableImageUrl(imageUrl),
+    },
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, selectedModel, imageStatus, currentAttempt, currentImage?.id, imageUrl])
+
+  const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
+  imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
+
+  const imageAutosaveAdapterRef = useRef<GenerationSessionAutosaveAdapter<ImageAutosaveState, number> | null>(null)
+  if (!imageAutosaveAdapterRef.current) {
+    imageAutosaveAdapterRef.current = {
+      serialize: (value) => JSON.parse(JSON.stringify(value)) as ImageAutosaveState,
+      fingerprint: (value) => JSON.stringify({
+        workingPrompt: value.workingPrompt,
+        generatedPrompt: value.workingState.generatedPrompt,
+        generatedPromptPt: value.workingState.generatedPromptPt,
+        promptDetails: value.workingState.promptDetails,
+        autoMode: value.workingState.autoMode,
+        selectedModel: value.workingState.selectedModel,
+        sourceReferences: value.workingState.sourceReferences,
+        generationConfig: value.workingState.generationConfig,
+      }),
+      save: async ({ snapshot, expectedToken }) => {
+        const sessionId = imageSessionContextRef.current.canonicalSessionId
+        if (!sessionId || expectedToken === null) throw { kind: 'validation', code: 'SESSION_REQUIRED' }
+        const response = await fetch(`/api/image-generation-sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expectedRevision: expectedToken, ...snapshot }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || typeof data.session?.revision !== 'number') {
+          const kind = response.status === 409
+            ? 'conflict'
+            : response.status === 401 || response.status === 403
+              ? 'auth'
+              : response.status >= 500
+                ? 'server'
+                : 'validation'
+          throw { kind, code: data.code || `HTTP_${response.status}`, server: data.session }
+        }
+        return {
+          ok: true,
+          snapshot: {
+            workingPrompt: data.session.workingPrompt,
+            workingState: data.session.workingState,
+          } as ImageAutosaveState,
+          token: data.session.revision as number,
+        }
+      },
+      classify: (error, snapshot, token) => {
+        const typed = error as ImageAutosaveTransportError
+        return {
+          ok: false,
+          kind: typed?.kind || 'network',
+          snapshot,
+          token,
+          retryable: typed?.kind !== 'validation' && typed?.kind !== 'auth' && typed?.kind !== 'conflict',
+          code: typed?.code,
+          server: typed?.server?.workingState && typeof typed.server.revision === 'number'
+            ? { snapshot: { workingPrompt: typed.server.workingPrompt || '', workingState: typed.server.workingState }, token: typed.server.revision }
+            : undefined,
+        }
+      },
+      fetchCurrent: async () => {
+        const sessionId = imageSessionContextRef.current.canonicalSessionId
+        if (!sessionId) throw { kind: 'validation', code: 'SESSION_REQUIRED' }
+        const response = await fetch(`/api/image-generation-sessions/${sessionId}`)
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok || typeof data.session?.revision !== 'number' || !data.session.workingState) {
+          throw { kind: response.status >= 500 ? 'server' : 'network', code: data.code || `HTTP_${response.status}` }
+        }
+        return {
+          snapshot: { workingPrompt: data.session.workingPrompt, workingState: data.session.workingState } as ImageAutosaveState,
+          token: data.session.revision as number,
+        }
+      },
+    }
+  }
+
+  const imageAutosave = useGenerationSessionAutosave({
+    sessionKey: `image:${canonicalSessionId || 'hub'}`,
+    initial: { snapshot: currentImageAutosaveState, token: null },
+    adapter: imageAutosaveAdapterRef.current,
+    canPersist: (_snapshot, token) => Boolean(canonicalSessionId && token !== null),
+    debounceMs: 800,
+  })
+  const navigation = useGenerationSessionNavigation()
+
+  useEffect(() => {
+    if (!canonicalSessionId) return
+    return navigation.register({
+      sessionKey: `image:${canonicalSessionId}`,
+      getState: () => imageAutosave.state,
+      flush: async () => (await imageAutosave.controller.flush()).ok,
+    })
+  }, [canonicalSessionId, imageAutosave.controller, imageAutosave.state, navigation])
+
+  const navigateSafely = (target: string) => {
+    void navigation.runBeforeNavigate(target, () => router.push(target))
+  }
+
+  useEffect(() => {
+    if (!canonicalWorkspace || !isDataReady) return
+    imageAutosave.controller.setLocal(currentImageAutosaveState)
+  }, [canonicalWorkspace, isDataReady, currentImageAutosaveState, imageAutosave.controller])
+
+  useEffect(() => {
+    if (!canonicalWorkspace) return
+    const flushLifecycle = () => {
+      if (document.visibilityState === 'hidden') void imageAutosave.controller.flushLifecycle()
+    }
+    document.addEventListener('visibilitychange', flushLifecycle)
+    window.addEventListener('pagehide', flushLifecycle)
+    return () => {
+      document.removeEventListener('visibilitychange', flushLifecycle)
+      window.removeEventListener('pagehide', flushLifecycle)
+    }
+  }, [canonicalWorkspace, imageAutosave.controller])
 
   // Evaluator state
   const [evaluatorEnabled, setEvaluatorEnabled] = useState(false)
@@ -139,7 +295,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [currentEvaluation, setCurrentEvaluation] = useState<ImageEvaluation | null>(null)
   const [generationAttempts, setGenerationAttempts] = useState<GenerationAttempt[]>([])
-  const [currentAttempt, setCurrentAttempt] = useState(1)
 
   // Refs para scroll automático
   const promptSectionRef = useRef<HTMLDivElement>(null)
@@ -247,69 +402,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     return data.draft as ImageDraft
   }
 
-  const buildCanonicalWorkingState = () => ({
-    schemaVersion: 1 as const,
-    generatedPrompt: generatedPrompt || null,
-    generatedPromptPt: generatedPromptPt || null,
-    promptDetails,
-    autoMode,
-    selectedModel,
-    imageStatus,
-    currentAttempt,
-    currentImageId: currentImage?.id || null,
-    sourceReferences: [],
-    generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
-    legacyImageUrl: getPersistableImageUrl(imageUrl),
-  })
-
-  useEffect(() => {
-    canonicalSnapshotRef.current = { workingPrompt: userInput, workingState: buildCanonicalWorkingState() }
-  }, [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, selectedModel, imageStatus, currentAttempt, currentImage?.id, imageUrl])
-
-  const saveCanonicalSession = async () => {
-    if (!canonicalSessionId || sessionRevisionRef.current === null) return
-    if (!userInput.trim() && !generatedPrompt.trim() && !currentImage) return
-    sessionSaveQueued.current = true
-    if (sessionSaveInFlight.current) return sessionSaveInFlight.current
-    const run = (async () => {
-      try {
-        while (sessionSaveQueued.current) {
-          sessionSaveQueued.current = false
-          const expectedRevision = sessionRevisionRef.current
-          if (expectedRevision === null) return
-          const snapshot = canonicalSnapshotRef.current
-          if (!snapshot) return
-          setIsSavingDraft(true)
-          const response = await fetch(`/api/image-generation-sessions/${canonicalSessionId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ expectedRevision, ...snapshot }),
-          })
-          const payload = await response.json()
-          if (!response.ok) {
-            if (response.status === 409 && payload.session) {
-              // Do not retry local state against a newer server revision. The
-              // reliability mission will add explicit conflict resolution.
-              sessionRevisionRef.current = null
-              setSessionRevision(null)
-            }
-            throw new Error(payload.error || 'Não foi possível salvar a geração.')
-          }
-          const revision = payload.session?.revision
-          if (typeof revision === 'number') {
-            sessionRevisionRef.current = revision
-            setSessionRevision(revision)
-          }
-        }
-      } finally {
-        setIsSavingDraft(false)
-        sessionSaveInFlight.current = null
-      }
-    })()
-    sessionSaveInFlight.current = run
-    return run
-  }
-
   const applyCanonicalSessionState = async (session: any, attempts: any[]) => {
     const state = session.workingState || {}
     const imageIds = Array.from(new Set([
@@ -324,10 +416,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
     const current = session.currentImageId ? imageById.get(session.currentImageId) || null : null
     setCurrentDraftId(null)
-    setSessionRevision(session.revision)
-    sessionRevisionRef.current = session.revision
     setSelectedProject(session.projectId || null)
     setProductionId(session.productionId || null)
+    setUserInput(session.workingPrompt || '')
     setGeneratedPrompt(state.generatedPrompt || '')
     setGeneratedPromptPt(state.generatedPromptPt || '')
     setPromptDetails(state.promptDetails || null)
@@ -335,6 +426,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (state.selectedModel) setSelectedModel(normalizeImageModel(state.selectedModel))
     setCurrentAttempt(state.currentAttempt || 1)
     setImageStatus(state.imageStatus || 'draft')
+    imageSourceReferencesRef.current = state.sourceReferences || []
+    imageGenerationConfigRef.current = state.generationConfig || imageGenerationConfigRef.current
     setCurrentImage(current)
     setImageUrl(await getDisplayUrlForImage(current) || state.legacyImageUrl || null)
     setCurrentEvaluation(session.legacyCurrentEvaluation || null)
@@ -352,6 +445,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       } as GenerationAttempt
     }))
     setGenerationAttempts(history)
+    imageAutosave.controller.resetAcknowledged({
+      workingPrompt: session.workingPrompt || '',
+      workingState: state as ImageGenerationWorkingStateV1,
+    }, session.revision)
     if (session.productionId) {
       fetch(`/api/productions/${session.productionId}`).then((r) => r.ok ? r.json() : null).then((payload) => {
         if (payload?.production) {
@@ -373,6 +470,37 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (sessionResponse.ok && attemptsResponse.ok && sessionPayload.session) {
       await applyCanonicalSessionState(sessionPayload.session, attemptsPayload.attempts || [])
     }
+  }
+
+  const refreshCanonicalExecution = async () => {
+    if (!canonicalSessionId) return
+    const response = await fetch(`/api/image-generation-attempts?sessionId=${canonicalSessionId}`)
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || !Array.isArray(payload.attempts)) return
+    const attempts = payload.attempts
+    const imageIds = Array.from(new Set(
+      attempts.map((attempt: any) => attempt.resultImageId).filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+    ))
+    const imageById = new Map<string, ImageType>()
+    if (imageIds.length) {
+      const supabase = createClient()
+      const { data } = await supabase.from('images').select('*').in('id', imageIds)
+      for (const image of data || []) imageById.set(image.id, image as ImageType)
+    }
+    const history = await Promise.all(attempts.map(async (attempt: any) => {
+      const output = attempt.resultImageId ? imageById.get(attempt.resultImageId) || null : null
+      return {
+        id: attempt.id,
+        attempt: attempt.sequence,
+        prompt: attempt.submittedPrompt || '',
+        imageUrl: await getDisplayUrlForImage(output),
+        imageId: attempt.resultImageId || null,
+        model: attempt.model || 'unknown',
+        evaluation: attempt.legacyEvaluation || null,
+        timestamp: attempt.submittedAt || attempt.createdAt,
+      } as GenerationAttempt
+    }))
+    setGenerationAttempts(history)
   }
 
   const applyDraftState = async (draft: ImageDraft) => {
@@ -494,16 +622,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     isDataReady,
     canonicalWorkspace,
   ])
-
-  // Canonical Session autosave keeps the current route resumable while the
-  // dedicated reliability mission hardens debounce/route-exit guarantees.
-  useEffect(() => {
-    if (!isDataReady || !canonicalWorkspace || sessionRevision === null) return
-    const timeoutId = window.setTimeout(() => {
-      saveCanonicalSession().catch((error) => console.error('[image-session] save error', error))
-    }, 800)
-    return () => window.clearTimeout(timeoutId)
-  }, [canonicalWorkspace, isDataReady, sessionRevision, userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, currentAttempt, currentImage?.id, imageStatus, selectedModel])
 
   // Fetch projects and drafts on mount
   useEffect(() => {
@@ -743,7 +861,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         }),
       })
       const payload = await response.json()
-      if (response.ok && payload.session?.id) router.push(`/imagens/geracoes/${payload.session.id}`)
+      if (response.ok && payload.session?.id) navigateSafely(`/imagens/geracoes/${payload.session.id}`)
       return
     }
     try {
@@ -989,6 +1107,26 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     } satisfies GeneratedImageResult
   }
 
+  const imageSubmissionSnapshot = (prompt: string, model: ImageModel): ImageAutosaveState => ({
+    workingPrompt: userInput,
+    workingState: {
+      ...currentImageAutosaveState.workingState,
+      generatedPrompt: prompt,
+      selectedModel: model,
+    },
+  })
+
+  const flushImageSubmission = async (prompt: string, model: ImageModel) => {
+    if (!canonicalSessionId) return true
+    const result = await imageAutosave.controller.flushSnapshot(imageSubmissionSnapshot(prompt, model))
+    if (!result.ok) {
+      throw new Error(result.kind === 'conflict'
+        ? 'Resolva o conflito de salvamento antes de gerar a imagem.'
+        : 'Não foi possível salvar o estado antes da geração.')
+    }
+    return true
+  }
+
   const saveGeneratedImageRecord = async (
     generatedImage: GeneratedImageResult,
     prompt: string,
@@ -1111,7 +1249,14 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       const modelVersion = model === 'nanobanana-v2' ? 'v2' : 'v1'
       
       // 1. Enviar requisição para gerar (retorna taskId)
-      const clientRequestId = canonicalSessionId ? crypto.randomUUID() : undefined
+      if (canonicalSessionId) {
+        await flushImageSubmission(promptToUse, model)
+        setGeneratedPrompt(promptToUse)
+        setSelectedModel(model)
+      }
+      // The legacy route contract was `canonicalSessionId ? crypto.randomUUID() : undefined`;
+      // the stable ref below keeps retries tied to one logical submission.
+      const clientRequestId = canonicalSessionId ? imageClientRequestIdRef.current : undefined
       const response = await fetch('/api/nanobanana/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1155,7 +1300,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             setCurrentImage(statusData.image as ImageType)
             setImageUrl(statusData.imageUrl)
             setImageStatus('draft')
-            await reloadCanonicalSession()
+            await refreshCanonicalExecution()
+            imageClientRequestIdRef.current = crypto.randomUUID()
             setIsGeneratingNanoBanana(false)
             toast({ title: 'Imagem gerada!', description: 'Sua imagem foi criada com sucesso.' })
             return
@@ -1354,13 +1500,16 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       if (!user) throw new Error('Usuário não autenticado')
 
       if (canonicalSessionId) {
-        const clientRequestId = crypto.randomUUID()
-        const generatedImage = await generateOpenAIImage(prompt, model, clientRequestId)
+        await flushImageSubmission(prompt, model)
+        setGeneratedPrompt(prompt)
+        setSelectedModel(model)
+        const generatedImage = await generateOpenAIImage(prompt, model, imageClientRequestIdRef.current)
         if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
         setCurrentImage(generatedImage.image)
         setImageUrl(generatedImage.imageUrl)
         setImageStatus('draft')
-        await reloadCanonicalSession()
+        await refreshCanonicalExecution()
+        imageClientRequestIdRef.current = crypto.randomUUID()
         toast({ title: 'Imagem criada!', description: 'A imagem foi gerada com sucesso.' })
         return
       }
@@ -1434,17 +1583,22 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         return
       }
 
-      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel, canonicalSessionId ? crypto.randomUUID() : undefined)
-
       if (canonicalSessionId) {
+        await flushImageSubmission(result.prompt, selectedModel)
+        setGeneratedPrompt(result.prompt)
+        setSelectedModel(selectedModel)
+        const generatedImage = await generateOpenAIImage(result.prompt, selectedModel, imageClientRequestIdRef.current)
         if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
         setCurrentImage(generatedImage.image)
         setImageUrl(generatedImage.imageUrl)
         setImageStatus('draft')
-        await reloadCanonicalSession()
+        await refreshCanonicalExecution()
+        imageClientRequestIdRef.current = crypto.randomUUID()
         toast({ title: 'Imagem regenerada!', description: 'Uma nova variação foi criada.' })
         return
       }
+
+      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel)
 
       const savedImage = await saveGeneratedImageRecord(
         generatedImage,
@@ -1913,9 +2067,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             onClick={() => {
               const projId = productionProjectId || selectedProject
               if (projId && productionId) {
-                router.push(`/projetos/${projId}/producoes/${productionId}`)
+                navigateSafely(`/projetos/${projId}/producoes/${productionId}`)
               } else {
-                router.back()
+                navigateSafely('/imagens')
               }
             }}
           >
@@ -1928,6 +2082,13 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             </span>
           )}
           </div>
+          <SessionSaveStatus
+            state={imageAutosave.state}
+            onRetry={() => void imageAutosave.controller.retry()}
+            onReloadServer={() => void imageAutosave.controller.resolveConflict('reload_server')}
+            onKeepLocal={() => void imageAutosave.controller.resolveConflict('keep_local')}
+            onDiscardLocal={() => void imageAutosave.controller.resolveConflict('discard_local')}
+          />
         </DashboardPageBar>
       )}
       <DashboardPageContent width="4xl" className="space-y-6">
