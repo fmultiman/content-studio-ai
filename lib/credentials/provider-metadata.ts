@@ -22,12 +22,17 @@ export type ProviderConnectionMethod = 'api_key'
 
 export type ProviderTransport = 'rest'
 
+/** Review execution capabilities a provider can serve (see lib/reviews/execution-provider.ts). */
+export type ProviderReviewCapability = 'image_review' | 'video_review'
+
 export interface ProviderMetadata {
   label: string
   connectionMethods: readonly ProviderConnectionMethod[]
   transports: readonly ProviderTransport[]
   /** False when the provider has credential storage/UI but no generation path. */
   executionImplemented: boolean
+  /** Review execution capabilities only; generation capabilities are intentionally not declared. */
+  reviewCapabilities: readonly ProviderReviewCapability[]
 }
 
 export const PROVIDER_METADATA: Record<AiProvider, ProviderMetadata> = {
@@ -36,30 +41,35 @@ export const PROVIDER_METADATA: Record<AiProvider, ProviderMetadata> = {
     connectionMethods: ['api_key'],
     transports: ['rest'],
     executionImplemented: true,
+    reviewCapabilities: ['image_review'],
   },
   nano_banana: {
     label: 'Nano Banana',
     connectionMethods: ['api_key'],
     transports: ['rest'],
     executionImplemented: true,
+    reviewCapabilities: [],
   },
   kling: {
     label: 'Kling',
     connectionMethods: ['api_key'],
     transports: ['rest'],
     executionImplemented: true,
+    reviewCapabilities: [],
   },
   replicate: {
     label: 'Replicate',
     connectionMethods: ['api_key'],
     transports: ['rest'],
     executionImplemented: false,
+    reviewCapabilities: [],
   },
   gemini: {
     label: 'Google Gemini API',
     connectionMethods: ['api_key'],
     transports: ['rest'],
     executionImplemented: false,
+    reviewCapabilities: ['image_review', 'video_review'],
   },
 }
 
