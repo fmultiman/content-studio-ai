@@ -31,6 +31,7 @@ type OutputRow = {
   project_id: string | null
   image_url: string | null
   storage_path: string | null
+  storage_provider: string | null
   thumbnail_path: string | null
   file_size: number | null
   mime_type: string | null
@@ -63,7 +64,7 @@ export async function resolveImageReviewContext(db: SupabaseClient, userId: stri
   }
 
   const outputResult = await db.from('images')
-    .select('id,user_id,project_id,image_url,storage_path,thumbnail_path,file_size,mime_type,updated_at,metadata')
+    .select('id,user_id,project_id,image_url,storage_path,storage_provider,thumbnail_path,file_size,mime_type,updated_at,metadata')
     .eq('id', attempt.result_image_id)
     .eq('user_id', userId)
     .maybeSingle()
@@ -145,6 +146,6 @@ export async function resolveImageReviewContext(db: SupabaseClient, userId: stri
   return { attempt, output, project, production, context, subject, contextFingerprint: sha256(context) }
 }
 
-export function buildRequestFingerprint(attemptId: string, outputId: string, contextFingerprint: string) {
-  return sha256({ attemptId, outputId, adapter: 'image', adapterVersion: 'image-review-v1', contextFingerprint })
+export function buildRequestFingerprint(attemptId: string, outputId: string, contextFingerprint: string, artifactId?: string) {
+  return sha256({ attemptId, outputId, artifactId: artifactId ?? null, adapter: 'image', adapterVersion: 'image-review-v1', contextFingerprint })
 }

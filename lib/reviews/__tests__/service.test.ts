@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
   resolveProvider: vi.fn(),
+  resolveArtifact: vi.fn(),
 }))
 
 vi.mock('../context', () => ({
@@ -27,6 +28,10 @@ vi.mock('../repository', () => ({
 
 vi.mock('@/lib/credentials/provider-execution', () => ({
   resolveProviderExecution: mocks.resolveProvider,
+}))
+
+vi.mock('@/lib/media-artifacts/image', () => ({
+  resolveImageArtifact: mocks.resolveArtifact,
 }))
 
 vi.mock('@/lib/supabase/service-role', () => ({
@@ -60,11 +65,18 @@ const resolved = {
     outputStoragePath: null,
     outputMetadata: {},
   },
+  output: {
+    storage_provider: null,
+    storage_path: null,
+    mime_type: 'image/png',
+    file_size: null,
+    metadata: {},
+  },
   contextFingerprint: 'context-fingerprint',
 }
 
 function row(status: 'pending' | 'running' | 'completed' | 'failed') {
-  return { id: '55555555-5555-4555-8555-555555555555', status, request_fingerprint: `${attemptId}:${outputId}:context-fingerprint` }
+  return { id: '55555555-5555-4555-8555-555555555555', status, request_fingerprint: `${attemptId}:${outputId}:context-fingerprint`, media_artifact_id: '66666666-6666-4666-8666-666666666666' }
 }
 
 function validEvaluatorResult() {
@@ -75,6 +87,7 @@ describe('createImageReviewExecution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveContext.mockResolvedValue(resolved)
+    mocks.resolveArtifact.mockResolvedValue({ id: '66666666-6666-4666-8666-666666666666' })
     mocks.findByClient.mockResolvedValue({ data: null, error: null })
     mocks.findActive.mockResolvedValue({ data: null, error: null })
     mocks.insertPending.mockResolvedValue({ data: row('pending'), error: null })
