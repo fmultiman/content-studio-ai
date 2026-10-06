@@ -33,3 +33,31 @@ describe('Image generation route convergence contract', () => {
     expect(compatibility).toContain("redirect('/imagens')")
   })
 })
+
+// IMAGE_GENERATION_WORKSPACE_REGRESSION_RECOVERY_V1: source-text assertions above passed while the canonical
+// route was broken in Production (Next.js 16 `params` is a Promise). Guard the whole App Router tree.
+describe('Next.js 16 async params contract', () => {
+  const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+  const walk = (dir: string, out: string[] = []): string[] => {
+    for (const entry of readdirSync(dir)) {
+      const full = resolve(dir, entry)
+      if (statSync(full).isDirectory()) walk(full, out)
+      else if (/^(page|layout|route)\.tsx?$/.test(entry)) out.push(full)
+    }
+    return out
+  }
+
+  it('no page, layout or route types `params` as a synchronous object', () => {
+    const offenders = walk(resolve(root, 'app'))
+      .filter((file) => /params\s*:\s*\{(?!\s*\})/.test(readFileSync(file, 'utf8')))
+      .map((file) => file.slice(root.length + 1))
+    expect(offenders).toEqual([])
+  })
+
+  it('the canonical Image Session page reads the id through useParams, not the params prop', () => {
+    const page = read('app/(dashboard)/imagens/geracoes/[sessionId]/page.tsx')
+    expect(page).toContain('useParams')
+    // The component takes no props, so nothing can read the Promise-typed `params` prop.
+    expect(page).toMatch(/export default function \w+\(\)/)
+  })
+})

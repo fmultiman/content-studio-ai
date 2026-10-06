@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { ImageSessionCard } from '@/components/images/image-session-card'
 import {
   DashboardPage,
   DashboardPageBar,
@@ -1903,15 +1904,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             {sessions.slice(0, 20).map((session) => {
               const project = projects.find((item) => item.id === session.projectId)
               const production = productions.find((item) => item.id === session.productionId)
-              return <Card key={session.id} className="border-border/50 bg-card/30">
-                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{session.workingPrompt || session.name || 'Geração sem descrição'}</p>
-                    <p className="text-xs text-muted-foreground">{project?.name || 'Sem Project'} · {production?.title || 'Sem Production'} · {new Date(session.updatedAt).toLocaleDateString('pt-BR')}</p>
-                  </div>
-                  <Button size="sm" onClick={() => router.push(`/imagens/geracoes/${session.id}`)} className="gap-1">Continuar <ChevronRight className="h-4 w-4" /></Button>
-                </CardContent>
-              </Card>
+              return <ImageSessionCard key={session.id} session={session} projectName={project?.name} productionTitle={production?.title} onContinue={(sessionId) => router.push(`/imagens/geracoes/${sessionId}`)} />
             })}
           </div>
         )}
