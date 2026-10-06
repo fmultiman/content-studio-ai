@@ -1,0 +1,470 @@
+{
+  "inventoryVersion": "1",
+  "mission": "SHARED_REVIEW_CORE_AND_IMAGE_ADAPTER_PREFLIGHT_V1",
+  "capturedAtUtc": "2026-10-06T00:44:13.174517+00:00",
+  "source": {
+    "projectRef": "nuhdhnasuohizxtmyiju",
+    "tables": [
+      "public.image_generation_sessions",
+      "public.image_generation_attempts",
+      "public.image_drafts",
+      "public.images"
+    ],
+    "readOnly": true
+  },
+  "counts": {
+    "imageDrafts": 29,
+    "migratedSessions": 29,
+    "legacyAttempts": 23,
+    "legacyAttemptsWithEvaluation": 18,
+    "legacyAttemptsWithoutEvaluation": 5,
+    "evaluatedAttemptsWithOutput": 17,
+    "evaluatedAttemptsWithoutOutput": 1,
+    "currentSessionEvaluations": 6,
+    "currentEvaluationsAliasedToHistorical": 6,
+    "normalizedReviewRowsNow": 0
+  },
+  "classificationTotals": {
+    "MIGRATE_EXACT": 0,
+    "MIGRATE_PARTIAL": 17,
+    "PRESERVE_LEGACY_ONLY": 1,
+    "NO_LEGACY_REVIEW": 5,
+    "AMBIGUOUS": 0,
+    "DISCARDED": 0
+  },
+  "reconciliation": "23 legacy attempts = 18 evaluated + 5 without evaluation; 18 evaluated = 17 with output + 1 without output; 29 drafts = 29 sessions.",
+  "notes": [
+    "legacy_evaluation JSON null is distinct from SQL null in the live JSONB column and is counted as without evaluation.",
+    "Legacy score scale is unknown; values include both 0-100-looking values and single-digit values. Preserve raw payload and do not normalize score.",
+    "Legacy rows have no reviewer provider/model/version/context snapshot/review timestamp. These fields remain unknown.",
+    "Current session evaluation values match a historical evaluation payload for each of the 6 current records; current aliases do not create additional Review subjects.",
+    "No source row is deleted or mutated by this preflight."
+  ],
+  "rows": [
+    {
+      "legacyImageDraftId": "07fdafe6-f2ff-471f-8a33-e0c7cbed4436",
+      "sessionId": "07fdafe6-f2ff-471f-8a33-e0c7cbed4436",
+      "attemptId": "3f30956c-9e32-4b01-93db-c0d4d9643664",
+      "sequence": 1,
+      "resultImageId": "3a49939e-f076-4cd9-bd1c-166b3320fa6d",
+      "legacyAttemptKey": "attempt-3a49939e-f076-4cd9-bd1c-166b3320fa6d",
+      "evaluationMd5": null,
+      "legacyScore": null,
+      "hasEvaluation": false,
+      "disposition": "NO_LEGACY_REVIEW",
+      "unknowns": []
+    },
+    {
+      "legacyImageDraftId": "0ea557f3-e04c-4ada-86a9-10ab12a8735c",
+      "sessionId": "0ea557f3-e04c-4ada-86a9-10ab12a8735c",
+      "attemptId": "da836722-0537-46ea-ae1d-dc085d2cc62b",
+      "sequence": 1,
+      "resultImageId": "545e1791-b32c-4d38-9dd8-adfc4434ecda",
+      "legacyAttemptKey": "attempt-545e1791-b32c-4d38-9dd8-adfc4434ecda",
+      "evaluationMd5": "96b2ff9a7ae9e9f2bb1d7220ebc99408",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "0eb2a983-4354-451a-8038-fd3f502c2413",
+      "sessionId": "0eb2a983-4354-451a-8038-fd3f502c2413",
+      "attemptId": "130c74d1-7db6-41be-843b-5dc0b9fb31aa",
+      "sequence": 1,
+      "resultImageId": "a59654ad-78b6-4490-a6a2-f3868bf0b4b5",
+      "legacyAttemptKey": "attempt-a59654ad-78b6-4490-a6a2-f3868bf0b4b5",
+      "evaluationMd5": null,
+      "legacyScore": null,
+      "hasEvaluation": false,
+      "disposition": "NO_LEGACY_REVIEW",
+      "unknowns": []
+    },
+    {
+      "legacyImageDraftId": "0eb2a983-4354-451a-8038-fd3f502c2413",
+      "sessionId": "0eb2a983-4354-451a-8038-fd3f502c2413",
+      "attemptId": "a67ba211-99b9-4063-ab38-97ebf6430787",
+      "sequence": 2,
+      "resultImageId": "1098c9f5-c0a2-466c-8f49-2b304f28d878",
+      "legacyAttemptKey": "attempt-1098c9f5-c0a2-466c-8f49-2b304f28d878",
+      "evaluationMd5": null,
+      "legacyScore": null,
+      "hasEvaluation": false,
+      "disposition": "NO_LEGACY_REVIEW",
+      "unknowns": []
+    },
+    {
+      "legacyImageDraftId": "4e57855a-9529-446a-9203-8d7935b66d5a",
+      "sessionId": "4e57855a-9529-446a-9203-8d7935b66d5a",
+      "attemptId": "abc182dc-dc7f-4508-af31-a72c3af30b7f",
+      "sequence": 1,
+      "resultImageId": "72bb8949-720f-464d-8e83-fe0e87683021",
+      "legacyAttemptKey": "attempt-72bb8949-720f-464d-8e83-fe0e87683021",
+      "evaluationMd5": "b5773fc69b1d2a68073221487b34b46b",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "539b2cb7-d8d7-4995-aa11-625bf7446345",
+      "sessionId": "539b2cb7-d8d7-4995-aa11-625bf7446345",
+      "attemptId": "d16e0d45-b5a4-4fc7-8fa3-010f49df9199",
+      "sequence": 1,
+      "resultImageId": "70e57294-d7cf-4c90-b064-fa29ac5f0e20",
+      "legacyAttemptKey": "attempt-70e57294-d7cf-4c90-b064-fa29ac5f0e20",
+      "evaluationMd5": "385fe45745165b827355c9e4ca8da3a0",
+      "legacyScore": 40,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "6bcbdfdb-4dc6-49ab-97e8-6baefe2038f7",
+      "sessionId": "6bcbdfdb-4dc6-49ab-97e8-6baefe2038f7",
+      "attemptId": "18a5a302-edd7-4053-93e6-ef5cd944daad",
+      "sequence": 1,
+      "resultImageId": "2dfafe66-050f-41f2-9656-9ae38b85b9ad",
+      "legacyAttemptKey": "attempt-2dfafe66-050f-41f2-9656-9ae38b85b9ad",
+      "evaluationMd5": "bc39aa4b73281cd4a21395fd0a1da234",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "6bcbdfdb-4dc6-49ab-97e8-6baefe2038f7",
+      "sessionId": "6bcbdfdb-4dc6-49ab-97e8-6baefe2038f7",
+      "attemptId": "3f8e79f8-6cf1-49ea-83d6-81e4ca3f3936",
+      "sequence": 2,
+      "resultImageId": "ce23879c-2e3a-4a45-a25b-5f27eb181410",
+      "legacyAttemptKey": "attempt-ce23879c-2e3a-4a45-a25b-5f27eb181410",
+      "evaluationMd5": null,
+      "legacyScore": null,
+      "hasEvaluation": false,
+      "disposition": "NO_LEGACY_REVIEW",
+      "unknowns": []
+    },
+    {
+      "legacyImageDraftId": "73e8a48d-636a-4a7e-9884-ea0d1f3631f0",
+      "sessionId": "73e8a48d-636a-4a7e-9884-ea0d1f3631f0",
+      "attemptId": "1f3796a8-44d8-4de1-98b4-a9dd810010d3",
+      "sequence": 1,
+      "resultImageId": "f489c6fb-9066-47c1-ab49-aaba72c4cb6a",
+      "legacyAttemptKey": "attempt-f489c6fb-9066-47c1-ab49-aaba72c4cb6a",
+      "evaluationMd5": "d59ae6df98500b6d0aeb111798f32cf6",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "73e8a48d-636a-4a7e-9884-ea0d1f3631f0",
+      "sessionId": "73e8a48d-636a-4a7e-9884-ea0d1f3631f0",
+      "attemptId": "ccba3d95-d354-43d0-8cb6-1a58f4f16624",
+      "sequence": 2,
+      "resultImageId": "048db604-0ac2-4172-9673-2087c1f3f771",
+      "legacyAttemptKey": "attempt-048db604-0ac2-4172-9673-2087c1f3f771",
+      "evaluationMd5": "dd33bbd3ba6e0d9f26099b7e833a93a6",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "8c5bbdb7-e864-4cfe-8745-63e1030be9cd",
+      "sessionId": "8c5bbdb7-e864-4cfe-8745-63e1030be9cd",
+      "attemptId": "e1f3f051-338a-4106-9b58-4e98f2398b28",
+      "sequence": 1,
+      "resultImageId": null,
+      "legacyAttemptKey": "attempt-1777240109024",
+      "evaluationMd5": "df8056dc691078613df2dc21b925b51c",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "PRESERVE_LEGACY_ONLY",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "sessionId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "attemptId": "2e302728-1dd8-4390-8140-cca576e7abdf",
+      "sequence": 1,
+      "resultImageId": "50bb650c-3ab0-487e-92a0-66bc31d79634",
+      "legacyAttemptKey": "attempt-1777275814821",
+      "evaluationMd5": "0e014b4611d5f9e40a0de7814a4583a5",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "sessionId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "attemptId": "2d884a3d-e587-4be8-aec5-12f59332247d",
+      "sequence": 2,
+      "resultImageId": "50bb650c-3ab0-487e-92a0-66bc31d79634",
+      "legacyAttemptKey": "attempt-1777275909579",
+      "evaluationMd5": "63d50acf1d73d3dfb203cc7f66a90b8a",
+      "legacyScore": 6,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "sessionId": "97508404-c5a9-4d30-ac0a-ac5b7ae0706d",
+      "attemptId": "a9f4b28d-2bdb-475f-a475-f44a6facb7ba",
+      "sequence": 3,
+      "resultImageId": "50bb650c-3ab0-487e-92a0-66bc31d79634",
+      "legacyAttemptKey": "attempt-1777275981757",
+      "evaluationMd5": "01276459aefeb50f4ca35d19bc3f1787",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "a9621d0a-118d-49fc-bca9-8864994ffd1f",
+      "sessionId": "a9621d0a-118d-49fc-bca9-8864994ffd1f",
+      "attemptId": "912c7b60-3cc3-4366-ab2c-e0887939972f",
+      "sequence": 1,
+      "resultImageId": "0047685a-71f7-410d-a291-f565cd1bf0d2",
+      "legacyAttemptKey": "attempt-0047685a-71f7-410d-a291-f565cd1bf0d2",
+      "evaluationMd5": "6835468f045b27fa8fd22abdd0d4a24e",
+      "legacyScore": 65,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "a9621d0a-118d-49fc-bca9-8864994ffd1f",
+      "sessionId": "a9621d0a-118d-49fc-bca9-8864994ffd1f",
+      "attemptId": "51e1412b-8250-45c9-a95f-ff438f73a0d3",
+      "sequence": 2,
+      "resultImageId": "a0c65611-ee87-41f7-b699-c01fc90c6cfd",
+      "legacyAttemptKey": "attempt-a0c65611-ee87-41f7-b699-c01fc90c6cfd",
+      "evaluationMd5": "c873002bfdd1f69796cbaee87184c07a",
+      "legacyScore": 75,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "sessionId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "attemptId": "07b9ddbd-f539-494c-a821-cb5147984418",
+      "sequence": 1,
+      "resultImageId": "cc5bff55-2b9d-4916-8a8d-7bf2e05b5386",
+      "legacyAttemptKey": "attempt-1777274569729",
+      "evaluationMd5": "21a907ddc2732e52d991c16011542990",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "sessionId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "attemptId": "3599ef1a-7eec-4444-b54b-d7c72dfcffc2",
+      "sequence": 2,
+      "resultImageId": "cc5bff55-2b9d-4916-8a8d-7bf2e05b5386",
+      "legacyAttemptKey": "attempt-1777274761015",
+      "evaluationMd5": "2fcb52985c1ef703d0da67ac1f8fafb5",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "sessionId": "c44bf448-350d-4a3f-833b-8d00f5a9f0b0",
+      "attemptId": "705dcf93-aeba-4a8d-b92f-52e4ee62b6a3",
+      "sequence": 3,
+      "resultImageId": "cc5bff55-2b9d-4916-8a8d-7bf2e05b5386",
+      "legacyAttemptKey": "attempt-1777274937108",
+      "evaluationMd5": "d0c800b9b6d1dab584dace15e5ba3260",
+      "legacyScore": 7,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "cbe26f71-27c8-44f2-89db-4432b104245a",
+      "sessionId": "cbe26f71-27c8-44f2-89db-4432b104245a",
+      "attemptId": "6a887ff0-289a-4979-ae46-3c05ae8aa979",
+      "sequence": 1,
+      "resultImageId": "6d1c465c-1142-4308-a097-becff16d0b68",
+      "legacyAttemptKey": "attempt-6d1c465c-1142-4308-a097-becff16d0b68",
+      "evaluationMd5": "57d6e517fe5ef4e6791eb89e2ab3fe64",
+      "legacyScore": 85,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "sessionId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "attemptId": "0812b363-7e6f-4f6f-be01-6687dd104adb",
+      "sequence": 1,
+      "resultImageId": "b7dbc8d4-a8a1-4bf3-9209-a99094c9cda8",
+      "legacyAttemptKey": "attempt-b7dbc8d4-a8a1-4bf3-9209-a99094c9cda8",
+      "evaluationMd5": "e0739f2e3ab08b773b3238f6f91dfe9a",
+      "legacyScore": 8,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "sessionId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "attemptId": "f1bdfe47-3556-4c24-8530-6efcf0067d7c",
+      "sequence": 2,
+      "resultImageId": "c1744c8c-c5c2-4e92-9a82-0b3cc9a299b0",
+      "legacyAttemptKey": "attempt-c1744c8c-c5c2-4e92-9a82-0b3cc9a299b0",
+      "evaluationMd5": "131eb0f7659a119ba48121673c2ac712",
+      "legacyScore": 8,
+      "hasEvaluation": true,
+      "disposition": "MIGRATE_PARTIAL",
+      "unknowns": [
+        "evaluator_provider",
+        "evaluator_model",
+        "evaluator_prompt_version",
+        "evaluation_context_snapshot",
+        "evaluation_created_at",
+        "score_scale"
+      ]
+    },
+    {
+      "legacyImageDraftId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "sessionId": "e624d457-b632-45f6-902e-d2598d84f6d9",
+      "attemptId": "4836c2dc-b336-4111-86db-4b96a6516a6f",
+      "sequence": 3,
+      "resultImageId": "1b3fba40-123b-4b9b-9e15-ffc10bec5a66",
+      "legacyAttemptKey": "attempt-1b3fba40-123b-4b9b-9e15-ffc10bec5a66",
+      "evaluationMd5": null,
+      "legacyScore": null,
+      "hasEvaluation": false,
+      "disposition": "NO_LEGACY_REVIEW",
+      "unknowns": []
+    }
+  ]
+}
