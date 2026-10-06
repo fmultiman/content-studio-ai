@@ -1,0 +1,112 @@
+{
+  "mission": "GEMINI_PROVIDER_AND_UNIVERSAL_MEDIA_REVIEW_PREFLIGHT_V1",
+  "checkpoint": {
+    "origin_main": "9cdeb6a03f3c91bc6e18a1018caf129cebbfa7a8",
+    "branch": "discovery/gemini-provider-universal-media-review-preflight-v1",
+    "product_code_changed": false,
+    "paid_provider_calls": 0
+  },
+  "current_media_reviews": {
+    "table": "public.media_reviews",
+    "subject_model": "image_generation_attempt_plus_images_output",
+    "normalized_rows_read_only": 17,
+    "typed_foreign_keys": [
+      "image_attempt_id -> image_generation_attempts.id",
+      "image_output_id -> images.id"
+    ],
+    "media_type_constraint": "subject_media_type = image",
+    "lifecycle": ["pending", "running", "completed", "failed"],
+    "review_is_advisory": true,
+    "approval_is_separate": true,
+    "library_promotion_is_separate": true
+  },
+  "legacy_reconciliation": {
+    "historical_attempts": 23,
+    "evaluated_attempts": 18,
+    "migrate_partial": 17,
+    "preserve_legacy_only_outputless": 1,
+    "null_evaluation_attempts": 5,
+    "current_evaluations_overlap_historical": true,
+    "duplicate_current_review_rows_allowed": false,
+    "discarded_evaluations": 0
+  },
+  "media_authorities": {
+    "generated_image": {
+      "session": "image_generation_sessions",
+      "attempt": "image_generation_attempts",
+      "output": "images"
+    },
+    "generated_video": {
+      "session": "video_generation_sessions",
+      "attempt_and_output": "video_generations"
+    },
+    "creative_editor_static": {
+      "authoring": "channel_piece_static_authoring_states/channel_pieces",
+      "render_output": "render_executions where kind = static_still"
+    },
+    "creative_editor_video": {
+      "authoring": "video_drafts/video_scenes",
+      "render_output": "render_executions where kind = video"
+    },
+    "library_or_upload": {
+      "asset": "library_files",
+      "required_review_identity": "immutable artifact revision/hash, not library_files.id alone"
+    }
+  },
+  "recommendation": {
+    "universal_subject": "immutable_media_artifact_version",
+    "provenance": "optional typed provenance edges",
+    "physical_strategy": "media_artifacts plus media_artifact_provenance, additive bridge from current Image FKs",
+    "unchecked_polymorphic_subject_id": false,
+    "migration_required_later": true,
+    "ffmpeg_or_local_frame_extraction_for_gemini_video_v1": false,
+    "native_video_preferred": true,
+    "video_review_execution": "asynchronous pending/running/completed|failed",
+    "image_endpoint": "retain /api/reviews/image as compatibility wrapper",
+    "future_universal_endpoint": "POST /api/reviews with server-resolvable artifact identifier"
+  },
+  "gemini": {
+    "official_provider_id": "gemini",
+    "official_auth_recommendation": "server-side per-user BYOK API key through existing provider credential boundary",
+    "review_adapter_is_provider_neutral": true,
+    "official_video_inputs": "native video via inline bytes or Files API",
+    "files_api_limits_observed": {
+      "project_storage_gb": 20,
+      "file_size_gb": 2,
+      "retention_hours": 48
+    },
+    "first_release_product_guardrails": {
+      "max_file_mb": 500,
+      "max_duration_minutes": 10,
+      "reason": "latency and cost control below provider maximums"
+    },
+    "structured_output": "request JSON schema but always validate server-side",
+    "provider_file_policy": "server uploads authorized artifact, deletes after execution where possible, never canonical artifact identity"
+  },
+  "antigravity": {
+    "classification": "Google Antigravity - Experimental Connected Account / Bridge",
+    "official_gemini_api": false,
+    "kling_mcp": false,
+    "google_flow": false,
+    "observed_mechanism": "community OmniRoute material describes Google OAuth 2.0, loopback callback, and local/VPS bridge options",
+    "native_video_review_proven": false,
+    "video_review_suitability": "unverified_deferred",
+    "future_security_requirements": [
+      "explicit opt-in",
+      "per-user encrypted token isolation",
+      "expiry and revoke/disconnect",
+      "no shared credentials",
+      "clear experimental label",
+      "no automatic fallback",
+      "no browser-held secret"
+    ]
+  },
+  "future_missions": [
+    "UNIVERSAL_MEDIA_REVIEW_SUBJECT_FOUNDATION_V1",
+    "GEMINI_REVIEW_PROVIDER_FOUNDATION_V1",
+    "GEMINI_VIDEO_REVIEW_ADAPTER_V1",
+    "ANTIGRAVITY_CONNECTED_ACCOUNT_EXPERIMENT_V1",
+    "GEMINI_IMAGE_GENERATION_ADAPTER_V1",
+    "GEMINI_VIDEO_GENERATION_VEO_ADAPTER_V1"
+  ]
+}
