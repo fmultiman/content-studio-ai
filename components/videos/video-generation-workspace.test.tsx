@@ -1,7 +1,6 @@
 ﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { GenerationSessionNavigationProvider } from '@/components/generation-session/session-navigation-guard'
 import WorkspacePage from '@/app/(dashboard)/videos/geracoes/[sessionId]/page'
 import { describeRestConnection } from '@/lib/video-generation/connections'
 import type { VideoGenerationConnectionDescriptor } from '@/lib/video-generation/capabilities'
@@ -21,9 +20,6 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }))
-
-// The dashboard layout mounts the navigation guard in production; the workspace requires it.
-const renderWorkspace = () => render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
 const CONNECTIONS_FIXTURE: VideoGenerationConnectionDescriptor[] = [
   describeRestConnection('configured'),
@@ -64,7 +60,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByText('Workspace de Geração de Vídeo')).toBeTruthy()
@@ -117,7 +113,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Como esta imagem deve ser animada|Descreva a cena do vídeo/i)).toBeTruthy()
@@ -206,7 +202,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial prompt')).toBeTruthy()
@@ -303,7 +299,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('My local prompt')).toBeTruthy()
@@ -411,7 +407,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial local prompt')).toBeTruthy()
@@ -483,7 +479,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Old prompt with non-existent model')).toBeTruthy()
@@ -572,7 +568,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial prompt')).toBeTruthy()
@@ -650,7 +646,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Ready prompt')).toBeTruthy()
@@ -735,7 +731,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByText('A futuristic cityscape at dusk')).toBeTruthy()
@@ -783,7 +779,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       // Prompt should be seeded
@@ -878,7 +874,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Existing stored session prompt')).toBeTruthy()
@@ -924,7 +920,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    renderWorkspace()
+    render(<WorkspacePage />)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Text to video prompt')).toBeTruthy()
