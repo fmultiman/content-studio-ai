@@ -12,6 +12,7 @@ import {
   type ImageGenerationSessionRow,
 } from '@/lib/image-generation/session'
 import { authenticateImageGenerationRequest, validateImageScope } from '@/lib/image-generation/api'
+import { resolveSessionThumbnails } from '@/lib/image-generation/session-thumbnails'
 
 function errorResponse(status: number, code: string, message: string, extra: Record<string, unknown> = {}) {
   return NextResponse.json({ error: message, code, ...extra }, { status })
@@ -40,7 +41,12 @@ export async function GET(req: NextRequest) {
     if (legacyImageDraftId) query = query.eq('legacy_image_draft_id', legacyImageDraftId)
     const { data, error } = await query.order('updated_at', { ascending: false }).order('id', { ascending: false }).limit(IMAGE_SESSION_LIMITS.listMax)
     if (error) return errorResponse(503, 'STORE_UNAVAILABLE', 'Sessions could not be loaded.')
-    return NextResponse.json({ sessions: ((data ?? []) as unknown as ImageGenerationSessionRow[]).map(toSessionResponse) })
+    const rows = (data ?? []) as unknown as ImageGenerationSessionRow[]
+    // Thumbnail resolution is best-effort: a failure must never hide the Sessions themselves.
+    const thumbnails = await resolveSessionThumbnails(supabase, user.id, rows.map((row) => row.current_image_id)).catch(() => new Map<string, string>())
+    return NextResponse.json({
+      sessions: rows.map((row) => ({ ...toSessionResponse(row), thumbnailUrl: row.current_image_id ? thumbnails.get(row.current_image_id) ?? null : null })),
+    })
   } catch {
     return errorResponse(500, 'INTERNAL_ERROR', 'Could not list Image generation sessions.')
   }
