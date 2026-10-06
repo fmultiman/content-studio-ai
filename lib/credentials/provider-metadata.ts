@@ -55,6 +55,12 @@ export const PROVIDER_METADATA: Record<AiProvider, ProviderMetadata> = {
     transports: ['rest'],
     executionImplemented: false,
   },
+  gemini: {
+    label: 'Google Gemini API',
+    connectionMethods: ['api_key'],
+    transports: ['rest'],
+    executionImplemented: false,
+  },
 }
 
 /** Connection method a saved credential is held under (V1: always an API key). */

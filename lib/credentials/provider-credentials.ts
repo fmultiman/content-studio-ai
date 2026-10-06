@@ -23,9 +23,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type AiProvider = 'openai' | 'nano_banana' | 'kling' | 'replicate'
+export type AiProvider = 'openai' | 'nano_banana' | 'kling' | 'replicate' | 'gemini'
 
-export const AI_PROVIDERS: readonly AiProvider[] = ['openai', 'nano_banana', 'kling', 'replicate']
+export const AI_PROVIDERS: readonly AiProvider[] = ['openai', 'nano_banana', 'kling', 'replicate', 'gemini']
 
 export function isAiProvider(value: string): value is AiProvider {
   return (AI_PROVIDERS as readonly string[]).includes(value)
@@ -36,6 +36,7 @@ const PROVIDER_SECRET_COLUMN: Record<AiProvider, string> = {
   nano_banana: 'nanobanana_api_key',
   kling: 'kling_api_key',
   replicate: 'replicate_api_key',
+  gemini: 'gemini_api_key',
 }
 
 export type ProviderCredentialResult =
@@ -77,7 +78,7 @@ export async function getProviderConfigurationStatuses(
 ): Promise<ProviderConfigurationStatusMap> {
   const { data } = await supabase
     .from('user_settings')
-    .select('openai_api_key, nanobanana_api_key, kling_api_key, replicate_api_key')
+    .select('openai_api_key, nanobanana_api_key, kling_api_key, replicate_api_key, gemini_api_key')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -89,6 +90,7 @@ export async function getProviderConfigurationStatuses(
     nano_banana: isConfigured(row?.nanobanana_api_key) ? 'configured' : 'missing',
     kling: isConfigured(row?.kling_api_key) ? 'configured' : 'missing',
     replicate: isConfigured(row?.replicate_api_key) ? 'configured' : 'missing',
+    gemini: isConfigured(row?.gemini_api_key) ? 'configured' : 'missing',
   }
 }
 
