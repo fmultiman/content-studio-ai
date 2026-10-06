@@ -2,6 +2,7 @@
 
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
+import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
 
 export interface Project {
   id: string
@@ -70,6 +71,7 @@ export interface GenerationAttempt {
   imageId?: string | null
   model: string
   evaluation: ImageEvaluation | null
+  review?: ReviewRecordV1 | null
   timestamp: string
 }
 

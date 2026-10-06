@@ -4,10 +4,18 @@ import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/proje
 import { buildImageEvaluationContext } from '@/lib/context-compiler'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { z } from 'zod'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_EVALUATION_MODEL = 'gpt-4o-mini'
 const EVALUATION_MODES = ['default', 'conceptual', 'aesthetic', 'commercial', 'experimental'] as const
+const LegacyEvaluationSchema = z.object({
+  score: z.number().int().min(0).max(100),
+  approved: z.boolean(),
+  feedback: z.string().min(1).max(10_000),
+  improvements: z.array(z.string().max(2_000)).max(20),
+  refinedPrompt: z.string().nullable(),
+}).strict()
 
 type EvaluationMode = (typeof EVALUATION_MODES)[number]
 
@@ -278,33 +286,29 @@ Responda apenas com JSON valido no formato solicitado. O feedback e as melhorias
 
     console.log('[Evaluate Image] OpenAI response received')
 
-    let evaluation
+    let evaluation: unknown
     try {
       evaluation = extractJson(text)
     } catch (parseError) {
       console.error('[Evaluate Image] Parse error:', parseError)
-      evaluation = {
-        score: 75,
-        approved: true,
-        feedback: 'Avaliacao concluida com sucesso.',
-        improvements: [],
-        refinedPrompt: generatedPrompt,
-      }
+      return NextResponse.json(
+        { error: 'A resposta do evaluator não pôde ser interpretada.', code: 'INVALID_EVALUATOR_RESPONSE' },
+        { status: 502 },
+      )
     }
 
-    evaluation = {
-      score: evaluation.score ?? 75,
-      approved: evaluation.approved ?? (evaluation.score >= 75),
-      feedback: evaluation.feedback ?? 'Avaliacao concluida.',
-      improvements: Array.isArray(evaluation.improvements)
-        ? evaluation.improvements
-        : [],
-      refinedPrompt: evaluation.refinedPrompt ?? generatedPrompt,
+    const parsedEvaluation = LegacyEvaluationSchema.safeParse(evaluation)
+    if (!parsedEvaluation.success) {
+      return NextResponse.json(
+        { error: 'A resposta do evaluator não corresponde ao schema legado.', code: 'INVALID_EVALUATOR_RESPONSE' },
+        { status: 502 },
+      )
     }
+    evaluation = parsedEvaluation.data
 
     console.log('[Evaluate Image] Evaluation complete:', {
-      score: evaluation.score,
-      approved: evaluation.approved,
+      score: parsedEvaluation.data.score,
+      approved: parsedEvaluation.data.approved,
     })
 
     return NextResponse.json(evaluation)

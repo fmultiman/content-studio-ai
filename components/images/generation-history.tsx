@@ -72,17 +72,10 @@ export function GenerationHistory({
                       <span className="text-sm font-medium">
                         {attempt.model}
                       </span>
-                      {attempt.evaluation && (
-                        <Badge 
-                          variant={attempt.evaluation.approved ? 'success' : 'warning'}
-                        >
-                          {attempt.evaluation.approved ? (
-                            <Check className="mr-1 h-3 w-3" />
-                          ) : (
-                            <X className="mr-1 h-3 w-3" />
-                          )}
-                          {attempt.evaluation.score}/100
-                        </Badge>
+                      {attempt.review?.result ? (
+                        <Badge variant="outline">{attempt.review.result.overall.assessment} · {attempt.review.result.overall.score}/100</Badge>
+                      ) : attempt.evaluation && (
+                        <Badge variant="warning">Legado · {attempt.evaluation.score}/100</Badge>
                       )}
                     </div>
                     <p className="line-clamp-1 text-xs text-muted-foreground">
@@ -121,8 +114,28 @@ export function GenerationHistory({
                       <p className="text-sm">{attempt.prompt}</p>
                     </div>
                     
-                    {/* Evaluation */}
-                    {attempt.evaluation && (
+                    {/* Normalized Review, with legacy compatibility fallback */}
+                    {attempt.review?.result ? (
+                      <div className="space-y-3 rounded-lg bg-muted/30 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Avaliação IA</span>
+                          <Badge variant="outline">{attempt.review.result.overall.assessment} · {attempt.review.result.overall.score}</Badge>
+                        </div>
+                        <p className="text-sm">{attempt.review.result.summary}</p>
+                        {attempt.review.result.issues.length > 0 && (
+                          <ul className="list-inside list-disc text-sm text-muted-foreground">
+                            {attempt.review.result.issues.map((issue) => <li key={issue}>{issue}</li>)}
+                          </ul>
+                        )}
+                        {attempt.review.result.refinedPrompt && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">Prompt refinado:</p>
+                            <p className="rounded-lg bg-background/50 p-2 text-sm">{attempt.review.result.refinedPrompt}</p>
+                            {onUsePrompt && <Button size="sm" variant="outline" onClick={() => onUsePrompt(attempt.review!.result!.refinedPrompt || '')} className="w-full"><Sparkles className="mr-2 h-3 w-3" />Usar este prompt</Button>}
+                          </div>
+                        )}
+                      </div>
+                    ) : attempt.evaluation && (
                       <div className="space-y-3 rounded-lg bg-muted/30 p-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-muted-foreground">Avaliação IA</span>

@@ -49,6 +49,7 @@ import { SessionSaveStatus } from '@/components/generation-session/session-save-
 import { useGenerationSessionNavigation } from '@/components/generation-session/session-navigation-guard'
 import type { GenerationSessionAutosaveAdapter } from '@/lib/generation-session/autosave'
 import type { ImageGenerationWorkingStateV1 } from '@/lib/image-generation/session'
+import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
 import {
   buildImageDraftHubCards,
   filterDraftHubCards,
@@ -294,6 +295,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [maxRefinements, setMaxRefinements] = useState(2)
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [currentEvaluation, setCurrentEvaluation] = useState<ImageEvaluation | null>(null)
+  const [currentReview, setCurrentReview] = useState<ReviewRecordV1 | null>(null)
   const [generationAttempts, setGenerationAttempts] = useState<GenerationAttempt[]>([])
 
   // Refs para scroll automático
@@ -402,6 +404,17 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     return data.draft as ImageDraft
   }
 
+  const loadNormalizedReview = async (attemptId: string): Promise<ReviewRecordV1 | null> => {
+    try {
+      const response = await fetch(`/api/reviews/image?attemptId=${attemptId}`)
+      if (!response.ok) return null
+      const payload = await response.json()
+      return payload.latestCompleted || null
+    } catch {
+      return null
+    }
+  }
+
   const applyCanonicalSessionState = async (session: any, attempts: any[]) => {
     const state = session.workingState || {}
     const imageIds = Array.from(new Set([
@@ -433,6 +446,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setCurrentEvaluation(session.legacyCurrentEvaluation || null)
     const history = await Promise.all(attempts.map(async (attempt) => {
       const output = attempt.resultImageId ? imageById.get(attempt.resultImageId) || null : null
+      const review = await loadNormalizedReview(attempt.id)
       return {
         id: attempt.id,
         attempt: attempt.sequence,
@@ -441,10 +455,15 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         imageId: attempt.resultImageId || null,
         model: attempt.model || 'unknown',
         evaluation: attempt.legacyEvaluation || null,
+        review,
         timestamp: attempt.submittedAt || attempt.createdAt,
       } as GenerationAttempt
     }))
     setGenerationAttempts(history)
+    const currentHistoryAttempt = history
+      .filter((attempt) => current?.id && attempt.imageId === current.id)
+      .sort((a, b) => b.attempt - a.attempt)[0]
+    setCurrentReview(currentHistoryAttempt?.review || null)
     imageAutosave.controller.resetAcknowledged({
       workingPrompt: session.workingPrompt || '',
       workingState: state as ImageGenerationWorkingStateV1,
@@ -489,6 +508,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
     const history = await Promise.all(attempts.map(async (attempt: any) => {
       const output = attempt.resultImageId ? imageById.get(attempt.resultImageId) || null : null
+      const review = await loadNormalizedReview(attempt.id)
       return {
         id: attempt.id,
         attempt: attempt.sequence,
@@ -497,10 +517,15 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         imageId: attempt.resultImageId || null,
         model: attempt.model || 'unknown',
         evaluation: attempt.legacyEvaluation || null,
+        review,
         timestamp: attempt.submittedAt || attempt.createdAt,
       } as GenerationAttempt
     }))
     setGenerationAttempts(history)
+    const currentHistoryAttempt = history
+      .filter((attempt) => currentImage?.id && attempt.imageId === currentImage.id)
+      .sort((a, b) => b.attempt - a.attempt)[0]
+    setCurrentReview(currentHistoryAttempt?.review || null)
   }
 
   const applyDraftState = async (draft: ImageDraft) => {
@@ -542,6 +567,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setPromptDetails(draft.prompt_details || null)
     setCurrentEvaluation(draft.current_evaluation || null)
     setGenerationAttempts(signedAttempts)
+    setCurrentReview(null)
     setCurrentAttempt(draft.current_attempt || 1)
     setCurrentImage(currentDraftImage)
     setImageUrl(currentDisplayUrl || draft.image_url || null)
@@ -835,6 +861,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setImageStatus('draft')
     // Reset evaluator state
     setCurrentEvaluation(null)
+    setCurrentReview(null)
     setGenerationAttempts([])
     setCurrentAttempt(1)
     // Production context and project are preserved intentionally:
@@ -949,6 +976,27 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setIsEvaluating(true)
 
     try {
+      if (canonicalWorkspace) {
+        const currentAttemptRecord = generationAttempts
+          .filter((attempt) => currentImage?.id && attempt.imageId === currentImage.id)
+          .sort((a, b) => b.attempt - a.attempt)[0]
+        if (!currentAttemptRecord) {
+          throw new Error('A avaliação exige um Attempt normalizado com output.')
+        }
+        const response = await fetch('/api/reviews/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attemptId: currentAttemptRecord.id, clientRequestId: crypto.randomUUID() }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload.review) throw new Error(payload.error || 'Erro na avaliação')
+        const review = payload.review as ReviewRecordV1
+        setCurrentReview(review)
+        setCurrentEvaluation(null)
+        setGenerationAttempts((prev) => prev.map((attempt) => attempt.id === currentAttemptRecord.id ? { ...attempt, review } : attempt))
+        toast({ title: 'Avaliação concluída', description: review.result?.summary || 'A avaliação está disponível no histórico.' })
+        return
+      }
       const selectedProjectData = projects.find(p => p.id === selectedProject)
 
       let projectIdentity: ProjectIdentity | null = null
@@ -991,6 +1039,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       }
 
       setCurrentEvaluation(evaluation)
+      setCurrentReview(null)
 
       // Attach evaluation to the generated image already present in history.
       setGenerationAttempts((prev) => {
@@ -1047,7 +1096,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const handleUseRefinedPrompt = (refinedPrompt: string) => {
     updateGeneratedPrompt(refinedPrompt)
     setCurrentEvaluation(null)
-    setCurrentAttempt(prev => prev + 1)
+    setCurrentReview(null)
     
     toast({
       title: 'Prompt atualizado',
@@ -2266,6 +2315,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                     imageId={currentImage?.id ?? null}
                     evaluatorEnabled={evaluatorEnabled}
                     evaluation={currentEvaluation}
+                    review={currentReview}
                     onEvaluate={handleEvaluateImage}
                     isEvaluating={isEvaluating}
                     onUseRefinedPrompt={handleUseRefinedPrompt}

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, Check, Download, Loader2, Brain, Sparkles } from 'lucide-react'
 import type { ImageEvaluation } from '@/lib/types'
+import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
 import { SaveImageToLibrary } from '@/components/images/save-image-to-library'
 
 interface ImageResultProps {
@@ -20,6 +21,7 @@ interface ImageResultProps {
   // Evaluator props
   evaluatorEnabled?: boolean
   evaluation?: ImageEvaluation | null
+  review?: ReviewRecordV1 | null
   onEvaluate?: () => void
   isEvaluating?: boolean
   onUseRefinedPrompt?: (prompt: string) => void
@@ -36,6 +38,7 @@ export function ImageResult({
   imageId = null,
   evaluatorEnabled = false,
   evaluation = null,
+  review = null,
   onEvaluate,
   isEvaluating = false,
   onUseRefinedPrompt,
@@ -120,27 +123,41 @@ export function ImageResult({
         </div>
 
         {/* Evaluation Result */}
-        {evaluation && (
+        {(review || evaluation) && (
           <div className="space-y-3 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Brain className="h-4 w-4 text-cyan-400" />
                 <span className="font-medium">Avaliação IA</span>
               </div>
-              <Badge 
-                variant={evaluation.approved ? 'default' : 'secondary'}
-                className={evaluation.approved 
-                  ? 'bg-emerald-500/20 text-emerald-400' 
-                  : 'bg-amber-500/20 text-amber-400'
-                }
-              >
-                Score: {evaluation.score}/100
-              </Badge>
+              {review?.status === 'failed' ? (
+                <Badge variant="secondary" className="bg-amber-500/20 text-amber-400">Falha na avaliação</Badge>
+              ) : review?.result ? (
+                <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-300">
+                  {review.result.overall.assessment} · {review.result.overall.score}/100
+                </Badge>
+              ) : evaluation ? (
+                <Badge variant="secondary">Legado · {evaluation.score}/100</Badge>
+              ) : null}
             </div>
-            
-            <p className="text-sm text-muted-foreground">{evaluation.feedback}</p>
-            
-            {evaluation.improvements.length > 0 && (
+
+            {review?.result ? (
+              <>
+                <p className="text-sm text-muted-foreground">{review.result.summary}</p>
+                {review.result.issues.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Pontos de atenção:</p>
+                    <ul className="list-inside list-disc text-sm text-muted-foreground">
+                      {review.result.issues.map((issue) => <li key={issue}>{issue}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : evaluation ? (
+              <p className="text-sm text-muted-foreground">{evaluation.feedback}</p>
+            ) : null}
+
+            {evaluation && !review && evaluation.improvements.length > 0 && (
               <div className="space-y-1">
                 <p className="text-xs font-medium">Sugestões de melhoria:</p>
                 <ul className="list-inside list-disc text-sm text-muted-foreground">
@@ -151,11 +168,11 @@ export function ImageResult({
               </div>
             )}
             
-            {evaluation.refinedPrompt && onUseRefinedPrompt && (
+            {(review?.result?.refinedPrompt || evaluation?.refinedPrompt) && onUseRefinedPrompt && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onUseRefinedPrompt(evaluation.refinedPrompt)}
+                onClick={() => onUseRefinedPrompt(review?.result?.refinedPrompt || evaluation?.refinedPrompt || '')}
                 className="w-full border-cyan-500/30 hover:bg-cyan-500/10"
               >
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -168,7 +185,7 @@ export function ImageResult({
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
           {/* Evaluate Button */}
-          {evaluatorEnabled && onEvaluate && !evaluation && status !== 'generating' && (
+          {evaluatorEnabled && onEvaluate && !evaluation && !review && status !== 'generating' && (
             <Button
               variant="outline"
               onClick={onEvaluate}
