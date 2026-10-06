@@ -44,7 +44,7 @@ export const ReviewFailureV1Schema = z.object({
 export const ReviewRecordSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(REVIEW_STATUSES),
-  subject: z.object({ mediaType: z.literal('image'), attemptId: z.string().uuid(), outputId: z.string().uuid() }).strict(),
+  subject: z.object({ mediaType: z.literal('image'), attemptId: z.string().uuid(), outputId: z.string().uuid(), artifactId: z.string().uuid().nullable() }).strict(),
   projectId: z.string().uuid().nullable(),
   productionId: z.string().uuid().nullable(),
   adapter: z.object({ key: z.string(), version: z.string() }).strict(),

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { buildRequestFingerprint, resolveImageReviewContext } from './context'
+import { resolveImageArtifact } from '@/lib/media-artifacts/image'
 import { buildImageEvaluationPrompt, IMAGE_EVALUATOR_PROMPT_VERSION, IMAGE_REVIEW_ADAPTER_KEY, IMAGE_REVIEW_ADAPTER_VERSION, mapImageEvaluatorResult, parseImageEvaluatorResponse } from './adapters/image'
 import { ReviewServiceError } from './errors'
 import { findActiveReviewByAttempt, findReviewByClientRequest, insertPendingReview, listReviewsByAttempt, markReviewCompleted, markReviewFailed, markReviewRunning, toReviewRecord, type MediaReviewRow } from './repository'
@@ -54,7 +55,19 @@ export async function createImageReviewExecution(params: {
 }) {
   const db = params.db ?? createServiceRoleSupabase()
   const resolved = await resolveImageReviewContext(db, params.userId, params.attemptId)
-  const fingerprint = buildRequestFingerprint(params.attemptId, resolved.subject.outputId, resolved.contextFingerprint)
+  const artifact = await resolveImageArtifact(db, {
+    userId: params.userId,
+    projectId: resolved.subject.projectId,
+    productionId: resolved.subject.productionId,
+    attemptId: resolved.subject.attemptId,
+    outputId: resolved.subject.outputId,
+    storageProvider: resolved.output.storage_provider ?? null,
+    storagePath: resolved.subject.outputStoragePath ?? '',
+    mimeType: resolved.output.mime_type,
+    fileSize: resolved.output.file_size,
+    metadata: resolved.output.metadata,
+  })
+  const fingerprint = buildRequestFingerprint(params.attemptId, resolved.subject.outputId, resolved.contextFingerprint, artifact.id)
   const existing = await findReviewByClientRequest(db, params.userId, params.clientRequestId)
   if (existing.error) throw storeError(existing.error)
   if (existing.data) {
@@ -83,6 +96,7 @@ export async function createImageReviewExecution(params: {
     subject_media_type: 'image',
     image_attempt_id: params.attemptId,
     image_output_id: resolved.subject.outputId,
+    media_artifact_id: artifact.id,
     project_id: resolved.subject.projectId,
     production_id: resolved.subject.productionId,
     adapter_key: IMAGE_REVIEW_ADAPTER_KEY,

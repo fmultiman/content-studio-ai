@@ -3,6 +3,7 @@ import { ReviewRecordSchema, ReviewResultV1Schema, type ReviewRecordV1 } from '.
 
 export const MEDIA_REVIEW_COLUMNS = [
   'id', 'user_id', 'subject_media_type', 'image_attempt_id', 'image_output_id',
+  'media_artifact_id',
   'project_id', 'production_id', 'adapter_key', 'adapter_version',
   'review_schema_version', 'origin', 'status', 'client_request_id',
   'request_fingerprint', 'subject_snapshot', 'context_snapshot',
@@ -18,6 +19,7 @@ export type MediaReviewRow = {
   subject_media_type: 'image'
   image_attempt_id: string
   image_output_id: string
+  media_artifact_id: string
   project_id: string | null
   production_id: string | null
   adapter_key: string
@@ -61,7 +63,7 @@ export function toReviewRecord(row: MediaReviewRow): ReviewRecordV1 {
   const record = {
     id: row.id,
     status: row.status,
-    subject: { mediaType: 'image' as const, attemptId: row.image_attempt_id, outputId: row.image_output_id },
+    subject: { mediaType: 'image' as const, attemptId: row.image_attempt_id, outputId: row.image_output_id, artifactId: row.media_artifact_id },
     projectId: row.project_id,
     productionId: row.production_id,
     adapter: { key: row.adapter_key, version: row.adapter_version },
