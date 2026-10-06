@@ -3,8 +3,11 @@ import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { buildRequestFingerprint, resolveImageReviewContext } from './context'
 import { resolveImageArtifact } from '@/lib/media-artifacts/image'
-import { buildImageEvaluationPrompt, IMAGE_EVALUATOR_PROMPT_VERSION, IMAGE_REVIEW_ADAPTER_KEY, IMAGE_REVIEW_ADAPTER_VERSION, mapImageEvaluatorResult, parseImageEvaluatorResponse } from './adapters/image'
+import { buildImageEvaluationPrompt, IMAGE_EVALUATOR_PROMPT_VERSION, IMAGE_EVALUATOR_RESPONSE_SCHEMA, IMAGE_REVIEW_ADAPTER_KEY, IMAGE_REVIEW_ADAPTER_VERSION, mapImageEvaluatorResult, parseImageEvaluatorResponse } from './adapters/image'
 import { ReviewServiceError } from './errors'
+import { ReviewProviderError, parseProviderJson, toReviewServiceError, type AuthorizedReviewMedia, type ReviewProviderId } from './execution-provider'
+import { resolveAuthorizedReviewMedia, type ReviewObjectReader } from './media'
+import { DEFAULT_REVIEW_PROVIDER_ID, assertProviderModelSupportsMedia, getReviewExecutionProvider, resolveReviewModelId, type ReviewProviderOverrides } from './provider-registry'
 import { findActiveReviewByAttempt, findReviewByClientRequest, insertPendingReview, listReviewsByAttempt, markReviewCompleted, markReviewFailed, markReviewRunning, toReviewRecord, type MediaReviewRow } from './repository'
 import type { ReviewHistoryV1 } from './contracts'
 
@@ -14,31 +17,6 @@ export type ImageReviewEvaluator = (input: {
   imageUrl: string
   model: string
 }) => Promise<unknown>
-
-async function openAiEvaluator(input: Parameters<ImageReviewEvaluator>[0]) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: input.model,
-      messages: [
-        { role: 'system', content: input.prompt.system },
-        { role: 'user', content: [{ type: 'text', text: input.prompt.input }, { type: 'image_url', image_url: { url: input.imageUrl, detail: 'low' } }] },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1400,
-    }),
-  })
-  const responseData = await response.json().catch(() => ({})) as Record<string, any>
-  if (!response.ok) throw new ReviewServiceError(502, 'REVIEW_PROVIDER_ERROR', 'Image evaluator provider failed.')
-  const content = responseData.choices?.[0]?.message?.content
-  if (typeof content !== 'string' || !content.trim()) throw new ReviewServiceError(502, 'REVIEW_INVALID_EVALUATOR_RESPONSE', 'Image evaluator returned no result.')
-  try {
-    return JSON.parse(content) as unknown
-  } catch {
-    throw new ReviewServiceError(502, 'REVIEW_INVALID_EVALUATOR_RESPONSE', 'Image evaluator returned invalid JSON.')
-  }
-}
 
 function storeError(error: unknown) {
   if (error instanceof ReviewServiceError) return error
@@ -50,7 +28,12 @@ export async function createImageReviewExecution(params: {
   attemptId: string
   clientRequestId: string
   db?: SupabaseClient
+  /** Legacy OpenAI-only evaluator seam (tests). Bypasses the provider boundary. */
   evaluator?: ImageReviewEvaluator
+  /** Server-decided Review execution provider. Never read from the client request. Defaults to OpenAI. */
+  providerId?: ReviewProviderId
+  providers?: ReviewProviderOverrides
+  readObject?: ReviewObjectReader
   now?: () => string
 }) {
   const db = params.db ?? createServiceRoleSupabase()
@@ -117,18 +100,50 @@ export async function createImageReviewExecution(params: {
     throw storeError(inserted.error)
   }
   const row = inserted.data
-  const execution = await resolveProviderExecution(db, { userId: params.userId, provider: 'openai' })
+  const providerId = params.providerId ?? DEFAULT_REVIEW_PROVIDER_ID
+  const execution = await resolveProviderExecution(db, { userId: params.userId, provider: providerId })
   if (execution.status !== 'ready') {
     const failed = await markReviewFailed(db, row.id, 'provider_error', 'Image evaluator provider is not configured.')
     if (failed.error || !failed.data) throw storeError(failed.error)
     throw new ReviewServiceError(422, 'REVIEW_PROVIDER_NOT_CONFIGURED', 'Image evaluator provider is not configured.', { reviewId: failed.data.id })
   }
-  const model = process.env.OPENAI_EVALUATION_MODEL || 'gpt-4o-mini'
-  const running = await markReviewRunning(db, row.id, { evaluator_provider: 'openai', evaluator_model: model, evaluator_prompt_version: IMAGE_EVALUATOR_PROMPT_VERSION })
+  const model = resolveReviewModelId(providerId)
+  const running = await markReviewRunning(db, row.id, { evaluator_provider: providerId, evaluator_model: model, evaluator_prompt_version: IMAGE_EVALUATOR_PROMPT_VERSION })
   if (running.error || !running.data) throw storeError(running.error)
   try {
-    const evaluator = params.evaluator ?? openAiEvaluator
-    const raw = await evaluator({ apiKey: execution.secret, prompt: buildImageEvaluationPrompt(resolved.context, resolved.subject), imageUrl: resolved.subject.outputUrl, model })
+    let raw: unknown
+    let warnings: Array<{ code: string; message: string }> = []
+    if (params.evaluator && providerId === 'openai') {
+      raw = await params.evaluator({ apiKey: execution.secret, prompt: buildImageEvaluationPrompt(resolved.context, resolved.subject), imageUrl: resolved.subject.outputUrl, model })
+    } else {
+      const provider = getReviewExecutionProvider(providerId, params.providers)
+      assertProviderModelSupportsMedia(provider, model, 'image')
+      let media: AuthorizedReviewMedia
+      let subject = resolved.subject
+      if (providerId === 'openai') {
+        // OpenAI keeps its historical delivery: the server-resolved output URL.
+        media = {
+          kind: 'image', artifactId: artifact.id, mimeType: resolved.output.mime_type ?? 'image/png', byteSize: null, durationMs: null,
+          url: resolved.subject.outputUrl,
+          load: () => Promise.reject(new ReviewServiceError(422, 'REVIEW_OUTPUT_UNAVAILABLE', 'Direct byte access is not used for this provider.')),
+        }
+      } else {
+        // Other providers receive artifact bytes authorized server-side; the delivery URL is not disclosed in the prompt.
+        media = await resolveAuthorizedReviewMedia(db, { userId: params.userId, artifactId: artifact.id, expectedKind: 'image', readObject: params.readObject })
+        subject = { ...resolved.subject, outputUrl: '[image attached as media input]' }
+      }
+      const prompt = buildImageEvaluationPrompt(resolved.context, subject)
+      const response = await provider.execute({
+        model,
+        apiKey: execution.secret,
+        instructions: prompt.system,
+        input: prompt.input,
+        media: [media],
+        responseSchema: providerId === 'gemini' ? IMAGE_EVALUATOR_RESPONSE_SCHEMA : null,
+      })
+      warnings = response.warnings
+      raw = parseProviderJson(response.rawText)
+    }
     const parsed = parseImageEvaluatorResponse(raw)
     const result = mapImageEvaluatorResult(parsed, resolved.context, resolved.subject)
     const completed = await markReviewCompleted(db, row.id, {
@@ -139,9 +154,11 @@ export async function createImageReviewExecution(params: {
       refined_prompt: result.refinedPrompt,
     })
     if (completed.error || !completed.data) throw storeError(completed.error)
-    return { row: completed.data, replayed: false }
+    if (warnings.length) console.warn('[reviews] provider cleanup warning', { reviewId: row.id, providerId, warnings: warnings.map((w) => w.code) })
+    return { row: completed.data, replayed: false, warnings }
   } catch (error) {
-    const normalized = error instanceof ReviewServiceError ? error : new ReviewServiceError(502, 'REVIEW_PROVIDER_ERROR', 'Image evaluator failed.')
+    const normalized = toReviewServiceError(error)
+    if (error instanceof ReviewProviderError && error.warnings.length) console.warn('[reviews] provider cleanup warning', { reviewId: row.id, providerId, warnings: error.warnings.map((w) => w.code) })
     const failureCode = normalized.code === 'REVIEW_INVALID_EVALUATOR_RESPONSE'
       ? 'invalid_evaluator_response'
       : normalized.code === 'REVIEW_PROVIDER_TIMEOUT'

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   markFailed: vi.fn(),
   resolveProvider: vi.fn(),
   resolveArtifact: vi.fn(),
+  resolveMedia: vi.fn(),
 }))
 
 vi.mock('../context', () => ({
@@ -34,11 +35,16 @@ vi.mock('@/lib/media-artifacts/image', () => ({
   resolveImageArtifact: mocks.resolveArtifact,
 }))
 
+vi.mock('../media', () => ({
+  resolveAuthorizedReviewMedia: mocks.resolveMedia,
+}))
+
 vi.mock('@/lib/supabase/service-role', () => ({
   createServiceRoleSupabase: () => ({}),
 }))
 
 import { createImageReviewExecution } from '../service'
+import { ReviewProviderError, type ReviewExecutionProvider } from '../execution-provider'
 
 const attemptId = '11111111-1111-4111-8111-111111111111'
 const outputId = '22222222-2222-4222-8222-222222222222'
@@ -139,5 +145,93 @@ describe('createImageReviewExecution', () => {
     expect(result.replayed).toBe(true)
     expect(evaluator).not.toHaveBeenCalled()
     expect(mocks.insertPending).not.toHaveBeenCalled()
+  })
+})
+
+describe('createImageReviewExecution provider boundary', () => {
+  const geminiMedia = { kind: 'image' as const, artifactId: '66666666-6666-4666-8666-666666666666', mimeType: 'image/png', byteSize: 10, durationMs: null, load: async () => new Uint8Array([1]) }
+  function geminiProvider(execute: ReturnType<typeof vi.fn>): ReviewExecutionProvider {
+    return { providerId: 'gemini', capabilities: new Set(['image_review', 'video_review'] as const), execute: execute as unknown as ReviewExecutionProvider['execute'] }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.resolveContext.mockResolvedValue(resolved)
+    mocks.resolveArtifact.mockResolvedValue({ id: '66666666-6666-4666-8666-666666666666' })
+    mocks.findByClient.mockResolvedValue({ data: null, error: null })
+    mocks.findActive.mockResolvedValue({ data: null, error: null })
+    mocks.insertPending.mockResolvedValue({ data: row('pending'), error: null })
+    mocks.markRunning.mockResolvedValue({ data: row('running'), error: null })
+    mocks.markCompleted.mockResolvedValue({ data: row('completed'), error: null })
+    mocks.markFailed.mockResolvedValue({ data: row('failed'), error: null })
+    mocks.resolveProvider.mockResolvedValue({ status: 'ready', secret: 'gemini-key' })
+    mocks.resolveMedia.mockResolvedValue(geminiMedia)
+  })
+
+  it('keeps OpenAI as the default provider and records it distinctly', async () => {
+    const evaluator = vi.fn().mockResolvedValue(validEvaluatorResult())
+    await createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, evaluator })
+    expect(mocks.resolveProvider.mock.calls[0][1]).toMatchObject({ provider: 'openai' })
+    expect(mocks.markRunning.mock.calls[0][2]).toMatchObject({ evaluator_provider: 'openai' })
+    expect(mocks.resolveMedia).not.toHaveBeenCalled()
+  })
+
+  it('executes Gemini through server-authorized artifact media with the Gemini credential and strict parsing', async () => {
+    const execute = vi.fn().mockResolvedValue({ rawText: JSON.stringify(validEvaluatorResult()), providerId: 'gemini', model: 'gemini-3.5-flash', warnings: [] })
+    const result = await createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(execute) } })
+
+    expect(mocks.resolveProvider.mock.calls[0][1]).toMatchObject({ provider: 'gemini' })
+    expect(mocks.resolveMedia.mock.calls[0][1]).toMatchObject({ userId: 'user-1', artifactId: '66666666-6666-4666-8666-666666666666', expectedKind: 'image' })
+    expect(mocks.markRunning.mock.calls[0][2]).toMatchObject({ evaluator_provider: 'gemini', evaluator_model: 'gemini-3.5-flash' })
+    const request = execute.mock.calls[0][0]
+    expect(request.apiKey).toBe('gemini-key')
+    expect(request.media).toEqual([geminiMedia])
+    expect(request.responseSchema).toMatchObject({ type: 'object' })
+    expect(request.input).not.toContain('example.test')
+    expect(mocks.markCompleted).toHaveBeenCalledOnce()
+    expect(result.replayed).toBe(false)
+  })
+
+  it('fails the Review when Gemini returns malformed or invalid-JSON output', async () => {
+    const bad = vi.fn().mockResolvedValue({ rawText: JSON.stringify({ score: 150, feedback: 'x', improvements: [] }), providerId: 'gemini', model: 'm', warnings: [] })
+    await expect(createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(bad) } }))
+      .rejects.toMatchObject({ code: 'REVIEW_INVALID_EVALUATOR_RESPONSE' })
+    const notJson = vi.fn().mockResolvedValue({ rawText: 'not json', providerId: 'gemini', model: 'm', warnings: [] })
+    await expect(createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(notJson) } }))
+      .rejects.toMatchObject({ code: 'REVIEW_INVALID_EVALUATOR_RESPONSE' })
+    expect(mocks.markCompleted).not.toHaveBeenCalled()
+    expect(mocks.markFailed).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails the Review with a normalized error when the Gemini provider fails', async () => {
+    const execute = vi.fn().mockRejectedValue(new ReviewProviderError('timeout', 'Gemini model request timed out.'))
+    await expect(createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(execute) } }))
+      .rejects.toMatchObject({ code: 'REVIEW_PROVIDER_TIMEOUT' })
+    expect(mocks.markFailed.mock.calls[0][2]).toBe('provider_timeout')
+    expect(mocks.markCompleted).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unregistered Gemini model before any provider call', async () => {
+    const prior = process.env.GEMINI_REVIEW_MODEL
+    process.env.GEMINI_REVIEW_MODEL = 'gemini-not-registered'
+    try {
+      const execute = vi.fn()
+      await expect(createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(execute) } }))
+        .rejects.toMatchObject({ code: 'REVIEW_PROVIDER_UNSUPPORTED' })
+      expect(execute).not.toHaveBeenCalled()
+      expect(mocks.resolveMedia).not.toHaveBeenCalled()
+    } finally {
+      if (prior === undefined) delete process.env.GEMINI_REVIEW_MODEL
+      else process.env.GEMINI_REVIEW_MODEL = prior
+    }
+  })
+
+  it('fails closed without a Gemini credential and never falls back to the OpenAI key', async () => {
+    mocks.resolveProvider.mockResolvedValue({ status: 'provider_not_configured' })
+    const execute = vi.fn()
+    await expect(createImageReviewExecution({ userId: 'user-1', attemptId, clientRequestId, providerId: 'gemini', providers: { gemini: geminiProvider(execute) } }))
+      .rejects.toMatchObject({ code: 'REVIEW_PROVIDER_NOT_CONFIGURED' })
+    expect(mocks.resolveProvider).toHaveBeenCalledTimes(1)
+    expect(execute).not.toHaveBeenCalled()
   })
 })

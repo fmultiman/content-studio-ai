@@ -132,7 +132,8 @@ describe('no provider secret reaches client code', () => {
   it('files that call api.openai.com are server routes or the server-only prompt module', () => {
     const callers = filesContaining('api.openai.com')
     for (const path of callers) {
-      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts').toBe(true)
+      // GEMINI_REVIEW_PROVIDER_FOUNDATION_V1: the OpenAI Review execution provider is a server-only module.
+      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts' || path === 'lib/reviews/providers/openai.ts').toBe(true)
     }
   })
 })
@@ -248,6 +249,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // IMAGE_GENERATION_ROUTE_CONVERGENCE_V1: provider adapters delegate
       // Attempt/output lifecycle writes to this server-only execution helper.
       path === 'lib/image-generation/execution.ts' ||
+      // SHARED_REVIEW_CORE_AND_IMAGE_ADAPTER_V1: the server-only Review service writes immutable Review rows after
+      // the authenticated route has verified the user; every operation is scoped to that user id.
+      path === 'lib/reviews/service.ts' ||
       // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
       path === 'app/api/video-generations/[id]/save-to-library/route.ts' ||
       // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
@@ -388,3 +392,31 @@ describe('video generation connection routing boundary — VIDEO_GENERATION_CONN
   })
 })
 
+
+describe('Gemini Review provider boundary — GEMINI_REVIEW_PROVIDER_FOUNDATION_V1', () => {
+  it('only the server-side Gemini client talks to the Gemini API host', () => {
+    expect(filesContaining('generativelanguage.googleapis.com')).toEqual(['lib/providers/gemini/client.ts'])
+  })
+
+  it('no client component or hook imports the Gemini provider or reads gemini_api_key', () => {
+    const clientFiles = sourceFiles.filter((file) => /^['"]use client['"]/m.test(file.text.slice(0, 200)))
+    for (const file of clientFiles) {
+      expect(file.text).not.toMatch(/providers\/gemini|reviews\/media|gemini_api_key/)
+    }
+  })
+
+  it('Gemini credentials resolve only through the shared user_byok boundary and never from the platform env', () => {
+    const geminiSources = sourceFiles.filter((file) => file.path.startsWith('lib/providers/gemini/') || file.path === 'lib/reviews/provider-registry.ts')
+    for (const file of geminiSources) {
+      expect(file.text).not.toMatch(/process\.env\.GEMINI_API_KEY|GOOGLE_API_KEY/)
+      expect(file.text).not.toMatch(/from\s+['"]@\/lib\/supabase/)
+    }
+  })
+
+  it('the browser-facing Review route never accepts a provider, model or media URL from the request body', () => {
+    const route = readFileSync(join(ROOT, 'app/api/reviews/image/route.ts'), 'utf8')
+    const contracts = readFileSync(join(ROOT, 'lib/reviews/contracts.ts'), 'utf8')
+    expect(route).not.toMatch(/providerId|provider:|\.model\b/)
+    expect(contracts).toMatch(/ReviewRequestSchema = z\.object\(\{\s*attemptId: z\.string\(\)\.uuid\(\),\s*clientRequestId: z\.string\(\)\.uuid\(\),\s*\}\)\.strict\(\)/)
+  })
+})

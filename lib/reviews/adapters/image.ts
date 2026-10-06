@@ -5,6 +5,40 @@ export const IMAGE_REVIEW_ADAPTER_KEY = 'image'
 export const IMAGE_REVIEW_ADAPTER_VERSION = 'image-review-v1'
 export const IMAGE_EVALUATOR_PROMPT_VERSION = 'image-review-prompt-v1'
 
+/**
+ * JSON-schema hint for providers that support structured output (Gemini). It is
+ * a request-side hint only: parseImageEvaluatorResponse remains the authority.
+ */
+export const IMAGE_EVALUATOR_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    score: { type: 'integer', minimum: 0, maximum: 100 },
+    feedback: { type: 'string' },
+    improvements: { type: 'array', items: { type: 'string' } },
+    refinedPrompt: { type: ['string', 'null'] },
+    summary: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' } },
+    issues: { type: 'array', items: { type: 'string' } },
+    recommendations: { type: 'array', items: { type: 'string' } },
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          label: { type: 'string' },
+          score: { type: 'integer', minimum: 0, maximum: 100 },
+          assessment: { type: ['string', 'null'], enum: ['strong', 'mixed', 'needs_revision', 'insufficient_evidence', null] },
+          evidence: { type: 'array', items: { type: 'string' } },
+          applicable: { type: 'boolean' },
+        },
+        required: ['key', 'label', 'score', 'assessment', 'evidence', 'applicable'],
+      },
+    },
+  },
+  required: ['score', 'feedback', 'improvements'],
+}
+
 function assessment(score: number): NonNullable<ReviewCriterionV1['assessment']> {
   if (score >= 80) return 'strong'
   if (score >= 60) return 'mixed'
