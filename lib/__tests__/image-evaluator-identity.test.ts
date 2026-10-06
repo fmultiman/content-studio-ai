@@ -460,7 +460,7 @@ describe('route handler — cases 6, 7, 17–33', () => {
     expect(data.approved).toBe(false)
   })
 
-  it('case 26b — threshold 75: model score=75 without approved field → approved derived as true', async () => {
+  it('case 26b — incomplete evaluator output is rejected instead of deriving approval', async () => {
     const modelOutput = { score: 75, feedback: 'OK', improvements: [], refinedPrompt: 'same' }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify(modelOutput) } }],
@@ -468,7 +468,8 @@ describe('route handler — cases 6, 7, 17–33', () => {
     const req = makeRequest(makeBody())
     const res = await POST(req)
     const data = await res.json()
-    expect(data.approved).toBe(true)
+    expect(res.status).toBe(502)
+    expect(data.code).toBe('INVALID_EVALUATOR_RESPONSE')
   })
 
   // ── Case 30: no universal score cap ─────────────────────────────────────────
