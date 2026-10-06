@@ -25,3 +25,24 @@ During the investigation `/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc`
 - `24 & 25` Reuse Settings: `save-status-saved` never appears.
 
 It is not known whether these are stale test expectations after `GENERATION_SESSION_AUTOSAVE_RELIABILITY_V1` (PR #130) or a real Video autosave/conflict defect. They were not investigated or fixed here. The audit should first restore the provider wrapper, then decide per test.
+
+## Preview smoke and controlled exception
+
+Rollback point: `a75eaf402b1d28852c4a7f5a288a94760dffdf7f` (pre-fix `main`). Preview smoke ran against PR #137 head `da03be7a631890153b48bc3c176dbe666efa0936`, authenticated, on 2026-10-07.
+
+| Smoke | Result | Evidence |
+|---|---|---|
+| 1 New Image Session | PASS | POST `/api/image-generation-sessions` 201 -> `/imagens/geracoes/7d6d9716-57c2-4592-bb72-49ce9adfd6ae`, stable URL, workspace + prompt + "Salvo", no hub |
+| 2 Existing Session | PASS for route/prompt/config hydration; output media NOT validated | `/imagens/geracoes/97508404-c5a9-4d30-ac0a-ac5b7ae0706d`; `<img>` present but did not decode |
+| 3 Thumbnail | FAIL in Preview (not representative) | 0 of 12 `thumbnailUrl`, 20 placeholders |
+| 4 Refresh | PASS | route and prompt/config rehydrated |
+| 5 Back / reopen | PASS | state persisted |
+| 6 Video sanity | PASS | `/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc` opened, "Salvo" |
+
+**Preview media smoke was non-representative because its S3 signing environment did not match Production.** On Preview the existing `/api/images/<id>/signed-url` route (untouched by this PR) returns an unsigned URL that does not decode; on Production it returns a signed URL that decodes. The `images` rows are intact (`thumbnail_path` of the form `users/<owner>/images/<uuid>/thumb.webp`). Focused thumbnail/resolver tests pass.
+
+The owner explicitly authorized merging PR #137 as a CONTROLLED EXCEPTION to the pre-merge smoke gate, with the full six-step smoke repeated on Production immediately after the deploy. **This is not permission to routinely skip Preview smoke.**
+
+## Residual infrastructure item: `PREVIEW_MEDIA_ENVIRONMENT_PARITY_V1`
+
+Goal: make Preview able to exercise the same media read/signing paths (S3 presigning of images, thumbnails and videos) that authenticated release smokes need, without weakening secret isolation. Not implemented here.
