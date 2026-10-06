@@ -36,7 +36,7 @@ describe('/api/settings/providers', () => {
 
   it('GET returns status only — never the raw secret value', async () => {
     const supabase = buildAuthedSupabase('user-1', {
-      userSettingsRow: { openai_api_key: 'sk-should-never-leak', nanobanana_api_key: null, kling_api_key: 'kling-should-never-leak', replicate_api_key: null, nanobanana_base_url: 'https://example.test' },
+      userSettingsRow: { openai_api_key: 'sk-should-never-leak', nanobanana_api_key: null, kling_api_key: 'kling-should-never-leak', replicate_api_key: null, gemini_api_key: 'gemini-should-never-leak', nanobanana_base_url: 'https://example.test' },
     })
     vi.mocked(server.createClient).mockResolvedValue(supabase as any)
 
@@ -49,11 +49,13 @@ describe('/api/settings/providers', () => {
     expect(payload.providers.kling.status).toBe('configured')
     expect(payload.providers.nano_banana.status).toBe('missing')
     expect(payload.providers.replicate.status).toBe('missing')
+    expect(payload.providers.gemini.status).toBe('configured')
     expect(payload.providers.kling.connectionMethod).toBe('api_key')
 
     const raw = JSON.stringify(payload)
     expect(raw).not.toContain('sk-should-never-leak')
     expect(raw).not.toContain('kling-should-never-leak')
+    expect(raw).not.toContain('gemini-should-never-leak')
   })
 
   it('GET requires authentication', async () => {
@@ -72,8 +74,8 @@ describe('/api/settings/providers/[provider]', () => {
     vi.clearAllMocks()
   })
 
-  function makeRequest(body: Record<string, unknown>, method: 'PUT' | 'DELETE' = 'PUT') {
-    return new NextRequest('http://localhost/api/settings/providers/kling', {
+  function makeRequest(body: Record<string, unknown>, method: 'PUT' | 'DELETE' = 'PUT', provider = 'kling') {
+    return new NextRequest(`http://localhost/api/settings/providers/${provider}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: method === 'PUT' ? JSON.stringify(body) : undefined,
@@ -158,5 +160,24 @@ describe('/api/settings/providers/[provider]', () => {
     const raw = JSON.stringify(payload)
     expect(raw).not.toContain('old-secret')
     expect(raw).not.toContain('new-secret')
+  })
+
+  it('saves and removes Gemini through the generic endpoint without returning the secret', async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null })
+    const eqSpy = vi.fn().mockResolvedValue({ error: null })
+    const update = vi.fn(() => ({ eq: eqSpy }))
+    const supabase = buildAuthedSupabase('user-1', { upsert, update })
+    vi.mocked(server.createClient).mockResolvedValue(supabase as any)
+
+    const { PUT, DELETE } = await import('@/app/api/settings/providers/[provider]/route')
+    const saveResponse = await PUT(makeRequest({ apiKey: 'gemini-secret' }, 'PUT', 'gemini'), { params: Promise.resolve({ provider: 'gemini' }) })
+    const savePayload = await saveResponse.json()
+    expect(savePayload).toEqual({ provider: 'gemini', status: 'configured' })
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'user-1', gemini_api_key: 'gemini-secret' }), { onConflict: 'user_id' })
+
+    const removeResponse = await DELETE(makeRequest({}, 'DELETE', 'gemini'), { params: Promise.resolve({ provider: 'gemini' }) })
+    expect(await removeResponse.json()).toEqual({ provider: 'gemini', status: 'missing' })
+    expect(update).toHaveBeenCalledWith({ gemini_api_key: null })
+    expect(JSON.stringify(savePayload)).not.toContain('gemini-secret')
   })
 })

@@ -59,6 +59,12 @@ describe('resolveProviderExecution — user_byok (default, active)', () => {
     expect(result).toMatchObject({ status: 'ready', credentialSource: 'user', secret: 'nb-user' })
   })
 
+  it('resolves a configured Gemini user credential without using another provider key', async () => {
+    const supabase = buildSupabaseStub({ u1: { gemini_api_key: 'gemini-user', nanobanana_api_key: 'nano-user' } })
+    const result = await resolveProviderExecution(supabase as any, { userId: 'u1', provider: 'gemini' })
+    expect(result).toMatchObject({ status: 'ready', provider: 'gemini', credentialSource: 'user', secret: 'gemini-user' })
+  })
+
   it('missing OpenAI credential → PROVIDER_NOT_CONFIGURED, even with OPENAI_API_KEY set in the environment', async () => {
     const supabase = buildSupabaseStub({})
     const result = await resolveProviderExecution(supabase as any, { userId: 'u1', provider: 'openai' })
@@ -100,6 +106,13 @@ describe('resolveProviderExecution — user_byok (default, active)', () => {
       const result = await resolveProviderExecution(supabase as any, { userId: 'user-a', provider })
       expect(result.status).toBe('provider_not_configured')
     }
+  })
+
+  it('missing Gemini credential remains unconfigured and does not use Nano Banana', async () => {
+    const supabase = buildSupabaseStub({ u1: { nanobanana_api_key: 'nano-user' } })
+    const result = await resolveProviderExecution(supabase as any, { userId: 'u1', provider: 'gemini' })
+    expect(result).toMatchObject({ status: 'provider_not_configured', provider: 'gemini' })
+    expect(JSON.stringify(result)).not.toContain('nano-user')
   })
 })
 

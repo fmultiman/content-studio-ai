@@ -46,6 +46,7 @@ export interface UserSettings {
   nanobanana_api_key: string | null
   nanobanana_base_url: string | null
   kling_api_key: string | null
+  gemini_api_key: string | null
   automation_enabled: boolean
   default_image_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2'
   image_evaluator_enabled: boolean

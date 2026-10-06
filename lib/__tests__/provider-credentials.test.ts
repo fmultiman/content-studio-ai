@@ -68,6 +68,8 @@ describe('resolveProviderCredential', () => {
       .toEqual({ status: 'missing' })
     expect(await resolveProviderCredential(supabase as any, { userId: 'user-1', provider: 'nano_banana' }))
       .toEqual({ status: 'configured', secret: 'nb-secret' })
+    expect(await resolveProviderCredential(supabase as any, { userId: 'user-1', provider: 'gemini' }))
+      .toEqual({ status: 'missing' })
   })
 })
 
@@ -82,6 +84,7 @@ describe('getProviderConfigurationStatuses', () => {
       nano_banana: 'missing',
       kling: 'configured',
       replicate: 'missing',
+      gemini: 'missing',
     })
     expect(JSON.stringify(statuses)).not.toContain('sk-abc')
     expect(JSON.stringify(statuses)).not.toContain('kling-abc')
@@ -94,6 +97,7 @@ describe('isAiProvider', () => {
     expect(isAiProvider('nano_banana')).toBe(true)
     expect(isAiProvider('kling')).toBe(true)
     expect(isAiProvider('replicate')).toBe(true)
+    expect(isAiProvider('gemini')).toBe(true)
     expect(isAiProvider('anthropic')).toBe(false)
     expect(isAiProvider('')).toBe(false)
   })

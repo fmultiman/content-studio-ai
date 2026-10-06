@@ -72,6 +72,7 @@ export default function SettingsPage() {
     nano_banana: 'loading',
     kling: 'loading',
     replicate: 'loading',
+    gemini: 'loading',
   })
   const [nanobananaBaseUrl, setNanobananaBaseUrl] = useState<string | null>(null)
   const [klingMcpConnection, setKlingMcpConnection] = useState<PublicProviderConnection | null | undefined>(undefined)
@@ -254,6 +255,7 @@ export default function SettingsPage() {
                 nano_banana: providersPayload?.providers?.nano_banana?.status ?? 'missing',
                 kling: providersPayload?.providers?.kling?.status ?? 'missing',
                 replicate: providersPayload?.providers?.replicate?.status ?? 'missing',
+                gemini: providersPayload?.providers?.gemini?.status ?? 'missing',
               })
               setNanobananaBaseUrl(providersPayload?.nanobananaBaseUrl ?? null)
             }
@@ -945,6 +947,17 @@ export default function SettingsPage() {
                     placeholder="r8_..."
                     onSave={(apiKey) => handleSaveProviderCredential('replicate', apiKey)}
                     onRemove={() => handleRemoveProviderCredential('replicate')}
+                  />
+
+                  <AiProviderCredentialCard
+                    providerId="gemini"
+                    title="Google Gemini API"
+                    description="Chave BYOK para futuras avaliações multimodais com a API oficial do Google Gemini."
+                    status={providerStatuses.gemini}
+                    placeholder="Chave da API Gemini..."
+                    helpText="A chave fica armazenada por usuário e nunca é devolvida ao navegador. A execução do provider será habilitada em uma missão posterior."
+                    onSave={(apiKey) => handleSaveProviderCredential('gemini', apiKey)}
+                    onRemove={() => handleRemoveProviderCredential('gemini')}
                   />
                 </CardContent>
               </Card>
