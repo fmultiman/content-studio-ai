@@ -56,6 +56,7 @@ function normalizeFailureCode(code: string) {
   if (code === 'provider_error' || code === 'review_provider_error' || code === 'provider_not_configured' || code === 'review_provider_not_configured') return 'provider_error' as const
   if (code === 'media_unavailable' || code === 'review_output_unavailable') return 'media_unavailable' as const
   if (code === 'project_identity_invalid' || code === 'review_identity_invalid') return 'project_identity_invalid' as const
+  if (code === 'execution_stale' || code === 'review_execution_stale') return 'execution_stale' as const
   return 'validation_error' as const
 }
 
@@ -133,5 +134,29 @@ export async function markReviewCompleted(db: SupabaseClient, id: string, values
 
 export async function markReviewFailed(db: SupabaseClient, id: string, code: string, message: string) {
   const result = await db.from('media_reviews').update({ status: 'failed', failure_code: code, failure_details: { message }, failed_at: new Date().toISOString() }).eq('id', id).in('status', ['pending', 'running']).select(MEDIA_REVIEW_COLUMNS).single()
+  return { data: result.data as MediaReviewRow | null, error: result.error }
+}
+
+export async function findReviewById(db: SupabaseClient, userId: string, id: string) {
+  const result = await db.from('media_reviews').select(MEDIA_REVIEW_COLUMNS).eq('user_id', userId).eq('id', id).maybeSingle()
+  return { data: result.data as MediaReviewRow | null, error: result.error }
+}
+
+/**
+ * Guarded stale-recovery transition (FUTURE-046). One atomic UPDATE whose predicate IS the policy:
+ * the Review must still be in flight AND its last lifecycle write (`updated_at`, maintained by the
+ * `media_reviews_updated_at` trigger) must be older than `cutoffIso`. A terminal row, or one that made
+ * progress after it was read, matches zero rows and is left untouched. `maybeSingle` so that "no row
+ * matched" is a normal outcome (`data: null`) rather than an error.
+ */
+export async function markReviewStaleFailed(db: SupabaseClient, params: { id: string; userId: string; cutoffIso: string; code: string; message: string; details: Record<string, unknown> }) {
+  const result = await db.from('media_reviews')
+    .update({ status: 'failed', failure_code: params.code, failure_details: { message: params.message, ...params.details }, failed_at: new Date().toISOString() })
+    .eq('id', params.id)
+    .eq('user_id', params.userId)
+    .in('status', ['pending', 'running'])
+    .lt('updated_at', params.cutoffIso)
+    .select(MEDIA_REVIEW_COLUMNS)
+    .maybeSingle()
   return { data: result.data as MediaReviewRow | null, error: result.error }
 }

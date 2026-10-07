@@ -47,7 +47,9 @@ describe('in-flight state', () => {
     expect(isInFlightReview({ status: 'completed' })).toBe(false)
     expect(isInFlightReview({ status: 'failed' })).toBe(false)
     expect(isStaleInFlightReview({ status: 'running', createdAt: '2026-10-07T11:50:00Z' }, now)).toBe(false)
-    expect(isStaleInFlightReview({ status: 'running', createdAt: '2026-10-07T11:40:00Z' }, now)).toBe(true)
+    // 20 min is still inside the provider execution envelope (FUTURE-046), so it is NOT called interrupted yet.
+    expect(isStaleInFlightReview({ status: 'running', createdAt: '2026-10-07T11:40:00Z' }, now)).toBe(false)
+    expect(isStaleInFlightReview({ status: 'running', createdAt: '2026-10-07T11:20:00Z' }, now)).toBe(true)
     expect(isStaleInFlightReview({ status: 'completed', createdAt: '2026-10-01T00:00:00Z' }, now)).toBe(false)
   })
 })
@@ -117,8 +119,14 @@ describe('describeVideoReviewError', () => {
 
 describe('describeFailureCode', () => {
   it('words every persisted failure code', () => {
-    const lines = ['invalid_evaluator_response', 'provider_timeout', 'media_unavailable', 'project_identity_invalid', 'provider_error', 'validation_error', ''].map(describeFailureCode)
-    expect(new Set(lines).size).toBe(6)
+    const lines = ['invalid_evaluator_response', 'provider_timeout', 'media_unavailable', 'project_identity_invalid', 'provider_error', 'validation_error', 'execution_stale', ''].map(describeFailureCode)
+    expect(new Set(lines).size).toBe(7)
     expect(lines.every((line) => line.length > 10)).toBe(true)
+  })
+
+  it('words a recovered stale execution as an interruption, never as a Gemini, media or user failure', () => {
+    const line = describeFailureCode('execution_stale')
+    expect(line).toContain('interrompida')
+    expect(line).not.toMatch(/gemini|vídeo|cancel/i)
   })
 })

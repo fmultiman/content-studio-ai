@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   markRunning: vi.fn(),
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
+  markStale: vi.fn(),
+  findById: vi.fn(),
   resolveProvider: vi.fn(),
   resolveArtifact: vi.fn(),
   resolveMedia: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock('../repository', () => ({
   markReviewRunning: mocks.markRunning,
   markReviewCompleted: mocks.markCompleted,
   markReviewFailed: mocks.markFailed,
+  markReviewStaleFailed: mocks.markStale,
+  findReviewById: mocks.findById,
 }))
 
 vi.mock('@/lib/credentials/provider-execution', () => ({

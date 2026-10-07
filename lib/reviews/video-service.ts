@@ -43,6 +43,7 @@ import {
   markReviewFailed,
   markReviewRunning,
 } from './repository'
+import { recoverStaleActiveReview } from './stale-recovery'
 import { buildVideoRequestFingerprint, resolveVideoReviewContext } from './video-context'
 
 /** Video Review runs on the official Gemini API. The provider is a SERVER decision, never a request field. */
@@ -111,6 +112,8 @@ export async function createVideoReviewExecution(params: {
   /** Test seams. Never read from a request. */
   providers?: ReviewProviderOverrides
   openObject?: ObjectStreamOpener
+  /** Test seam for the stale-recovery clock (epoch ms). Never read from a request. */
+  clock?: () => number
 }) {
   const db = params.db ?? createServiceRoleSupabase()
 
@@ -139,7 +142,12 @@ export async function createVideoReviewExecution(params: {
   }
   const active = await findActiveReviewByArtifact(db, params.userId, artifact.id)
   if (active.error) throw storeError(active.error)
-  if (active.data) throw new ReviewServiceError(409, 'REVIEW_IN_PROGRESS', 'A Review is already running for this video.', { reviewId: active.data.id })
+  if (active.data) {
+    // FUTURE-046: recover an abandoned in-flight Review before it blocks this artifact forever. A legitimately slow
+    // one (younger than the stale policy) still answers 409. Runs before any insert or provider call.
+    const recovery = await recoverStaleActiveReview(db, active.data, { userId: params.userId, nowMs: (params.clock ?? Date.now)() })
+    if (recovery === 'in_flight') throw new ReviewServiceError(409, 'REVIEW_IN_PROGRESS', 'A Review is already running for this video.', { reviewId: active.data.id })
+  }
 
   const inserted = await insertPendingReview(db, {
     user_id: params.userId,

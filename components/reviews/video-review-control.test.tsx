@@ -217,6 +217,15 @@ describe('result presentation', () => {
 })
 
 describe('Review states', () => {
+  it('a Review recovered as stale (execution_stale) reads as an interruption and allows a new Review', async () => {
+    server.items = [item({ status: 'failed', result: null, failure: { code: 'execution_stale', message: 'The previous Review execution was interrupted and did not complete.' }, id: '40000000-0000-4000-8000-000000000004' })]
+    await openPanel()
+    const text = (await screen.findByTestId('review-failure')).textContent ?? ''
+    expect(text).toContain('interrompida')
+    expect(text).not.toMatch(/Gemini/)
+    expect((screen.getByTestId('video-review-run') as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('failed: explains the failure and allows a new Review', async () => {
     server.items = [failed()]
     await openPanel()
@@ -237,10 +246,12 @@ describe('Review states', () => {
     expect(server.posts).toHaveLength(0)
   })
 
-  it('an in-flight Review older than 15 minutes is called out as possibly interrupted, and polling stops', async () => {
-    server.items = [inFlight('running', new Date(Date.now() - 30 * 60_000).toISOString())]
+  it('an in-flight Review older than the stale policy (30 minutes) is called out as possibly interrupted, and polling stops', async () => {
+    server.items = [inFlight('running', new Date(Date.now() - 45 * 60_000).toISOString())]
     await openPanel()
-    expect((await screen.findByTestId('review-stale-note')).textContent).toContain('pode ter sido interrompida')
+    const note = (await screen.findByTestId('review-stale-note')).textContent ?? ''
+    expect(note).toContain('pode ter sido interrompida')
+    expect(note).toContain('30 minutos')
     expect((screen.getByTestId('video-review-run') as HTMLButtonElement).disabled).toBe(false)
     const gets = server.gets
     await new Promise((resolve) => setTimeout(resolve, 150))

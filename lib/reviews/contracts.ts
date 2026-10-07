@@ -36,6 +36,8 @@ export const ReviewFailureV1Schema = z.object({
     'provider_timeout',
     'media_unavailable',
     'project_identity_invalid',
+    // FUTURE-046: an in-flight Review whose process died; recovered into a terminal failure by a later request.
+    'execution_stale',
     'validation_error',
   ]),
   message: z.string().min(1).max(2_000),
