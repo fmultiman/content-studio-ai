@@ -806,6 +806,38 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       expect(screen.getByTestId('attempt-watch-gen-001')).toBeTruthy()
     })
   })
+  it('VIDEO_REVIEW_UI_AND_HISTORY_V1: Revisar appears only on completed attempts that still have a usable result, and sends nothing until opened', async () => {
+    const generations = [
+      { id: 'gen-ok', status: 'succeeded', prompt: 'Completed with result', mode: 'text_to_video', transport: 'rest', created_at: '2026-10-03T11:00:00.000Z', public_url: 'https://signed.example/ok.mp4', storage_path: 'u/videos/ai/p/gen-ok.mp4' },
+      { id: 'gen-gone', status: 'succeeded', prompt: 'Completed but result refused', mode: 'text_to_video', transport: 'rest', created_at: '2026-10-03T10:00:00.000Z', public_url: null, storage_path: null },
+      { id: 'gen-failed', status: 'failed', prompt: 'Failed one', mode: 'text_to_video', transport: 'rest', created_at: '2026-10-03T09:00:00.000Z', public_url: null, storage_path: null },
+      { id: 'gen-processing', status: 'processing', prompt: 'Still processing', mode: 'text_to_video', transport: 'rest', created_at: '2026-10-03T08:00:00.000Z', public_url: null, storage_path: null },
+    ]
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/connections')) return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
+      if (url.includes('/video-generation-sessions/')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          session: {
+            id: currentSessionId, projectId: '00000000-0000-0000-0000-000000000010', productionId: '00000000-0000-0000-0000-000000000020', updatedAt: '2026-10-03T12:00:00.000Z',
+            workingState: { schemaVersion: 1, prompt: 'Ready prompt', source: null, selection: { connectionRef: 'rest', operation: 'text_to_video', modelId: 'kling-v1', duration: 5, resolution: '720p', aspectRatio: '16:9', audio: 'off', multiShot: false, asmr: false, audioPrompt: null, musicPrompt: null } },
+          },
+        }), { status: 200 }))
+      }
+      if (url.includes('/video-generations?sessionId=')) return Promise.resolve(new Response(JSON.stringify({ generations }), { status: 200 }))
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
+
+    const okCard = await screen.findByTestId('attempt-card-gen-ok')
+    expect(within(okCard).getByTestId('video-review-open')).toBeTruthy()
+    for (const id of ['gen-gone', 'gen-failed', 'gen-processing']) {
+      expect(within(screen.getByTestId(`attempt-card-${id}`)).queryByTestId('video-review-open')).toBeNull()
+    }
+    // Rendering the cards never reads or writes Reviews.
+    expect(fetchMock.mock.calls.filter((call: unknown[]) => String(call[0]).includes('/api/reviews/'))).toHaveLength(0)
+  })
+
   it('24 & 25. Reuse Settings: fetches source securely and seeds workspace accurately without saving', async () => {
     currentSearchParams.set('new', '1')
     currentSearchParams.set('project', '00000000-0000-0000-0000-000000000010')
