@@ -6,7 +6,7 @@ import { createVideoReviewExecution } from '../video-service'
 import { createGeminiClient } from '@/lib/providers/gemini/client'
 import { createGeminiReviewProvider } from '@/lib/providers/gemini/review-provider'
 import type { ObjectStreamOpener } from '@/lib/media-artifacts/streaming'
-import { makeMp4 } from '@/lib/media-artifacts/__tests__/mp4-fixture'
+import { box, ftyp, makeMp4, mvhd, trak } from '@/lib/media-artifacts/__tests__/mp4-fixture'
 import { createReviewTestDb, type FakeDbOptions, type Row } from './review-test-db'
 
 export const OWNER = '11111111-1111-4111-8111-111111111111'
@@ -45,6 +45,40 @@ export const zeroObject = (size: number): VirtualObject => ({
   size,
   async *slice(start, end) { for (let at = start; at <= end && at < size; at += MIB) yield ZEROS.subarray(0, Math.min(MIB, end + 1 - at, size - at)) },
 })
+
+/**
+ * A large, VALID MP4 produced lazily: [ftyp][mdat header + virtual zero payload][moov at the end]. Only the small
+ * head and tail exist in memory, so a 40 MiB object costs a few hundred bytes, and its container facts are real.
+ */
+export function mp4VirtualObject(payloadBytes: number, facts: { durationMs: number; width: number; height: number }): VirtualObject {
+  const mdatHeader = Buffer.alloc(8)
+  mdatHeader.writeUInt32BE(8 + payloadBytes, 0)
+  mdatHeader.write('mdat', 4, 'ascii')
+  const head = Buffer.concat([ftyp, mdatHeader])
+  const tail = Buffer.from(box('moov', mvhd(0, 1000, facts.durationMs), trak('vide', facts.width, facts.height)))
+  const size = head.length + payloadBytes + tail.length
+  return {
+    size,
+    async *slice(start, end) {
+      const last = Math.min(end, size - 1)
+      let at = start
+      while (at <= last) {
+        if (at < head.length) {
+          const stop = Math.min(head.length, last + 1)
+          yield head.subarray(at, stop)
+          at = stop
+        } else if (at < head.length + payloadBytes) {
+          const stop = Math.min(head.length + payloadBytes, last + 1, at + MIB)
+          yield ZEROS.subarray(0, stop - at)
+          at = stop
+        } else {
+          yield tail.subarray(at - head.length - payloadBytes, last + 1 - head.length - payloadBytes)
+          at = last + 1
+        }
+      }
+    },
+  }
+}
 
 export function storage(objects: Record<string, VirtualObject>, behavior: { failStreamOpensAfter?: number } = {}) {
   const opens: Array<{ path: string; ranged: boolean }> = []
@@ -140,7 +174,8 @@ export function seed(overrides: { generation?: Row; render?: Row; library?: Row 
       id: EXEC, user_id: OWNER, project_id: PROJECT, video_draft_id: DRAFT, kind: 'video', status: 'completed',
       output_bucket: process.env.RENDER_EXECUTION_SCRATCH_BUCKET || process.env.S3_BUCKET_NAME || process.env.S3_BUCKET || 'content-studio',
       output_storage_path: SCRATCH_PATH, output_mime_type: 'video/mp4', output_size_bytes: genMp4.length,
-      output_duration_ms: 8000, output_width: 1280, output_height: 720, ...overrides.render,
+      // output_duration_ms is the renderer's WALL-CLOCK time, never the media duration; it must never reach an artifact.
+      output_duration_ms: 10_896, output_width: 1280, output_height: 720, ...overrides.render,
     }],
     library_files: [{
       id: FILE, user_id: OWNER, project_id: null, production_id: null, kind: 'video', mime_type: 'video/mp4', file_size: libMp4.length,

@@ -20,10 +20,11 @@ import { toReviewRecord } from '../repository'
 import { REVIEW_VIDEO_MAX_BYTES, REVIEW_VIDEO_MAX_DURATION_MS } from '../media-limits'
 import { GEMINI_UPLOAD_CHUNK_BYTES } from '@/lib/providers/gemini/client'
 import { readS3Object, openS3ObjectStream } from '@/lib/storage/s3'
+import { makeMp4 } from '@/lib/media-artifacts/__tests__/mp4-fixture'
 import { createReviewTestDb } from './review-test-db'
 import {
   API_KEY, EXEC, GEN, GEN_PATH, GEN_SOURCE, HOST, LIB_PATH, LIB_SOURCE, LIB_UUID, MIB, OTHER, OWNER, PRODUCTION, PROJECT, REQ,
-  RENDER_SOURCE, SCRATCH_PATH, UPLOAD_URL, ZEROS, bufferObject, genMp4, libMp4, seed, setup, sha, zeroObject, FILE,
+  RENDER_SOURCE, SCRATCH_PATH, UPLOAD_URL, bufferObject, genMp4, libMp4, mp4VirtualObject, seed, setup, sha, FILE,
 } from './video-review-harness'
 
 const reviews = (db: ReturnType<typeof createReviewTestDb>): Array<Record<string, any>> => db.tables.media_reviews ?? []
@@ -208,11 +209,33 @@ describe('Video Review: media guardrails (limits unchanged)', () => {
     expect(t.gemini.fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('12. an over-long video (recorded duration) is rejected before the object is read', async () => {
-    const t = setup({ seedOverrides: { render: { output_duration_ms: REVIEW_VIDEO_MAX_DURATION_MS + 1 } } })
+  it('12. an over-long video is rejected on its REAL duration (read from the file), before any upload or Review row', async () => {
+    const tooLong = makeMp4({ durationMs: REVIEW_VIDEO_MAX_DURATION_MS + 1, width: 1280, height: 720 })
+    const t = setup({
+      seedOverrides: { render: { output_size_bytes: tooLong.length } },
+      objects: { [SCRATCH_PATH]: bufferObject(tooLong) },
+    })
     await expect(t.run(RENDER_SOURCE)).rejects.toMatchObject({ status: 422, code: 'REVIEW_PROVIDER_UNSUPPORTED' })
-    expect(t.store.opens).toHaveLength(0)
+    expect(t.db.tables.media_artifacts[0]).toMatchObject({ duration_ms: REVIEW_VIDEO_MAX_DURATION_MS + 1 })
     expect(reviews(t.db)).toHaveLength(0)
+    expect(t.gemini.fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('12b. the recorded render wall-clock time can neither veto nor approve a video: only the file decides', async () => {
+    // Recorded "duration" above the 10 minute cap, real file 8 s: the Review proceeds and the artifact says 8000.
+    const veto = setup({ seedOverrides: { render: { output_duration_ms: REVIEW_VIDEO_MAX_DURATION_MS * 3 } } })
+    const result = await veto.run(RENDER_SOURCE)
+    expect(result.row.status).toBe('completed')
+    expect(veto.db.tables.media_artifacts[0].duration_ms).toBe(8000)
+    // Recorded tiny value, file with no readable duration: still fails closed (no fallback to the recorded value).
+    const opaque = Buffer.alloc(4096, 3)
+    const approve = setup({
+      seedOverrides: { render: { output_duration_ms: 1000, output_size_bytes: opaque.length } },
+      objects: { [SCRATCH_PATH]: bufferObject(opaque) },
+    })
+    await expect(approve.run(RENDER_SOURCE)).rejects.toMatchObject({ status: 422, code: 'REVIEW_PROVIDER_UNSUPPORTED', message: expect.stringContaining('must be known') })
+    expect(approve.db.tables.media_artifacts[0].duration_ms).toBeNull()
+    expect(reviews(approve.db)).toHaveLength(0)
   })
 
   it('13. a video whose duration cannot be proven fails closed: no Review row, no upload, no model call', async () => {
@@ -230,22 +253,25 @@ describe('Video Review: media guardrails (limits unchanged)', () => {
 
 describe('Video Review: the streaming path is the only path', () => {
   it('14/15/16. streams a 40 MiB video to the Files API in protocol chunks; never loads the whole object', async () => {
-    const size = 40 * MIB
+    // A large, valid MP4 (moov at the end), so its real duration is readable by bounded ranged reads.
+    const object = mp4VirtualObject(40 * MIB, { durationMs: 8000, width: 1280, height: 720 })
+    const size = object.size
     const t = setup({
       seedOverrides: { render: { output_size_bytes: size } },
-      objects: { [SCRATCH_PATH]: zeroObject(size) },
+      objects: { [SCRATCH_PATH]: object },
     })
     const concat = vi.spyOn(Buffer, 'concat')
     const result = await t.run(RENDER_SOURCE)
     expect(result.row.status).toBe('completed')
+    expect(t.db.tables.media_artifacts[0]).toMatchObject({ duration_ms: 8000, byte_size: size })
 
     const expected = createHash('sha256')
-    for (let i = 0; i < 40; i += 1) expected.update(ZEROS)
+    for await (const piece of object.slice(0, size - 1)) expected.update(piece)
     // The exact bytes of the stored object reached Gemini, in bounded chunks.
     expect(t.gemini.uploadedHash()).toBe(expected.digest('hex'))
     expect(t.gemini.uploadedBytes()).toBe(size)
     const chunks = t.gemini.chunkCalls()
-    expect(chunks.map((c) => c.headers['X-Goog-Upload-Offset'])).toEqual(['0', String(8 * MIB), String(16 * MIB), String(24 * MIB), String(32 * MIB)])
+    expect(chunks.map((c) => c.headers['X-Goog-Upload-Offset'])).toEqual(['0', String(8 * MIB), String(16 * MIB), String(24 * MIB), String(32 * MIB), String(40 * MIB)])
     expect(chunks.at(-1)?.headers['X-Goog-Upload-Command']).toBe('upload, finalize')
     expect(Math.max(...chunks.map((c) => c.bodyBytes))).toBeLessThanOrEqual(GEMINI_UPLOAD_CHUNK_BYTES)
     expect(Math.max(0, ...concat.mock.results.map((r: { value: unknown }) => (r.value as Buffer).byteLength))).toBeLessThanOrEqual(GEMINI_UPLOAD_CHUNK_BYTES)
