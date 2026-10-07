@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
 import { readS3Object } from '@/lib/storage/s3'
 import type { MediaArtifactRow } from './contracts'
+import { attachArtifactProvenance } from './provenance'
 
 const MEDIA_ARTIFACT_COLUMNS = [
   'id', 'user_id', 'project_id', 'production_id', 'media_type', 'identity_mode',
@@ -156,14 +157,10 @@ export async function resolveImageArtifact(db: SupabaseClient, input: ImageArtif
 }
 
 export async function attachImageProvenance(db: SupabaseClient, input: ImageArtifactInput, artifactId: string) {
-  const result = await db.from('media_artifact_provenance').upsert({
-    artifact_id: artifactId,
-    user_id: input.userId,
-    project_id: input.projectId,
-    production_id: input.productionId,
-    provenance_kind: 'image_generation',
-    image_generation_attempt_id: input.attemptId,
-    image_output_id: input.outputId,
-  }, { onConflict: 'artifact_id,image_generation_attempt_id,image_output_id' })
-  if (result.error) throw result.error
+  // Shared writer: derives the NOT NULL `provenance_key` and conflicts on the real unique key.
+  await attachArtifactProvenance(db, {
+    artifactId,
+    scope: { userId: input.userId, projectId: input.projectId, productionId: input.productionId },
+    ref: { kind: 'image_generation', attemptId: input.attemptId, outputId: input.outputId },
+  })
 }
