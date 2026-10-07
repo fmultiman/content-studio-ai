@@ -29,6 +29,11 @@ the checklist; it must not merge on green checks alone.
 - The workspace content (controls and hydrated values), not only the absence of an error toast.
 - The browser console and the failing network request, if any.
 
+## Environment Requirements
+
+Preview media smoke requires media-environment parity.
+If the Preview cannot produce working signed URLs or media fails to render in the browser, verify that the media storage environment variables (`S3_ENDPOINT`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, etc.) are configured to target the `Preview` environment in Vercel, not just `Production`. A missing environment variable will fail signed media URLs.
+
 ## Test conventions that protect these flows
 
 - Route components are tested by rendering the **real** route page and shell with only network, auth and
