@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import WorkspacePage from '@/app/(dashboard)/videos/geracoes/[sessionId]/page'
+import { GenerationSessionNavigationProvider } from '@/components/generation-session/session-navigation-guard'
 import { describeRestConnection } from '@/lib/video-generation/connections'
 import type { VideoGenerationConnectionDescriptor } from '@/lib/video-generation/capabilities'
 
@@ -60,7 +61,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByText('Workspace de Geração de Vídeo')).toBeTruthy()
@@ -113,7 +114,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Como esta imagem deve ser animada|Descreva a cena do vídeo/i)).toBeTruthy()
@@ -202,7 +203,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial prompt')).toBeTruthy()
@@ -221,17 +222,68 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
   })
 
   it('8 & 9. Optimistic concurrency conflict (409) shows conflict UX and supports Reload Server Version', async () => {
+    let patchCount = 0
     fetchMock.mockImplementation((url: string, opts?: any) => {
       if (url.includes('/connections')) {
         return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
       }
       if (url.includes('/video-generation-sessions/')) {
         if (opts?.method === 'PATCH') {
+          patchCount++
+          if (patchCount === 1) {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  code: 'SESSION_VERSION_CONFLICT',
+                  error: 'Version conflict',
+                  session: {
+                    id: currentSessionId,
+                    projectId: '00000000-0000-0000-0000-000000000010',
+                    productionId: '00000000-0000-0000-0000-000000000020',
+                    updatedAt: '2026-10-03T13:00:00.000Z',
+                    workingState: {
+                      schemaVersion: 1,
+                      prompt: 'Server authoritative version from another tab',
+                      source: null,
+                      selection: {
+                        connectionRef: 'rest',
+                        operation: 'text_to_video',
+                        modelId: 'kling-v1',
+                        duration: 10,
+                        resolution: '1080p',
+                        aspectRatio: '16:9',
+                        audio: 'off',
+                        multiShot: false,
+                        asmr: false,
+                        audioPrompt: null,
+                        musicPrompt: null,
+                      },
+                    },
+                  },
+                }),
+                { status: 409 },
+              ),
+            )
+          }
           return Promise.resolve(
             new Response(
               JSON.stringify({
-                code: 'SESSION_VERSION_CONFLICT',
-                error: 'Version conflict',
+                session: {
+                  id: currentSessionId,
+                  projectId: '00000000-0000-0000-0000-000000000010',
+                  productionId: '00000000-0000-0000-0000-000000000020',
+                  updatedAt: '2026-10-03T13:01:00.000Z',
+                  workingState: JSON.parse(opts.body).workingState,
+                },
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (patchCount >= 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
                 session: {
                   id: currentSessionId,
                   projectId: '00000000-0000-0000-0000-000000000010',
@@ -257,7 +309,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
                   },
                 },
               }),
-              { status: 409 },
+              { status: 200 },
             ),
           )
         }
@@ -299,7 +351,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('My local prompt')).toBeTruthy()
@@ -369,6 +421,22 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
             ),
           )
         }
+        if (patchCount >= 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session: {
+                  id: currentSessionId,
+                  projectId: '00000000-0000-0000-0000-000000000010',
+                  productionId: '00000000-0000-0000-0000-000000000020',
+                  updatedAt: '2026-10-03T13:00:00.000Z',
+                  workingState: { schemaVersion: 1, prompt: 'Server prompt', source: null, selection: {} },
+                },
+              }),
+              { status: 200 },
+            ),
+          )
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -407,7 +475,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial local prompt')).toBeTruthy()
@@ -479,7 +547,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Old prompt with non-existent model')).toBeTruthy()
@@ -568,7 +636,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Initial prompt')).toBeTruthy()
@@ -646,7 +714,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Ready prompt')).toBeTruthy()
@@ -731,7 +799,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByText('A futuristic cityscape at dusk')).toBeTruthy()
@@ -745,11 +813,28 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
     currentSearchParams.set('reuseGenerationId', '00000000-0000-0000-0000-000000000100')
 
     let reuseFetched = false
-    fetchMock.mockImplementation((url: string) => {
+    fetchMock.mockImplementation((url: string, opts?: any) => {
       if (url.includes('/connections')) {
         return Promise.resolve(new Response(JSON.stringify({ connections: CONNECTIONS_FIXTURE }), { status: 200 }))
       }
       if (url.includes('/video-generation-sessions/')) {
+        if (opts?.method === 'PUT') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session: {
+                  id: currentSessionId,
+                  projectId: '00000000-0000-0000-0000-000000000010',
+                  productionId: '00000000-0000-0000-0000-000000000020',
+                  updatedAt: '2026-10-03T12:00:00.000Z',
+                  workingState: JSON.parse(opts.body).workingState,
+                },
+                created: true,
+              }),
+              { status: 201 },
+            ),
+          )
+        }
         return Promise.resolve(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }))
       }
       if (url.includes('/api/video-generations/00000000-0000-0000-0000-000000000100')) {
@@ -779,7 +864,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       // Prompt should be seeded
@@ -874,7 +959,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Existing stored session prompt')).toBeTruthy()
@@ -920,7 +1005,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
 
-    render(<WorkspacePage />)
+    render(<GenerationSessionNavigationProvider><WorkspacePage /></GenerationSessionNavigationProvider>)
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Text to video prompt')).toBeTruthy()
