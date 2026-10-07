@@ -28,6 +28,8 @@ import {
 } from '@/lib/video-generation/status-refresh'
 import { GenerationProvenance } from '@/components/videos/generation-provenance'
 import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
+import { VideoReviewControl } from '@/components/reviews/video-review-control'
+import { isGenerationReviewable } from '@/lib/reviews/video-review-presentation'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -779,6 +781,11 @@ function WorkspacePageContent() {
                           </Button>
 
                           <SaveGenerationToLibrary generation={generation} size="sm" onSaved={markGenerationSaved} />
+
+                          {/* VIDEO_REVIEW_UI_AND_HISTORY_V1: advisory Review of a completed result; sends only the generation id. */}
+                          {isGenerationReviewable(generation) && (
+                            <VideoReviewControl source={{ kind: 'video_generation', id: generation.id }} size="sm" subjectLabel={generation.prompt} />
+                          )}
                         </div>
                       </CardContent>
                     </Card>

@@ -55,7 +55,16 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
       const ins: Array<[string, unknown[]]> = []
       let op: 'select' | 'insert' | 'update' = 'select'
       let values: Row = {}
-      const match = () => (tables[table] ?? []).filter((row) => eqs.every(([k, v]) => row[k] === v) && ins.every(([k, vs]) => vs.includes(row[k])))
+      let orderBy: { column: string; ascending: boolean } | null = null
+      let limitTo: number | null = null
+      const match = () => {
+        let rows = (tables[table] ?? []).filter((row) => eqs.every(([k, v]) => row[k] === v) && ins.every(([k, vs]) => vs.includes(row[k])))
+        if (orderBy) {
+          const { column, ascending } = orderBy
+          rows = [...rows].sort((a, b) => (a[column] === b[column] ? 0 : (a[column] > b[column] ? 1 : -1) * (ascending ? 1 : -1)))
+        }
+        return limitTo === null ? rows : rows.slice(0, limitTo)
+      }
 
       function run(): { data: Row | null; error: any } {
         if (op === 'insert') {
@@ -98,6 +107,8 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
         select: () => builder,
         eq: (column: string, value: unknown) => { eqs.push([column, value]); return builder },
         in: (column: string, vs: unknown[]) => { ins.push([column, vs]); return builder },
+        order: (column: string, options?: { ascending?: boolean }) => { orderBy = { column, ascending: options?.ascending !== false }; return builder },
+        limit: (count: number) => { limitTo = count; return builder },
         maybeSingle: async () => run(),
         single: async () => {
           const result = run()

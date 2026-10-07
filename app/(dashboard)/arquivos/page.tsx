@@ -36,6 +36,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { VideoReviewControl } from '@/components/reviews/video-review-control'
+import { isLibraryFileReviewable } from '@/lib/reviews/video-review-presentation'
 import type { LibraryFile, LibraryFileKind, LibraryFolder, Project } from '@/lib/types'
 import {
   ChevronLeft,
@@ -1102,6 +1104,10 @@ export default function ArquivosPage() {
                           Baixar
                         </a>
                       </Button>
+                      {/* VIDEO_REVIEW_UI_AND_HISTORY_V1: videos only, never in the trash; sends only the LibraryFile id. */}
+                      {!showTrash && isLibraryFileReviewable(file) && (
+                        <VideoReviewControl source={{ kind: 'library_file', id: file.id }} size="sm" subjectLabel={file.name} />
+                      )}
                     </CardActions>
                   </CardContent>
                 </Card>

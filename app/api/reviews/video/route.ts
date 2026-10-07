@@ -1,6 +1,7 @@
 // GEMINI_VIDEO_REVIEW_ADAPTER_V1
 //
-// POST /api/reviews/video
+// POST /api/reviews/video   (run one Review)
+// GET  /api/reviews/video   (read-only history of a typed source)
 //
 // The browser names a typed SOURCE entity by id (`video_generation` | `render_execution` |
 // `library_file`) and a clientRequestId. It can never send a URL, bucket, storage key, MIME type,
@@ -10,10 +11,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isUuid, readBoundedJsonBody } from '@/lib/image-generation/session'
-import { VideoReviewRequestSchema } from '@/lib/reviews/contracts'
+import { VideoReviewRequestSchema, VideoReviewSourceSchema } from '@/lib/reviews/contracts'
 import { ReviewServiceError } from '@/lib/reviews/errors'
 import { toReviewRecord } from '@/lib/reviews/repository'
 import { createVideoReviewExecution } from '@/lib/reviews/video-service'
+import { getVideoReviewHistory } from '@/lib/reviews/video-history'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +28,31 @@ function errorResponse(error: unknown) {
   }
   // Unknown failures are never echoed: they may carry storage keys or provider details.
   return NextResponse.json({ error: 'Review could not be completed.', code: 'REVIEW_INTERNAL_ERROR' }, { status: 500 })
+}
+
+/**
+ * GET /api/reviews/video?kind=<video_generation|render_execution|library_file>&id=<uuid>
+ *
+ * READ-ONLY history of Video Reviews for one typed source, newest first. It runs with the caller's own
+ * session client (row-level security applies), issues only SELECTs, and never registers an artifact, reads
+ * media, writes provenance or a Review, or contacts a provider. A source with no artifact yet answers `[]`.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
+
+    const params = new URL(request.url).searchParams
+    const parsed = VideoReviewSourceSchema.safeParse({ kind: params.get('kind'), id: params.get('id') })
+    if (!parsed.success || !isUuid(parsed.data.id)) {
+      return NextResponse.json({ error: 'Invalid Review source.', code: 'INVALID_BODY' }, { status: 400 })
+    }
+    const history = await getVideoReviewHistory({ db: supabase, userId: user.id, source: parsed.data })
+    return NextResponse.json(history, { headers: { 'Cache-Control': 'private, no-store' } })
+  } catch (error) {
+    return errorResponse(error)
+  }
 }
 
 export async function POST(request: NextRequest) {
