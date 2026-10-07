@@ -407,3 +407,75 @@ describe('Settings navigation', () => {
     expect(component).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/)
   })
 })
+
+// GEMINI_PROVIDER_USAGE_AND_COST_INTEGRATION_V1 — Gemini Review rows reuse the same screen, filters and summary rules.
+describe('Gemini Review usage', () => {
+  const gemini = (id: string, unit: UsageEventView['unit'], quantity: number, extra: Partial<UsageEventView> = {}): UsageEventView => ({
+    id, occurred_at: '2026-10-07T11:50:00.000Z', provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash',
+    quantity, unit, measurement_source: 'provider_reported', project_id: 'proj-1', connection_id: null, funding: 'user_byok', usage_category: null, ...extra,
+  })
+  const set = [
+    gemini('g-in', 'input_tokens', 24800),
+    gemini('g-out', 'output_tokens', 640),
+    gemini('g-think', 'tokens', 310, { usage_category: 'thoughts' }),
+  ]
+
+  it('labels provider, operation, API transport, model and BYOK funding; shows the provider-native unit', async () => {
+    respond(payload([...set, gemini('g-img', 'input_tokens', 1290, { operation: 'image_review' })]))
+    await ready()
+    const row = rowFor('Revisão de vídeo')
+    expect(within(row).getByTestId('usage-provider').textContent).toBe('Gemini')
+    expect(within(row).getByTestId('usage-transport').textContent).toBe('API')
+    expect(within(row).getByTestId('usage-connection').textContent).toBe('Gemini API')
+    expect(within(row).getByTestId('usage-model').textContent).toBe('gemini-3.5-flash')
+    expect(within(row).getByTestId('usage-funding').textContent).toMatch(/Chave própria \(BYOK\).*custo não calculado/)
+    expect(screen.getAllByTestId('usage-operation').map((el) => el.textContent)).toContain('Revisão de imagem')
+    expect(document.body.textContent).toMatch(/24\.800 tokens de entrada/)
+  })
+
+  it('input, output and thinking tokens are three separate summary groups: never added into one number', async () => {
+    respond(payload(set))
+    await ready()
+    const groups = screen.getAllByTestId('usage-summary-group').map((g) => g.textContent ?? '')
+    expect(groups).toHaveLength(3)
+    expect(groups.join('|')).toMatch(/24\.800 tokens de entrada/)
+    expect(groups.join('|')).toMatch(/640 tokens de saída/)
+    expect(groups.join('|')).toMatch(/310 tokens de raciocínio/)
+    expect(document.body.textContent).not.toMatch(/25\.750|25\.\d{3} tokens(?! de)/)
+  })
+
+  it('thinking tokens are not merged with plain tokens of the same unit', () => {
+    const summary = summarizeUsage([gemini('a', 'tokens', 10), gemini('b', 'tokens', 5, { usage_category: 'thoughts' })])
+    expect(summary.groups).toHaveLength(2)
+  })
+
+  it('the provider filter narrows to Gemini and leaves Kling summaries untouched', async () => {
+    respond(payload([...set, mcpEvent, restEvent]))
+    await ready()
+    await selectOption('usage-filter-provider', 'Gemini')
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(3)
+    expect(screen.getAllByTestId('usage-summary-group').every((g) => /Gemini/.test(g.textContent ?? ''))).toBe(true)
+    await selectOption('usage-filter-provider', 'Kling')
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(2)
+    expect(screen.getAllByTestId('usage-summary-group').map((g) => g.textContent).join('|')).toMatch(/18 créditos/)
+  })
+
+  it('an unknown-usage Gemini execution is counted as unknown, never as 0 tokens', async () => {
+    respond(payload([gemini('g-unknown', null, 0, { quantity: null, unit: null, measurement_source: 'unknown' })]))
+    await ready()
+    expect(screen.getByTestId('usage-quantity').textContent).toBe('Uso não informado')
+    expect(screen.getByTestId('usage-summary-unknown')).toBeTruthy()
+  })
+
+  it('never shows a monetary value for Gemini usage', async () => {
+    respond(payload(set))
+    await ready()
+    expect(document.body.textContent).not.toMatch(/R\$|US\$|\$\s?\d/)
+  })
+
+  it('presentation vocabulary', () => {
+    expect(operationLabel('video_review')).toBe('Revisão de vídeo')
+    expect(operationLabel('image_review')).toBe('Revisão de imagem')
+    expect(formatUsageQuantity({ quantity: 1, unit: 'tokens', usage_category: 'thoughts' })).toBe('1 token de raciocínio')
+  })
+})

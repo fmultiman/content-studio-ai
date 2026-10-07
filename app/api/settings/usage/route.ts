@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { listConnectionsForUser } from '@/lib/provider-connections/connections'
 import { describeMcpConnection } from '@/lib/video-generation/connections'
 import { connectionDisplayName } from '@/lib/video-generation/connection-presentation'
-import type { UsageEventView, UsageHistoryResponse } from '@/lib/usage/provider-usage'
+import { USAGE_CATEGORIES, USAGE_FUNDING, type UsageCategory, type UsageEventView, type UsageFunding, type UsageHistoryResponse } from '@/lib/usage/provider-usage'
 
 // AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1
 //
@@ -11,7 +11,8 @@ import type { UsageEventView, UsageHistoryResponse } from '@/lib/usage/provider-
 // session, so the database (RLS SELECT policy on provider_usage_events) is the
 // tenant boundary — there is no service-role read here and no write path at all.
 // Only safe, display-ready columns are returned: no raw provider metadata, no task
-// ids, no idempotency keys. `historical_import` is the one flag derived from provider_metadata.
+// ids, no idempotency keys. `historical_import`, `usage_category` and `funding` are the only values derived from
+// provider_metadata, each through a closed whitelist (nothing free-form is ever forwarded).
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,8 @@ export async function GET() {
       project_id: row.project_id ?? null,
       connection_id: row.connection_id ?? null,
       historical_import: row.provider_metadata?.historical_import === true,
+      usage_category: (USAGE_CATEGORIES as readonly unknown[]).includes(row.provider_metadata?.usage_category) ? (row.provider_metadata.usage_category as UsageCategory) : null,
+      funding: (USAGE_FUNDING as readonly unknown[]).includes(row.provider_metadata?.funding) ? (row.provider_metadata.funding as UsageFunding) : null,
     }))
 
     // Names are decoration: if they cannot be loaded the rows still render, and never with an invented name.

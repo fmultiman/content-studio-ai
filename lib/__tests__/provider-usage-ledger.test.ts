@@ -378,7 +378,7 @@ describe('GET /api/settings/usage — tenant-private read', () => {
     signIn(db)
     const body = await (await get()).json()
     expect(Object.keys(body.events[0]).sort()).toEqual(
-      ['connection_id', 'historical_import', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit'].sort(),
+      ['connection_id', 'funding', 'historical_import', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit', 'usage_category'].sort(),
     )
     expect(JSON.stringify(body)).not.toMatch(/SECRET-TASK-ID|idempotency|provider_metadata/)
     expect(body.projects).toEqual({ 'proj-1': 'Projeto A' })
@@ -401,6 +401,34 @@ describe('GET /api/settings/usage — tenant-private read', () => {
     expect(byId.imported.historical_import).toBe(true)
     expect(byId.live.historical_import).toBe(false)
     expect(JSON.stringify(raw)).not.toMatch(/verified_real_provider_proof|charge_type|provider_billing/)
+  })
+
+  it('includes Gemini Review rows (same API) and forwards only whitelisted usage_category / funding — never the metadata', async () => {
+    const geminiRow = (overrides: Record<string, unknown>) => eventRow({
+      provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash', connection_id: null, provider_task_id: 'resp-SECRET',
+      measurement_source: 'provider_reported', idempotency_key: 'gemini_review:r:x',
+      provider_metadata: { funding: 'user_byok', api: 'gemini_generate_content', review: { id: 'r' }, usage: { totalTokenCount: 99 } }, ...overrides,
+    })
+    const db = createFakeDb({
+      seed: {
+        provider_usage_events: [
+          geminiRow({ id: 'g-in', quantity: '1000', unit: 'input_tokens' }),
+          geminiRow({ id: 'g-think', quantity: 50, unit: 'tokens', provider_metadata: { funding: 'user_byok', usage_category: 'thoughts' } }),
+          geminiRow({ id: 'g-evil', quantity: 1, unit: 'tokens', provider_metadata: { funding: 'free-money', usage_category: '<script>' } }),
+          eventRow({ id: 'k', quantity: 3, unit: 'units', measurement_source: 'provider_reported', transport: 'rest', connection_id: null }),
+        ],
+        projects: [],
+        provider_connections: [],
+      },
+    }) as any
+    signIn(db)
+    const raw = await (await get()).json()
+    const byId = Object.fromEntries(raw.events.map((event: any) => [event.id, event]))
+    expect(byId['g-in']).toMatchObject({ provider: 'gemini', operation: 'video_review', quantity: 1000, unit: 'input_tokens', funding: 'user_byok', usage_category: null })
+    expect(byId['g-think']).toMatchObject({ unit: 'tokens', usage_category: 'thoughts', funding: 'user_byok' })
+    expect(byId['g-evil']).toMatchObject({ usage_category: null, funding: null })
+    expect(byId.k).toMatchObject({ provider: 'kling', funding: null, usage_category: null })
+    expect(JSON.stringify(raw)).not.toMatch(/resp-SECRET|gemini_review|gemini_generate_content|totalTokenCount|<script>|free-money/)
   })
 
   it('keeps unknown usage as null (not 0) and normalises a NUMERIC that arrives as a string', async () => {
