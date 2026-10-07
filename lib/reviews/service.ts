@@ -9,6 +9,7 @@ import { ReviewProviderError, parseProviderJson, toReviewServiceError, type Auth
 import { resolveAuthorizedReviewMedia, type ReviewObjectReader } from './media'
 import { DEFAULT_REVIEW_PROVIDER_ID, assertProviderModelSupportsMedia, getReviewExecutionProvider, resolveReviewModelId, type ReviewProviderOverrides } from './provider-registry'
 import { findActiveReviewByAttempt, findReviewByClientRequest, insertPendingReview, listReviewsByAttempt, markReviewCompleted, markReviewFailed, markReviewRunning, toReviewRecord, type MediaReviewRow } from './repository'
+import { recoverStaleActiveReview } from './stale-recovery'
 import type { ReviewHistoryV1 } from './contracts'
 
 export type ImageReviewEvaluator = (input: {
@@ -35,6 +36,8 @@ export async function createImageReviewExecution(params: {
   providers?: ReviewProviderOverrides
   readObject?: ReviewObjectReader
   now?: () => string
+  /** Test seam for the stale-recovery clock (epoch ms). Never read from a request. */
+  clock?: () => number
 }) {
   const db = params.db ?? createServiceRoleSupabase()
   const resolved = await resolveImageReviewContext(db, params.userId, params.attemptId)
@@ -59,7 +62,12 @@ export async function createImageReviewExecution(params: {
   }
   const active = await findActiveReviewByAttempt(db, params.userId, params.attemptId)
   if (active.error) throw storeError(active.error)
-  if (active.data) throw new ReviewServiceError(409, 'REVIEW_IN_PROGRESS', 'A Review is already running for this Attempt.', { reviewId: active.data.id })
+  if (active.data) {
+    // FUTURE-046: an abandoned in-flight Review (process died) must not block this Attempt forever. Only a Review
+    // older than the stale policy is recovered; a legitimately slow one still answers 409.
+    const recovery = await recoverStaleActiveReview(db, active.data, { userId: params.userId, nowMs: (params.clock ?? Date.now)() })
+    if (recovery === 'in_flight') throw new ReviewServiceError(409, 'REVIEW_IN_PROGRESS', 'A Review is already running for this Attempt.', { reviewId: active.data.id })
+  }
 
   const subjectSnapshot = {
     schemaVersion: 1,
@@ -94,6 +102,11 @@ export async function createImageReviewExecution(params: {
   })
   if (inserted.error || !inserted.data) {
     if (inserted.error?.code === '23505') {
+      // The partial unique in-flight index is the final authority when two requests race to start a Review.
+      if (String(inserted.error.message ?? '').includes('media_reviews_active_attempt_key')) {
+        const racedActive = await findActiveReviewByAttempt(db, params.userId, params.attemptId)
+        throw new ReviewServiceError(409, 'REVIEW_IN_PROGRESS', 'A Review is already running for this Attempt.', racedActive.data ? { reviewId: racedActive.data.id } : undefined)
+      }
       const raced = await findReviewByClientRequest(db, params.userId, clientRequestId)
       if (raced.data && raced.data.request_fingerprint === fingerprint) return { row: raced.data, replayed: true }
     }

@@ -17,6 +17,7 @@ import {
   describeFailureCode,
   isInFlightReview,
   isStaleInFlightReview,
+  VIDEO_REVIEW_STALE_MINUTES,
 } from '@/lib/reviews/video-review-presentation'
 import type { ReviewCriterionV1 } from '@/lib/reviews/contracts'
 import type { VideoReviewHistoryItem } from '@/lib/reviews/video-review-dto'
@@ -106,7 +107,7 @@ export function VideoReviewResult({
         </p>
         {stale && (
           <p className="text-xs text-text-secondary" data-testid="review-stale-note">
-            Esta revisão foi iniciada há mais de 15 minutos e pode ter sido interrompida.
+            Esta revisão foi iniciada há mais de {VIDEO_REVIEW_STALE_MINUTES} minutos e pode ter sido interrompida. Ao revisar novamente, ela será encerrada e uma nova revisão começará.
           </p>
         )}
       </div>

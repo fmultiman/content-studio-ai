@@ -31,6 +31,10 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
       if (rows.some((o) => o.user_id === row.user_id && o.client_request_id === row.client_request_id)) {
         return { code: '23505', message: 'duplicate key value violates unique constraint "media_reviews_user_client_request_key"' }
       }
+      if (row.subject_media_type === 'image' && ['pending', 'running'].includes(row.status)
+        && rows.some((o) => o.subject_media_type === 'image' && o.image_attempt_id === row.image_attempt_id && ['pending', 'running'].includes(o.status))) {
+        return { code: '23505', message: 'duplicate key value violates unique constraint "media_reviews_active_attempt_key"' }
+      }
       if (row.subject_media_type === 'video' && ['pending', 'running'].includes(row.status)
         && rows.some((o) => o.subject_media_type === 'video' && o.media_artifact_id === row.media_artifact_id && ['pending', 'running'].includes(o.status))) {
         return { code: '23505', message: 'duplicate key value violates unique constraint "media_reviews_active_video_artifact_key"' }
@@ -53,12 +57,13 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
     from(table: string) {
       const eqs: Array<[string, unknown]> = []
       const ins: Array<[string, unknown[]]> = []
+      const lts: Array<[string, string]> = []
       let op: 'select' | 'insert' | 'update' = 'select'
       let values: Row = {}
       let orderBy: { column: string; ascending: boolean } | null = null
       let limitTo: number | null = null
       const match = () => {
-        let rows = (tables[table] ?? []).filter((row) => eqs.every(([k, v]) => row[k] === v) && ins.every(([k, vs]) => vs.includes(row[k])))
+        let rows = (tables[table] ?? []).filter((row) => eqs.every(([k, v]) => row[k] === v) && ins.every(([k, vs]) => vs.includes(row[k])) && lts.every(([k, v]) => row[k] < v))
         if (orderBy) {
           const { column, ascending } = orderBy
           rows = [...rows].sort((a, b) => (a[column] === b[column] ? 0 : (a[column] > b[column] ? 1 : -1) * (ascending ? 1 : -1)))
@@ -107,9 +112,14 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
         select: () => builder,
         eq: (column: string, value: unknown) => { eqs.push([column, value]); return builder },
         in: (column: string, vs: unknown[]) => { ins.push([column, vs]); return builder },
+        lt: (column: string, value: string) => { lts.push([column, value]); return builder },
         order: (column: string, options?: { ascending?: boolean }) => { orderBy = { column, ascending: options?.ascending !== false }; return builder },
         limit: (count: number) => { limitTo = count; return builder },
-        maybeSingle: async () => run(),
+        maybeSingle: async () => {
+          const result = run()
+          // PostgREST: `.maybeSingle()` on zero rows is a normal null, never PGRST116 (only `.single()` errors).
+          return op === 'update' && result.error?.code === 'PGRST116' ? { data: null, error: null } : result
+        },
         single: async () => {
           const result = run()
           return op === 'select' && !result.data ? { data: null, error: { code: 'PGRST116', message: 'no rows' } } : result

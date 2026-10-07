@@ -4,12 +4,19 @@
 // and how an assessment is worded. No server imports, no I/O, so it is trivially testable and client-safe.
 
 import type { ReviewAssessment, VideoReviewSource } from './contracts'
+import { REVIEW_STALE_AFTER_MS } from './stale-policy'
 import type { VideoReviewHistoryItem } from './video-review-dto'
 
 /** How often an in-flight Review is re-read while its panel is open. Deliberately slow. */
 export const VIDEO_REVIEW_POLL_MS = 15_000
-/** After this age an in-flight Review is called out as possibly interrupted (and polling stops). */
-export const VIDEO_REVIEW_STALE_MS = 15 * 60_000
+/**
+ * After this age an in-flight Review is called out as possibly interrupted (and polling stops). It is the SAME
+ * number the backend uses to recover an abandoned Review on the next request (FUTURE-046), so the warning never
+ * promises more than the backend will do.
+ */
+export const VIDEO_REVIEW_STALE_MS = REVIEW_STALE_AFTER_MS
+/** Minutes, for copy. */
+export const VIDEO_REVIEW_STALE_MINUTES = Math.round(VIDEO_REVIEW_STALE_MS / 60_000)
 
 // ── Eligibility ────────────────────────────────────────────────────────────
 
@@ -117,6 +124,7 @@ export function describeFailureCode(code: string): string {
     case 'provider_timeout': return 'O Gemini demorou demais para responder.'
     case 'media_unavailable': return 'O arquivo de vídeo não pôde ser lido ou mudou desde o registro.'
     case 'project_identity_invalid': return 'A identidade do Project é inválida para esta revisão.'
+    case 'execution_stale': return 'A revisão anterior foi interrompida e não foi concluída. Você pode revisar novamente.'
     case 'provider_error': return 'O Gemini não concluiu a revisão (ou a API Gemini não está configurada).'
     default: return 'A revisão não pôde ser concluída.'
   }
