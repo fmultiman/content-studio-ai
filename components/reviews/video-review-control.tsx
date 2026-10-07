@@ -165,7 +165,9 @@ export function VideoReviewControl({
       </Button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-2xl overflow-y-auto sm:max-w-2xl" data-testid="video-review-panel">
+        {/* The dialog is a CSS grid: `minmax(0,1fr)` stops a long unbroken word from widening its column, and
+            `overflow-wrap:anywhere` (inherited) lets such text actually wrap instead of forcing a sideways scroll. */}
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-2xl grid-cols-[minmax(0,1fr)] overflow-y-auto [overflow-wrap:anywhere] sm:max-w-2xl" data-testid="video-review-panel">
           <DialogHeader>
             <DialogTitle>Revisão do vídeo</DialogTitle>
             <DialogDescription>

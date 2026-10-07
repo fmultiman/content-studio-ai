@@ -195,7 +195,12 @@ describe('result presentation', () => {
     expect((await screen.findByTestId('review-summary')).className).toContain('break-words')
     expect(within(screen.getByTestId('review-refined-prompt')).getByText(long).className).toContain('break-words')
     expect(within(screen.getByTestId('review-issues')).getByText(long).className).toContain('break-words')
-    expect(screen.getByTestId('video-review-panel').className).toContain('overflow-y-auto')
+    const panel = screen.getByTestId('video-review-panel')
+    expect(panel.className).toContain('overflow-y-auto')
+    // jsdom has no layout, so the guards against a long word widening the grid column are asserted structurally;
+    // the real overflow measurement is recorded in the Preview/harness smoke.
+    expect(panel.className).toContain('grid-cols-[minmax(0,1fr)]')
+    expect(panel.className).toContain('[overflow-wrap:anywhere]')
   })
 
   it('lists previous Reviews newest first with the newest expanded and older ones collapsed', async () => {
