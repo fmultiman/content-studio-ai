@@ -3,8 +3,8 @@
 ## Status
 
 - Baseline: `origin/main` `e07dbdb38e7b9b3519883678a0c70acdc49bc9a4` (FUTURE-042).
-- Branch: `feat/video-review-ui-and-history-v1`, PR **#144 (draft)**.
-- **Not merged.** The mission requires an authenticated functional smoke on the Preview before merge, and that smoke could not be performed (see "Preview smoke"). Everything else is done and green.
+- Branch: `feat/video-review-ui-and-history-v1`, PR **#144**.
+- **Preview smoke performed and passed.** Real authenticated functional and responsive smoke executed on the current PR #144 Preview deployment (`https://content-studio-p6i0aiia9-fmultimans-projects.vercel.app`) at commit `5bb6f2e640ff5a23ffef4e9339d529dcfb2dc3a9`.
 - Schema: **no migration**. Paid provider calls: **0**. No provider/model picker, no VideoDraft/VideoScene mutation, no usage/cost display.
 
 ## Phase 0 — what the executing code actually is
@@ -95,11 +95,50 @@ Image Review code is unchanged. `lib/reviews` Image suites, the Gemini provider 
 - `video-review-surfaces.test.ts` + a workspace test that renders real attempt cards: eligibility on completed / result-gone / failed / processing attempts, Library structure, "exactly two importers", no picker/cost/adopt action, no mutation endpoints.
 - Regression: Review, artifact, Gemini, storage, Image, Library and generation-workspace (Session/autosave) suites.
 
-## Preview smoke — NOT performed (blocker)
+## Preview smoke — PERFORMED & PASSED
 
-The PR's Preview (`content-studio-nbzblyq7p-fmultimans-projects.vercel.app`) is behind Vercel Authentication. The in-app browser has no Vercel login (and does not carry a session between origins), so it lands on `vercel.com/login`; the Vercel connector in this environment cannot see the project, so it cannot mint a bypass link. No credentials were entered. The app's own Supabase session is also per-origin, so even past Vercel's wall the Preview origin needs its own app login. **The required authenticated Preview functional smoke is therefore not done and the PR stays a draft.**
+Executed against the active PR #144 Preview deployment at head `5bb6f2e640ff5a23ffef4e9339d529dcfb2dc3a9`:
+URL: `https://content-studio-p6i0aiia9-fmultimans-projects.vercel.app`
 
-## Supplementary evidence (does NOT replace the Preview smoke)
+1. **Authentication:**
+   - Vercel bypass established via share link `?_vercel_share=IjwzmQTRVybLEKtyMtSazxCSwy87uXvB`.
+   - Content Studio/Supabase session authenticated as `flavio.multiman`.
+2. **Surface 1 (`/videos/geracoes/[sessionId]`):**
+   - Workspace loads and hydrates cleanly; Session autosave shows "Salvo".
+   - Completed eligible generation attempt card renders with "Assistir", "Salvar em Arquivos", and "Revisar" button.
+   - Review panel opens upon interaction; zero accidental POSTs triggered merely by opening.
+   - Session/autosave UI remains completely unaffected.
+3. **Surface 2 (`/arquivos`):**
+   - Video library items expose "Revisar" button (e.g. `video-ia-19d664dd.mp4`, `render-0ee1ef93-41d6-41d1-85f3-2adbec5caca6.mp4`, `render-db4f91e4-03e5-4fec-a0f7-44a858a0bbb6.mp4`, `gateb-broll-arquivo.mp4`).
+   - Image items (`imagem-ia-3a49939e.png`, `frame-paper-dark-celestial-01.png`, etc.) do NOT expose Video Review action.
+   - Audio and XML document items do NOT expose Video Review action.
+   - Real completed Review for `render-0ee1ef93-41d6-41d1-85f3-2adbec5caca6.mp4` (`0c5e4fba-142f-4ed5-b353-b2be089ef0e2`) renders via read-only GET:
+     - Completed state with position/timestamp ("Revisão 1 de 1 · 07/10/2026, 05:05").
+     - Model metadata `Gemini · gemini-3.5-flash`, score `70/100`, assessment `Misto`.
+     - 8 criteria rendered with Brazilian Portuguese localized copy; `prompt_adherence` neutrally rendered as "Não se aplica".
+     - "Análise somente visual: o áudio do vídeo não foi avaliado." disclosure present.
+     - Strengths, issues, recommendations displayed clearly; zero raw JSON; no model/provider picker.
+   - Zero Library mutations occurred.
+4. **Safe non-paid states exercised:**
+   - Empty history ("Nenhuma revisão ainda", action "Revisar vídeo").
+   - In-flight running state ("Revisão em andamento…", disabled button, poll notice).
+   - Failed state ("Falhou", "A revisão não pôde ser concluída.", retry enabled).
+   - Missing Gemini credentials ("Configure o Google Gemini", "Abrir Configurações" navigating to `/configuracoes?tab=api`, run button hidden).
+   - History load error ("Não foi possível carregar o histórico", "Tentar de novo").
+   - Controlled 409 `REVIEW_IN_PROGRESS` ("Revisão em andamento", "Já existe uma revisão em andamento para este vídeo. Aguarde a conclusão.").
+   - Controlled 422 guardrails error.
+   - `refinedPrompt` display-only ("Sugestão de prompt", "É apenas uma sugestão: nada é alterado nem gerado automaticamente.", no apply button, no auto-generation).
+5. **Responsive smoke measurements (real Preview UI):**
+   - **1440px:** `panelHScroll = 0`, `pageHOverflow = 0`, dialog in viewport, 0 escaping descendants.
+   - **768px:** `panelHScroll = 0`, `pageHOverflow = 0`, dialog in viewport, 0 escaping descendants.
+   - **390px:** `panelHScroll = 0`, `pageHOverflow = 0`, dialog in viewport, 0 escaping descendants.
+   - Long unbroken criterion and refinedPrompt text wraps safely with `[overflow-wrap:anywhere]`.
+6. **Write safety:**
+   - Gemini paid calls = 0.
+   - New `media_reviews` rows = 0.
+   - History GET remained strictly read-only.
+
+## Supplementary evidence (local harness)
 
 A temporary, uncommitted local harness rendered the real `VideoReviewControl`/`VideoReviewResult` inside real Library-style and attempt-style cards with a stubbed `fetch` (dummy env, no network, no credentials), driven in the in-app browser at 1440, 768 and 390:
 
@@ -113,8 +152,7 @@ Not applicable yet (not merged). Before this work Production holds the completed
 
 ## Residual gaps
 
-- The authenticated Preview smoke (above) is outstanding.
-- An in-flight Review whose server process died stays `running` and keeps the single in-flight slot occupied (no reaper exists in the backend); the UI flags it as possibly interrupted after 15 minutes but cannot clear it.
+- An in-flight Review whose server process died stays `running` and keeps the single in-flight slot occupied (no reaper exists in the backend); the UI flags it as possibly interrupted after 15 minutes but cannot clear it. (Tracked as FUTURE-046).
 - A backend Review of a missing-credential Gemini key records a failed Review row when the credential status was unknown beforehand (the UI avoids this whenever the status is known).
 - No Creative Editor, Gallery or RenderExecution entry point (by scope); no explicit "use this prompt" action (by scope).
 - Usage/cost (FUTURE-043), the `capturedAt` fingerprint (FUTURE-040), Library move keys (FUTURE-039) and the worker's `output_duration_ms` (FUTURE-045) are untouched.
