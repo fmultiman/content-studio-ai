@@ -40,8 +40,22 @@ export type AuthorizedReviewMedia = {
   durationMs: number | null
   /** Server-resolved delivery URL (never client supplied). Optional; providers may use `load` instead. */
   url?: string
-  /** Reads the authorized bytes from Content Studio storage. */
+  /** Reads the authorized bytes from Content Studio storage. Whole-object: images only. */
   load(): Promise<Uint8Array>
+  /**
+   * Streams the authorized bytes (video). Bounded-memory: the object is never held whole.
+   * The returned chunks verify length and SHA-256 against the immutable artifact when they
+   * end; consumers must drain them BEFORE committing the data to a provider.
+   */
+  openStream?(): Promise<AuthorizedMediaStream>
+}
+
+export type AuthorizedMediaStream = {
+  /** Exact byte length of the artifact (declared; enforced while streaming). */
+  byteLength: number
+  chunks: AsyncIterable<Uint8Array>
+  /** Releases the storage connection. Idempotent; call on any failure before the chunks are drained. */
+  abort(): void
 }
 
 export type ReviewExecutionRequest = {

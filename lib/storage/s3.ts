@@ -2,6 +2,7 @@ import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCom
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
+import type { Readable } from 'node:stream'
 
 type UploadImageInput = {
   userId: string
@@ -357,6 +358,44 @@ export async function readS3Object(path: string, options: { maxBytes?: number } 
   const bytes = await result.Body.transformToByteArray()
   if (options.maxBytes && bytes.byteLength > options.maxBytes) throw new Error('Object exceeds the allowed size.')
   return { bytes, contentType: result.ContentType ?? 'application/octet-stream' }
+}
+
+export type S3ObjectStream = {
+  /** Node readable of the object body. Consume it or `destroy()` it; never buffer it whole. */
+  stream: Readable
+  /** `ContentLength` as reported by S3 for this response (the range length for ranged reads); null when unreported. */
+  contentLength: number | null
+  contentType: string
+}
+
+/**
+ * Server-side STREAMING read of one trusted object (large-video path). Unlike
+ * `readS3Object` it never materialises the body: memory is bounded by the
+ * consumer's chunking, not the object size. `range` is an inclusive byte
+ * range (HTTP semantics). Callers authorize `path` first; this takes no URL.
+ * Null = S3 not configured / empty body. Storage failures propagate.
+ */
+export async function openS3ObjectStream(
+  path: string,
+  options: { range?: { start: number; end: number }; signal?: AbortSignal } = {},
+): Promise<S3ObjectStream | null> {
+  const config = getS3Config()
+  if (!config) return null
+  const client = createS3Client(config)
+  const result = await client.send(
+    new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: path,
+      ...(options.range ? { Range: `bytes=${options.range.start}-${options.range.end}` } : {}),
+    }),
+    options.signal ? { abortSignal: options.signal } : undefined,
+  )
+  if (!result.Body) return null
+  return {
+    stream: result.Body as Readable,
+    contentLength: typeof result.ContentLength === 'number' ? result.ContentLength : null,
+    contentType: result.ContentType ?? 'application/octet-stream',
+  }
 }
 
 export type UploadedLibraryFile = {

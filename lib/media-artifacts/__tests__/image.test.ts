@@ -91,7 +91,8 @@ describe('image media artifact resolver', () => {
       artifact_id: ARTIFACT,
       image_generation_attempt_id: ATTEMPT,
       image_output_id: OUTPUT,
-    }), { onConflict: 'artifact_id,image_generation_attempt_id,image_output_id' })
+      provenance_key: `image_generation:${ATTEMPT}:${OUTPUT}`,
+    }), { onConflict: 'artifact_id,provenance_key', ignoreDuplicates: true })
   })
 
   it('reuses provenance before reading or creating a duplicate artifact', async () => {

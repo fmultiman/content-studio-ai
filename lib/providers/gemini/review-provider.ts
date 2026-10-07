@@ -4,7 +4,7 @@
 // Transport policy (V1):
 //
 //   image  -> inline bytes in the model request
-//   video  -> Files API: upload -> wait ACTIVE -> reference in model request
+//   video  -> Files API: chunked resumable upload of a byte STREAM -> wait ACTIVE -> reference in model request
 //             -> delete remote file (upload-per-execution, no persistent cache)
 //
 // The remote file is execution transport only. Canonical media stays in Content
@@ -84,13 +84,22 @@ export function createGeminiReviewProvider(options: { client?: GeminiClient } = 
       }
 
       async function prepareMedia(media: AuthorizedReviewMedia): Promise<GeminiContentPart> {
-        const bytes = await media.load()
         if (media.kind === 'image') {
+          const bytes = await media.load()
           return { inlineData: { mimeType: media.mimeType, data: Buffer.from(bytes).toString('base64') } }
         }
-        // Re-check the real byte length: the declared size is metadata, the bytes are the truth.
-        assertReviewMediaWithinLimits({ kind: 'video', byteSize: bytes.byteLength, durationMs: media.durationMs })
-        let file = await client.uploadFile({ apiKey: request.apiKey, bytes, mimeType: media.mimeType })
+        // Video is streamed to the Files API in bounded chunks; it is never held whole in memory.
+        if (!media.openStream) throw new ReviewProviderError('unsupported_capability', 'Video media must provide a byte stream.')
+        const source = await media.openStream()
+        // The declared length is what the upload protocol commits to; the stream enforces it byte for byte.
+        let file: GeminiRemoteFile
+        try {
+          assertReviewMediaWithinLimits({ kind: 'video', byteSize: source.byteLength, durationMs: media.durationMs })
+          file = await client.uploadFile({ apiKey: request.apiKey, mimeType: media.mimeType, byteLength: source.byteLength, chunks: source.chunks })
+        } catch (error) {
+          source.abort()
+          throw error
+        }
         uploaded.push(file)
         file = await client.waitForActiveFile({ apiKey: request.apiKey, file })
         uploaded[uploaded.length - 1] = file

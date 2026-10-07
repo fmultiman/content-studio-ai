@@ -111,3 +111,112 @@ describe('resolveAuthorizedReviewMedia', () => {
       .rejects.toMatchObject({ code: 'REVIEW_STORE_UNAVAILABLE' })
   })
 })
+
+describe('streaming video access', () => {
+  const videoBytes = new Uint8Array(3000).fill(5)
+  const videoHash = createHash('sha256').update(videoBytes).digest('hex')
+  const videoPath = `${OWNER}/videos/ai/${PROJECT}/gen-1.mp4`
+  const videoRow = (overrides: Artifact = {}) => artifact({
+    media_type: 'video', storage_path: videoPath, mime_type: 'video/mp4', byte_size: 3000, duration_ms: 30_000,
+    content_hash: videoHash, ...overrides,
+  })
+  function opener(chunks: Uint8Array[], extra: { contentLength?: number | null; failAfter?: Error } = {}) {
+    const destroy = vi.fn()
+    const open = vi.fn(async (_path: string) => ({
+      stream: Object.assign({
+        async *[Symbol.asyncIterator]() {
+          for (const chunk of chunks) yield chunk
+          if (extra.failAfter) throw extra.failAfter
+        },
+      }, { destroy }),
+      contentLength: extra.contentLength === undefined ? chunks.reduce((n, c) => n + c.byteLength, 0) : extra.contentLength,
+      contentType: 'video/mp4',
+    }))
+    return { open, destroy }
+  }
+  async function drain(chunks: AsyncIterable<Uint8Array>) {
+    let total = 0
+    for await (const chunk of chunks) total += chunk.byteLength
+    return total
+  }
+
+  it('streams an owned video artifact in verified chunks without calling the whole-object reader', async () => {
+    const readObject = vi.fn()
+    const { open } = opener([videoBytes.subarray(0, 1000), videoBytes.subarray(1000, 2000), videoBytes.subarray(2000)])
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, expectedKind: 'video', readObject, openObject: open })
+    const stream = await media.openStream!()
+    expect(stream.byteLength).toBe(3000)
+    expect(await drain(stream.chunks)).toBe(3000)
+    expect(open).toHaveBeenCalledWith(videoPath)
+    expect(readObject).not.toHaveBeenCalled()
+  })
+
+  it('refuses to load a video whole', async () => {
+    const readObject = vi.fn()
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, readObject })
+    await expect(media.load()).rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    expect(readObject).not.toHaveBeenCalled()
+  })
+
+  it('fails the stream when the stored bytes no longer match the immutable hash', async () => {
+    const { open } = opener([new Uint8Array(3000).fill(6)])
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: open })
+    await expect((async () => drain((await media.openStream!()).chunks))()).rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+  })
+
+  it('rejects an object whose reported length differs from the artifact, and releases the connection', async () => {
+    const { open, destroy } = opener([videoBytes], { contentLength: 4000 })
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: open })
+    await expect(media.openStream!()).rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('normalizes missing storage and mid-stream storage failures without leaking details', async () => {
+    const missing = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: async () => null })
+    await expect(missing.openStream!()).rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    const throwing = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: async () => { throw new Error(`s3 ${videoPath}`) } })
+    await expect(throwing.openStream!()).rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+
+    const { open } = opener([videoBytes.subarray(0, 100)], { contentLength: 3000, failAfter: new Error(`reset ${videoPath}`) })
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: open })
+    const error = await drain((await media.openStream!()).chunks).catch((e) => e)
+    expect(error).toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    expect(String(error.message)).not.toContain(videoPath)
+  })
+
+  it('abort() releases the storage stream', async () => {
+    const { open, destroy } = opener([videoBytes])
+    const media = await resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OWNER, artifactId: ARTIFACT, openObject: open })
+    ;(await media.openStream!()).abort()
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('never opens storage for another user, an untrusted key, or an over-limit video', async () => {
+    const { open } = opener([videoBytes])
+    await expect(resolveAuthorizedReviewMedia(db([videoRow()]), { userId: OTHER, artifactId: ARTIFACT, openObject: open }))
+      .rejects.toMatchObject({ code: 'REVIEW_SUBJECT_NOT_FOUND' })
+    await expect(resolveAuthorizedReviewMedia(db([videoRow({ storage_path: 'https://evil.example/v.mp4' })]), { userId: OWNER, artifactId: ARTIFACT, openObject: open }))
+      .rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    await expect(resolveAuthorizedReviewMedia(db([videoRow({ byte_size: REVIEW_VIDEO_MAX_BYTES + 1 })]), { userId: OWNER, artifactId: ARTIFACT, openObject: open }))
+      .rejects.toMatchObject({ kind: 'media_limit_exceeded' })
+    await expect(resolveAuthorizedReviewMedia(db([videoRow({ duration_ms: REVIEW_VIDEO_MAX_DURATION_MS + 1 })]), { userId: OWNER, artifactId: ARTIFACT, openObject: open }))
+      .rejects.toMatchObject({ kind: 'media_limit_exceeded' })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('trusts a completed render scratch key for its own owner and no other scratch key', async () => {
+    const exec = '55555555-5555-4555-8555-555555555555'
+    const own = `users/${OWNER}/renders/scratch/${exec}/output.mp4`
+    const ok = await resolveAuthorizedReviewMedia(db([videoRow({ storage_path: own })]), { userId: OWNER, artifactId: ARTIFACT, expectedKind: 'video' })
+    expect(ok.kind).toBe('video')
+    for (const storage_path of [
+      `users/${OTHER}/renders/scratch/${exec}/output.mp4`,
+      `users/${OWNER}/renders/scratch/${exec}/output.png`,
+      `users/${OWNER}/renders/scratch/${exec}/../other/output.mp4`,
+      `users/${OWNER}/renders/scratch/not-a-uuid/output.mp4`,
+    ]) {
+      await expect(resolveAuthorizedReviewMedia(db([videoRow({ storage_path })]), { userId: OWNER, artifactId: ARTIFACT }))
+        .rejects.toMatchObject({ code: 'REVIEW_OUTPUT_UNAVAILABLE' })
+    }
+  })
+})

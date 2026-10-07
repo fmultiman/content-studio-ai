@@ -37,8 +37,22 @@ function image(overrides: Partial<AuthorizedReviewMedia> = {}): AuthorizedReview
   return { kind: 'image', artifactId: 'a1', mimeType: 'image/png', byteSize: 3, durationMs: null, load: async () => new Uint8Array([1, 2, 3]), ...overrides }
 }
 
+function streamOf(bytes: Uint8Array, abort = vi.fn()) {
+  return {
+    byteLength: bytes.byteLength,
+    abort,
+    chunks: { async *[Symbol.asyncIterator]() { yield bytes } } as AsyncIterable<Uint8Array>,
+  }
+}
+
 function video(overrides: Partial<AuthorizedReviewMedia> = {}): AuthorizedReviewMedia {
-  return { kind: 'video', artifactId: 'v1', mimeType: 'video/mp4', byteSize: 4, durationMs: 30_000, load: async () => new Uint8Array([1, 2, 3, 4]), ...overrides }
+  return {
+    kind: 'video', artifactId: 'v1', mimeType: 'video/mp4', byteSize: 4, durationMs: 30_000,
+    // Video is never whole-loaded: load() must stay unused on this path.
+    load: async () => { throw new Error('video must not be loaded whole') },
+    openStream: async () => streamOf(new Uint8Array([1, 2, 3, 4])),
+    ...overrides,
+  }
 }
 
 const base = { apiKey: KEY, model: 'gemini-3.5-flash', instructions: 'system', input: 'input', responseSchema: { type: 'object' } as Record<string, unknown> | null }
@@ -161,11 +175,37 @@ describe('Gemini Review provider: native Video via Files API', () => {
     }
   })
 
-  it('re-checks real byte length, not only declared metadata, before uploading', async () => {
+  it('re-checks the real stream byte length, not only declared metadata, before uploading, and releases the stream', async () => {
     const h = videoFlow()
-    const lying = video({ byteSize: 4, load: async () => ({ byteLength: REVIEW_VIDEO_MAX_BYTES + 1 }) as unknown as Uint8Array })
+    const abort = vi.fn()
+    const lying = video({ byteSize: 4, openStream: async () => ({ byteLength: REVIEW_VIDEO_MAX_BYTES + 1, abort, chunks: (async function* () { /* never read */ })() }) })
     await expect(h.provider.execute({ ...base, media: [lying] })).rejects.toMatchObject({ kind: 'media_limit_exceeded' })
     expect(h.fetchImpl).not.toHaveBeenCalled()
+    expect(abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('streams the video into the Files API without ever calling load()', async () => {
+    const h = videoFlow()
+    const load = vi.fn()
+    await h.provider.execute({ ...base, media: [video({ load })] })
+    expect(load).not.toHaveBeenCalled()
+    expect(h.calls[1].init.body).toEqual(new Uint8Array([1, 2, 3, 4]))
+  })
+
+  it('refuses video media that cannot be streamed instead of falling back to whole-object buffering', async () => {
+    const h = videoFlow()
+    const noStream = video({ openStream: undefined })
+    await expect(h.provider.execute({ ...base, media: [noStream] })).rejects.toMatchObject({ kind: 'unsupported_capability' })
+    expect(h.fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('releases the media stream when the upload fails, and creates no remote file to clean up', async () => {
+    const abort = vi.fn()
+    const h = harness((call) => call.url.endsWith('/upload/v1beta/files') ? json({ error: { message: 'x' } }, 500) : modelOk())
+    await expect(h.provider.execute({ ...base, media: [video({ openStream: async () => streamOf(new Uint8Array([1, 2, 3, 4]), abort) })] }))
+      .rejects.toMatchObject({ kind: 'upload_failed' })
+    expect(abort).toHaveBeenCalledTimes(1)
+    expect(h.calls.some((c) => c.init.method === 'DELETE')).toBe(false)
   })
 
   it('rejects an unsupported model and unsupported media before upload or model call', async () => {

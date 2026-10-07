@@ -14,6 +14,10 @@ export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com'
 
 export const GEMINI_GENERATE_TIMEOUT_MS = 120_000
 export const GEMINI_UPLOAD_TIMEOUT_MS = 300_000
+/** Whole-upload ceiling across all chunks (each request is still bounded by GEMINI_UPLOAD_TIMEOUT_MS). */
+export const GEMINI_UPLOAD_TOTAL_TIMEOUT_MS = 600_000
+/** Files API resumable chunk size: the protocol requires multiples of 8 MiB except for the last chunk. */
+export const GEMINI_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 export const GEMINI_FILE_PROCESSING_TIMEOUT_MS = 180_000
 export const GEMINI_FILE_POLL_INITIAL_MS = 2_000
 export const GEMINI_FILE_POLL_MAX_MS = 10_000
@@ -116,39 +120,113 @@ export function createGeminiClient(options: GeminiClientOptions = {}) {
   }
 
   const client = {
-    async uploadFile(input: { apiKey: string; bytes: Uint8Array; mimeType: string; displayName?: string; timeoutMs?: number }): Promise<GeminiRemoteFile> {
+    /**
+     * Resumable Files API upload (official protocol: `start`, then `upload` chunks at an
+     * explicit offset, the last one `upload, finalize`). The body is consumed chunk by chunk,
+     * so memory is bounded by GEMINI_UPLOAD_CHUNK_BYTES, never by the file size. The remote
+     * file only comes into existence at finalize: a failure before it leaves nothing to delete,
+     * and because the source is drained to its end before finalize, a source-side integrity
+     * failure (hash/length) aborts the upload before any remote file exists.
+     */
+    async uploadFile(input: {
+      apiKey: string
+      mimeType: string
+      displayName?: string
+      timeoutMs?: number
+    } & ({ bytes: Uint8Array } | { byteLength: number; chunks: AsyncIterable<Uint8Array> })): Promise<GeminiRemoteFile> {
       const timeoutMs = input.timeoutMs ?? GEMINI_UPLOAD_TIMEOUT_MS
-      const start = await request(`${GEMINI_API_BASE}/upload/v1beta/files`, {
-        method: 'POST',
-        headers: {
-          'x-goog-api-key': input.apiKey,
-          'X-Goog-Upload-Protocol': 'resumable',
-          'X-Goog-Upload-Command': 'start',
-          'X-Goog-Upload-Header-Content-Length': String(input.bytes.byteLength),
-          'X-Goog-Upload-Header-Content-Type': input.mimeType,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ file: { display_name: input.displayName ?? 'content-studio-review' } }),
-      }, timeoutMs, 'upload_failed', 'file upload')
-      if (!start.ok) await failFromResponse(start, true)
-      const uploadUrl = start.headers.get('x-goog-upload-url')
-      let parsed: URL | null = null
-      try { parsed = uploadUrl ? new URL(uploadUrl) : null } catch { parsed = null }
-      // The resumable URL must stay on Google's API host; never follow an arbitrary redirect target.
-      if (!parsed || parsed.protocol !== 'https:' || parsed.hostname !== 'generativelanguage.googleapis.com') {
-        throw new ReviewProviderError('upload_failed', 'Gemini file upload session was invalid.')
+      const total = 'bytes' in input ? input.bytes.byteLength : input.byteLength
+      if (!Number.isSafeInteger(total) || total <= 0) throw new ReviewProviderError('upload_failed', 'Gemini file upload source was empty.')
+      const source: AsyncIterable<Uint8Array> = 'bytes' in input
+        ? { async *[Symbol.asyncIterator]() { yield input.bytes } }
+        : input.chunks
+      const iterator = source[Symbol.asyncIterator]()
+      const deadline = now() + GEMINI_UPLOAD_TOTAL_TIMEOUT_MS
+      try {
+        const start = await request(`${GEMINI_API_BASE}/upload/v1beta/files`, {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': input.apiKey,
+            'X-Goog-Upload-Protocol': 'resumable',
+            'X-Goog-Upload-Command': 'start',
+            'X-Goog-Upload-Header-Content-Length': String(total),
+            'X-Goog-Upload-Header-Content-Type': input.mimeType,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ file: { display_name: input.displayName ?? 'content-studio-review' } }),
+        }, timeoutMs, 'upload_failed', 'file upload')
+        if (!start.ok) await failFromResponse(start, true)
+        const uploadUrl = start.headers.get('x-goog-upload-url')
+        let parsed: URL | null = null
+        try { parsed = uploadUrl ? new URL(uploadUrl) : null } catch { parsed = null }
+        // The resumable URL must stay on Google's API host; never follow an arbitrary redirect target.
+        if (!parsed || parsed.protocol !== 'https:' || parsed.hostname !== 'generativelanguage.googleapis.com') {
+          throw new ReviewProviderError('upload_failed', 'Gemini file upload session was invalid.')
+        }
+
+        let offset = 0
+        let pieces: Uint8Array[] = []
+        let pending = 0
+        let ended = false
+        const takeChunk = async (): Promise<Uint8Array> => {
+          while (!ended && pending < GEMINI_UPLOAD_CHUNK_BYTES) {
+            const next = await iterator.next()
+            if (next.done) { ended = true; break }
+            if (next.value.byteLength === 0) continue
+            pieces.push(next.value)
+            pending += next.value.byteLength
+          }
+          const size = Math.min(pending, GEMINI_UPLOAD_CHUNK_BYTES)
+          const out = new Uint8Array(size)
+          let filled = 0
+          const rest: Uint8Array[] = []
+          for (const piece of pieces) {
+            if (filled >= size) { rest.push(piece); continue }
+            const take = Math.min(piece.byteLength, size - filled)
+            out.set(piece.subarray(0, take), filled)
+            filled += take
+            if (take < piece.byteLength) rest.push(piece.subarray(take))
+          }
+          pieces = rest
+          pending -= size
+          return out
+        }
+
+        for (;;) {
+          if (now() > deadline) throw new ReviewProviderError('timeout', 'Gemini file upload timed out.')
+          const body = await takeChunk()
+          if (body.byteLength === 0 || offset + body.byteLength > total) {
+            throw new ReviewProviderError('upload_failed', 'Gemini file upload source did not match its declared length.')
+          }
+          const last = offset + body.byteLength === total
+          if (last) {
+            // Drain to the source's end: proves nothing extra follows and runs its integrity check pre-finalize.
+            if (pending > 0) throw new ReviewProviderError('upload_failed', 'Gemini file upload source did not match its declared length.')
+            if (!ended) {
+              const extra = await iterator.next()
+              if (!extra.done) throw new ReviewProviderError('upload_failed', 'Gemini file upload source did not match its declared length.')
+            }
+          }
+          const response = await request(parsed.toString(), {
+            method: 'POST',
+            headers: {
+              'X-Goog-Upload-Offset': String(offset),
+              'X-Goog-Upload-Command': last ? 'upload, finalize' : 'upload',
+              'Content-Length': String(body.byteLength),
+            },
+            body: body as unknown as BodyInit,
+          }, timeoutMs, 'upload_failed', 'file upload')
+          if (!response.ok) await failFromResponse(response, true)
+          if (last) return parseFile(await response.json().catch(() => null))
+          const status = response.headers.get('x-goog-upload-status')
+          if (status && status.toLowerCase() !== 'active') throw new ReviewProviderError('upload_failed', 'Gemini file upload session ended early.')
+          offset += body.byteLength
+        }
+      } catch (error) {
+        // Release the source (destroys the storage stream) on every failure path.
+        await iterator.return?.().catch(() => undefined)
+        throw error
       }
-      const finalize = await request(parsed.toString(), {
-        method: 'POST',
-        headers: {
-          'X-Goog-Upload-Offset': '0',
-          'X-Goog-Upload-Command': 'upload, finalize',
-          'Content-Length': String(input.bytes.byteLength),
-        },
-        body: input.bytes as unknown as BodyInit,
-      }, timeoutMs, 'upload_failed', 'file upload')
-      if (!finalize.ok) await failFromResponse(finalize, true)
-      return parseFile(await finalize.json().catch(() => null))
     },
 
     async getFile(input: { apiKey: string; name: string }): Promise<GeminiRemoteFile> {
