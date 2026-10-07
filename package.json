@@ -70,6 +70,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@remotion/cli": "4.0.526",
     "@tailwindcss/postcss": "^4.2.0",
     "@testing-library/dom": "^10.4.2",
