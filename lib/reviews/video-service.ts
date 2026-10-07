@@ -33,7 +33,7 @@ import {
 import { ReviewServiceError } from './errors'
 import { ReviewProviderError, parseProviderJson, toReviewServiceError } from './execution-provider'
 import { resolveAuthorizedReviewMedia } from './media'
-import { REVIEW_VIDEO_MAX_BYTES, REVIEW_VIDEO_MAX_DURATION_MS } from './media-limits'
+import { REVIEW_VIDEO_MAX_BYTES } from './media-limits'
 import { assertProviderModelSupportsMedia, getReviewExecutionProvider, resolveReviewModelId, type ReviewProviderOverrides } from './provider-registry'
 import {
   findActiveReviewByArtifact,
@@ -84,16 +84,14 @@ function normalizePreflightError(error: unknown): ReviewServiceError {
 }
 
 /**
- * Cheap guardrails on facts a trusted writer already recorded, BEFORE the object is read and hashed:
- * an oversized video is rejected without streaming hundreds of MB. Unknown facts are resolved by the
- * artifact registration and then enforced by `resolveAuthorizedReviewMedia` (fail closed).
+ * Cheap guardrail on the recorded SIZE, before the object is read and hashed: an oversized video is rejected
+ * without streaming hundreds of MB. Duration is deliberately not pre-checked from any source record (none is
+ * authoritative); it is read from the stored bytes during registration and enforced by
+ * `resolveAuthorizedReviewMedia` (unknown or over-long fails closed).
  */
 function assertKnownFactsWithinLimits(known: KnownVideoFacts) {
   if (known.byteSize !== null && known.byteSize > REVIEW_VIDEO_MAX_BYTES) {
     throw new ReviewProviderError('media_limit_exceeded', 'Video exceeds the Review size limit (500 MB).')
-  }
-  if (known.durationMs !== null && known.durationMs > REVIEW_VIDEO_MAX_DURATION_MS) {
-    throw new ReviewProviderError('media_limit_exceeded', 'Video exceeds the Review duration limit (10 minutes).')
   }
 }
 

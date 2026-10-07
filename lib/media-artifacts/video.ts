@@ -50,9 +50,21 @@ export type VideoArtifactSource =
   | { kind: 'render_execution'; renderExecutionId: string }
   | { kind: 'library'; libraryFileId: string }
 
+/**
+ * Facts a trusted writer recorded about the SOURCE object. They locate and cross-check the object; they are
+ * not the artifact's intrinsic truth.
+ *
+ *  - `byteSize` is only a cross-check: the artifact stores the bytes actually streamed, and a disagreement
+ *    refuses registration (SIZE_MISMATCH).
+ *  - There is deliberately NO duration here. Intrinsic duration comes from the stored bytes (MP4 `moov`),
+ *    never from a source record. `render_executions.output_duration_ms` is the render's wall-clock time as
+ *    reported by the renderer (`Date.now() - startedAt`), not the media duration; trusting it produced a
+ *    10896 ms artifact for a 3051 ms file. Keeping the field out of this type makes that mistake structural.
+ *  - `width`/`height` are the renderer's configured composition size for a render (semantically intrinsic and
+ *    equal to the file's in every observed case); they are kept as-is and still audited, see the doc.
+ */
 export type KnownVideoFacts = {
   byteSize: number | null
-  durationMs: number | null
   width: number | null
   height: number | null
 }
@@ -117,13 +129,13 @@ async function resolveVideoGeneration(db: SupabaseClient, userId: string, id: st
     storagePath: data.storage_path,
     // The key is validated as a single `.mp4` object, so the fallback is a fact of the path rule, not a guess.
     mimeType: isVideoMime(meta.mime) ? meta.mime : 'video/mp4',
-    known: { byteSize: positiveInt(meta.size), durationMs: null, width: null, height: null },
+    known: { byteSize: positiveInt(meta.size), width: null, height: null },
   }
 }
 
 async function resolveRenderExecution(db: SupabaseClient, userId: string, id: string): Promise<ResolvedVideoSource> {
   const { data, error } = await db.from('render_executions')
-    .select('id,user_id,project_id,video_draft_id,kind,status,output_bucket,output_storage_path,output_mime_type,output_size_bytes,output_duration_ms,output_width,output_height')
+    .select('id,user_id,project_id,video_draft_id,kind,status,output_bucket,output_storage_path,output_mime_type,output_size_bytes,output_width,output_height')
     .eq('id', id).eq('user_id', userId).maybeSingle()
   if (error) storeFailure(error)
   if (!data) throw new MediaArtifactError('SOURCE_NOT_FOUND')
@@ -144,9 +156,9 @@ async function resolveRenderExecution(db: SupabaseClient, userId: string, id: st
     storageProvider: 's3',
     storagePath: eligibility.storagePath,
     mimeType: eligibility.mimeType,
+    // `output_duration_ms` is intentionally NOT read: it is render wall-clock time, not media duration.
     known: {
       byteSize: eligibility.sizeBytes,
-      durationMs: positiveInt(data.output_duration_ms),
       width: positiveInt(data.output_width),
       height: positiveInt(data.output_height),
     },
@@ -170,7 +182,7 @@ async function resolveLibraryVideo(db: SupabaseClient, userId: string, id: strin
     storageProvider: 's3',
     storagePath: data.storage_path,
     mimeType: data.mime_type,
-    known: { byteSize: positiveInt(data.file_size), durationMs: null, width: null, height: null },
+    known: { byteSize: positiveInt(data.file_size), width: null, height: null },
   }
 }
 
@@ -221,6 +233,11 @@ async function collect(stream: AsyncIterable<Uint8Array>, limit: number): Promis
   return Buffer.concat(parts)
 }
 
+/**
+ * Reads the container facts from the stored bytes with bounded ranged reads (no download, no ffmpeg).
+ * A container the parser cannot read yields nulls: that is a permanent, honest "unknown". A storage FAILURE is
+ * different: it is transient, so it aborts registration instead of freezing an unknown into an immutable artifact.
+ */
 async function probeFacts(open: ObjectStreamOpener, source: ResolvedVideoSource, size: number): Promise<Mp4Facts> {
   try {
     return await probeMp4(async (start, end) => {
@@ -228,9 +245,8 @@ async function probeFacts(open: ObjectStreamOpener, source: ResolvedVideoSource,
       if (!opened) throw new MediaArtifactError('STORAGE_UNAVAILABLE')
       return collect(opened.stream, Math.max(end - start + 1, 1))
     }, size)
-  } catch {
-    // Facts are optional. A probe failure must not block registration, and must not invent values.
-    return { durationMs: null, width: null, height: null }
+  } catch (error) {
+    throw error instanceof MediaArtifactError ? error : new MediaArtifactError('STORAGE_UNAVAILABLE')
   }
 }
 
@@ -311,13 +327,14 @@ export async function registerVideoArtifact(
   }
   if (digest.byteLength <= 0) throw new MediaArtifactError('SOURCE_NOT_READY')
 
-  // 3. Container facts: trust a recorded fact, otherwise read it from the file header/moov, otherwise leave null.
-  const needsProbe = source.known.durationMs === null || source.known.width === null || source.known.height === null
-  const probed = needsProbe ? await probeFacts(open, source, digest.byteLength) : { durationMs: null, width: null, height: null }
+  // 3. Container facts. DURATION is read from the stored bytes for every source family, so it cannot depend on
+  //    which source registered the object first. A source record never supplies it. Dimensions keep the existing
+  //    rule (a recorded value, else the container's), see KnownVideoFacts.
+  const probed = await probeFacts(open, source, digest.byteLength)
   const facts = {
     hash: digest.hash,
     byteSize: digest.byteLength,
-    durationMs: source.known.durationMs ?? probed.durationMs,
+    durationMs: probed.durationMs,
     width: source.known.width ?? probed.width,
     height: source.known.height ?? probed.height,
   }

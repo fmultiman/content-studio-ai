@@ -142,7 +142,8 @@ function renderRow(overrides: Row = {}): Row {
     id: EXEC, user_id: OWNER, project_id: PROJECT, video_draft_id: DRAFT, kind: 'video', status: 'completed',
     output_bucket: process.env.RENDER_EXECUTION_SCRATCH_BUCKET || process.env.S3_BUCKET_NAME || process.env.S3_BUCKET || 'content-studio',
     output_storage_path: SCRATCH_PATH, output_mime_type: 'video/mp4', output_size_bytes: mp4.length,
-    output_duration_ms: 8000, output_width: 1280, output_height: 720, ...overrides,
+    // output_duration_ms is the renderer's WALL-CLOCK time, not the media duration: deliberately != the MP4's 8000 ms.
+    output_duration_ms: 10_896, output_width: 1280, output_height: 720, ...overrides,
   }
 }
 
@@ -313,22 +314,50 @@ describe('authorization and trusted storage', () => {
 })
 
 describe('RenderExecution video artifact registration', () => {
-  it('registers a completed render from its scratch output using worker-recorded facts without probing', async () => {
+  it('registers a completed render with the duration of the STORED BYTES, ignoring the recorded render wall-clock time', async () => {
     const db = fakeDb({ render_executions: [renderRow()], ...seedProduction })
     const s = storage({ [SCRATCH_PATH]: bufferObject(mp4) })
     const artifact = await ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: s.open })
     expect(artifact).toMatchObject({ storage_path: SCRATCH_PATH, production_id: PRODUCTION, duration_ms: 8000, width: 1280, height: 720, content_hash: sha(mp4), mime_type: 'video/mp4' })
-    // Facts were already recorded, so only the single streaming hash read happened.
-    expect(s.opens.filter((open) => open.range)).toHaveLength(0)
+    expect(artifact.duration_ms).not.toBe(10_896)
+    // The duration came from the file itself: bounded ranged reads of the container, never a whole-object join.
+    expect(s.opens.some((open) => open.range)).toBe(true)
     expect(db.tables.media_artifact_provenance[0]).toMatchObject({ provenance_kind: 'render_execution', render_execution_id: EXEC, provenance_key: `render_execution:${EXEC}` })
   })
 
-  it('probes only the facts the worker did not record', async () => {
+  it('reproduces the live mismatch: recorded 10896 ms vs a 3051 ms file -> the artifact says 3051', async () => {
+    const live = makeMp4({ durationMs: 3051, width: 1080, height: 1920 })
+    const db = fakeDb({ render_executions: [renderRow({ output_size_bytes: live.length, output_duration_ms: 10_896, output_width: 1080, output_height: 1920 })], ...seedProduction })
+    const artifact = await ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: storage({ [SCRATCH_PATH]: bufferObject(live) }).open })
+    expect(artifact).toMatchObject({ duration_ms: 3051, width: 1080, height: 1920 })
+  })
+
+  it('never falls back to the recorded value when the container cannot prove a duration (fail closed: null)', async () => {
+    const opaque = Buffer.alloc(4096, 3)
+    const db = fakeDb({ render_executions: [renderRow({ output_size_bytes: opaque.length, output_duration_ms: 10_896 })], ...seedProduction })
+    const artifact = await ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: storage({ [SCRATCH_PATH]: bufferObject(opaque) }).open })
+    expect(artifact.duration_ms).toBeNull()
+  })
+
+  it('a transient storage failure while probing refuses registration instead of freezing an unknown into an immutable artifact', async () => {
+    const db = fakeDb({ render_executions: [renderRow()], ...seedProduction })
+    const s = storage({ [SCRATCH_PATH]: bufferObject(mp4) })
+    const flaky: ObjectStreamOpener = async (path, options) => {
+      if (options?.range) throw new Error(`s3 down ${path}`)
+      return s.open(path, options)
+    }
+    const error = await ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: flaky }).catch((e) => e)
+    expect(error).toMatchObject({ name: 'MediaArtifactError', code: 'STORAGE_UNAVAILABLE' })
+    expect(String(error.message)).not.toContain(SCRATCH_PATH)
+    expect(db.tables.media_artifacts ?? []).toHaveLength(0)
+    expect(db.tables.media_artifact_provenance ?? []).toHaveLength(0)
+  })
+
+  it('takes dimensions from the container when the worker recorded none', async () => {
     const db = fakeDb({ render_executions: [renderRow({ output_width: null, output_height: null })], ...seedProduction })
     const s = storage({ [SCRATCH_PATH]: bufferObject(mp4) })
     const artifact = await ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: s.open })
     expect(artifact).toMatchObject({ duration_ms: 8000, width: 1280, height: 720 })
-    expect(s.opens.some((open) => open.range)).toBe(true)
   })
 
   it('does not register queued, claimed, failed or still-image executions', async () => {
@@ -400,6 +429,80 @@ describe('large object registration is bounded-memory', () => {
     const widest = Math.max(0, ...concat.mock.results.map((result) => (result.value as Buffer).byteLength))
     expect(widest).toBeLessThan(1024 * 1024)
     concat.mockRestore()
+  })
+})
+
+describe('cross-source identity: duration never depends on which source registered the bytes first', () => {
+  const REAL_MS = 3051
+  const real = makeMp4({ durationMs: REAL_MS, width: 1080, height: 1920 })
+  const COPY_PATH = `users/${OWNER}/library/${LIB_UUID}/render-${EXEC}.mp4`
+
+  const viaRender = (db: ReturnType<typeof fakeDb>, s: ReturnType<typeof storage>) =>
+    ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'render_execution', renderExecutionId: EXEC } }, { openObject: s.open })
+  const viaLibrary = (db: ReturnType<typeof fakeDb>, s: ReturnType<typeof storage>) =>
+    ensureVideoArtifact(db, { userId: OWNER, source: { kind: 'library', libraryFileId: FILE } }, { openObject: s.open })
+
+  function seeded() {
+    // A Library copy of the render: byte-identical, different physical key (this is what "Save to Library" produces).
+    const db = fakeDb({
+      render_executions: [renderRow({ output_size_bytes: real.length, output_duration_ms: 10_896, output_width: 1080, output_height: 1920 })],
+      library_files: [libraryRow({ file_size: real.length, storage_path: COPY_PATH, origin: 'studio_render', project_id: PROJECT, production_id: PRODUCTION })],
+      ...seedProduction,
+    })
+    const s = storage({ [SCRATCH_PATH]: bufferObject(real), [COPY_PATH]: bufferObject(real) })
+    return { db, s }
+  }
+
+  it('A. Library -> RenderExecution: both families report the real duration', async () => {
+    const { db, s } = seeded()
+    const fromLibrary = await viaLibrary(db, s)
+    const fromRender = await viaRender(db, s)
+    expect(fromLibrary.duration_ms).toBe(REAL_MS)
+    expect(fromRender.duration_ms).toBe(REAL_MS)
+    expect(fromRender.content_hash).toBe(fromLibrary.content_hash)
+  })
+
+  it('B. RenderExecution -> Library: the same, in the other order', async () => {
+    const { db, s } = seeded()
+    const fromRender = await viaRender(db, s)
+    const fromLibrary = await viaLibrary(db, s)
+    expect(fromRender.duration_ms).toBe(REAL_MS)
+    expect(fromLibrary.duration_ms).toBe(REAL_MS)
+    expect(fromRender.content_hash).toBe(fromLibrary.content_hash)
+  })
+
+  it('a Library copy is a different physical object, so it is a different artifact under the existing identity contract (key + hash), not a duplicate', async () => {
+    const { db, s } = seeded()
+    const a = await viaRender(db, s)
+    const b = await viaLibrary(db, s)
+    expect(a.id).not.toBe(b.id)
+    expect([a.storage_path, b.storage_path]).toEqual([SCRATCH_PATH, COPY_PATH])
+    // Re-registering either source adds nothing: one artifact per physical object.
+    await viaRender(db, s)
+    await viaLibrary(db, s)
+    expect(db.tables.media_artifacts).toHaveLength(2)
+    expect(db.tables.media_artifact_provenance).toHaveLength(2)
+  })
+
+  it('the same key reached through two source families converges on ONE artifact whichever registers first', async () => {
+    // The trusted-path rules make this impossible through the public API (a Library key and a render scratch key live in
+    // different namespaces), so it is exercised at the registration boundary with two resolved sources on one key.
+    const KEY = `users/${OWNER}/library/${LIB_UUID}/shared.mp4`
+    const scope = { userId: OWNER, projectId: PROJECT, productionId: PRODUCTION }
+    const common = { scope, storageProvider: 's3' as const, storagePath: KEY, mimeType: 'video/mp4', known: { byteSize: real.length, width: null, height: null } }
+    const asLibrary = { ...common, ref: { kind: 'library' as const, libraryFileId: FILE } }
+    const asRender = { ...common, ref: { kind: 'render_execution' as const, renderExecutionId: EXEC } }
+    for (const order of [[asLibrary, asRender], [asRender, asLibrary]]) {
+      const db = fakeDb()
+      const s = storage({ [KEY]: bufferObject(real) })
+      const first = await registerVideoArtifact(db, order[0], { openObject: s.open })
+      const second = await registerVideoArtifact(db, order[1], { openObject: s.open })
+      expect(second.id).toBe(first.id)
+      expect(first.duration_ms).toBe(REAL_MS)
+      expect(second.duration_ms).toBe(REAL_MS)
+      expect(db.tables.media_artifacts).toHaveLength(1)
+      expect(db.tables.media_artifact_provenance.map((r: Row) => r.provenance_kind).sort()).toEqual(['library', 'render_execution'])
+    }
   })
 })
 
