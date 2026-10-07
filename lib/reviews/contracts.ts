@@ -44,7 +44,11 @@ export const ReviewFailureV1Schema = z.object({
 export const ReviewRecordSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(REVIEW_STATUSES),
-  subject: z.object({ mediaType: z.literal('image'), attemptId: z.string().uuid(), outputId: z.string().uuid(), artifactId: z.string().uuid().nullable() }).strict(),
+  // Discriminated by media type (migration 060): an Image Review keeps its Attempt/output links; a Video Review is bound only to its media artifact.
+  subject: z.discriminatedUnion('mediaType', [
+    z.object({ mediaType: z.literal('image'), attemptId: z.string().uuid(), outputId: z.string().uuid(), artifactId: z.string().uuid().nullable() }).strict(),
+    z.object({ mediaType: z.literal('video'), artifactId: z.string().uuid() }).strict(),
+  ]),
   projectId: z.string().uuid().nullable(),
   productionId: z.string().uuid().nullable(),
   adapter: z.object({ key: z.string(), version: z.string() }).strict(),
@@ -61,6 +65,21 @@ export const ReviewRecordSchema = z.object({
 
 export const ReviewRequestSchema = z.object({
   attemptId: z.string().uuid(),
+  clientRequestId: z.string().uuid(),
+}).strict()
+
+/**
+ * Typed Video Review source. The browser names a SOURCE ENTITY by id only; the server resolves ownership,
+ * storage coordinates, MIME, size and duration. There is deliberately no URL, key, bucket or media-fact field.
+ */
+export const VIDEO_REVIEW_SOURCE_KINDS = ['video_generation', 'render_execution', 'library_file'] as const
+export const VideoReviewSourceSchema = z.object({
+  kind: z.enum(VIDEO_REVIEW_SOURCE_KINDS),
+  id: z.string().uuid(),
+}).strict()
+
+export const VideoReviewRequestSchema = z.object({
+  source: VideoReviewSourceSchema,
   clientRequestId: z.string().uuid(),
 }).strict()
 
@@ -108,6 +127,30 @@ export type ImageEvaluatorParsed = {
   strengths?: string[]
   issues?: string[]
   recommendations?: string[]
+}
+
+export type VideoReviewSourceKind = typeof VIDEO_REVIEW_SOURCE_KINDS[number]
+export type VideoReviewSource = z.infer<typeof VideoReviewSourceSchema>
+
+/** Same server-resolved Project/Production context shape as Image; the scope is the artifact's own scope. */
+export type VideoReviewContext = ImageReviewContext
+
+export type VideoReviewSubject = {
+  artifactId: string
+  source: VideoReviewSource
+  projectId: string | null
+  productionId: string | null
+  /** Trusted media facts from the artifact row (never from the client). Null = unknown. */
+  media: {
+    mimeType: string
+    byteSize: number | null
+    durationMs: number | null
+    width: number | null
+    height: number | null
+    contentHash: string | null
+  }
+  /** Source-specific provenance context resolved server-side (e.g. the submitted generation prompt). */
+  sourceContext: Record<string, unknown>
 }
 
 export type ReviewHistoryV1 = {

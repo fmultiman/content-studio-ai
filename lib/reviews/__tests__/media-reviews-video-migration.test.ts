@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { STUBS, script } from './pglite-review-schema'
 
 // MEDIA_REVIEWS_VIDEO_SCHEMA_EXTENSION_V1
 //
@@ -10,8 +9,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // or Production. Only the tables the migrations reference are stubbed, with the
 // columns the trigger functions actually read.
 
-const ROOT = process.cwd()
-const script = (name: string) => readFileSync(join(ROOT, 'scripts', name), 'utf8')
 
 const U1 = '11111111-1111-4111-8111-111111111111'
 const U2 = '22222222-2222-4222-8222-222222222222'
@@ -21,24 +18,6 @@ const P3 = 'a3333333-3333-4333-8333-333333333333' // owned by U2
 const PR1 = 'b1111111-1111-4111-8111-111111111111' // in P1
 const PR2 = 'b2222222-2222-4222-8222-222222222222' // in P2
 
-const STUBS = `
-  CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
-  CREATE SCHEMA auth;
-  CREATE TABLE auth.users (id uuid PRIMARY KEY);
-  CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-  CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$;
-  CREATE TABLE public.projects (id uuid PRIMARY KEY, user_id uuid NOT NULL);
-  CREATE TABLE public.productions (id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid);
-  CREATE TABLE public.images (
-    id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid,
-    storage_provider text, storage_path text, mime_type text, file_size integer, updated_at timestamptz DEFAULT now());
-  CREATE TABLE public.image_generation_attempts (
-    id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid, production_id uuid, result_image_id uuid);
-  CREATE TABLE public.video_generations (id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid, production_id uuid);
-  CREATE TABLE public.render_executions (id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid);
-  CREATE TABLE public.library_files (id uuid PRIMARY KEY, user_id uuid NOT NULL, project_id uuid, production_id uuid);
-`
 
 let db: PGlite
 let serial = 0

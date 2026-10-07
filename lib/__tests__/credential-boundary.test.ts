@@ -252,6 +252,11 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // SHARED_REVIEW_CORE_AND_IMAGE_ADAPTER_V1: the server-only Review service writes immutable Review rows after
       // the authenticated route has verified the user; every operation is scoped to that user id.
       path === 'lib/reviews/service.ts' ||
+      // GEMINI_VIDEO_REVIEW_ADAPTER_V1: the server-only Video Review service is the Video counterpart of the Image
+      // Review service. It writes media artifacts and immutable Review rows (RLS gives users SELECT only) after the
+      // authenticated route has verified the user; every query is filtered by that user id and the browser sends
+      // only a typed source id (never a URL, key, credential or media fact).
+      path === 'lib/reviews/video-service.ts' ||
       // VIDEO_GENERATION_LIBRARY_PROMOTION_V1: writes only the server-owned promotion pointer (library_file_id).
       path === 'app/api/video-generations/[id]/save-to-library/route.ts' ||
       // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
