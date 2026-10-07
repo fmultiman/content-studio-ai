@@ -39,7 +39,7 @@ export const IMAGE_EVALUATOR_RESPONSE_SCHEMA: Record<string, unknown> = {
   required: ['score', 'feedback', 'improvements'],
 }
 
-function assessment(score: number): NonNullable<ReviewCriterionV1['assessment']> {
+export function assessment(score: number): NonNullable<ReviewCriterionV1['assessment']> {
   if (score >= 80) return 'strong'
   if (score >= 60) return 'mixed'
   return 'needs_revision'

@@ -16,9 +16,10 @@ export const MEDIA_REVIEW_COLUMNS = [
 export type MediaReviewRow = {
   id: string
   user_id: string
-  subject_media_type: 'image'
-  image_attempt_id: string
-  image_output_id: string
+  subject_media_type: 'image' | 'video'
+  /** NULL for Video Reviews (migration 060 shape: image rows carry both, video rows neither). */
+  image_attempt_id: string | null
+  image_output_id: string | null
   media_artifact_id: string
   project_id: string | null
   production_id: string | null
@@ -58,12 +59,21 @@ function normalizeFailureCode(code: string) {
   return 'validation_error' as const
 }
 
+function toReviewSubject(row: MediaReviewRow) {
+  if (row.subject_media_type === 'video') {
+    return { mediaType: 'video' as const, artifactId: row.media_artifact_id }
+  }
+  // An image row always carries both links (media_reviews_subject_shape); anything else is corrupt, never silently coerced.
+  if (!row.image_attempt_id || !row.image_output_id) throw new Error('Image Review row is missing its Attempt or output link.')
+  return { mediaType: 'image' as const, attemptId: row.image_attempt_id, outputId: row.image_output_id, artifactId: row.media_artifact_id }
+}
+
 export function toReviewRecord(row: MediaReviewRow): ReviewRecordV1 {
   const result = ReviewResultV1Schema.safeParse(row.result_payload)
   const record = {
     id: row.id,
     status: row.status,
-    subject: { mediaType: 'image' as const, attemptId: row.image_attempt_id, outputId: row.image_output_id, artifactId: row.media_artifact_id },
+    subject: toReviewSubject(row),
     projectId: row.project_id,
     productionId: row.production_id,
     adapter: { key: row.adapter_key, version: row.adapter_version },
@@ -92,6 +102,12 @@ export async function findReviewByClientRequest(db: SupabaseClient, userId: stri
 
 export async function findActiveReviewByAttempt(db: SupabaseClient, userId: string, attemptId: string) {
   const result = await db.from('media_reviews').select(MEDIA_REVIEW_COLUMNS).eq('user_id', userId).eq('image_attempt_id', attemptId).in('status', ['pending', 'running']).maybeSingle()
+  return { data: result.data as MediaReviewRow | null, error: result.error }
+}
+
+/** The single in-flight Video Review for an artifact, if any (mirrors media_reviews_active_video_artifact_key). */
+export async function findActiveReviewByArtifact(db: SupabaseClient, userId: string, artifactId: string) {
+  const result = await db.from('media_reviews').select(MEDIA_REVIEW_COLUMNS).eq('user_id', userId).eq('subject_media_type', 'video').eq('media_artifact_id', artifactId).in('status', ['pending', 'running']).maybeSingle()
   return { data: result.data as MediaReviewRow | null, error: result.error }
 }
 
