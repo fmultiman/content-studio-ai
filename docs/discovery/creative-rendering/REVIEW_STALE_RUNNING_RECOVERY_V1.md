@@ -134,6 +134,14 @@ Copy only: the stale note now reads the shared 30-minute number and says a new R
 
 PGlite is a single session: it proves predicate/index semantics and sequentially interleaved races, not cross-connection locking, which is PostgreSQL's documented READ COMMITTED re-check of the WHERE clause on the locked row.
 
+## Preview smoke — PERFORMED & PASSED (read-only)
+
+- Preview `https://content-studio-97gtanz4b-fmultimans-projects.vercel.app` at PR #145 head `bf9351983de32334263673476b7ec0d80685fd6c`; authenticated app session, Vercel share-link access.
+- Library page: four video cards with the `Revisar` control. Opening four panels issued **only** `GET /api/reviews/video?kind=library_file&id=…` and `GET /api/settings/providers`; **no POST, no Review created, no provider call**.
+- Existing history renders normally ("Revisão 2 de 2", completed, score shown), no stale note, no in-progress state.
+- Database read before/after (Supabase, read-only): Image `completed` 17 (last update 2026-10-06), Video `completed` 2 (last update 2026-10-07 11:50 UTC), **0** pending/running, **0** `execution_stale` rows. No row written.
+- The stale lifecycle itself is proven by the automated suites, not by corrupting a live row.
+
 ## Not done (by design)
 
 No cron, no RPC, no migration, no backfill, no Production cleanup (no stale row exists), no manual unlock/cancel, no heartbeat, no change to FUTURE-040 / 043 / 045, no worker changes.
