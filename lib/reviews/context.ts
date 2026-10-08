@@ -49,7 +49,60 @@ type ProjectRow = {
 
 type ProductionRow = { id: string; user_id: string; project_id: string; title: string; intention: string; type: string }
 
-const sha256 = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+
+/** JSON with object keys sorted at every depth, so a hash never depends on property order (jsonb round-trips, spreads). */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+/**
+ * REQUEST IDENTITY of an Image Review (FUTURE-040).
+ *
+ * Every field of the resolved context is classified here. Only SEMANTIC fields may enter the idempotency
+ * fingerprint; OBSERVATIONAL fields are recorded (history, provenance, debugging) but must never decide whether
+ * a retry is "the same request". A test fails if the context gains a field that is in neither list.
+ *
+ *   semantic       schemaVersion        context contract version
+ *                  project.*            id, context text, evaluationMode, normalized Identity: the evaluator is
+ *                                       prompted with them, so changing one is a different Review request
+ *                  production.*         id, title, intention, type: same reason
+ *   observational  capturedAt           wall-clock time of the resolution; regenerated on EVERY resolution; read
+ *                                       by no prompt, adapter, provider or UI; changes nothing the evaluator sees
+ *
+ * What the Attempt itself fixes (submitted prompt, provider, model, config, source) is immutable per Attempt
+ * (IMAGE_ATTEMPT_SUBMISSION_IMMUTABLE) and the media bytes are bound by the artifact id, so those are carried by
+ * `attemptId` / `outputId` / `artifactId` in `buildRequestFingerprint`, not repeated here.
+ */
+export const IMAGE_REVIEW_CONTEXT_SEMANTIC_FIELDS = ['schemaVersion', 'project', 'production'] as const
+export const IMAGE_REVIEW_CONTEXT_OBSERVATIONAL_FIELDS = ['capturedAt'] as const
+
+/** Explicit allow-list projection of the resolved context: only the fields that define request identity. */
+export function semanticImageReviewContext(context: ImageReviewContext) {
+  return {
+    schemaVersion: context.schemaVersion,
+    project: {
+      id: context.project.id,
+      context: context.project.context,
+      evaluationMode: context.project.evaluationMode,
+      identity: context.project.identity,
+    },
+    production: context.production
+      ? { id: context.production.id, title: context.production.title, intention: context.production.intention, type: context.production.type }
+      : null,
+  }
+}
+
+/** Stable across replays: the same semantic context always hashes the same, whenever it was captured. */
+export function fingerprintImageReviewContext(context: ImageReviewContext): string {
+  return createHash('sha256').update(canonicalJson(semanticImageReviewContext(context))).digest('hex')
+}
 
 export async function resolveImageReviewContext(db: SupabaseClient, userId: string, attemptId: string) {
   const attemptResult = await db.from('image_generation_attempts')
@@ -143,9 +196,12 @@ export async function resolveImageReviewContext(db: SupabaseClient, userId: stri
       metadata: output.metadata ?? {},
     },
   }
-  return { attempt, output, project, production, context, subject, contextFingerprint: sha256(context) }
+  return { attempt, output, project, production, context, subject, contextFingerprint: fingerprintImageReviewContext(context) }
 }
 
+/** Identity of one Image Review request: the Attempt, its output, the canonical artifact and the stable semantic context. */
 export function buildRequestFingerprint(attemptId: string, outputId: string, contextFingerprint: string, artifactId?: string) {
-  return sha256({ attemptId, outputId, artifactId: artifactId ?? null, adapter: 'image', adapterVersion: 'image-review-v1', contextFingerprint })
+  return createHash('sha256')
+    .update(canonicalJson({ attemptId, outputId, artifactId: artifactId ?? null, adapter: 'image', adapterVersion: 'image-review-v1', contextFingerprint }))
+    .digest('hex')
 }
