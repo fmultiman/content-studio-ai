@@ -85,3 +85,16 @@ No backfill, no migration. Existing rows keep their old, capturedAt-inclusive fi
 
 - Pre-fix Image Reviews cannot be replayed (unchanged behavior; not a regression).
 - Project/Production text edited between a request and its retry conflicts by design.
+
+## Preview smoke evidence (READ-ONLY)
+
+- **Preview deployment:** `https://content-studio-mkcxvx6ts-fmultimans-projects.vercel.app` (HEAD `051f536051d8a3eedc88213665753cb977ede9d5`).
+- **Vercel bypass:** successful via share link.
+- **App authentication:** authenticated as `flavio.multiman` on the Preview origin.
+- **Image Review panel & history:** loaded normally on `/imagens/geracoes/73e8a48d-636a-4a7e-9884-ea0d1f3631f0`; existing attempts, legacy evaluations, and feedback displayed correctly.
+- **Image Review no-write proof:** opening and browsing history created 0 reviews; `media_reviews` image rows count remained exactly 17 (all `completed`).
+- **Provider calls:** 0 paid Gemini/OpenAI calls for Image Review.
+- **Video Review status:** existing video reviews remain completed (0 pending/running); video generation workspace (`/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc`) loaded without errors.
+- **Settings → Uso e custos:** loaded normally on `/configuracoes?tab=usage`, rendering summary cards, per-provider aggregations, and execution details.
+- **Database invariants:** 0 pending/running review rows; 17 image review rows remain completed; paid calls count = 0.
+
