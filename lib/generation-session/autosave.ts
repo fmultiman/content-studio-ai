@@ -91,13 +91,20 @@ function noopTimer() {
   return undefined
 }
 
+// Browsers brand-check the receiver of timer functions: `clock.setTimeout(fn, ms)` with `this === clock`
+// throws `TypeError: Illegal invocation`. Never store `globalThis.setTimeout` as a bare property; call it
+// through `globalThis` at call time (also keeps fake timers installed after module load effective).
+export const createDefaultClock = (): Clock => ({
+  setTimeout: ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+    globalThis.setTimeout(handler, timeout, ...args)) as typeof setTimeout,
+  clearTimeout: ((id?: number | ReturnType<typeof setTimeout>) =>
+    globalThis.clearTimeout(id as Parameters<typeof clearTimeout>[0])) as typeof clearTimeout,
+})
+
 export function createGenerationSessionAutosave<S, T extends SaveToken>(
   options: CreateGenerationSessionAutosaveOptions<S, T>,
 ): GenerationSessionAutosave<S, T> {
-  const clock: Clock = options.clock || {
-    setTimeout: globalThis.setTimeout,
-    clearTimeout: globalThis.clearTimeout,
-  }
+  const clock: Clock = options.clock || createDefaultClock()
   const listeners = new Set<() => void>()
   const initialSnapshot = cloneSnapshot(options.adapter.serialize(options.initial.snapshot))
   let acknowledged: { snapshot: S; token: T } = {

@@ -23,6 +23,29 @@ the checklist; it must not merge on green checks alone.
 | Creative Editor Static | Open a Static piece in the editor; canvas loads with its saved state; edit, save, refresh; state persists. |
 | Creative Editor Video | Open a Video draft; timeline/preview load; edit, save, refresh; state persists. |
 
+## Mutation canaries (LOAD is not enough)
+
+`GENERATION_WORKSPACE_INTERACTION_CRASH_V1` (2026-10-08): both generation workspaces **loaded** fine on
+Production and passed every load-only smoke, yet the first harmless edit (one character in the Image prompt,
+or changing the Video model) fell into the Next.js error boundary. A smoke that only opens the page cannot see
+that. For the surfaces below the smoke MUST mutate state, wait for autosave, restore the original state exactly,
+and wait for the restoring save. No Generate click, no provider call, ever.
+
+| Canary | Steps (use a known test/noncritical session; record original values first) | Pass |
+|---|---|---|
+| Image Generation | Route `/imagens/geracoes/[sessionId]` loads → type a unique temporary suffix in the prompt → page stays alive → save indicator goes dirty/saving → **Salvo** → persisted prompt contains the suffix (reload or GET) → restore the ORIGINAL prompt exactly → **Salvo** again | No error boundary; no provider/Review request; original prompt restored and persisted |
+| Video Generation | Route `/videos/geracoes/[sessionId]` loads → change the model (Kling 3.0 → Kling 2.6) → page stays alive → autosave succeeds → change back to the ORIGINAL model → **Salvo** → edit the prompt with a temporary suffix → **Salvo** → restore the exact original prompt → **Salvo** | No error boundary; no `POST` to generation endpoints; original model, connection and prompt restored |
+
+Run these canaries after any change touching: the generation workspaces, the shared autosave controller
+(`lib/generation-session/autosave.ts`, `hooks/use-generation-session-autosave.ts`), session schemas, the
+provider/model registry, route state, or shared form components. Evidence (URL, session id, original values,
+restored values, pass/fail) goes in the PR or the closure doc.
+
+Unit tests that exercise timers must run under browser timer semantics: Node and jsdom do **not** throw
+`Illegal invocation` for a detached `setTimeout`, browsers do. Use
+`lib/generation-session/__tests__/browser-timers.ts` (`installBrowserFaithfulTimers`) in component tests that
+render a workspace.
+
 ## What to look at, not just "page loads"
 
 - The final URL after each navigation (a redirect back to a hub is a failure even if nothing errors).
@@ -53,3 +76,11 @@ Promise, so the id was `undefined`, the shared shell treated the page as the hub
 been created. Build, types, lint, unit tests and Vercel could not see it because no test rendered the route and
 the only route test asserted source text. The same PR also dropped the thumbnail the old drafts list showed and
 never added one to the new Session cards.
+
+## Incident reference — GENERATION_WORKSPACE_INTERACTION_CRASH_V1
+
+Introduced by `c082728` (`feat: standardize generation session autosave`, 2026-10-05). The shared autosave
+controller built its default clock as `{ setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }`
+and called `clock.setTimeout(...)`; browsers brand-check the receiver, so the first `setLocal` after hydration threw
+`TypeError: Illegal invocation`. Image (typing) and Video (model selection) crashed through the same line. See
+`docs/discovery/creative-rendering/GENERATION_WORKSPACE_INTERACTION_CRASH_V1.md`.
