@@ -83,6 +83,18 @@ export async function recordProviderUsageEvent(db: SupabaseClient, input: Provid
   if (error) throw new Error('provider usage event write failed')
 }
 
+/**
+ * Appends several events of ONE provider execution in a single statement: all rows or none, duplicates ignored via
+ * the unique idempotency key. Throws on a store error (callers decide the failure policy).
+ */
+export async function recordProviderUsageEvents(db: SupabaseClient, inputs: ProviderUsageEventInput[]): Promise<void> {
+  if (!inputs.length) return
+  const { error } = await db
+    .from('provider_usage_events')
+    .upsert(inputs.map(toUsageEventRow), { onConflict: 'idempotency_key', ignoreDuplicates: true })
+  if (error) throw new Error('provider usage event write failed')
+}
+
 // ---------------------------------------------------------------------------
 // Video generation
 // ---------------------------------------------------------------------------

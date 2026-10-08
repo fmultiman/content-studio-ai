@@ -281,20 +281,21 @@ export function createGeminiClient(options: GeminiClientOptions = {}) {
       if (!response.ok) await failFromResponse(response, false)
       const data = await response.json().catch(() => null) as Record<string, any> | null
       if (!data) throw new ReviewProviderError('invalid_response', 'Gemini returned an unreadable response.')
-      if (data.promptFeedback?.blockReason) throw new ReviewProviderError('invalid_response', 'Gemini blocked the Review request.')
+      const usage = data.usageMetadata && typeof data.usageMetadata === 'object' ? data.usageMetadata as Record<string, unknown> : undefined
+      const responseId = typeof data.responseId === 'string' ? data.responseId : undefined
+      // A response that was received but rejected below was still executed and metered: keep its usage on the error
+      // so the caller can record it (never the provider body, only the numeric usage object).
+      const rejected = (message: string) => Object.assign(new ReviewProviderError('invalid_response', message), { usage, providerRequestId: responseId })
+      if (data.promptFeedback?.blockReason) throw rejected('Gemini blocked the Review request.')
       const candidate = data.candidates?.[0]
       // Anything but a natural stop (truncation, safety, recitation, ...) is not a complete Review.
       if (!candidate || (candidate.finishReason && candidate.finishReason !== 'STOP')) {
-        throw new ReviewProviderError('invalid_response', 'Gemini did not complete the Review response.')
+        throw rejected('Gemini did not complete the Review response.')
       }
       const parts: Array<{ text?: unknown; thought?: unknown }> = Array.isArray(candidate.content?.parts) ? candidate.content.parts : []
       const text = parts.filter((part) => typeof part.text === 'string' && part.thought !== true).map((part) => part.text as string).join('')
-      if (!text.trim()) throw new ReviewProviderError('invalid_response', 'Gemini returned no Review text.')
-      return {
-        text,
-        responseId: typeof data.responseId === 'string' ? data.responseId : undefined,
-        usage: data.usageMetadata && typeof data.usageMetadata === 'object' ? data.usageMetadata : undefined,
-      }
+      if (!text.trim()) throw rejected('Gemini returned no Review text.')
+      return { text, responseId, usage }
     },
   }
   return client

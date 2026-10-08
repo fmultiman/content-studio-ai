@@ -16,6 +16,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { recordGeminiReviewUsage, type GeminiReviewUsageContext } from '@/lib/usage/gemini-review-usage'
 import { MediaArtifactError } from '@/lib/media-artifacts/errors'
 import type { ObjectStreamOpener } from '@/lib/media-artifacts/streaming'
 import { registerVideoArtifact, resolveVideoArtifactSource, type KnownVideoFacts, type VideoArtifactSource } from '@/lib/media-artifacts/video'
@@ -199,6 +200,13 @@ export async function createVideoReviewExecution(params: {
   const running = await markReviewRunning(db, row.id, { evaluator_provider: VIDEO_REVIEW_PROVIDER, evaluator_model: model, evaluator_prompt_version: VIDEO_EVALUATOR_PROMPT_VERSION })
   if (running.error || !running.data) throw storeError(running.error)
 
+  // Usage observability (FUTURE-043): attribution of THIS provider execution. Recorded as soon as Gemini answered,
+  // before Review parsing, because the execution happened whatever the Review outcome.
+  const usageContext = (providerResponse: GeminiReviewUsageContext['providerResponse'], providerRequestId?: string | null): GeminiReviewUsageContext => ({
+    userId: params.userId, reviewId: row.id, mediaType: 'video', projectId: row.project_id, productionId: row.production_id,
+    artifactId: artifact.id, model, funding: execution.executionMode, credentialSource: execution.credentialSource, providerRequestId, providerResponse,
+  })
+
   // 7. Execute through the provider boundary; the provider streams the video and cleans up its remote file.
   try {
     const provider = getReviewExecutionProvider(VIDEO_REVIEW_PROVIDER, params.providers)
@@ -213,6 +221,7 @@ export async function createVideoReviewExecution(params: {
       responseSchema: VIDEO_EVALUATOR_RESPONSE_SCHEMA,
     })
     const warnings = response.warnings
+    await recordGeminiReviewUsage(db, usageContext('received', response.providerRequestId), response.usage)
     const parsed = parseVideoEvaluatorResponse(parseProviderJson(response.rawText))
     const result = mapVideoEvaluatorResult(parsed, resolved.context, resolved.subject)
     const completed = await markReviewCompleted(db, row.id, {
@@ -228,6 +237,8 @@ export async function createVideoReviewExecution(params: {
     return { row: completed.data, replayed: false, warnings }
   } catch (error) {
     const normalized = toReviewServiceError(error)
+    // Gemini answered with usage but the response was unusable (blocked / truncated / empty): still a metered execution.
+    if (error instanceof ReviewProviderError && error.usage) await recordGeminiReviewUsage(db, usageContext('received_rejected', error.providerRequestId), error.usage)
     if (error instanceof ReviewProviderError && error.warnings.length) {
       console.warn('[reviews] provider cleanup warning', { reviewId: row.id, providerId: VIDEO_REVIEW_PROVIDER, warnings: error.warnings.map((w) => w.code) })
     }

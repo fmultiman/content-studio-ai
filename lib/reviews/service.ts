@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { recordGeminiReviewUsage, type GeminiReviewUsageContext } from '@/lib/usage/gemini-review-usage'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { buildRequestFingerprint, resolveImageReviewContext } from './context'
 import { resolveImageArtifact } from '@/lib/media-artifacts/image'
@@ -123,6 +124,11 @@ export async function createImageReviewExecution(params: {
   const model = resolveReviewModelId(providerId)
   const running = await markReviewRunning(db, row.id, { evaluator_provider: providerId, evaluator_model: model, evaluator_prompt_version: IMAGE_EVALUATOR_PROMPT_VERSION })
   if (running.error || !running.data) throw storeError(running.error)
+  // Usage observability (FUTURE-043), Gemini only: OpenAI Review usage is a separate integration.
+  const usageContext = (providerResponse: GeminiReviewUsageContext['providerResponse'], providerRequestId?: string | null): GeminiReviewUsageContext => ({
+    userId: params.userId, reviewId: row.id, mediaType: 'image', projectId: row.project_id, productionId: row.production_id,
+    artifactId: artifact.id, model, funding: execution.executionMode, credentialSource: execution.credentialSource, providerRequestId, providerResponse,
+  })
   try {
     let raw: unknown
     let warnings: Array<{ code: string; message: string }> = []
@@ -155,6 +161,7 @@ export async function createImageReviewExecution(params: {
         responseSchema: providerId === 'gemini' ? IMAGE_EVALUATOR_RESPONSE_SCHEMA : null,
       })
       warnings = response.warnings
+      if (providerId === 'gemini') await recordGeminiReviewUsage(db, usageContext('received', response.providerRequestId), response.usage)
       raw = parseProviderJson(response.rawText)
     }
     const parsed = parseImageEvaluatorResponse(raw)
@@ -171,6 +178,7 @@ export async function createImageReviewExecution(params: {
     return { row: completed.data, replayed: false, warnings }
   } catch (error) {
     const normalized = toReviewServiceError(error)
+    if (providerId === 'gemini' && error instanceof ReviewProviderError && error.usage) await recordGeminiReviewUsage(db, usageContext('received_rejected', error.providerRequestId), error.usage)
     if (error instanceof ReviewProviderError && error.warnings.length) console.warn('[reviews] provider cleanup warning', { reviewId: row.id, providerId, warnings: error.warnings.map((w) => w.code) })
     const failureCode = normalized.code === 'REVIEW_INVALID_EVALUATOR_RESPONSE'
       ? 'invalid_evaluator_response'

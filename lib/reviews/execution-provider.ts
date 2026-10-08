@@ -114,6 +114,13 @@ export class ReviewProviderError extends Error {
   readonly providerStatus?: number
   /** Non-fatal transport warnings (e.g. failed remote cleanup) gathered before the failure. */
   warnings: ReviewExecutionCleanupWarning[] = []
+  /**
+   * Raw provider usage metadata, present ONLY when the provider answered (HTTP 200) with usage and the response was
+   * then rejected (blocked, truncated, empty). The execution happened and was metered even though no Review resulted.
+   */
+  usage?: Record<string, unknown>
+  /** The provider's own response id for that rejected response, when it sent one. */
+  providerRequestId?: string
 
   constructor(kind: ReviewProviderErrorKind, message: string, providerStatus?: number) {
     super(message)

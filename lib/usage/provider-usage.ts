@@ -38,6 +38,11 @@ export interface UsageMeasurement {
   source: Exclude<MeasurementSource, 'unknown'>
 }
 
+export const USAGE_CATEGORIES = ['thoughts'] as const
+export type UsageCategory = (typeof USAGE_CATEGORIES)[number]
+export const USAGE_FUNDING = ['user_byok', 'content_studio_credits'] as const
+export type UsageFunding = (typeof USAGE_FUNDING)[number]
+
 /** The safe, client-facing shape of one ledger row. */
 export interface UsageEventView {
   id: string
@@ -51,6 +56,13 @@ export interface UsageEventView {
   measurement_source: MeasurementSource
   project_id: string | null
   connection_id: string | null
+  /**
+   * Provider-native sub-kind of a unit that would otherwise be ambiguous. `thoughts` = Gemini thinking tokens, which the
+   * provider reports apart from output tokens and which are therefore never merged with them. Whitelisted by the API.
+   */
+  usage_category?: UsageCategory | null
+  /** Who paid the provider: `user_byok` = the user's own provider key (provider usage, NOT Content Studio spend). */
+  funding?: UsageFunding | null
   /** True for an event imported from a verified historical proof (inserted after the fact, measured as stated). */
   historical_import?: boolean
 }
@@ -115,13 +127,15 @@ export function measurementSourceHelp(source: MeasurementSource): string {
 const OPERATION_LABEL: Record<string, string> = {
   text_to_video: 'Texto → Vídeo',
   image_to_video: 'Imagem → Vídeo',
+  image_review: 'Revisão de imagem',
+  video_review: 'Revisão de vídeo',
 }
 
 export function operationLabel(operation: string): string {
   return OPERATION_LABEL[operation] ?? operation
 }
 
-const PROVIDER_LABEL: Record<string, string> = { kling: 'Kling', openai: 'OpenAI', replicate: 'Replicate' }
+const PROVIDER_LABEL: Record<string, string> = { kling: 'Kling', openai: 'OpenAI', replicate: 'Replicate', gemini: 'Gemini' }
 
 export function providerLabel(provider: string): string {
   return PROVIDER_LABEL[provider] ?? provider
@@ -137,9 +151,18 @@ export function transportLabel(transport: string): string {
 const NUMBER_FORMAT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 4 })
 
 /** "18 créditos" — or an honest "Uso não informado" when the quantity is unknown (never "0"). */
-export function formatUsageQuantity(event: Pick<UsageEventView, 'quantity' | 'unit'>): string {
+export function formatUsageQuantity(event: Pick<UsageEventView, 'quantity' | 'unit'> & { usage_category?: UsageCategory | null }): string {
   if (event.quantity === null || event.unit === null) return 'Uso não informado'
+  if (event.usage_category === 'thoughts' && event.unit === 'tokens') {
+    return `${NUMBER_FORMAT.format(event.quantity)} ${event.quantity === 1 ? 'token de raciocínio' : 'tokens de raciocínio'}`
+  }
   return `${NUMBER_FORMAT.format(event.quantity)} ${unitLabel(event.unit, event.quantity)}`
+}
+
+/** Funding line for a row; null when the ledger did not record it (never invented). */
+export function fundingLabel(funding: UsageFunding | null | undefined): string | null {
+  if (funding === 'user_byok') return 'Chave própria (BYOK): consumo na sua conta do provedor — custo não calculado'
+  return null
 }
 
 /** Connection line: the account connection's name if known, "Kling API" for REST, otherwise nothing (never invented). */
@@ -188,6 +211,8 @@ export interface UsageSummaryGroup {
   transport: string
   /** Sum of KNOWN quantities in this unit, only. */
   unit: UsageUnit
+  /** Distinguishes provider-native kinds sharing a unit (Gemini thinking tokens vs plain tokens). */
+  usageCategory: UsageCategory | null
   measurementSource: MeasurementSource
   quantity: number
   events: number
@@ -208,7 +233,7 @@ export function summarizeUsage(events: UsageEventView[]): UsageSummary {
       unknownEvents += 1
       continue
     }
-    const key = [event.provider, event.transport, event.unit, event.measurement_source].join('|')
+    const key = [event.provider, event.transport, event.unit, event.usage_category ?? '', event.measurement_source].join('|')
     const group = groups.get(key)
     if (group) {
       group.quantity += event.quantity
@@ -218,6 +243,7 @@ export function summarizeUsage(events: UsageEventView[]): UsageSummary {
         provider: event.provider,
         transport: event.transport,
         unit: event.unit,
+        usageCategory: event.usage_category ?? null,
         measurementSource: event.measurement_source,
         quantity: event.quantity,
         events: 1,

@@ -12,6 +12,8 @@ export type FakeDbOptions = {
   failReviewInsert?: boolean
   /** Fail the UPDATE that would mark a Review with this status. */
   failUpdateToStatus?: string
+  /** Fail every provider_usage_events write (ledger unavailable). */
+  failUsageWrite?: boolean
   beforeInsert?: (table: string, tables: Record<string, Row[]>) => void
 }
 
@@ -127,7 +129,26 @@ export function createReviewTestDb(seed: Record<string, Row[]> = {}, options: Fa
         then: (resolve: (value: unknown) => unknown) => resolve({ data: match(), error: null }),
         insert: (v: Row) => { op = 'insert'; values = v; return builder },
         update: (v: Row) => { op = 'update'; values = v; return builder },
-        upsert: async (v: Row, opts: { onConflict: string }) => {
+        upsert: async (v: Row | Row[], opts: { onConflict: string; ignoreDuplicates?: boolean }) => {
+          if (table === 'provider_usage_events') {
+            // migration 044: UNIQUE (idempotency_key); one statement = all rows or none (a bad row rejects the batch).
+            if (options.failUsageWrite) return { error: { code: 'XX000', message: 'usage ledger unavailable' } }
+            const batch = Array.isArray(v) ? v : [v]
+            if (opts.onConflict !== 'idempotency_key') return { error: { code: '42P10', message: 'no unique constraint matches' } }
+            for (const row of batch) {
+              if (!row.idempotency_key || !row.user_id || !row.provider || !row.transport || !row.operation || !row.resource_type) return { error: { code: '23502', message: 'null value violates not-null constraint' } }
+              const known = row.quantity !== null && row.quantity !== undefined
+              if (known === (row.measurement_source === 'unknown') || (known && !row.unit) || (!known && row.unit)) return { error: { code: '23514', message: 'violates check constraint "provider_usage_events_quantity_shape"' } }
+            }
+            for (const row of batch) {
+              const rows = (tables[table] ??= [])
+              if (rows.some((r) => r.idempotency_key === row.idempotency_key)) continue
+              rows.push({ id: randomUUID(), occurred_at: new Date().toISOString(), created_at: new Date().toISOString(), ...row })
+              log.push({ op: 'upsert', table, values: { ...row } })
+            }
+            return { error: null }
+          }
+          if (Array.isArray(v)) throw new Error('array upsert only modelled for provider_usage_events')
           if (table === 'media_artifact_provenance') {
             if (!v.provenance_key) return { error: { code: '23502', message: 'null provenance_key' } }
             if (opts.onConflict !== 'artifact_id,provenance_key') return { error: { code: '42P10', message: 'no unique constraint matches' } }

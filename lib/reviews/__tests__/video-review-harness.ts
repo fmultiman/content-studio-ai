@@ -105,7 +105,7 @@ export function storage(objects: Record<string, VirtualObject>, behavior: { fail
 
 // ── Gemini (mocked HTTP) ───────────────────────────────────────────────────
 
-export function geminiHarness(options: { states?: Array<'PROCESSING' | 'ACTIVE' | 'FAILED'>; deleteStatus?: number; startStatus?: number; modelResponse?: () => Response; modelText?: string } = {}) {
+export function geminiHarness(options: { states?: Array<'PROCESSING' | 'ACTIVE' | 'FAILED'>; deleteStatus?: number; startStatus?: number; modelResponse?: () => Response; modelText?: string; usageMetadata?: Record<string, unknown>; finishReason?: string } = {}) {
   const calls: Array<{ method: string; url: string; headers: Record<string, string>; bodyBytes: number }> = []
   const uploaded = createHash('sha256')
   let uploadedBytes = 0
@@ -139,7 +139,8 @@ export function geminiHarness(options: { states?: Array<'PROCESSING' | 'ACTIVE' 
     if (u.endsWith('/v1beta/files/abc') && method === 'DELETE') return new Response('{}', { status: options.deleteStatus ?? 200 })
     if (u.includes(':generateContent')) {
       return options.modelResponse?.() ?? new Response(JSON.stringify({
-        responseId: 'resp-1', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: options.modelText ?? defaultText }] } }],
+        responseId: 'resp-1', candidates: [{ finishReason: options.finishReason ?? 'STOP', content: { parts: [{ text: options.modelText ?? defaultText }] } }],
+        ...(options.usageMetadata ? { usageMetadata: options.usageMetadata } : {}),
       }), { status: 200 })
     }
     return new Response('{}', { status: 500 })

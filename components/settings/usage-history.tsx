@@ -10,6 +10,7 @@ import {
   DEFAULT_USAGE_FILTERS,
   filterUsageEvents,
   formatUsageQuantity,
+  fundingLabel,
   measurementSourceHelp,
   measurementSourceLabel,
   operationLabel,
@@ -95,7 +96,7 @@ export function UsageHistory() {
       <div>
         <h2 id="usage-history-title" className="text-lg font-semibold">Uso e custos</h2>
         <p className="text-sm text-muted-foreground" data-testid="usage-disclaimer">
-          O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades…). São quantidades de uso —
+          O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades, tokens…). São quantidades de uso —
           não são valores em reais e não são convertidas entre si. Execuções anteriores a este registro só aparecem quando foram importadas com evidência verificada.
         </p>
       </div>
@@ -120,7 +121,7 @@ export function UsageHistory() {
         <div className="rounded-md border border-border/50 bg-card/30 p-6 text-sm" data-testid="usage-empty">
           <p className="font-medium">Nenhum uso registrado ainda.</p>
           <p className="mt-1 text-muted-foreground">
-            Cada vídeo gerado com IA passa a aparecer aqui quando fica pronto.
+            Cada vídeo gerado com IA e cada revisão feita com o Gemini passam a aparecer aqui.
           </p>
         </div>
       )}
@@ -194,9 +195,9 @@ export function UsageHistory() {
             ) : (
               <ul className="space-y-1 text-sm">
                 {summary.groups.map((group) => (
-                  <li key={`${group.provider}|${group.transport}|${group.unit}|${group.measurementSource}`} data-testid="usage-summary-group">
+                  <li key={`${group.provider}|${group.transport}|${group.unit}|${group.usageCategory ?? ''}|${group.measurementSource}`} data-testid="usage-summary-group">
                     <span className="font-medium">{providerLabel(group.provider)} · {transportLabel(group.transport)}:</span>{' '}
-                    {formatUsageQuantity({ quantity: group.quantity, unit: group.unit })}{' '}
+                    {formatUsageQuantity({ quantity: group.quantity, unit: group.unit, usage_category: group.usageCategory })}{' '}
                     <span className="text-xs text-muted-foreground">
                       ({measurementSourceLabel(group.measurementSource)}; {group.events} {group.events === 1 ? 'execução' : 'execuções'})
                     </span>
@@ -237,6 +238,9 @@ export function UsageHistory() {
                         {project ? ` · ${project}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground" data-testid="usage-date">{dateFormat.format(new Date(event.occurred_at))}</p>
+                      {fundingLabel(event.funding) && (
+                        <p className="text-xs text-muted-foreground" data-testid="usage-funding">{fundingLabel(event.funding)}</p>
+                      )}
                       {event.historical_import && (
                         <p className="text-xs text-muted-foreground" data-testid="usage-historical">Importado de prova histórica verificada</p>
                       )}
