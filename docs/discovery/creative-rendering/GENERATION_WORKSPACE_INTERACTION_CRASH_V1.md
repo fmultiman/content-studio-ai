@@ -127,4 +127,26 @@ Production usage rows were not touched (5 Kling and 6 Gemini `provider_usage_eve
 
 ## Interactive validation
 
-Recorded in the PR and appended here after the Preview and Production mutation canaries run.
+### Preview (authenticated, PR #148 head `4fdd196`, 2026-10-08)
+
+Preview `content-studio-hcj5kow4i`, Vercel share bypass OK, app authenticated (same Supabase project as Production).
+No Generate clicked. Browser `error` / `console.error` hooks and a `fetch` logger were installed before each mutation.
+
+| Canary | Session | Original | Mutation | Autosave | Restore |
+|---|---|---|---|---|---|
+| Image | `f89db0b4-2621-4049-988b-eefcf8aa30da` | prompt `""`, revision 0, state `Salvo` | prompt → `" [F049-SMOKE]"` | `Alterações pendentes` → `saving` → `Salvo`; one `PATCH` 200 (`expectedRevision:0`); reload shows the suffix; GET revision 1 | prompt → `""`; `PATCH` 200 (`expectedRevision:1`); reload `""`; revision 2; `workingState` byte-identical to original |
+| Video model | `11912666-ecbc-4b71-b810-3c24aecd41fc` | Kling 3.0 (`kling-v3`), API connection checked, MCP unchecked, `image_to_video`, `multiShot:false`, prompt `""` | Kling 3.0 → **Kling 2.6** | `clean → dirty → saving → clean`; one `PATCH` 200 (`modelId:"kling-v2-6"`, `multiShot:null` — 2.6 has no multi-shot); GET confirms `kling-v2-6` | Kling 2.6 → 3.0; `PATCH` 200; `selection` deep-equals the original (incl. `multiShot:false`) |
+| Video prompt | same | prompt `""` | → `" [F049-SMOKE]"` | `dirty → saving → clean`; `PATCH` 200; persisted | → `""`; `PATCH` 200; after reload `workingState` deep-equals the original; Kling 3.0, API checked |
+
+* "This page couldn’t load": never shown. `TypeError: Illegal invocation`: never raised. Uncaught errors captured: 0;
+  `console.error`: 0 (after both canaries).
+* Network during the canaries: only `PATCH /api/*-generation-sessions/{id}` (200) plus session/generation reads. No
+  `POST`, no `/openai`, `/nanobanana`, `/reviews`, `/evaluate-image`, `/prompts/*` request.
+* DB (Supabase, project Content Agent Studio) after the Preview smoke: `provider_usage_events` 11 (5 Kling + 6 Gemini,
+  unchanged, 0 in the last 3 h); `media_reviews` 19 (unchanged, 0 new, 0 pending/running); `video_generations`,
+  `image_generation_attempts`, `generation_tasks` created in the last 3 h: 0. Paid calls: 0.
+* Temporary state fully restored (Image revision 0→2, Video `updatedAt` advanced; values identical to the originals).
+
+### Production
+
+Appended after merge and the exact Production deployment.
