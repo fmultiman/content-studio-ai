@@ -149,4 +149,19 @@ No Generate clicked. Browser `error` / `console.error` hooks and a `fetch` logge
 
 ### Production
 
-Appended after merge and the exact Production deployment.
+Merge commit `20dec1388739b7337b65f37527ffaad58cfc84b7` (PR #148). Production deployment for that exact SHA:
+GitHub deployment `6949178541`, environment *Production*, state `success`
+(`content-studio-nd22t10ra-fmultimans-projects.vercel.app`, served at `content.multihuman.com.br`).
+The same two noncritical sessions were used, originals recorded first, no Generate clicked.
+
+| Canary | Result |
+|---|---|
+| Image `f89db0b4-…` | prompt `""` (revision 2) → `" [F049-SMOKE]"`: `clean → dirty → saving → clean`, `PATCH` 200, persisted after reload → restored `""`: `PATCH` 200, `Salvo`; final revision 4, `workingState` identical to original |
+| Video `11912666-…` model | Kling 3.0 → Kling 2.6: `PATCH` 200, persisted `kling-v2-6` → restored Kling 3.0: `PATCH` 200 |
+| Video prompt | `""` → `" [F049-SMOKE]"`: `PATCH` 200, persisted → restored `""`: `PATCH` 200; after reload the whole `workingState` deep-equals the original; Kling 3.0, API connection checked, MCP unchecked |
+
+* No "This page couldn’t load", no `TypeError: Illegal invocation`, 0 uncaught errors, 0 `console.error`.
+* Only session `PATCH`/`GET` traffic; no generation, provider, Review or evaluation request.
+* DB after the Production smoke: `provider_usage_events` 11 (unchanged, 0 new in 3 h), `media_reviews` 19 (unchanged,
+  0 new, 0 pending/running), `video_generations` / `image_generation_attempts` / `generation_tasks` created in 3 h: 0.
+  Paid calls: 0.
