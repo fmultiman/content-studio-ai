@@ -91,6 +91,12 @@ Same API and screen. Additive, whitelisted fields `usage_category` (`thoughts`) 
 
 `gemini/__tests__/usage.test.ts` (contract extraction), `usage/__tests__/gemini-review-usage.test.ts` (events, attribution, idempotency, ledger failure, real migration 044), `reviews/__tests__/gemini-usage-video-service.test.ts`, `gemini-usage-image-service.test.ts` (replay, new Review, parse failure, rejected response, credential, errors, ledger failure, secrets, stale-recovery interplay, no backfill), `provider-usage-ledger.test.ts` (API whitelist incl. Gemini), `usage-history.test.tsx` (Gemini rows, filters, separate groups, unknown, no money). Existing Kling, Image, Video and stale-recovery suites unchanged and green.
 
+## Preview smoke — PERFORMED & PASSED (read-only)
+
+- Preview `https://content-studio-dq8t8p92i-fmultimans-projects.vercel.app` at PR #146 head `83915be3d12113aa215a27217d5471d27a39e4d5`; authenticated app session, Vercel share-link access.
+- Settings → Uso e custos loaded with a single `GET /api/settings/usage` (no write, no provider call). Existing Kling rows rendered unchanged: MCP 18 créditos (diferença de saldo), API 2 × 3 unidades (informado pelo provedor), 2 unknown executions counted apart; provider filter present; no error state.
+- Database before/after (read-only): `provider_usage_events` 5 rows, **0 Gemini**; `media_reviews` 19, 0 in flight, last Review unchanged. No fake usage was inserted. Gemini row presentation is proven by the automated UI/API tests, since no real Gemini usage exists yet and none was fabricated.
+
 ## Residual gaps
 
 - Monetary cost (above).
