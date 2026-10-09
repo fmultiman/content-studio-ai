@@ -378,7 +378,7 @@ describe('GET /api/settings/usage — tenant-private read', () => {
     signIn(db)
     const body = await (await get()).json()
     expect(Object.keys(body.events[0]).sort()).toEqual(
-      ['connection_id', 'funding', 'historical_import', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit', 'usage_category'].sort(),
+      ['connection_id', 'estimated_cost', 'funding', 'historical_import', 'id', 'measurement_source', 'model', 'occurred_at', 'operation', 'project_id', 'provider', 'quantity', 'transport', 'unit', 'usage_category'].sort(),
     )
     expect(JSON.stringify(body)).not.toMatch(/SECRET-TASK-ID|idempotency|provider_metadata/)
     expect(body.projects).toEqual({ 'proj-1': 'Projeto A' })

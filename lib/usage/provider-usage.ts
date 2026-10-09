@@ -6,6 +6,12 @@
 // The one rule everything here protects: provider-native quantities are NEVER
 // converted into, or added to, one another. 18 credits and 3 units are two
 // different things, and "unknown" is not "zero".
+//
+// PROVIDER_PRICING_REGISTRY_AND_ESTIMATED_COST_V1: an event may also carry a DERIVED, ESTIMATED list-price cost
+// (`estimated_cost`). It is computed on read from this usage x the pricing registry; the quantity above is
+// never changed by it, and it is never described as what the provider charged.
+
+import type { ProviderUsageCost } from './pricing/derive'
 
 export const USAGE_UNITS = [
   'credits',
@@ -65,6 +71,11 @@ export interface UsageEventView {
   funding?: UsageFunding | null
   /** True for an event imported from a verified historical proof (inserted after the fact, measured as stated). */
   historical_import?: boolean
+  /**
+   * Derived on read: usage x the pricing version effective at `occurred_at`. ESTIMATED list-price equivalent, never the
+   * provider's invoice. Absent only in a payload that predates pricing; `unavailable`/`ambiguous` carry no amount.
+   */
+  estimated_cost?: ProviderUsageCost
 }
 
 export interface UsageHistoryResponse {
@@ -161,7 +172,7 @@ export function formatUsageQuantity(event: Pick<UsageEventView, 'quantity' | 'un
 
 /** Funding line for a row; null when the ledger did not record it (never invented). */
 export function fundingLabel(funding: UsageFunding | null | undefined): string | null {
-  if (funding === 'user_byok') return 'Chave própria (BYOK): consumo na sua conta do provedor — custo não calculado'
+  if (funding === 'user_byok') return 'Chave própria (BYOK): consumo na sua conta do provedor — o valor cobrado depende do seu plano'
   return null
 }
 

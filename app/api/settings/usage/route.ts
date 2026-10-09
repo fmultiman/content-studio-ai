@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { listConnectionsForUser } from '@/lib/provider-connections/connections'
 import { describeMcpConnection } from '@/lib/video-generation/connections'
 import { connectionDisplayName } from '@/lib/video-generation/connection-presentation'
+import { costInputFromRow, deriveProviderUsageCost } from '@/lib/usage/pricing/derive'
+import { loadPricingVersions } from '@/lib/usage/pricing/load'
 import { USAGE_CATEGORIES, USAGE_FUNDING, type UsageCategory, type UsageEventView, type UsageFunding, type UsageHistoryResponse } from '@/lib/usage/provider-usage'
 
 // AI_PROVIDER_USAGE_LEDGER_AND_HISTORY_V1
@@ -13,6 +15,11 @@ import { USAGE_CATEGORIES, USAGE_FUNDING, type UsageCategory, type UsageEventVie
 // Only safe, display-ready columns are returned: no raw provider metadata, no task
 // ids, no idempotency keys. `historical_import`, `usage_category` and `funding` are the only values derived from
 // provider_metadata, each through a closed whitelist (nothing free-form is ever forwarded).
+//
+// PROVIDER_PRICING_REGISTRY_AND_ESTIMATED_COST_V1: each event also gets `estimated_cost`, DERIVED here on read
+// (usage x the pricing version effective at occurred_at, from the SELECT-only provider_pricing_versions table).
+// Nothing is stored or written. If the registry cannot be loaded the usage still renders and every cost is
+// "unavailable" - never zero.
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +53,7 @@ export async function GET() {
 
     const rows = (data ?? []) as Array<Record<string, any>>
     const hasMore = rows.length > WINDOW
+    const pricing = await loadPricingVersions(supabase)
     const events: UsageEventView[] = rows.slice(0, WINDOW).map((row) => ({
       id: row.id,
       occurred_at: row.occurred_at,
@@ -62,6 +70,7 @@ export async function GET() {
       historical_import: row.provider_metadata?.historical_import === true,
       usage_category: (USAGE_CATEGORIES as readonly unknown[]).includes(row.provider_metadata?.usage_category) ? (row.provider_metadata.usage_category as UsageCategory) : null,
       funding: (USAGE_FUNDING as readonly unknown[]).includes(row.provider_metadata?.funding) ? (row.provider_metadata.funding as UsageFunding) : null,
+      estimated_cost: pricing ? deriveProviderUsageCost(costInputFromRow(row), pricing) : { status: 'unavailable', reason: 'pricing_registry_unavailable' },
     }))
 
     // Names are decoration: if they cannot be loaded the rows still render, and never with an invented name.

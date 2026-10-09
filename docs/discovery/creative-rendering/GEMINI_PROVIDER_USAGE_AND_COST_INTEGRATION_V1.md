@@ -77,7 +77,9 @@ Same as the existing recorder: one retry of the **ledger write only**, error log
 
 Current pricing was read from `https://ai.google.dev/gemini-api/docs/pricing` (page dated 2026-10-07) for the two supported Review models. Paid standard tier: `gemini-3.5-flash` $1.50 in / $9.00 out (output "including thinking tokens") per 1M; `gemini-3.5-flash-lite` $0.30 in / $2.50 out per 1M. The same models also have a **free tier**, and separate **batch / flex / priority** prices. The response reports `serviceTier` but **not** whether the user's key is on the free or a paid plan, and the ledger has no cost/currency column nor any pricing registry. Computing a number would therefore be a guess. Persisted facts (token counts, modality split, cached tokens, service tier, model) are sufficient for a later layer.
 
-Follow-up mission required: a versioned pricing registry with provenance (model × service tier × free/paid), a way to know the key's plan or an explicit "estimated, plan unknown" label, a cost column or derived view in the ledger, and its UI. Out of scope here.
+**Superseded for cost:** FUTURE-047 implemented the follow-up — see `docs/architecture/PROVIDER_PRICING_REGISTRY_AND_ESTIMATED_COST_V1.md` (versioned registry, derived-on-read *estimated* list-price cost, explicit "plan unknown" label).
+
+Follow-up mission required (now done, see above): a versioned pricing registry with provenance (model × service tier × free/paid), a way to know the key's plan or an explicit "estimated, plan unknown" label, a cost column or derived view in the ledger, and its UI. Out of scope here.
 
 ## Settings → Uso e custos
 
