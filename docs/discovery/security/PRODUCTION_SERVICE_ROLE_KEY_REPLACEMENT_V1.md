@@ -428,3 +428,64 @@ After criterion 6 holds and `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_ANON_KEY
 
 An ordinary local app needs only `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for Auth/UI work; it does not need `SUPABASE_SECRET_KEY`. The FUTURE-050 local admin guard
 (`CONTENT_STUDIO_LOCAL_SERVICE_ROLE_PROJECT_REF`) is untouched.
+
+## 14. Preview compatibility and smoke evidence (PR #153, FUTURE-052B)
+
+Smoke performed prior to PR #153 merge:
+
+* **Preview deployment ID:** `dpl_8AKuQ4ynGspemHbX5AYPDZ54dDMT`
+* **Preview URL:** `https://content-studio-g9rawzm24-fmultimans-projects.vercel.app`
+* **Vercel bypass & app auth:** authenticated as `flavio.multiman`
+* **FUTURE-050 policy gate:**
+  * `executionPolicy.environment`: `"preview"`
+  * `executionPolicy.paidExecution`: `"blocked"` (FAIL-CLOSED preserved)
+* **Public-credential diagnostic (`GET /api/settings/providers`):**
+  * `publicCredential.configured`: `true`
+  * `publicCredential.variable`: `"NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"`
+  * `publicCredential.shape`: `"publishable-key"`
+  * `publicCredential.legacyVariableInUse`: `false`
+* **Admin-credential diagnostic (`GET /api/settings/providers`):**
+  * `adminCredential.configured`: `true`
+  * `adminCredential.variable`: `"SUPABASE_SECRET_KEY"`
+  * `adminCredential.shape`: `"secret-key"`
+  * `adminCredential.legacyVariableInUse`: `false`
+* **Auth / SSR / Middleware live verification:**
+  * Authenticated session exists and loads `/dashboard` with full SSR user data (projects, productions, recent items, metrics)
+  * Protected route redirection verified via isolated unauthenticated session: navigating to `/dashboard` and `/videos` redirected to `/login`
+  * Session survives hard reload without redirect loops or auth refresh errors
+* **RLS / user-scoped data:**
+  * `/projetos` loads active projects via RLS
+  * `/arquivos` loads folders and library files via RLS (24 folders)
+  * Review history loads (`/api/reviews/image?attemptId=ccba3d95-d354-43d0-8cb6-1a58f4f16624` returned historical review row)
+  * Image generation session loads (`/api/image-generation-sessions/f89db0b4-2621-4049-988b-eefcf8aa30da`)
+  * Video generation session loads (`/api/video-generation-sessions/11912666-ecbc-4b71-b810-3c24aecd41fc`)
+* **Reversible safe write canaries:**
+  * **IMAGE** (`/imagens/geracoes/f89db0b4-2621-4049-988b-eefcf8aa30da`):
+    * Original prompt recorded: `""`
+    * Temporary prompt edit: `" [F052B-PREVIEW-CANARY]"`
+    * Autosave transition: `Salvo` (succeeded)
+    * Reloaded and verified persisted temporary state: `"[F052B-PREVIEW-CANARY]"`
+    * Restored exact original prompt: `""`
+    * Autosave transition: `Salvo` (succeeded)
+    * Hard reload verification: persisted restored value `""`
+  * **VIDEO** (`/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc`):
+    * Original model + prompt recorded: `Kling 3.0` and `""`
+    * Model change: `Kling 3.0` → `Kling 2.6` → autosaved `Salvo`
+    * Model restored: `Kling 2.6` → `Kling 3.0` → autosaved `Salvo`
+    * Temporary prompt edit: `" [F052B-PREVIEW-CANARY]"` → autosaved `Salvo`
+    * Prompt restored: `""` → autosaved `Salvo`
+    * Hard reload verification: persisted restored model `Kling 3.0` and prompt `""`
+* **Database before/after safety proof (delta = 0):**
+  * `media_reviews`: 17 image completed, 2 video completed, 0 pending, 0 running (19 total, delta = 0)
+  * `provider_usage_events`: 6 Gemini, 5 Kling (11 total, delta = 0)
+  * `video_generations`: 10 (delta = 0)
+  * `image_generation_attempts`: 23 (delta = 0)
+  * `generation_tasks`: 12 (delta = 0)
+* **Console / Network audit:**
+  * 0 uncaught errors or error boundaries
+  * 0 Supabase 401/403 errors
+  * 0 auth refresh loops or redirect loops
+  * 0 paid provider requests
+  * 0 Generate POSTs
+  * 0 Review POSTs
+
