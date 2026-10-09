@@ -81,7 +81,7 @@ async function post(body: unknown) {
 
 beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://test.invalid')
-  vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-only-not-a-secret')
+  vi.stubEnv('SUPABASE_SECRET_KEY', `sb_secret_${'t'.repeat(32)}`) // fake, correctly shaped
   seed([file()])
 })
 

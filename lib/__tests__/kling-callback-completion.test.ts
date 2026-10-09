@@ -43,6 +43,8 @@ function seed(row: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.KLING_WEBHOOK_SECRET = `whsec_${RAW_SECRET}`
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.test'
+  process.env.SUPABASE_SECRET_KEY = `sb_secret_${'t'.repeat(32)}` // fake, correctly shaped
   vi.mocked(downloadAndStoreVideo).mockResolvedValue({ storagePath: 'user-a/videos/ai/proj-1/gen-1.mp4', publicUrl: 'https://s3.example.test/gen-1.mp4', mime: 'video/mp4', size: 42 })
   seed()
 })

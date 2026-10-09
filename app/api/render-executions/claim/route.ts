@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   // ── 2. Service-role DB client ─────────────────────────────────────────────
   const db = createWorkerApiDbClient()
   if (!db) {
-    console.error('[render-executions/claim] SUPABASE_SERVICE_ROLE_KEY is not configured')
+    console.error('[render-executions/claim] Supabase admin credential is not configured')
     return NextResponse.json(
       { error: 'Render service is unavailable.', code: 'RENDER_EXECUTION_SERVICE_UNAVAILABLE' },
       { status: 503 },

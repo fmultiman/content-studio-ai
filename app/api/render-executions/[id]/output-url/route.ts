@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -8,12 +8,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const dynamic = 'force-dynamic'
 
 function createRenderExecutionReadClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return createServiceRoleSupabaseOrNull()
 }
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -36,7 +31,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     const executionReader = createRenderExecutionReadClient()
     if (!executionReader) {
-      console.error('[Render Executions output-url] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      console.error('[Render Executions output-url] Supabase admin credential is not configured')
       return NextResponse.json({ error: 'Servico de renderizacao indisponivel.' }, { status: 503 })
     }
 

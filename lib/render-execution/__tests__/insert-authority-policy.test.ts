@@ -18,10 +18,13 @@ describe('render execution insert authority (Phase 2I-B1.1)', () => {
 
   it('keeps SELECT policy while routing insertion through a server-only service-role client', () => {
     expect(migration031).toMatch(/CREATE\s+POLICY\s+"render_executions_select_own"[\s\S]*?FOR\s+SELECT/i)
-    expect(renderRoute).toContain("process.env.SUPABASE_SERVICE_ROLE_KEY")
+    // FUTURE-052: the credential is resolved in one place (lib/supabase/admin-credential.ts), never read inline by a route.
+    expect(renderRoute).toContain("from '@/lib/supabase/service-role'")
+    expect(renderRoute).not.toMatch(/process\.env\.SUPABASE_(SERVICE_ROLE|SECRET)_KEY/)
     expect(renderRoute).toContain('const executionAdmin = createRenderExecutionWriteClient()')
     expect(renderRoute).toContain('.from(\'render_executions\')')
-    expect(readRoute).toContain('process.env.SUPABASE_SERVICE_ROLE_KEY')
+    expect(readRoute).toContain("from '@/lib/supabase/service-role'")
+    expect(readRoute).not.toMatch(/process\.env\.SUPABASE_(SERVICE_ROLE|SECRET)_KEY/)
     expect(readRoute).toContain('const executionReader = createRenderExecutionReadClient()')
   })
 })

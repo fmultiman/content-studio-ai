@@ -187,11 +187,14 @@ describe('browser authority remains unchanged (B1.1 regression, Task 14)', () =>
     // When called without env vars, it returns null (not an authenticated client).
     const oldUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const oldSecret = process.env.SUPABASE_SECRET_KEY
     delete process.env.NEXT_PUBLIC_SUPABASE_URL
     delete process.env.SUPABASE_SERVICE_ROLE_KEY
+    delete process.env.SUPABASE_SECRET_KEY
     const client = createWorkerApiDbClient()
     expect(client).toBeNull()
     if (oldUrl) process.env.NEXT_PUBLIC_SUPABASE_URL = oldUrl
     if (oldKey) process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey
+    if (oldSecret) process.env.SUPABASE_SECRET_KEY = oldSecret
   })
 })

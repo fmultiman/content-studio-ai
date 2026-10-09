@@ -94,9 +94,9 @@ function loadEnv() {
 const env    = loadEnv()
 const get    = k => env[k] ?? ''
 const SB_URL = get('SUPABASE_URL')
-const SVC    = get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC    = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
 
-if (!SB_URL || !SVC) throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente no .env.local')
+if (!SB_URL || !SVC) throw new Error('SUPABASE_URL ou SUPABASE_SECRET_KEY (ou SUPABASE_SERVICE_ROLE_KEY legado) ausente no .env.local')
 adminGuard.requireAdminAck({ script: 'posts_migration_m84_execute.mjs', target: SB_URL })
 
 const BASE_URL = SB_URL.replace(/\/$/, '')

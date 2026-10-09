@@ -9,7 +9,7 @@
  * DRY RUN is the default: nothing is written unless --apply is passed.
  *
  * Online (needs a server credential; never printed):
- *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+ *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SECRET_KEY=... \
  *     node scripts/backfill-verified-provider-usage-proofs.mjs            # dry run
  *   ... node scripts/backfill-verified-provider-usage-proofs.mjs --apply  # insert
  *
@@ -69,8 +69,8 @@ async function main() {
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required (or use --from-json)')
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (legacy: SUPABASE_SERVICE_ROLE_KEY) are required (or use --from-json)')
   const { default: adminGuard } = await import('./lib/production-admin-guard.cjs')
   adminGuard.requireAdminAck({ script: 'backfill-verified-provider-usage-proofs', target: url })
   const { createClient } = await import('@supabase/supabase-js')

@@ -79,12 +79,22 @@ describe('admin script guard', () => {
 
 describe('every script that uses admin authority is guarded', () => {
   const SCRIPTS = join(process.cwd(), 'scripts')
-  const usesAdmin = /SUPABASE_SERVICE_ROLE_KEY|SERVICE_ROLE_KEY|POSTGRES_URL/
+  const usesAdmin = /SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY|POSTGRES_URL/
   const scripts = readdirSync(SCRIPTS).filter((name) => /\.(mjs|cjs|js)$/.test(name))
 
   it.each(scripts)('%s requires --admin-project-ref before using admin credentials', (name) => {
     const text = readFileSync(join(SCRIPTS, name), 'utf8')
     if (!usesAdmin.test(text)) return
+    expect(text).toContain('requireAdminAck')
+  })
+})
+
+describe('root-level operator scripts that use admin authority are guarded too (FUTURE-052)', () => {
+  const rootScripts = readdirSync(process.cwd()).filter((name) => /\.(mjs|cjs)$/.test(name))
+
+  it.each(rootScripts)('%s requires --admin-project-ref before using admin credentials', (name) => {
+    const text = readFileSync(join(process.cwd(), name), 'utf8')
+    if (!/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY|POSTGRES_URL/.test(text)) return
     expect(text).toContain('requireAdminAck')
   })
 })

@@ -99,11 +99,11 @@ function loadEnv() {
 const env = loadEnv()
 const get = k => env[k] ?? ''
 const SUPABASE_URL   = get('SUPABASE_URL') || get('NEXT_PUBLIC_SUPABASE_URL')
-const SVC_KEY        = get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC_KEY        = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
 const SESSION_COOKIE = process.env.SESSION_COOKIE || ''
 
 if (!SUPABASE_URL || !SVC_KEY) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
+  console.error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY (legacy: SUPABASE_SERVICE_ROLE_KEY) in .env.local')
   process.exit(1)
 }
 adminGuard.requireAdminAck({ script: 'posts_m85b_tests.mjs', target: SUPABASE_URL })

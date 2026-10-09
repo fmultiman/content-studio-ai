@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { AI_PROVIDERS, getProviderConfigurationStatuses } from '@/lib/credentials/provider-credentials'
 import { primaryConnectionMethod } from '@/lib/credentials/provider-metadata'
 import { describeProviderExecutionPolicy } from '@/lib/providers/execution-policy'
+import { describeAdminCredential } from '@/lib/supabase/admin-credential'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
 // Returns configuration status only — never a secret value — for every
@@ -37,6 +38,9 @@ export async function GET() {
       nanobananaBaseUrl: settings?.nanobanana_base_url ?? null,
       // FUTURE-050: browser-safe diagnostic (class + allowed/blocked only) so a smoke can prove the guard without a paid call.
       executionPolicy: describeProviderExecutionPolicy(),
+      // FUTURE-052: which admin-credential variable/shape this runtime uses (names and shape class only, never a value),
+      // so a credential replacement can be verified without reading any secret.
+      adminCredential: describeAdminCredential(),
     })
   } catch (error) {
     console.error('[Settings Providers] Error:', error)

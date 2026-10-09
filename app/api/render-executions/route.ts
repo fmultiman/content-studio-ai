@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { createClient } from '@/lib/supabase/server'
 import type { RenderExecutionSummary } from '@/lib/types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function createRenderExecutionReadClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return createServiceRoleSupabaseOrNull()
 }
 
 const SAFE_COLUMNS = [
@@ -121,7 +116,7 @@ export async function GET(request: Request) {
 
     const executionReader = createRenderExecutionReadClient()
     if (!executionReader) {
-      console.error('[Render Executions List GET] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      console.error('[Render Executions List GET] Supabase admin credential is not configured')
       return NextResponse.json({ error: 'Servico de renderizacao indisponivel.' }, { status: 503 })
     }
 

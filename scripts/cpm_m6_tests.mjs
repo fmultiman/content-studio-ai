@@ -30,7 +30,7 @@ const get = (k) => {
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
 }
 
-const SVC    = get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC    = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
 const SB_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
 adminGuard.requireAdminAck({ script: 'cpm_m6_tests.mjs', target: SB_URL })
 const BASE   = 'http://localhost:3000'
