@@ -46,6 +46,35 @@ Unit tests that exercise timers must run under browser timer semantics: Node and
 `lib/generation-session/__tests__/browser-timers.ts` (`installBrowserFaithfulTimers`) in component tests that
 render a workspace.
 
+## Provider-facing smoke safety (FUTURE-050)
+
+Preview and local runtimes share the Production database, and the user's provider keys live in that database. Two real Gemini
+Video Reviews ran during a "read-only" validation (FUTURE-048). Since FUTURE-050 the **server refuses paid provider execution outside
+Production** (`lib/providers/execution-policy.ts`; Preview has no override, local needs an explicit acknowledgement). The smoke rules
+are therefore:
+
+| | Preview | Production |
+|---|---|---|
+| Route load, auth, Session reads, Review/usage history | allowed | allowed |
+| Reversible mutation canary (prompt edit, model select, autosave, restore) | allowed | allowed |
+| **Generate**, **Review**, prompt/translate/evaluate buttons | **forbidden** (the server answers `403 PROVIDER_EXECUTION_DISABLED_IN_ENVIRONMENT`) | **forbidden unless separately authorised in writing** (it is real spend) |
+| Non-paid proof of the policy | `GET /api/settings/providers` → `executionPolicy: { environment: "preview", paidExecution: "blocked" }` | `executionPolicy: { environment: "production", paidExecution: "allowed" }` |
+
+Every provider-facing "read-only" smoke MUST record, **before and after**, and attach to the PR/closure doc:
+
+* `media_reviews` count and status breakdown (image/video; 0 pending/running);
+* `provider_usage_events` count by provider;
+* `video_generations`, `image_generation_attempts`, `generation_tasks` counts;
+* an explicit statement: "Generate was not clicked. Review was not clicked.";
+* for Preview: the `executionPolicy` value observed.
+
+Any non-zero delta not authorised in advance fails the smoke, and the delta is reported even if it looks harmless. A smoke must never
+delete rows it did not create, and never use an admin credential: the append-only ledger keeps usage rows even when someone deletes the
+Review they point to (FUTURE-048).
+
+Controlled denial check (optional, Preview only): a single `POST` to a paid route is safe because the guard answers before any
+provider call, Attempt, generation row or usage event; record the 403 body and the unchanged counts.
+
 ## What to look at, not just "page loads"
 
 - The final URL after each navigation (a redirect back to a hub is a failure even if nothing errors).

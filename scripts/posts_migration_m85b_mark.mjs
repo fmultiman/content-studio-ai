@@ -27,6 +27,7 @@ import { createHash }                     from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve, dirname }               from 'path'
 import { fileURLToPath }                  from 'url'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
@@ -121,6 +122,7 @@ if (!SUPABASE_URL || !SVC_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
   process.exit(1)
 }
+adminGuard.requireAdminAck({ script: 'posts_migration_m85b_mark.mjs', target: SUPABASE_URL })
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 

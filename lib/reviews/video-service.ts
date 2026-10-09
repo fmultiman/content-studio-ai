@@ -31,7 +31,7 @@ import {
   mapVideoEvaluatorResult,
   parseVideoEvaluatorResponse,
 } from './adapters/video'
-import { ReviewServiceError } from './errors'
+import { ReviewServiceError, assertReviewExecutionAllowed } from './errors'
 import { ReviewProviderError, parseProviderJson, toReviewServiceError } from './execution-provider'
 import { resolveAuthorizedReviewMedia } from './media'
 import { REVIEW_VIDEO_MAX_BYTES } from './media-limits'
@@ -116,6 +116,8 @@ export async function createVideoReviewExecution(params: {
   /** Test seam for the stale-recovery clock (epoch ms). Never read from a request. */
   clock?: () => number
 }) {
+  // FUTURE-050: refuse BEFORE the artifact, provenance or Review row exist when this environment may not spend.
+  assertReviewExecutionAllowed(VIDEO_REVIEW_PROVIDER, 'video_review')
   const db = params.db ?? createServiceRoleSupabase()
 
   // 1-3. Source -> trusted coordinates -> canonical artifact (idempotent) -> authorized media (limits, trusted path).

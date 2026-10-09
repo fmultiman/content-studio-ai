@@ -12,6 +12,7 @@ import { createHash }          from 'crypto'
 import { readFileSync, mkdirSync, writeFileSync } from 'fs'
 import { resolve, dirname }    from 'path'
 import { fileURLToPath }       from 'url'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 // ── Environment ──────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ const S3_KEY = get('S3_ACCESS_KEY')
 const S3_SEC = get('S3_SECRET_KEY')
 
 if (!SB_URL || !SVC)    throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente no .env.local')
+adminGuard.requireAdminAck({ script: 'posts_migration_dry_run.mjs', target: SB_URL })
 if (!S3_KEY || !S3_SEC) throw new Error('S3_ACCESS_KEY ou S3_SECRET_KEY ausente no .env.local')
 
 // ── Decisions H1–H4 (applied, not reinterpreted) ────────────────────────

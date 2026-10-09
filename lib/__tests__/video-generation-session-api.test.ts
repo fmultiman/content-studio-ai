@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { createFakeDb } from './helpers/fake-db'
 import { REST_CONNECTION_REF, accountConnectionRef } from '@/lib/video-generation/connection-ref'
 import { SESSION_LIMITS } from '@/lib/video-generation/session'
 import { attemptToWorkingState } from '@/lib/video-generation/working-state'
+import { restoreEnvironment, simulateEnvironment } from '@/lib/providers/__tests__/policy-env'
 
 // VIDEO_GENERATION_SESSION_PERSISTENCE_AND_API_V1
 //
@@ -549,5 +550,26 @@ describe('GET /api/video-generation-sessions?productionId — list', () => {
     // USER_A has sessions in PRODUCTION and OTHER_PRODUCTION, but not FOREIGN_PRODUCTION (USER_B)
     expect(body.sessions).toHaveLength(4)
     expect(JSON.stringify(body)).not.toContain('B SECRET')
+  })
+})
+
+// ===========================================================================
+// FUTURE-050 (test 20): the provider-execution policy must never touch authoring state. Session autosave (PATCH)
+// and reads keep working in Preview, where paid execution is denied, and they perform no provider-execution check.
+describe('Session autosave in Preview (provider execution disabled)', () => {
+  afterEach(() => restoreEnvironment())
+
+  it('PATCH persists the edit and returns a new token while the environment is Preview', async () => {
+    simulateEnvironment('preview')
+    const db = makeDb([sessionRow()])
+    signIn(db)
+
+    const response = await patch({ expectedUpdatedAt: stamp(1), workingState: state({ prompt: 'edited in preview' }) })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.session.workingState.prompt).toBe('edited in preview')
+    expect(db.tables.video_generation_sessions[0]).toMatchObject({ working_prompt: 'edited in preview' })
+    expect((await get()).status).toBe(200)
   })
 })

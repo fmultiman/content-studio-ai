@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
@@ -50,6 +51,10 @@ export async function POST(req: NextRequest) {
     if (userError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // FUTURE-050: before the queued generation row, the credential, the MCP token or any source upload exists.
+    const blocked = providerExecutionBlockedResponse({ provider: 'kling', operation: 'video_generation' })
+    if (blocked) return blocked
 
     let body: Record<string, any>
     try {

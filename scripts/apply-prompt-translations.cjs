@@ -1,5 +1,6 @@
 const fs = require('fs')
 const postgres = require('postgres')
+const adminGuard = require('./lib/production-admin-guard.cjs')
 
 function readLocalEnv() {
   const contents = fs.readFileSync('.env.local', 'utf8')
@@ -25,6 +26,8 @@ async function main() {
   if (!connectionString) {
     throw new Error('POSTGRES_URL_NON_POOLING ou POSTGRES_URL nao encontrado em .env.local')
   }
+
+  adminGuard.requireAdminAck({ script: 'apply-prompt-translations', target: connectionString })
 
   const sql = postgres(connectionString, { ssl: 'require' })
 
