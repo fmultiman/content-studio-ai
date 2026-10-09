@@ -298,3 +298,54 @@ At the end of phase 1 the application no longer depends on the compromised crede
 * `app/api/settings/providers/route.ts` — adds the non-secret `adminCredential` diagnostic.
 * Operator scripts read `SUPABASE_SECRET_KEY` first; `cpm_m5_tests.mjs` gains the admin guard; new `scripts/verify-legacy-admin-key-rejected.mjs`.
 * Tests: `lib/__tests__/supabase-admin-credential.test.ts` (new, 46 cases) and updates to tests that asserted the old inline pattern.
+
+## 12. Preview compatibility smoke evidence (PR #152)
+
+Smoke performed prior to PR #152 merge:
+
+* **Preview deployment ID:** `dpl_75RkjHBg6fL11F9Rm1gtCr3xw2QW`
+* **Preview URL:** `https://content-studio-4n71uun0o-fmultimans-projects.vercel.app`
+* **Vercel bypass & app auth:** authenticated as `flavio.multiman`
+* **FUTURE-050 policy gate:**
+  * `executionPolicy.environment`: `"preview"`
+  * `executionPolicy.paidExecution`: `"blocked"` (FAIL-CLOSED preserved)
+* **Admin-credential source diagnostic:**
+  * `adminCredential.configured`: `true`
+  * `adminCredential.variable`: `"SUPABASE_SECRET_KEY"`
+  * `adminCredential.shape`: `"secret-key"` (`sb_secret`)
+  * `adminCredential.legacyVariableInUse`: `false`
+* **Representative read-only admin paths verified:**
+  * Authenticated dashboard & project/production summary loads
+  * Review history loads (`/api/reviews/image?attemptId=ccba3d95-d354-43d0-8cb6-1a58f4f16624` returned historical review row)
+  * Image generation session loads (`/api/image-generation-sessions/f89db0b4-2621-4049-988b-eefcf8aa30da`)
+  * Video generation session loads (`/api/video-generation-sessions/11912666-ecbc-4b71-b810-3c24aecd41fc`)
+  * Settings provider data loads (`/api/settings/providers`)
+  * Library & gallery files load (`/api/gallery/video-outputs` returned 24 items; `/arquivos` UI rendered all folders and media files)
+* **Reversible safe write canaries:**
+  * **IMAGE** (`/imagens/geracoes/f89db0b4-2621-4049-988b-eefcf8aa30da`):
+    * Original prompt recorded: `""`
+    * Temporary prompt edit: `" [F052-PREVIEW-CANARY]"`
+    * Autosave transition: `PENDING` → `SAVING` → `Salvo` (succeeded)
+    * Restored exact original: `""`
+    * Autosave transition: `Salvo` (succeeded)
+    * Hard reload verification: persisted restored value `""`
+  * **VIDEO** (`/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc`):
+    * Original model + prompt recorded: `Kling 3.0` and `""`
+    * Model change: `Kling 3.0` → `Kling 2.6` → autosaved `Salvo`
+    * Model restored: `Kling 2.6` → `Kling 3.0` → autosaved `Salvo`
+    * Temporary prompt edit: `" [F052-PREVIEW-CANARY]"` → autosaved `Salvo`
+    * Prompt restored: `""` → autosaved `Salvo`
+    * Hard reload verification: persisted restored model `Kling 3.0` and prompt `""`
+* **Database before/after safety proof (delta = 0):**
+  * `media_reviews`: 17 image completed, 2 video completed, 0 pending, 0 running (19 total, delta = 0)
+  * `provider_usage_events`: 6 Gemini, 5 Kling (11 total, delta = 0)
+  * `video_generations`: 10 (delta = 0)
+  * `image_generation_attempts`: 23 (delta = 0)
+  * `generation_tasks`: 12 (delta = 0)
+* **Secret safety:**
+  * 0 credential values in browser responses
+  * 0 credential values in browser JS bundles
+  * 0 console errors or credential leakage
+  * 0 hardcoded service-role literals in source
+  * 0 paid provider calls
+
