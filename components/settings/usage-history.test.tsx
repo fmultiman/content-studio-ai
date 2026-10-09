@@ -352,12 +352,14 @@ describe('states', () => {
     expect(screen.getByTestId('usage-has-more').textContent).toMatch(/200 registros mais recentes/)
   })
 
-  it('states plainly that quantities are usage, not money and not converted', async () => {
+  it('states plainly that quantities are usage, not converted, and that any cost is an estimate rather than the billed amount', async () => {
     respond(payload([mcpEvent]))
     await ready()
     const text = screen.getByTestId('usage-disclaimer').textContent ?? ''
-    expect(text).toMatch(/não são valores em reais/)
-    expect(text).toMatch(/não são convertidas entre si/)
+    expect(text).toMatch(/não são\s+convertidas entre si/)
+    expect(text).toMatch(/custo estimado pelo preço de tabela/)
+    expect(text).toMatch(/não é o valor\s+cobrado/)
+    // No estimate in the payload -> no money anywhere on the screen.
     expect(document.body.textContent).not.toMatch(/R\$|US\$|\$\s?\d/)
   })
 
@@ -428,7 +430,7 @@ describe('Gemini Review usage', () => {
     expect(within(row).getByTestId('usage-transport').textContent).toBe('API')
     expect(within(row).getByTestId('usage-connection').textContent).toBe('Gemini API')
     expect(within(row).getByTestId('usage-model').textContent).toBe('gemini-3.5-flash')
-    expect(within(row).getByTestId('usage-funding').textContent).toMatch(/Chave própria \(BYOK\).*custo não calculado/)
+    expect(within(row).getByTestId('usage-funding').textContent).toMatch(/Chave própria \(BYOK\).*valor cobrado depende do seu plano/)
     expect(screen.getAllByTestId('usage-operation').map((el) => el.textContent)).toContain('Revisão de imagem')
     expect(document.body.textContent).toMatch(/24\.800 tokens de entrada/)
   })

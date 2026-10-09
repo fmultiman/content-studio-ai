@@ -5,6 +5,14 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { summarizeEstimatedCost } from '@/lib/usage/pricing/aggregate'
+import {
+  ESTIMATED_COST_LABEL,
+  PRICING_UNAVAILABLE_LABEL,
+  estimatedCostDetails,
+  formatEstimatedAmount,
+  unpricedReason,
+} from '@/lib/usage/pricing/presentation'
 import {
   connectionName,
   DEFAULT_USAGE_FILTERS,
@@ -27,6 +35,10 @@ import {
 // Shows what each AI provider execution used, in the provider's OWN unit and with
 // how the number was obtained. It is usage observability, not billing: nothing
 // here is a price, and quantities in different units are never added together.
+//
+// PROVIDER_PRICING_REGISTRY_AND_ESTIMATED_COST_V1: next to the usage, a row may show an ESTIMATED cost (the
+// provider's public list price x the measured usage). It is derived by the API, labelled as an estimate, never
+// described as what was charged, and a row without a published price says "Preço indisponível" - never zero.
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -81,6 +93,8 @@ export function UsageHistory() {
   const events = useMemo(() => data?.events ?? [], [data])
   const visible = useMemo(() => filterUsageEvents(events, filters), [events, filters])
   const summary = useMemo(() => summarizeUsage(visible), [visible])
+  const showCost = useMemo(() => visible.some((event) => event.estimated_cost !== undefined), [visible])
+  const costSummary = useMemo(() => summarizeEstimatedCost(visible.map((event) => event.estimated_cost)), [visible])
 
   const providers = useMemo(() => [...new Set(events.map((event) => event.provider))].sort(), [events])
   const transports = useMemo(() => [...new Set(events.map((event) => event.transport))].sort(), [events])
@@ -96,8 +110,9 @@ export function UsageHistory() {
       <div>
         <h2 id="usage-history-title" className="text-lg font-semibold">Uso e custos</h2>
         <p className="text-sm text-muted-foreground" data-testid="usage-disclaimer">
-          O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades, tokens…). São quantidades de uso —
-          não são valores em reais e não são convertidas entre si. Execuções anteriores a este registro só aparecem quando foram importadas com evidência verificada.
+          O que cada execução de IA consumiu, na unidade de cada provedor (créditos, unidades, tokens…). As quantidades de uso não são
+          convertidas entre si. Quando o provedor publica preço, mostramos também um custo estimado pelo preço de tabela — não é o valor
+          cobrado. Execuções anteriores a este registro só aparecem quando foram importadas com evidência verificada.
         </p>
       </div>
 
@@ -210,6 +225,35 @@ export function UsageHistory() {
                 {summary.unknownEvents} {summary.unknownEvents === 1 ? 'execução' : 'execuções'} sem consumo informado pelo provedor — não entram em nenhum total.
               </p>
             )}
+            {showCost && (
+              <div className="space-y-1 border-t border-border/50 pt-2" data-testid="usage-cost-summary">
+                <p className="text-sm font-medium">{ESTIMATED_COST_LABEL} (preço de tabela)</p>
+                {costSummary.totals.length === 0 ? (
+                  <p className="text-sm text-muted-foreground" data-testid="usage-cost-none">
+                    Nenhum registro exibido tem preço disponível.
+                  </p>
+                ) : (
+                  <ul className="space-y-1 text-sm">
+                    {costSummary.totals.map((total) => (
+                      <li key={total.currency} data-testid="usage-cost-total" data-currency={total.currency}>
+                        <span className="font-medium">{formatEstimatedAmount(total.amount, total.currency)}</span>{' '}
+                        <span className="text-xs text-muted-foreground">
+                          ({total.pricedEvents} {total.pricedEvents === 1 ? 'registro com preço' : 'registros com preço'})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {costSummary.unpricedEvents > 0 && (
+                  <p className="text-xs text-muted-foreground" data-testid="usage-cost-unpriced">
+                    {costSummary.unpricedEvents} {costSummary.unpricedEvents === 1 ? 'registro' : 'registros'} sem preço disponível — não entram no total e não valem zero.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground" data-testid="usage-cost-disclaimer">
+                  Estimativa pelo preço de tabela público do provedor. Não é o valor cobrado: com chave própria (BYOK), a fatura real na sua conta pode ser diferente.
+                </p>
+              </div>
+            )}
           </div>
 
           {visible.length === 0 ? (
@@ -252,6 +296,28 @@ export function UsageHistory() {
                       <p className="text-xs text-muted-foreground" data-testid="usage-source" title={measurementSourceHelp(event.measurement_source)}>
                         {event.quantity === null ? measurementSourceLabel('unknown') : `Medição: ${measurementSourceLabel(event.measurement_source).toLowerCase()}`}
                       </p>
+                      {event.estimated_cost && event.estimated_cost.status === 'estimated' && (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          tabIndex={0}
+                          data-testid="usage-cost"
+                          data-status="estimated"
+                          title={estimatedCostDetails(event.estimated_cost).join(' · ')}
+                        >
+                          {ESTIMATED_COST_LABEL}: {formatEstimatedAmount(event.estimated_cost.amount, event.estimated_cost.currency)}
+                        </p>
+                      )}
+                      {event.estimated_cost && event.estimated_cost.status !== 'estimated' && (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          tabIndex={0}
+                          data-testid="usage-cost"
+                          data-status={event.estimated_cost.status}
+                          title={unpricedReason(event.estimated_cost) ?? undefined}
+                        >
+                          {PRICING_UNAVAILABLE_LABEL}
+                        </p>
+                      )}
                     </div>
                   </li>
                 )
