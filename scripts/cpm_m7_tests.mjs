@@ -6,7 +6,7 @@
  * Prerequisites:
  *   1. No migration needed — schema already supports video via library_files.kind='video'.
  *   2. Dev server running: pnpm dev (http://localhost:3000)
- *   3. .env.local with SUPABASE_SERVICE_ROLE_KEY, S3 credentials.
+ *   3. .env.local with SUPABASE_SECRET_KEY, S3 credentials.
  *
  * Run: node scripts/cpm_m7_tests.mjs
  *
@@ -31,7 +31,7 @@ const get = (k) => {
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
 }
 
-const SVC    = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC    = get('SUPABASE_SECRET_KEY')
 const SB_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
 adminGuard.requireAdminAck({ script: 'cpm_m7_tests.mjs', target: SB_URL })
 const BASE   = 'http://localhost:3000'

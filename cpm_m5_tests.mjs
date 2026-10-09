@@ -15,7 +15,7 @@ function readEnv(key) {
   const m = c.match(new RegExp(`^${key}=(.+)`, 'm'))
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
 }
-const SVC_KEY = readEnv('SUPABASE_SECRET_KEY') || readEnv('SUPABASE_SERVICE_ROLE_KEY')
+const SVC_KEY = readEnv('SUPABASE_SECRET_KEY')
 const SUPABASE_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
 
 // FUTURE-050/052: this suite writes fixtures to the Production project with admin authority, so it needs the same

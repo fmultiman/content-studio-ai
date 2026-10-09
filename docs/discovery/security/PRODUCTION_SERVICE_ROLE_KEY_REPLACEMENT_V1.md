@@ -489,3 +489,97 @@ Smoke performed prior to PR #153 merge:
   * 0 Generate POSTs
   * 0 Review POSTs
 
+## 15. Phase 2 — Legacy Supabase API Key Invalidation Evidence (FUTURE-052)
+
+Operational security execution:
+
+* **Execution timestamp:** 2026-10-09 05:30 UTC
+* **Project ref:** `nuhdhnasuohizxtmyiju` (`Content Agent Studio`)
+* **Action performed:** User disabled legacy JWT-based API keys in Supabase dashboard (Settings → API Keys).
+* **Legacy anon API key verification:**
+  * `apikey: <legacy_anon>` against Supabase endpoint returned **HTTP 401 Unauthorized** (REJECTED / DISABLED).
+  * Modern publishable key against the same endpoint returned **HTTP 200 OK** (ACTIVE).
+* **Legacy service_role verification (`scripts/verify-legacy-admin-key-rejected.mjs`):**
+  * Probe A (`apikey=legacy + Bearer legacy`): `status=206 total=19 STILL_VALID`
+  * Probe B (`apikey=publishable + Bearer legacy`): `status=206 total=19 STILL_VALID`
+  * Probe C (`apikey=publishable` control): `status=401 total=n/a REJECTED`
+  * Script verdict: **`LEGACY_ADMIN_CREDENTIAL_STILL_VALID`** (exit code 1).
+* **Architectural cause:**
+  * Disabling the legacy API keys in the Supabase dashboard disables gateway recognition of the legacy `anon` API key.
+  * However, the legacy `service_role` key is a signed JWT. Because the gateway / PostgREST validates the signature against the project's legacy JWT secret (`SUPABASE_JWT_SECRET`), and the JWT secret was **not** revoked in this step, any request bearing `Authorization: Bearer <legacy_service_role_jwt>` is still verified as authentic by the platform and accepted with full RLS-bypassing `service_role` permissions.
+* **Modern application runtime health:**
+  * `publicCredential`: `configured: true`, `variable: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"`, `shape: "publishable-key"`, `legacyVariableInUse: false` (HEALTHY)
+  * `adminCredential`: `configured: true`, `variable: "SUPABASE_SECRET_KEY"`, `shape: "secret-key"`, `legacyVariableInUse: false` (HEALTHY)
+  * `executionPolicy`: `environment: "production"`, `paidExecution: "allowed"`
+  * Production dashboard, SSR, and user-scoped RLS paths remain fully operational.
+* **Database impact (delta = 0):**
+  * `media_reviews`: 17 image completed, 2 video completed, 0 pending, 0 running (19 total, delta = 0)
+  * `provider_usage_events`: 6 Gemini, 5 Kling (11 total, delta = 0)
+  * `video_generations`: 10 (delta = 0)
+  * `image_generation_attempts`: 23 (delta = 0)
+  * `generation_tasks`: 12 (delta = 0)
+* **Paid provider calls:** 0
+* **Signing keys / secrets status:**
+  * JWT signing secret **NOT** revoked.
+  * JWT signing keys **NOT** rotated.
+* **Stop condition triggered:** **`LEGACY_API_KEY_DISABLE_INSUFFICIENT`**
+* **Recommended next action:** As anticipated in runbook §9 step 14, invalidating the leaked legacy service-role credential requires revoking the legacy JWT secret in Supabase dashboard (Settings → JWT Signing Keys → legacy secret → *Revoke*).
+
+## 16. Phase 2B — Legacy JWT Secret Revocation Evidence (FUTURE-052)
+
+Operational security execution & invalidation proof:
+
+* **Execution timestamp:** 2026-10-09 16:35 UTC
+* **Project ref:** `nuhdhnasuohizxtmyiju` (`Content Agent Studio`)
+* **Action performed:** User revoked the legacy JWT secret in Supabase Dashboard (Settings → JWT Signing Keys → legacy secret → *Revoke*).
+* **Legacy service_role rejection proof (`scripts/verify-legacy-admin-key-rejected.mjs`):**
+  * Probe A (`apikey=legacy + Bearer legacy`): `status=401 total=n/a REJECTED`
+  * Probe B (`apikey=publishable + Bearer legacy`): `status=401 total=n/a REJECTED`
+  * Probe C (`apikey=publishable` control): `status=401 total=n/a REJECTED`
+  * Script verdict: **`LEGACY_ADMIN_CREDENTIAL_REJECTED`** (exit code 0).
+* **Security verdict:**
+  * The leaked legacy JWT service_role credential is now **completely rejected** by the Supabase platform and PostgREST.
+  * The bearer path bypass is terminated; no credential signed with the revoked legacy secret is accepted.
+* **Modern application runtime health on Production:**
+  * `publicCredential`: `configured: true`, `variable: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"`, `shape: "publishable-key"`, `legacyVariableInUse: false` (HTTP 200)
+  * `adminCredential`: `configured: true`, `variable: "SUPABASE_SECRET_KEY"`, `shape: "secret-key"`, `legacyVariableInUse: false` (HTTP 200)
+  * `executionPolicy`: `environment: "production"`, `paidExecution: "allowed"`
+  * Production dashboard, SSR data, page reload, protected routes (307 redirect unauthenticated), and user-scoped RLS paths remain 100% operational.
+  * Reversible Image (`f89db0b4-2621-4049-988b-eefcf8aa30da`) and Video (`11912666-ecbc-4b71-b810-3c24aecd41fc`) autosave canaries verified and restored.
+* **Database impact (delta = 0):**
+  * `media_reviews`: 17 image completed, 2 video completed, 0 pending, 0 running (19 total, delta = 0)
+  * `provider_usage_events`: 6 Gemini, 5 Kling (11 total, delta = 0)
+  * `video_generations`: 10 (delta = 0)
+  * `image_generation_attempts`: 23 (delta = 0)
+  * `generation_tasks`: 12 (delta = 0)
+* **Paid provider calls:** 0
+* **Migrations:** 0
+* **Rollback status:** Rollback not needed.
+* **Conclusion:** The compromised legacy credentials (`anon` and `service_role`) are fully invalidated. The running application is entirely decoupled and operational on the modern publishable and secret keys. Ready for FUTURE-052C.
+
+## 17. Phase C — Legacy Credential Fallback Cleanup Evidence (FUTURE-052C)
+
+Code and operational cleanup:
+
+* **Public credential fallback removed:**
+  * `lib/supabase/public-credential.ts` now requires `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+  * Fallback to `NEXT_PUBLIC_SUPABASE_ANON_KEY` has been deleted.
+  * Any legacy anon JWT passed to the public resolver is rejected with `PublicCredentialMalformedError`.
+* **Admin credential fallback removed:**
+  * `lib/supabase/admin-credential.ts` now requires `SUPABASE_SECRET_KEY`.
+  * Fallback to `SUPABASE_SERVICE_ROLE_KEY` has been deleted.
+  * Any legacy JWT passed to the admin resolver is rejected with `AdminCredentialMalformedError`.
+* **Operator scripts cleaned:**
+  * All operator and migration scripts (`m10c_api_test.mjs`, `backfill-verified-provider-usage-proofs.mjs`, `cpm_m*.mjs`, `posts_migration_*.mjs`, `project_archive_*.mjs`) now strictly read canonical `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`.
+* **Source safety enforcement:**
+  * Automated source scans in `supabase-public-credential.test.ts` and `supabase-admin-credential.test.ts` verify 0 application readers for `SUPABASE_ANON_KEY` and 0 application readers for `SUPABASE_SERVICE_ROLE_KEY`.
+* **Verification:**
+  * TypeScript typecheck clean (0 errors).
+  * Production `next build` clean (all 57 pages compiled with 0 errors).
+  * Full test suite: 4921 / 4923 passed (exactly the 2 known Inspector label drift baseline failures).
+  * Migrations: none.
+  * Paid calls: 0.
+
+
+
+

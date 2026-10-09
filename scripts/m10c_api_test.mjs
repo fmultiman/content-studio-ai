@@ -12,14 +12,14 @@ import { createClient } from '@supabase/supabase-js'
 import adminGuard from './lib/production-admin-guard.cjs'
 
 const SUPABASE_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '' // public key (FUTURE-052B: publishable preferred)
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || ''
 const LOCAL_BASE = 'http://localhost:3000'
 const PROJECT_REF = 'nuhdhnasuohizxtmyiju'
 
 // FUTURE-050: no credential is embedded in this file any more. Supply them through the environment, and name the
 // project you are about to administer: node scripts/m10c_api_test.mjs --admin-project-ref=<ref>
-if (!ANON_KEY || !SERVICE_ROLE_KEY) throw new Error('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (legacy: NEXT_PUBLIC_SUPABASE_ANON_KEY) and SUPABASE_SECRET_KEY (legacy: SUPABASE_SERVICE_ROLE_KEY) are required in the environment')
+if (!ANON_KEY || !SERVICE_ROLE_KEY) throw new Error('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY are required in the environment')
 adminGuard.requireAdminAck({ script: 'm10c_api_test', target: SUPABASE_URL })
 
 // Admin client — service role, bypasses RLS for fixture setup/teardown
