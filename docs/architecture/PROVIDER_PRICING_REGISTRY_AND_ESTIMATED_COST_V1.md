@@ -173,3 +173,24 @@ Content Studio Credits, debits, margins, markup, plans, wallets, resale economic
 3. Free-tier BYOK users have a real cost of $0 that the estimate cannot see (labelled).
 4. Gemini tool-use prompt tokens and cache storage are unmodelled (explicit ambiguity / out of scope).
 5. Prices change: a stale registry silently stops matching only when a window is closed; otherwise it keeps estimating at the last known rate until someone re-verifies and adds a version.
+
+## Operational closure (2026-10-09)
+
+Migration `061_create_provider_pricing_versions` was applied to the Content
+Agent Studio Supabase project `nuhdhnasuohizxtmyiju`. The registry is active
+with 19 pricing versions: 18 Gemini versions and one Kling version. Every
+seeded version starts at `2026-10-09T00:00:00Z` with
+`effective_from_basis = observed_at_source`; provenance is stored with each
+version and the database overlap check reports no conflicting windows.
+
+The current Production corpus contains 11 usage events, all before the first
+evidenced pricing window. They therefore remain correctly unpriced, with no
+retroactive tariff inference and no mutation to `provider_usage_events`.
+Future executions that occur inside a valid pricing window may receive a
+derived estimate on read.
+
+The derived amount is a public list-price equivalent, not an invoice or a
+billing record. BYOK usage is shown as the user's provider usage context; the
+provider invoice can differ because of free tiers, plan terms, discounts,
+batch or priority settings, negotiated pricing, and other account-specific
+conditions.
