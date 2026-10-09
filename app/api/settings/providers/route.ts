@@ -4,6 +4,7 @@ import { AI_PROVIDERS, getProviderConfigurationStatuses } from '@/lib/credential
 import { primaryConnectionMethod } from '@/lib/credentials/provider-metadata'
 import { describeProviderExecutionPolicy } from '@/lib/providers/execution-policy'
 import { describeAdminCredential } from '@/lib/supabase/admin-credential'
+import { describePublicCredential } from '@/lib/supabase/public-credential'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
 // Returns configuration status only — never a secret value — for every
@@ -41,6 +42,9 @@ export async function GET() {
       // FUTURE-052: which admin-credential variable/shape this runtime uses (names and shape class only, never a value),
       // so a credential replacement can be verified without reading any secret.
       adminCredential: describeAdminCredential(),
+      // FUTURE-052B: same idea for the browser/SSR/middleware key — which NEXT_PUBLIC_* variable and shape class this build
+      // selected (names only, never a value; the publishable key is not a secret but is still not echoed).
+      publicCredential: describePublicCredential(),
     })
   } catch (error) {
     console.error('[Settings Providers] Error:', error)

@@ -253,7 +253,7 @@ At the end of phase 1 the application no longer depends on the compromised crede
 
 ### Phase 2 — invalidate the compromised credential (requires explicit approval)
 
-11. **[CODE — FUTURE-052B, not in this PR]** Move `lib/supabase/{client,server,middleware}.ts` from `NEXT_PUBLIC_SUPABASE_ANON_KEY` to
+11. **[CODE — FUTURE-052B, done on branch `feat/supabase-publishable-key-migration-v1`; see §13]** Move `lib/supabase/{client,server,middleware}.ts` from `NEXT_PUBLIC_SUPABASE_ANON_KEY` to
     `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (with a build-time-safe fallback), verify login/logout/refresh/middleware on a Preview, ship to Production,
     and wait until the "last used" indicator for the legacy `anon` key stops moving (browser caches/old tabs).
     *[ROLLBACK]* revert the PR (the anon key is still enabled at this point).
@@ -281,7 +281,7 @@ At the end of phase 1 the application no longer depends on the compromised crede
 ## 10. Residual risks
 
 1. **Until phase 2, the leaked credential is fully valid** (measured). Phase 1 alone only removes the app's dependence on it.
-2. Phase 2 is blocked on FUTURE-052B (browser/SSR `anon` → publishable). This is the largest scope the audit uncovered.
+2. Phase 2 was blocked on FUTURE-052B (browser/SSR `anon` → publishable); the code half is done (§13) but the live Preview + Production smoke gate is still open.
 3. Whether disabling the legacy pair also blocks the bare-Bearer path is undocumented; step 13 settles it empirically.
 4. The raw-REST operator scripts send `sb_` keys in `Authorization` — undocumented-but-working (§4); a future platform change would break
    the scripts (fail closed), not the app.
@@ -348,4 +348,144 @@ Smoke performed prior to PR #152 merge:
   * 0 console errors or credential leakage
   * 0 hardcoded service-role literals in source
   * 0 paid provider calls
+
+
+## 13. Phase B — FUTURE-052B `PUBLIC_SUPABASE_PUBLISHABLE_KEY_MIGRATION_V1`
+
+Baseline: `origin/main` = `3a57143905d7040c332bdc3d4bdcf3dab4e966cd` (Phase A merged; Production `dpl_C1ntx8iUzYzkvkcprwkdyWK159Bt`).
+Branch `feat/supabase-publishable-key-migration-v1`. **No migration, no Supabase/Vercel change, no key disabled, 0 paid calls, 0 DB writes.**
+The legacy `anon` / `service_role` keys stay enabled; this change only makes the application *capable* of running without `anon`.
+
+### 13.1 Legacy anon dependency inventory (non-test source, before)
+
+| Consumer | Class | Read |
+|---|---|---|
+| `lib/supabase/client.ts` (`createBrowserClient`) — used by ~40 pages/components for Auth + RLS reads/writes | PUBLIC_BROWSER | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `lib/supabase/server.ts` (`createServerClient`, cookie store) — SSR pages and every authenticated route handler | USER_SSR | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `lib/supabase/middleware.ts` (`updateSession`, via `proxy.ts`) — session refresh + protected-route redirects | MIDDLEWARE | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `scripts/m10c_api_test.mjs` (operator contract test) | SCRIPT | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+
+Nothing read the non-public `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY` (they exist in pulled env files only). There is **no** other `createClient`
+against the public key, no raw `fetch` to Supabase with a public key, and **no browser Supabase Storage usage**: the only `.storage` hits are a server
+helper (`lib/image-generation/execution.ts`) and a test harness; media uses server-signed URLs (`/api/storage/sign-image-path`, S3). So there are
+no browser Storage operations to re-prove; Storage access is unaffected by the public key and stays governed by the user JWT + Storage RLS.
+SERVER_ADMIN consumers (Phase A) were not touched. A server-only `SUPABASE_URL` alias is **not** needed: nothing reads it and `NEXT_PUBLIC_SUPABASE_URL` serves every client.
+
+### 13.2 Runtime-selection contract
+
+One resolver, `lib/supabase/public-credential.ts` (browser-safe, no imports):
+
+| Rule | Behaviour |
+|---|---|
+| Canonical variable | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — wins whenever non-empty |
+| Transitional fallback | `NEXT_PUBLIC_SUPABASE_ANON_KEY` — only when the canonical variable is absent/blank (**YES**, kept for rollout safety: Preview/Production/local may still be anon-only) |
+| Malformed canonical value | throws `PublicCredentialMalformedError` — **never** falls back (a fallback would hide the misconfiguration until the legacy keys are disabled) |
+| Accepted shapes | `sb_publishable_…` and a legacy JWT whose `role` claim is `anon` |
+| Rejected | `sb_secret_…`, a legacy JWT with `role: service_role`, anything unrecognised — the error names the variable and class, never the value |
+| Missing | `PublicCredentialNotConfiguredError` naming the canonical variable |
+
+`readPublicCredentialEnv()` spells both names as literal `process.env.NEXT_PUBLIC_…` accesses — Next.js only inlines literal member expressions into the
+browser bundle (verified: both names are inlined in `.next/static`; a test pins the literal form). `client.ts`, `server.ts` and `middleware.ts` call
+`getSupabasePublicKey()`; none of them can name an admin variable (source-scan test). `SUPABASE_SECRET_KEY` remains backend/admin only.
+
+Diagnostic (existing authenticated `GET /api/settings/providers`, next to `adminCredential`; no new endpoint):
+`publicCredential: { configured, variable, shape: "publishable-key" | "legacy-anon-jwt" | "invalid" | null, legacyVariableInUse }`.
+`legacyVariableInUse` is true when the legacy variable **or** the legacy anon JWT shape is selected (a legacy JWT pasted into the new variable dies with the legacy keys too).
+
+**Target state after merge (Preview and Production):** `publicCredential = { configured: true, variable: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", shape: "publishable-key", legacyVariableInUse: false }`.
+
+### 13.3 Auth / RLS evidence
+
+* The API key only identifies the project (`apikey` header). The signed-in user's JWT (cookie session, asymmetric ES256) is what `auth.getUser`, refresh and RLS use,
+  so `anon` / `authenticated` role semantics are unchanged; the publishable key carries no `BYPASSRLS` and is not an admin credential. No Auth, session-lifetime or JWT-signing change.
+* Cookie contracts (`getAll`/`setAll`) and middleware redirect lists are unchanged; tests pin them.
+* Automated evidence: `lib/__tests__/supabase-public-credential.test.ts` (56 cases) — resolver, fallback precedence, admin-key rejection, browser/SSR/middleware key receipt,
+  cookie wiring, refresh propagation, protected-route and login-bounce behaviour, diagnostic, source scans. These run against mocked `@supabase/ssr`; **live** RLS/Auth evidence is the operator smoke below.
+
+### 13.4 Validation
+
+Full suite 4834/4839 passed on the branch. Failures: the 2 known Inspector label failures (`Estilo` vs `Estilos`); the pre-existing timing flake
+`video-generation-workspace … Optimistic concurrency conflict (409)` (reproduced 1 of 3 runs on a clean `origin/main` worktree); and load-induced timeouts of
+`video-generation-session-generate` / worker start-ups because `tsc`/`eslint` ran concurrently (they pass in isolation). Typecheck clean, lint of the touched scope clean, `next build` passes.
+Client-bundle scan (`.next/static`, 74 files): `SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_JWT_SECRET` values — 0 files; identifiers
+`SUPABASE_SECRET_KEY` / `SERVICE_ROLE` / `JWT_SECRET` — 0 files; `sb_secret_` shape — 0; the publishable key is present (allowed, public by design). The legacy anon value is also inlined while the fallback exists.
+
+### 13.5 Legacy invalidation readiness criteria (all must hold before the operational mission disables `anon`/`service_role`)
+
+1. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` present in **Preview and Production** (and Development if used) — checked by name only.
+2. Preview deployment of this PR: authenticated `GET /api/settings/providers` returns the target `publicCredential` above; `adminCredential` still `SUPABASE_SECRET_KEY` / `secret-key` / `false`; `executionPolicy` preview/blocked.
+3. Preview smoke: login → dashboard (SSR), protected-route redirect when logged out, logout, session survives a reload (refresh), Image + Video generation-session autosave canary (mutate → *Salvo* → restore → hard reload), a Review/history read, Library/gallery read; 0 console/auth errors; DB deltas 0; 0 paid calls.
+4. Same on Production after merge (`publicCredential` target state).
+5. Supabase dashboard "last used" for the legacy `anon` key stops advancing (old tabs/caches drained).
+6. Only then: disable the legacy pair (reversible), run `scripts/verify-legacy-admin-key-rejected.mjs`, repeat 2–3 on Production, re-activate immediately on any failure.
+
+### 13.6 Phase C (FUTURE-052C) fallback-removal boundary
+
+After criterion 6 holds and `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_ANON_KEY` are removed from every Vercel scope: delete `LEGACY_PUBLIC_KEY_ENV`, its line in `readPublicCredentialEnv`, the
+`legacy-anon-jwt` shape and the `scripts/m10c_api_test.mjs` fallback, and flip the "readers" source-scan test to expect only the resolver. The admin-side fallback removal (`LEGACY_ADMIN_KEY_ENV`, §5) belongs to the same mission.
+
+### 13.7 Local environment
+
+An ordinary local app needs only `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for Auth/UI work; it does not need `SUPABASE_SECRET_KEY`. The FUTURE-050 local admin guard
+(`CONTENT_STUDIO_LOCAL_SERVICE_ROLE_PROJECT_REF`) is untouched.
+
+## 14. Preview compatibility and smoke evidence (PR #153, FUTURE-052B)
+
+Smoke performed prior to PR #153 merge:
+
+* **Preview deployment ID:** `dpl_8AKuQ4ynGspemHbX5AYPDZ54dDMT`
+* **Preview URL:** `https://content-studio-g9rawzm24-fmultimans-projects.vercel.app`
+* **Vercel bypass & app auth:** authenticated as `flavio.multiman`
+* **FUTURE-050 policy gate:**
+  * `executionPolicy.environment`: `"preview"`
+  * `executionPolicy.paidExecution`: `"blocked"` (FAIL-CLOSED preserved)
+* **Public-credential diagnostic (`GET /api/settings/providers`):**
+  * `publicCredential.configured`: `true`
+  * `publicCredential.variable`: `"NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"`
+  * `publicCredential.shape`: `"publishable-key"`
+  * `publicCredential.legacyVariableInUse`: `false`
+* **Admin-credential diagnostic (`GET /api/settings/providers`):**
+  * `adminCredential.configured`: `true`
+  * `adminCredential.variable`: `"SUPABASE_SECRET_KEY"`
+  * `adminCredential.shape`: `"secret-key"`
+  * `adminCredential.legacyVariableInUse`: `false`
+* **Auth / SSR / Middleware live verification:**
+  * Authenticated session exists and loads `/dashboard` with full SSR user data (projects, productions, recent items, metrics)
+  * Protected route redirection verified via isolated unauthenticated session: navigating to `/dashboard` and `/videos` redirected to `/login`
+  * Session survives hard reload without redirect loops or auth refresh errors
+* **RLS / user-scoped data:**
+  * `/projetos` loads active projects via RLS
+  * `/arquivos` loads folders and library files via RLS (24 folders)
+  * Review history loads (`/api/reviews/image?attemptId=ccba3d95-d354-43d0-8cb6-1a58f4f16624` returned historical review row)
+  * Image generation session loads (`/api/image-generation-sessions/f89db0b4-2621-4049-988b-eefcf8aa30da`)
+  * Video generation session loads (`/api/video-generation-sessions/11912666-ecbc-4b71-b810-3c24aecd41fc`)
+* **Reversible safe write canaries:**
+  * **IMAGE** (`/imagens/geracoes/f89db0b4-2621-4049-988b-eefcf8aa30da`):
+    * Original prompt recorded: `""`
+    * Temporary prompt edit: `" [F052B-PREVIEW-CANARY]"`
+    * Autosave transition: `Salvo` (succeeded)
+    * Reloaded and verified persisted temporary state: `"[F052B-PREVIEW-CANARY]"`
+    * Restored exact original prompt: `""`
+    * Autosave transition: `Salvo` (succeeded)
+    * Hard reload verification: persisted restored value `""`
+  * **VIDEO** (`/videos/geracoes/11912666-ecbc-4b71-b810-3c24aecd41fc`):
+    * Original model + prompt recorded: `Kling 3.0` and `""`
+    * Model change: `Kling 3.0` → `Kling 2.6` → autosaved `Salvo`
+    * Model restored: `Kling 2.6` → `Kling 3.0` → autosaved `Salvo`
+    * Temporary prompt edit: `" [F052B-PREVIEW-CANARY]"` → autosaved `Salvo`
+    * Prompt restored: `""` → autosaved `Salvo`
+    * Hard reload verification: persisted restored model `Kling 3.0` and prompt `""`
+* **Database before/after safety proof (delta = 0):**
+  * `media_reviews`: 17 image completed, 2 video completed, 0 pending, 0 running (19 total, delta = 0)
+  * `provider_usage_events`: 6 Gemini, 5 Kling (11 total, delta = 0)
+  * `video_generations`: 10 (delta = 0)
+  * `image_generation_attempts`: 23 (delta = 0)
+  * `generation_tasks`: 12 (delta = 0)
+* **Console / Network audit:**
+  * 0 uncaught errors or error boundaries
+  * 0 Supabase 401/403 errors
+  * 0 auth refresh loops or redirect loops
+  * 0 paid provider requests
+  * 0 Generate POSTs
+  * 0 Review POSTs
 
