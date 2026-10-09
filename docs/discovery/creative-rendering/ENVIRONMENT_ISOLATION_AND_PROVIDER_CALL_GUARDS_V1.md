@@ -196,3 +196,40 @@ stale-recovery and Review suites run unchanged.
 * Live provider check from a laptop: run `next dev` with `CONTENT_STUDIO_ALLOW_LOCAL_PAID_PROVIDER_CALLS=i-accept-real-provider-costs`
   **and** `CONTENT_STUDIO_LOCAL_SERVICE_ROLE_PROJECT_REF=<ref>`; both are intentionally long and non-boolean.
 * Admin script: `node scripts/<name>.mjs --admin-project-ref=<ref>`.
+
+## 13. Preview safety-smoke evidence (FUTURE-050)
+
+* **Preview deployment:** `dpl_37LFwKG6JSEWUbCM9fsjGta9TraV` (`content-studio-g8ieymx2q-fmultimans-projects.vercel.app`)
+* **Preview commit SHA:** `1760fdba7239343833f3bda423d1cd088c87ab31`
+* **Vercel bypass:** verified via share link (`_vercel_share=RNGdkKXaoHa9wH9tRbp469cRZZ6shgy3`)
+* **App authentication:** verified (authenticated as `flavio.multiman`)
+* **Execution policy gate (`GET /api/settings/providers`):**
+  * `executionPolicy.environment`: `"preview"`
+  * `executionPolicy.paidExecution`: `"blocked"`
+  * Returned HTTP 200 with non-secret provider statuses
+* **Image generation canary (session `f89db0b4-2621-4049-988b-eefcf8aa30da`):**
+  * Original prompt captured: `""`
+  * Mutated prompt: `" [F050-PREVIEW-CANARY]"`
+  * Autosave: succeeded, status reached `Salvo`, no error boundary
+  * Restored prompt: `""`
+  * Autosave: succeeded, status reached `Salvo`
+  * Reload persistence: verified, prompt remained `""` and state `Salvo`
+* **Video generation canary (session `11912666-ecbc-4b71-b810-3c24aecd41fc`):**
+  * Original model: `Kling 3.0`
+  * Original prompt: `""`
+  * Original connection: `Kling API (API)`
+  * Model mutation (Kling 3.0 → Kling 2.6): succeeded, autosave saved, no error boundary
+  * Model restore (Kling 2.6 → Kling 3.0): succeeded, autosave saved
+  * Prompt mutation: appended `" [F050-PREVIEW-CANARY]"`, autosave saved, no error boundary
+  * Prompt restore: restored to `""`, autosave saved
+  * Reload persistence: verified, model remained `Kling 3.0`, prompt `""`, API checked, MCP unchecked, state `Salvo`
+* **Actions withheld:** Generate NOT clicked; Review NOT clicked; 0 provider POST requests sent
+* **Browser console:** 0 uncaught errors, no "This page couldn’t load"
+* **Database no-write / no-execution proof (pre-smoke vs post-smoke):**
+  * `media_reviews`: 19 before (17 image completed, 2 video completed, 0 pending, 0 running) → 19 after (delta = 0)
+  * `provider_usage_events`: 11 before (6 Gemini, 5 Kling) → 11 after (delta = 0)
+  * `video_generations`: 10 before → 10 after (delta = 0)
+  * `image_generation_attempts`: 23 before → 23 after (delta = 0)
+  * `generation_tasks`: 12 before → 12 after (delta = 0)
+  * Paid calls: 0
+
