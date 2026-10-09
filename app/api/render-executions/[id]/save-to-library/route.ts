@@ -1,4 +1,4 @@
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { NextResponse } from 'next/server'
 import { ownedProductionIdOrNull } from '@/lib/library/production-scope'
 import { createClient } from '@/lib/supabase/server'
@@ -13,12 +13,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function createRenderExecutionReadClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return createServiceRoleSupabaseOrNull()
 }
 
 /**

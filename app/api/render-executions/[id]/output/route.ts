@@ -14,7 +14,7 @@
  * that execution. Never returns a storage path, bucket or credential.
  */
 import { NextResponse } from 'next/server'
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { createClient } from '@/lib/supabase/server'
 import { readS3Object } from '@/lib/storage/s3'
 
@@ -27,10 +27,7 @@ export const dynamic = 'force-dynamic'
 type RouteContext = { params: Promise<{ id: string }> }
 
 function createRenderExecutionReadClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  return createServiceRoleSupabaseOrNull()
 }
 
 export async function GET(_request: Request, context: RouteContext) {

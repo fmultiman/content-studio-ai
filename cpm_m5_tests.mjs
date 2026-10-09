@@ -7,6 +7,7 @@ import https from 'https'
 import http from 'http'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
+import { createRequire } from 'module'
 
 const ENV_FILE = 'c:/Users/flavi/OneDrive/Documentos/Content Agent Studio/content-studio-ai-git/.env.local'
 function readEnv(key) {
@@ -14,8 +15,12 @@ function readEnv(key) {
   const m = c.match(new RegExp(`^${key}=(.+)`, 'm'))
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
 }
-const SVC_KEY = readEnv('SUPABASE_SERVICE_ROLE_KEY')
+const SVC_KEY = readEnv('SUPABASE_SECRET_KEY') || readEnv('SUPABASE_SERVICE_ROLE_KEY')
 const SUPABASE_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
+
+// FUTURE-050/052: this suite writes fixtures to the Production project with admin authority, so it needs the same
+// typed acknowledgement as every script under scripts/:  node cpm_m5_tests.mjs --admin-project-ref=<ref>
+createRequire(import.meta.url)('./scripts/lib/production-admin-guard.cjs').requireAdminAck({ script: 'cpm_m5_tests', target: SUPABASE_URL })
 const PREFIX = '[TESTE CPM M5]'
 
 const PROJECT_A = 'd0d008c3-321b-46fe-8225-2f1a68e833ec'

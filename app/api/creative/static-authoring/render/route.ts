@@ -30,7 +30,7 @@
  * execution row itself) are always server-derived.
  */
 import { NextResponse } from 'next/server'
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { authoringRenderRequestSchema, type AuthoringRenderOverrides } from '@/lib/creative/authoring/render-request'
 import { createClient } from '@/lib/supabase/server'
 import { adaptProjectIdentityToVisualTokens } from '@/lib/creative/integration/project-identity-adapter'
@@ -66,10 +66,7 @@ const OVERRIDE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/web
 
 /** Server-only: execution rows are never insertable with the browser's session client (see 031/032). */
 function createRenderExecutionWriteClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  return createServiceRoleSupabaseOrNull()
 }
 
 function fail(status: number, code: string, error: string) {
@@ -157,7 +154,7 @@ export async function POST(request: Request) {
 
     const executionAdmin = createRenderExecutionWriteClient()
     if (!executionAdmin) {
-      console.error('[static-render enqueue] SUPABASE_SERVICE_ROLE_KEY is not configured')
+      console.error('[static-render enqueue] Supabase admin credential is not configured')
       return fail(503, 'RENDER_EXECUTION_SERVICE_UNAVAILABLE', 'Servico de renderizacao indisponivel.')
     }
 

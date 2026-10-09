@@ -305,7 +305,7 @@ are never merged into one generic settings object.
 
 | Authority | Example | Where | Who can read it |
 |---|---|---|---|
-| Infrastructure secret | `KLING_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` | server environment | server code only |
+| Infrastructure secret | `KLING_WEBHOOK_SECRET`, `SUPABASE_SECRET_KEY` (legacy name during transition: `SUPABASE_SERVICE_ROLE_KEY`; see `docs/discovery/security/PRODUCTION_SERVICE_ROLE_KEY_REPLACEMENT_V1.md`) | server environment | server code only |
 | Platform execution credential | `OPENAI_API_KEY`, `KLING_API_KEY` | environment, read only in `platform-credentials.ts`, reachable only through the gated `content_studio_credits` mode | nobody today (mode is disabled) |
 | **User API-key credential** | `user_settings.openai_api_key`, `kling_api_key`, ... | plaintext columns, RLS, resolved by `resolveProviderExecution` | server resolver only; never selected by the browser |
 | **User OAuth connection** | Kling MCP account grant | `provider_connections` (safe metadata, owner-readable) + `provider_connection_secrets` (AES-256-GCM ciphertext, **no client access at all**) | server token store only |

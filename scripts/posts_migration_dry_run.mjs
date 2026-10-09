@@ -31,13 +31,13 @@ function loadEnv() {
 const env    = loadEnv()
 const get    = k => env[k] ?? ''
 const SB_URL = get('SUPABASE_URL')
-const SVC    = get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC    = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
 const S3_EP  = get('S3_ENDPOINT') || 'https://s3.multihuman.com.br'
 const S3_BKT = get('S3_BUCKET_NAME') || 'content-studio'
 const S3_KEY = get('S3_ACCESS_KEY')
 const S3_SEC = get('S3_SECRET_KEY')
 
-if (!SB_URL || !SVC)    throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente no .env.local')
+if (!SB_URL || !SVC)    throw new Error('SUPABASE_URL ou SUPABASE_SECRET_KEY (ou SUPABASE_SERVICE_ROLE_KEY legado) ausente no .env.local')
 adminGuard.requireAdminAck({ script: 'posts_migration_dry_run.mjs', target: SB_URL })
 if (!S3_KEY || !S3_SEC) throw new Error('S3_ACCESS_KEY ou S3_SECRET_KEY ausente no .env.local')
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 import { createClient } from '@/lib/supabase/server'
 import { ownedProductionIdOrNull } from '@/lib/library/production-scope'
 import { deleteS3Object, uploadLibraryFile } from '@/lib/storage/s3'
@@ -21,10 +21,7 @@ import { UUID_RE, mapPgError, resolveMediaSource } from '../_helpers'
 
 /** render_executions is server-only (no browser SELECT policy, see 031/032). */
 function createRenderExecutionReadClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  return createServiceRoleSupabaseOrNull()
 }
 
 const ALLOWED_MIME_TYPES = new Set([

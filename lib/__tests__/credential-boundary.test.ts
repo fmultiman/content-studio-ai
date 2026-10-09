@@ -262,7 +262,17 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // NANOBANANA_CALLBACK_AUTHENTICATION_V1: the unauthenticated provider callback has no session, so it reads
       // the OWNER's own credential and updates only that owner's still-`processing` task, from the provider's
       // authenticated answer (never from the request body).
-      path === 'app/api/nanobanana/callback/route.ts'
+      path === 'app/api/nanobanana/callback/route.ts' ||
+      // PRODUCTION_SERVICE_ROLE_KEY_REPLACEMENT_V1: the render-execution surface (server-owned inserts/reads, RLS gives
+      // users no INSERT) and the Kling REST webhook used to build their own inline clients from the raw env var. They
+      // now share this factory, so the admin credential is resolved (and the local-runtime guard applied) in one place.
+      path === 'lib/render-execution/worker-db-client.ts' ||
+      path.startsWith('app/api/render-executions/') ||
+      path === 'app/api/video-drafts/[id]/render/route.ts' ||
+      path === 'app/api/creative/static-authoring/render/route.ts' ||
+      path === 'app/api/gallery/video-outputs/route.ts' ||
+      path === 'app/api/channel-piece-media/upload/route.ts' ||
+      path === 'app/api/kling/callback/route.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
 

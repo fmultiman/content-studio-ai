@@ -23,7 +23,7 @@ describe('GET /api/gallery/video-outputs', () => {
   })
 
   it('reads render_executions through the service-role client, never the browser session client', () => {
-    expect(routeSource).toMatch(/createServiceRoleClient/)
+    expect(routeSource).toMatch(/createServiceRoleSupabaseOrNull/)
     expect(routeSource).toMatch(/createRenderExecutionReadClient/)
   })
 

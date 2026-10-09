@@ -10,6 +10,7 @@
 
 import { createClient as createServiceRoleClient, type SupabaseClient } from '@supabase/supabase-js'
 import { classifyExecutionEnvironment, type PolicyEnv } from '@/lib/providers/execution-policy'
+import { resolveAdminCredential } from '@/lib/supabase/admin-credential'
 
 export class ServiceRoleNotConfiguredError extends Error {
   readonly code = 'SERVICE_ROLE_NOT_CONFIGURED'
@@ -47,12 +48,26 @@ export function assertServiceRolePermitted(env: PolicyEnv = process.env): void {
   if (!ref || env[LOCAL_SERVICE_ROLE_PROJECT_REF_ENV] !== ref) throw new ServiceRoleNotPermittedError()
 }
 
-export function createServiceRoleSupabase(): SupabaseClient {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) throw new ServiceRoleNotConfiguredError()
+// The key is passed to supabase-js untouched: it accepts the secret API key (sb_secret_...) and the legacy
+// service_role JWT alike (see admin-credential.ts). Throws AdminCredentialMalformedError for any other shape.
+function buildServiceRoleClient(supabaseUrl: string, key: string): SupabaseClient {
   assertServiceRolePermitted()
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
+  return createServiceRoleClient(supabaseUrl, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+}
+
+export function createServiceRoleSupabase(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const credential = resolveAdminCredential()
+  if (!supabaseUrl || !credential) throw new ServiceRoleNotConfiguredError()
+  return buildServiceRoleClient(supabaseUrl, credential.key)
+}
+
+/** Same client and the same local-runtime guard, for routes that answer 503 when the service is not configured. */
+export function createServiceRoleSupabaseOrNull(): SupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const credential = resolveAdminCredential()
+  if (!supabaseUrl || !credential) return null
+  return buildServiceRoleClient(supabaseUrl, credential.key)
 }

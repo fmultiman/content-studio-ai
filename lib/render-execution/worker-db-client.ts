@@ -13,14 +13,12 @@
  * through any path that ends up in a client component or page.
  */
 
-import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
+import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 
-/** Returns null when env vars are absent (caller responds 503). */
+/**
+ * Returns null when the Supabase URL or the admin credential is absent (caller responds 503). The credential is
+ * resolved by lib/supabase/admin-credential.ts (SUPABASE_SECRET_KEY, legacy SUPABASE_SERVICE_ROLE_KEY fallback).
+ */
 export function createWorkerApiDbClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
-  return createServiceRoleClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return createServiceRoleSupabaseOrNull()
 }
