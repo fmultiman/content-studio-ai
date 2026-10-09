@@ -17,7 +17,7 @@ import { createServiceRoleSupabaseOrNull } from '@/lib/supabase/service-role'
 
 /**
  * Returns null when the Supabase URL or the admin credential is absent (caller responds 503). The credential is
- * resolved by lib/supabase/admin-credential.ts (SUPABASE_SECRET_KEY, legacy SUPABASE_SERVICE_ROLE_KEY fallback).
+ * resolved by lib/supabase/admin-credential.ts (SUPABASE_SECRET_KEY).
  */
 export function createWorkerApiDbClient() {
   return createServiceRoleSupabaseOrNull()

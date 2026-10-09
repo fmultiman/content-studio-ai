@@ -326,7 +326,7 @@ describe('offline SQL emitter (for operators who can only run SQL)', () => {
 
 describe('CLI (offline mode — no network, never writes)', () => {
   // The real environment, with any server credential explicitly removed: the CLI must work (or refuse) without one.
-  const withoutServerCredentials = () => ({ ...process.env, SUPABASE_SECRET_KEY: undefined, SUPABASE_SERVICE_ROLE_KEY: undefined, NEXT_PUBLIC_SUPABASE_URL: undefined })
+  const withoutServerCredentials = () => ({ ...process.env, SUPABASE_SECRET_KEY: undefined, NEXT_PUBLIC_SUPABASE_URL: undefined })
 
   const run = (payload: unknown, extraArgs: string[] = []) => {
     const dir = mkdtempSync(join(tmpdir(), 'usage-proofs-'))
@@ -381,6 +381,6 @@ describe('CLI (offline mode — no network, never writes)', () => {
       env: withoutServerCredentials(),
     })
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toMatch(/SUPABASE_SECRET_KEY \(legacy: SUPABASE_SERVICE_ROLE_KEY\) are required/)
+    expect(result.stderr).toMatch(/SUPABASE_SECRET_KEY are required/)
   })
 })

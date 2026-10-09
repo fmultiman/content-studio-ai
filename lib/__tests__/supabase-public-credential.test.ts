@@ -3,7 +3,6 @@ import { join, relative } from 'node:path'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  LEGACY_PUBLIC_KEY_ENV,
   PUBLIC_PUBLISHABLE_KEY_ENV,
   PublicCredentialMalformedError,
   PublicCredentialNotConfiguredError,
@@ -14,7 +13,7 @@ import {
   resolvePublicCredential,
 } from '@/lib/supabase/public-credential'
 
-// FUTURE-052B — PUBLIC_SUPABASE_PUBLISHABLE_KEY_MIGRATION_V1.
+// FUTURE-052C — LEGACY_CREDENTIAL_FALLBACK_CLEANUP_V1.
 // No real credential appears here: every key is assembled at runtime from a prefix and filler, so no literal of
 // either shape exists in the source (the repo-wide scan below would reject one).
 
@@ -48,11 +47,10 @@ vi.mock('@supabase/ssr', () => ({
 const cookieStore = vi.hoisted(() => ({ getAll: vi.fn(() => [{ name: 'sb-access', value: 'cookie-value' }]), set: vi.fn() }))
 vi.mock('next/headers', () => ({ cookies: async () => cookieStore }))
 
-const stubPublicEnv = (env: { publishable?: string; legacy?: string }) => {
+const stubPublicEnv = (env: { publishable?: string }) => {
   vi.unstubAllEnvs()
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', URL_)
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', env.publishable ?? '')
-  vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', env.legacy ?? '')
 }
 
 beforeEach(() => {
@@ -65,9 +63,9 @@ afterEach(() => vi.unstubAllEnvs())
 
 describe('classifyPublicCredential', () => {
   it('accepts the sb_publishable shape', () => expect(classifyPublicCredential(PUBLISHABLE)).toBe('publishable-key'))
-  it('accepts a legacy anon JWT (transition only)', () => expect(classifyPublicCredential(LEGACY_ANON)).toBe('legacy-anon-jwt'))
-  it('6. rejects a secret API key', () => expect(classifyPublicCredential(fakeSecret())).toBe('secret-key'))
-  it('6. rejects a legacy service_role JWT even though it is structurally a valid JWT', () => {
+  it('identifies a legacy anon JWT so it can be refused', () => expect(classifyPublicCredential(LEGACY_ANON)).toBe('legacy-anon-jwt'))
+  it('rejects a secret API key', () => expect(classifyPublicCredential(fakeSecret())).toBe('secret-key'))
+  it('rejects a legacy service_role JWT even though it is structurally a valid JWT', () => {
     expect(classifyPublicCredential(SERVICE_ROLE_JWT)).toBe('service-role-jwt')
   })
   it.each([
@@ -80,44 +78,34 @@ describe('classifyPublicCredential', () => {
     [b64url({ alg: 'HS256' }), b64url({ role: 'authenticated' }), 'x'.repeat(20)].join('.'),
     [b64url({ alg: 'HS256' }), b64url({ nope: 1 }), 'x'.repeat(20)].join('.'),
     [b64url({ alg: 'HS256' }), '!!!', 'x'.repeat(20)].join('.'),
-  ])('5. rejects %j', (value) => {
+  ])('rejects %j', (value) => {
     expect(classifyPublicCredential(value)).toBe('unrecognised-format')
   })
 })
 
 describe('resolvePublicCredential — variable contract', () => {
-  it('4. missing key fails clearly (and blank counts as missing)', () => {
+  it('missing key fails clearly (and blank counts as missing)', () => {
     expect(() => resolvePublicCredential({})).toThrow(PublicCredentialNotConfiguredError)
-    expect(() => resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: '  ', [LEGACY_PUBLIC_KEY_ENV]: '' })).toThrow(/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/)
+    expect(() => resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: '  ' })).toThrow(/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/)
   })
 
-  it('1. publishable key is accepted from the canonical variable', () => {
-    expect(resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE })).toEqual({ key: PUBLISHABLE, variable: PUBLIC_PUBLISHABLE_KEY_ENV, shape: 'publishable-key' })
+  it('publishable key is accepted from the canonical variable', () => {
+    expect(resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE })).toEqual({
+      key: PUBLISHABLE,
+      variable: PUBLIC_PUBLISHABLE_KEY_ENV,
+      shape: 'publishable-key',
+    })
   })
 
   it('trims surrounding whitespace', () => {
     expect(resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: `  ${PUBLISHABLE}\n` }).key).toBe(PUBLISHABLE)
   })
 
-  it('2. publishable key wins over the legacy fallback when both are set', () => {
-    const resolved = resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE, [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON })
-    expect(resolved.variable).toBe(PUBLIC_PUBLISHABLE_KEY_ENV)
-    expect(resolved.key).toBe(PUBLISHABLE)
+  it('legacy anon JWT in the canonical variable is rejected', () => {
+    expect(() => resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: LEGACY_ANON })).toThrow(PublicCredentialMalformedError)
   })
 
-  it('3. legacy anon fallback is accepted during the transition', () => {
-    expect(resolvePublicCredential({ [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON })).toEqual({ key: LEGACY_ANON, variable: LEGACY_PUBLIC_KEY_ENV, shape: 'legacy-anon-jwt' })
-  })
-
-  it('a blank canonical variable falls through to the legacy one', () => {
-    expect(resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: '', [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON }).variable).toBe(LEGACY_PUBLIC_KEY_ENV)
-  })
-
-  it('a malformed canonical value never falls back to the legacy variable', () => {
-    expect(() => resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: 'typo', [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON })).toThrow(PublicCredentialMalformedError)
-  })
-
-  it('5. a malformed key fails with the variable name and no value', () => {
+  it('a malformed key fails with the variable name and no value', () => {
     const value = 'definitely-not-a-key-value'
     try {
       resolvePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: value })
@@ -132,9 +120,8 @@ describe('resolvePublicCredential — variable contract', () => {
   it.each([
     ['secret key in the canonical variable', { [PUBLIC_PUBLISHABLE_KEY_ENV]: fakeSecret() }, 'secret-key'],
     ['service_role JWT in the canonical variable', { [PUBLIC_PUBLISHABLE_KEY_ENV]: SERVICE_ROLE_JWT }, 'service-role-jwt'],
-    ['service_role JWT in the legacy variable', { [LEGACY_PUBLIC_KEY_ENV]: SERVICE_ROLE_JWT }, 'service-role-jwt'],
-    ['secret key in the legacy variable', { [LEGACY_PUBLIC_KEY_ENV]: fakeSecret() }, 'secret-key'],
-  ] as const)('6. admin credential rejected by the public resolver: %s', (_label, env, reason) => {
+    ['legacy anon JWT in the canonical variable', { [PUBLIC_PUBLISHABLE_KEY_ENV]: LEGACY_ANON }, 'legacy-anon-jwt'],
+  ] as const)('admin or legacy credential rejected by the public resolver: %s', (_label, env, reason) => {
     try {
       resolvePublicCredential(env)
       throw new Error('expected a throw')
@@ -150,9 +137,9 @@ describe('resolvePublicCredential — variable contract', () => {
     expect(getSupabasePublicKey({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE })).toBe(PUBLISHABLE)
   })
 
-  it('readPublicCredentialEnv reads exactly the two NEXT_PUBLIC_* names from process.env', () => {
-    stubPublicEnv({ publishable: PUBLISHABLE, legacy: LEGACY_ANON })
-    expect(readPublicCredentialEnv()).toEqual({ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE, NEXT_PUBLIC_SUPABASE_ANON_KEY: LEGACY_ANON })
+  it('readPublicCredentialEnv reads exactly NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY from process.env', () => {
+    stubPublicEnv({ publishable: PUBLISHABLE })
+    expect(readPublicCredentialEnv()).toEqual({ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE })
   })
 
   it('does not read the non-public SUPABASE_ANON_KEY / SUPABASE_PUBLISHABLE_KEY aliases', () => {
@@ -165,25 +152,12 @@ describe('resolvePublicCredential — variable contract', () => {
 
 describe('describePublicCredential (safe diagnostic)', () => {
   it('reports the target state: canonical variable, publishable shape, legacyVariableInUse=false', () => {
-    expect(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE, [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON })).toEqual({
+    expect(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE })).toEqual({
       configured: true,
       variable: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
       shape: 'publishable-key',
       legacyVariableInUse: false,
     })
-  })
-
-  it('reports the legacy fallback as in use', () => {
-    expect(describePublicCredential({ [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON })).toEqual({
-      configured: true,
-      variable: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-      shape: 'legacy-anon-jwt',
-      legacyVariableInUse: true,
-    })
-  })
-
-  it('treats a legacy anon JWT pasted into the canonical variable as legacy in use (it dies with the legacy keys)', () => {
-    expect(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: LEGACY_ANON })).toMatchObject({ variable: PUBLIC_PUBLISHABLE_KEY_ENV, shape: 'legacy-anon-jwt', legacyVariableInUse: true })
   })
 
   it('reports unconfigured and invalid without throwing', () => {
@@ -194,10 +168,16 @@ describe('describePublicCredential (safe diagnostic)', () => {
       shape: 'invalid',
       legacyVariableInUse: false,
     })
+    expect(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: LEGACY_ANON })).toEqual({
+      configured: true,
+      variable: PUBLIC_PUBLISHABLE_KEY_ENV,
+      shape: 'invalid',
+      legacyVariableInUse: false,
+    })
   })
 
   it('never contains any part of a credential value', () => {
-    const raw = JSON.stringify(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE, [LEGACY_PUBLIC_KEY_ENV]: LEGACY_ANON }))
+    const raw = JSON.stringify(describePublicCredential({ [PUBLIC_PUBLISHABLE_KEY_ENV]: PUBLISHABLE }))
     expect(raw).not.toContain('sb_publishable_')
     expect(raw).not.toContain('eyJ')
     expect(raw).not.toContain(PUBLISHABLE.slice(-8))
@@ -205,40 +185,23 @@ describe('describePublicCredential (safe diagnostic)', () => {
 })
 
 describe('browser client', () => {
-  it('7. receives the publishable key', async () => {
+  it('receives the publishable key', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/client')
     createClient()
     expect(captured.browserArgs).toEqual([[URL_, PUBLISHABLE]])
   })
 
-  it('9. never selects the legacy key when the publishable key exists', async () => {
-    stubPublicEnv({ publishable: PUBLISHABLE, legacy: LEGACY_ANON })
-    const { createClient } = await import('@/lib/supabase/client')
-    createClient()
-    expect(captured.browserArgs[0][1]).toBe(PUBLISHABLE)
-    expect(captured.browserArgs.flat()).not.toContain(LEGACY_ANON)
-  })
-
-  it('8. no admin secret reaches the browser client even if one is present in the environment', async () => {
+  it('no admin secret reaches the browser client even if one is present in the environment', async () => {
     vi.stubEnv('SUPABASE_SECRET_KEY', fakeSecret('Z'))
-    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_JWT)
     stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/client')
     createClient()
     const sent = JSON.stringify(captured.browserArgs)
     expect(sent).not.toContain('sb_secret_')
-    expect(sent).not.toContain(SERVICE_ROLE_JWT)
   })
 
-  it('falls back to the legacy anon key only when the publishable key is absent (transition)', async () => {
-    stubPublicEnv({ legacy: LEGACY_ANON })
-    const { createClient } = await import('@/lib/supabase/client')
-    createClient()
-    expect(captured.browserArgs).toEqual([[URL_, LEGACY_ANON]])
-  })
-
-  it('refuses to build a browser client from an admin credential', async () => {
+  it('refuses to build a browser client from an admin credential or legacy anon JWT', async () => {
     stubPublicEnv({ publishable: fakeSecret() })
     const { createClient } = await import('@/lib/supabase/client')
     expect(() => createClient()).toThrow(PublicCredentialMalformedError)
@@ -247,8 +210,8 @@ describe('browser client', () => {
 })
 
 describe('SSR user client', () => {
-  it('10. receives the publishable key and the project URL', async () => {
-    stubPublicEnv({ publishable: PUBLISHABLE, legacy: LEGACY_ANON })
+  it('receives the publishable key and the project URL', async () => {
+    stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/server')
     await createClient()
     expect(captured.serverArgs).toHaveLength(1)
@@ -256,7 +219,7 @@ describe('SSR user client', () => {
     expect(captured.serverArgs[0][1]).toBe(PUBLISHABLE)
   })
 
-  it('11. cookies stay wired: getAll reads the request cookie store and setAll writes through it', async () => {
+  it('cookies stay wired: getAll reads the request cookie store and setAll writes through it', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/server')
     await createClient()
@@ -266,7 +229,7 @@ describe('SSR user client', () => {
     expect(cookieStore.set).toHaveBeenCalledWith('sb-refresh', 'rotated', { path: '/' })
   })
 
-  it('11. setAll from a Server Component (cookie store throws) is swallowed, as before', async () => {
+  it('setAll from a Server Component (cookie store throws) is swallowed, as before', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     cookieStore.set.mockImplementation(() => {
       throw new Error('read-only cookies')
@@ -277,11 +240,10 @@ describe('SSR user client', () => {
     expect(() => cookies.setAll([{ name: 'a', value: 'b' }])).not.toThrow()
   })
 
-  it('12. the client is the stock @supabase/ssr client: the user JWT comes from the cookie session, the key is only `apikey`', async () => {
+  it('the client is the stock @supabase/ssr client: the user JWT comes from the cookie session, the key is only `apikey`', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/server')
     const client = await createClient()
-    // No global.headers / Authorization override is passed, so the authenticated user's JWT is what supabase-js forwards.
     const options = captured.serverArgs[0][2] as Record<string, unknown>
     expect(Object.keys(options)).toEqual(['cookies'])
     expect(client).toHaveProperty('auth.getUser')
@@ -291,8 +253,8 @@ describe('SSR user client', () => {
 describe('middleware (updateSession)', () => {
   const request = (path: string) => new NextRequest(`http://localhost${path}`, { headers: { cookie: 'sb-access=cookie-value' } })
 
-  it('13. receives the publishable key and reads the request cookies', async () => {
-    stubPublicEnv({ publishable: PUBLISHABLE, legacy: LEGACY_ANON })
+  it('receives the publishable key and reads the request cookies', async () => {
+    stubPublicEnv({ publishable: PUBLISHABLE })
     captured.getUser.mockResolvedValue({ data: { user: { id: 'u1' } } })
     const { updateSession } = await import('@/lib/supabase/middleware')
     await updateSession(request('/dashboard'))
@@ -302,7 +264,7 @@ describe('middleware (updateSession)', () => {
     expect(cookies.getAll()).toEqual([{ name: 'sb-access', value: 'cookie-value' }])
   })
 
-  it('14. session refresh: cookies rotated by supabase-js are written to the request AND the response', async () => {
+  it('session refresh: cookies rotated by supabase-js are written to the request AND the response', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     captured.getUser.mockImplementation(async () => {
       const { cookies } = captured.serverArgs[0][2] as { cookies: { setAll(c: { name: string; value: string; options?: object }[]): void } }
@@ -315,7 +277,7 @@ describe('middleware (updateSession)', () => {
     expect(response.cookies.get('sb-access')?.value).toBe('refreshed')
   })
 
-  it('15. protected routes redirect an anonymous visitor to /login', async () => {
+  it('protected routes redirect an anonymous visitor to /login', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     captured.getUser.mockResolvedValue({ data: { user: null } })
     const { updateSession } = await import('@/lib/supabase/middleware')
@@ -326,7 +288,7 @@ describe('middleware (updateSession)', () => {
     }
   })
 
-  it('15. an authenticated user passes protected routes and is bounced off /login and /signup', async () => {
+  it('an authenticated user passes protected routes and is bounced off /login and /signup', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     captured.getUser.mockResolvedValue({ data: { user: { id: 'u1' } } })
     const { updateSession } = await import('@/lib/supabase/middleware')
@@ -338,7 +300,7 @@ describe('middleware (updateSession)', () => {
     }
   })
 
-  it('15. public routes stay public for an anonymous visitor', async () => {
+  it('public routes stay public for an anonymous visitor', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     captured.getUser.mockResolvedValue({ data: { user: null } })
     const { updateSession } = await import('@/lib/supabase/middleware')
@@ -348,18 +310,17 @@ describe('middleware (updateSession)', () => {
 })
 
 describe('RLS / Auth contract under the publishable key', () => {
-  it('16/17. authenticated vs anonymous is decided by the user JWT (auth.getUser), not by the API key', async () => {
+  it('authenticated vs anonymous is decided by the user JWT (auth.getUser), not by the API key', async () => {
     stubPublicEnv({ publishable: PUBLISHABLE })
     const { createClient } = await import('@/lib/supabase/server')
     await createClient()
-    // The same key + cookie wiring serves both cases; the middleware/route decision hinges only on getUser().
     captured.getUser.mockResolvedValueOnce({ data: { user: { id: 'u1' } }, error: null }).mockResolvedValueOnce({ data: { user: null }, error: new Error('no session') })
     const client = (await import('@supabase/ssr')).createServerClient('', '', { cookies: { getAll: () => [], setAll: () => undefined } })
     expect((await client.auth.getUser()).data.user).toEqual({ id: 'u1' })
     expect((await client.auth.getUser()).data.user).toBeNull()
   })
 
-  it('18. login/signup/logout helpers keep using the browser factory unchanged', () => {
+  it('login/signup/logout helpers keep using the browser factory unchanged', () => {
     const login = readFileSync(join(process.cwd(), 'app/login/page.tsx'), 'utf8')
     expect(login).toMatch(/from '@\/lib\/supabase\/client'/)
     expect(login).toMatch(/signInWithPassword/)
@@ -369,7 +330,7 @@ describe('RLS / Auth contract under the publishable key', () => {
 
 describe('/api/settings/providers public credential diagnostic', () => {
   it('reports publicCredential with names and shape only', async () => {
-    stubPublicEnv({ publishable: PUBLISHABLE, legacy: LEGACY_ANON })
+    stubPublicEnv({ publishable: PUBLISHABLE })
     vi.resetModules()
     vi.doMock('@/lib/supabase/server', () => ({
       createClient: async () => ({
@@ -388,7 +349,6 @@ describe('/api/settings/providers public credential diagnostic', () => {
     })
     const raw = JSON.stringify(payload)
     expect(raw).not.toContain(PUBLISHABLE)
-    expect(raw).not.toContain(LEGACY_ANON)
     vi.doUnmock('@/lib/supabase/server')
     vi.doUnmock('@/lib/credentials/provider-credentials')
   })
@@ -415,9 +375,9 @@ const sources = walk(ROOT).filter((file) => !isTest(file) && !file.endsWith('.d.
 const rel = (file: string) => relative(ROOT, file).replace(/\\/g, '/')
 
 describe('source safety', () => {
-  it('the legacy NEXT_PUBLIC_SUPABASE_ANON_KEY name is read only by the public resolver (and one operator script)', () => {
+  it('no application source reads the legacy SUPABASE_ANON_KEY name', () => {
     const readers = sources.filter((file) => /SUPABASE_ANON_KEY/.test(readFileSync(file, 'utf8'))).map(rel).sort()
-    expect(readers).toEqual(['lib/supabase/public-credential.ts', 'scripts/m10c_api_test.mjs'])
+    expect(readers).toEqual([])
   })
 
   it('the Supabase client factories never reference the admin credential or any NEXT_PUBLIC key name directly', () => {
@@ -429,10 +389,10 @@ describe('source safety', () => {
     }
   })
 
-  it('Next.js can inline both public names: they are spelled as literal process.env member accesses', () => {
+  it('Next.js can inline the public name: it is spelled as a literal process.env member access', () => {
     const text = readFileSync(join(ROOT, 'lib/supabase/public-credential.ts'), 'utf8')
     expect(text).toContain('process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY')
-    expect(text).toContain('process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    expect(text).not.toContain('process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
     expect(text).not.toMatch(/process\.env\[/)
   })
 

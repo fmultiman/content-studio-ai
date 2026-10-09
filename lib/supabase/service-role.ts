@@ -48,8 +48,8 @@ export function assertServiceRolePermitted(env: PolicyEnv = process.env): void {
   if (!ref || env[LOCAL_SERVICE_ROLE_PROJECT_REF_ENV] !== ref) throw new ServiceRoleNotPermittedError()
 }
 
-// The key is passed to supabase-js untouched: it accepts the secret API key (sb_secret_...) and the legacy
-// service_role JWT alike (see admin-credential.ts). Throws AdminCredentialMalformedError for any other shape.
+// The key is passed to supabase-js untouched: it accepts the secret API key (sb_secret_...)
+// (see admin-credential.ts). Throws AdminCredentialMalformedError for any other shape.
 function buildServiceRoleClient(supabaseUrl: string, key: string): SupabaseClient {
   assertServiceRolePermitted()
   return createServiceRoleClient(supabaseUrl, key, {

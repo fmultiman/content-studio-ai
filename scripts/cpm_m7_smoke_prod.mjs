@@ -7,7 +7,7 @@
  * localmente no smoke visual — nao testaveis via script.
  *
  * Run: node scripts/cpm_m7_smoke_prod.mjs
- * Requires: .env.local com SUPABASE_SERVICE_ROLE_KEY, S3 credentials
+ * Requires: .env.local com SUPABASE_SECRET_KEY, S3 credentials
  */
 
 import http  from 'http'
@@ -25,7 +25,7 @@ const get = (k) => {
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
 }
 
-const SVC    = get('SUPABASE_SECRET_KEY') || get('SUPABASE_SERVICE_ROLE_KEY')
+const SVC    = get('SUPABASE_SECRET_KEY')
 const SB_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
 adminGuard.requireAdminAck({ script: 'cpm_m7_smoke_prod.mjs', target: SB_URL })
 const BASE   = 'https://content.multihuman.com.br'
