@@ -12,8 +12,8 @@ function row(overrides: PricingVersionRow = {}): PricingVersionRow {
   seq += 1
   return {
     id: `v-${seq}`, provider: 'gemini', model: 'gemini-3.5-flash', usage_category: 'input', service_tier: 'standard', currency: 'USD',
-    unit_name: 'tokens', unit_quantity: '1000000', price_amount: '1.5', effective_from: '2026-05-19T00:00:00Z', effective_to: null,
-    effective_from_basis: 'model_release_no_documented_change', source_url: 'https://ai.google.dev/gemini-api/docs/pricing',
+    unit_name: 'tokens', unit_quantity: '1000000', price_amount: '1.5', effective_from: '2026-10-09T00:00:00Z', effective_to: null,
+    effective_from_basis: 'observed_at_source', source_url: 'https://ai.google.dev/gemini-api/docs/pricing',
     source_label: 'Gemini API pricing', retrieved_at: '2026-10-09T00:00:00Z', notes: null, ...overrides,
   }
 }
@@ -31,7 +31,8 @@ function geminiRegistry(): PricingVersion[] {
   )
 }
 
-const EXECUTED = '2026-10-08T17:38:46.650Z'
+// After the evidenced effective_from (2026-10-09, the day the rates were observed at the source).
+const EXECUTED = '2026-10-12T17:38:46.650Z'
 const geminiEvent = (overrides: Partial<ProviderUsageCostInput> = {}): ProviderUsageCostInput => ({
   provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash', quantity: 18_432, unit: 'input_tokens',
   measurementSource: 'provider_reported', occurredAt: EXECUTED, funding: 'user_byok', serviceTier: 'standard', ...overrides,
@@ -206,10 +207,10 @@ describe('deriveProviderUsageCost — Gemini', () => {
     const cost = estimated(deriveProviderUsageCost(geminiEvent(), versions))
     expect(cost.pricing).toMatchObject({
       sourceUrl: 'https://ai.google.dev/gemini-api/docs/pricing', sourceLabel: 'Gemini API pricing', retrievedAt: '2026-10-09T00:00:00Z',
-      effectiveFrom: '2026-05-19T00:00:00.000Z', effectiveFromBasis: 'model_release_no_documented_change',
+      effectiveFrom: '2026-10-09T00:00:00.000Z', effectiveFromBasis: 'observed_at_source',
     })
     expect(cost.pricing.versionIds).toEqual(cost.components.map((c) => c.pricingVersionId))
-    expect(cost.assumptions).toContain('effective_from_inferred')
+    expect(cost.assumptions).toContain('price_observed_at_source')
   })
 
   it('13./15. currency is preserved; BYOK stays an ESTIMATE (never zero, never "charged")', () => {
@@ -243,7 +244,7 @@ describe('deriveProviderUsageCost — Gemini', () => {
 })
 
 describe('deriveProviderUsageCost — Kling and unsupported providers', () => {
-  const kling = [version({ provider: 'kling', model: 'kling-v3', usage_category: 'unit', unit_name: 'units', unit_quantity: '1', price_amount: '0.14', effective_from: '2026-10-09T00:00:00Z', effective_from_basis: 'retrieval_date', source_url: 'https://kling.ai/document-api/pricing/base/video' })]
+  const kling = [version({ provider: 'kling', model: 'kling-v3', usage_category: 'unit', unit_name: 'units', unit_quantity: '1', price_amount: '0.14', effective_from: '2026-10-09T00:00:00Z', effective_from_basis: 'observed_at_source', source_url: 'https://kling.ai/document-api/pricing/base/video' })]
   const klingRest = (overrides: Partial<ProviderUsageCostInput> = {}): ProviderUsageCostInput => ({
     provider: 'kling', transport: 'rest', operation: 'text_to_video', model: 'kling-v3', quantity: 3, unit: 'units', measurementSource: 'provider_reported', occurredAt: '2026-10-10T00:00:00Z', ...overrides,
   })
@@ -251,7 +252,7 @@ describe('deriveProviderUsageCost — Kling and unsupported providers', () => {
   it('prices provider-reported API units at the published unit price - as a list-price estimate', () => {
     const cost = estimated(deriveProviderUsageCost(klingRest(), kling))
     expect(cost.amount).toBe('0.42')
-    expect(cost.assumptions).toEqual(expect.arrayContaining(['package_discounts_not_applied', 'effective_from_inferred']))
+    expect(cost.assumptions).toEqual(expect.arrayContaining(['price_observed_at_source', 'list_price_equivalent']))
     expect(cost.assumptions).not.toContain('paid_tier_list_price')
     expect(cost.assumptions).not.toContain('byok_invoice_may_differ')
   })
@@ -344,7 +345,7 @@ describe('presentation', () => {
     const details = estimatedCostDetails(cost).join('\n')
     expect(details).toMatch(/não é o valor cobrado/)
     expect(details).toMatch(/Fonte: Gemini API pricing \(https:\/\/ai\.google\.dev/)
-    expect(details).toMatch(/Preço em vigor desde 19\/05\/2026; consultado em 09\/10\/2026/)
+    expect(details).toMatch(/Preço em vigor desde 09\/10\/2026; consultado em 09\/10\/2026/)
     expect(details).toMatch(/BYOK/)
     expect(details).toMatch(/Valor cobrado não disponível/)
     expect(details).not.toMatch(/foi cobrado|cobrado pelo provedor|valor real cobrado:/i)
@@ -352,5 +353,80 @@ describe('presentation', () => {
     expect(unpricedReason({ status: 'ambiguous', reason: 'service_tier_not_proven' })).toMatch(/nível de serviço/)
     expect(unpricedReason(estimated(deriveProviderUsageCost(geminiEvent(), geminiRegistry())))).toBeNull()
     expect(unpricedReason(undefined)).toMatch(/não pôde ser carregada/)
+  })
+})
+
+describe('effective-date truthfulness (FUTURE-047 fix)', () => {
+  // The Production Gemini Review rows are from 2026-10-08, one day BEFORE the rates were observed at the source.
+  const OBSERVED = '2026-10-09T00:00:00Z'
+  const observed = () => geminiRegistry() // every default version starts at OBSERVED with basis observed_at_source
+
+  it('1. the observed price does not apply before its effective_from (not even by a second)', () => {
+    for (const occurredAt of ['2026-10-08T17:38:46.650Z', '2026-10-08T23:59:59.999Z', '2026-05-19T00:00:00Z', '2026-07-21T00:00:00Z']) {
+      expect(deriveProviderUsageCost(geminiEvent({ occurredAt }), observed())).toEqual({ status: 'unavailable', reason: 'pricing_not_effective_at_execution' })
+    }
+  })
+
+  it('2. the version applies on and after effective_from (inclusive start)', () => {
+    expect(estimated(deriveProviderUsageCost(geminiEvent({ occurredAt: OBSERVED, quantity: 1_000_000 }), observed())).amount).toBe('1.5')
+    expect(estimated(deriveProviderUsageCost(geminiEvent({ occurredAt: '2026-10-09T00:00:00.001Z', quantity: 1_000_000 }), observed())).amount).toBe('1.5')
+    expect(estimated(deriveProviderUsageCost(geminiEvent({ occurredAt: '2027-03-01T00:00:00Z', quantity: 1_000_000 }), observed())).amount).toBe('1.5')
+  })
+
+  it('3. no GA-date backdating: the model release date is not a pricing start', () => {
+    // gemini-3.5-flash GA = 2026-05-19, gemini-3.5-flash-lite GA = 2026-07-21 (official changelog): proves the model shipped, not its price.
+    for (const [model, occurredAt] of [['gemini-3.5-flash', '2026-06-01T00:00:00Z'], ['gemini-3.5-flash-lite', '2026-08-01T00:00:00Z']] as const) {
+      const lite = observed().map((v) => ({ ...v, model }))
+      expect(deriveProviderUsageCost(geminiEvent({ model, occurredAt }), lite)).toEqual({ status: 'unavailable', reason: 'pricing_not_effective_at_execution' })
+    }
+  })
+
+  it('the cost explains why: the price is "observed at source", never "since the model GA"', () => {
+    const cost = estimated(deriveProviderUsageCost(geminiEvent(), observed()))
+    expect(cost.pricing.effectiveFromBasis).toBe('observed_at_source')
+    expect(cost.assumptions).toContain('price_observed_at_source')
+    expect(estimatedCostDetails(cost).join('\n')).toMatch(/observado na página oficial; execuções anteriores não são estimadas/)
+    expect(estimatedCostDetails(cost).join('\n')).not.toMatch(/lançamento|desde o GA|desde o lançamento/i)
+  })
+
+  it('4. historical usage stays unavailable without an evidenced rate - and summaries do not turn it into zero', () => {
+    const history = [
+      geminiEvent({ occurredAt: '2026-10-08T17:38:46.650Z' }),
+      geminiEvent({ occurredAt: '2026-10-08T17:38:46.650Z', unit: 'output_tokens', quantity: 612 }),
+      geminiEvent({ occurredAt: '2026-10-08T17:39:03.609Z', unit: 'tokens', usageCategory: 'thoughts', quantity: 240 }),
+    ].map((e) => deriveProviderUsageCost(e, observed()))
+    expect(history.every((c) => c.status === 'unavailable' && c.reason === 'pricing_not_effective_at_execution')).toBe(true)
+    const summary = summarizeEstimatedCost(history)
+    expect(summary.totals).toEqual([])
+    expect(summary.pricedEvents).toBe(0)
+    expect(summary.unpricedEvents).toBe(3)
+  })
+
+  it('5. a later, authoritative historical version fills the gap without touching the usage event', () => {
+    const event = geminiEvent({ occurredAt: '2026-10-08T17:38:46.650Z', quantity: 1_000_000 })
+    const frozenEvent = JSON.stringify(event)
+    const before = deriveProviderUsageCost(event, observed())
+    expect(before.status).toBe('unavailable')
+
+    // Registry change only: a NEW version covering [2026-05-19, 2026-10-09) from an official historical source.
+    const historical = version({
+      effective_from: '2026-05-19T00:00:00Z', effective_to: OBSERVED, price_amount: '1.25', effective_from_basis: 'official_effective_date',
+      source_label: 'Official price history entry', retrieved_at: '2026-11-01T00:00:00Z',
+    })
+    const after = deriveProviderUsageCost(event, [...observed(), historical])
+    expect(estimated(after).amount).toBe('1.25')
+    expect(estimated(after).pricing.effectiveFromBasis).toBe('official_effective_date')
+    expect(estimated(after).assumptions).not.toContain('price_observed_at_source')
+    // The execution just after OBSERVED still uses the observed rate: no window overlaps, nothing is rewritten.
+    expect(estimated(deriveProviderUsageCost(geminiEvent({ occurredAt: OBSERVED, quantity: 1_000_000 }), [...observed(), historical])).amount).toBe('1.5')
+    // The usage event itself is never mutated.
+    expect(JSON.stringify(event)).toBe(frozenEvent)
+  })
+
+  it('an explicitly evidenced earlier date is honoured (official_effective_date)', () => {
+    const evidenced = geminiRegistry().map((v) => ({ ...v, effectiveFrom: Date.parse('2026-08-01T00:00:00Z'), effectiveFromBasis: 'official_effective_date' as const }))
+    const cost = estimated(deriveProviderUsageCost(geminiEvent({ occurredAt: '2026-08-15T00:00:00Z' }), evidenced))
+    expect(cost.pricing.effectiveFrom).toBe('2026-08-01T00:00:00.000Z')
+    expect(cost.assumptions).not.toContain('price_observed_at_source')
   })
 })

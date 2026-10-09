@@ -29,10 +29,10 @@ Exactly two writers exist (also pinned by `provider-usage-ledger.test.ts`): Klin
 
 | provider | model | operation | usage category | usage unit | rows | service tier fact | funding fact | pricing derivable? | reason if not |
 |---|---|---|---|---|---|---|---|---|---|
-| gemini | gemini-3.5-flash | video_review (image_review same shape) | input | `input_tokens` | 2 | **yes** (`usageMetadata.serviceTier`, `standard`) | yes (`user_byok`) | **yes** | — |
-| gemini | gemini-3.5-flash | video_review / image_review | output | `output_tokens` | 2 | yes | yes | **yes** | — |
-| gemini | gemini-3.5-flash | video_review / image_review | thoughts | `tokens` + `usage_category=thoughts` | 2 | yes | yes | **yes** (priced as output) | — |
-| gemini | gemini-3.5-flash-lite | image/video review | input / output / thoughts | same | 0 | yes when present | yes | **yes** | — |
+| gemini | gemini-3.5-flash | video_review (image_review same shape) | input | `input_tokens` | 2 | **yes** (`usageMetadata.serviceTier`, `standard`) | yes (`user_byok`) | **yes for executions on/after 2026-10-09** | the 2 existing rows are from 2026-10-08, before the first evidenced rate: `pricing_not_effective_at_execution` |
+| gemini | gemini-3.5-flash | video_review / image_review | output | `output_tokens` | 2 | yes | yes | **yes for executions on/after 2026-10-09** | existing rows predate it → unavailable |
+| gemini | gemini-3.5-flash | video_review / image_review | thoughts | `tokens` + `usage_category=thoughts` | 2 | yes | yes | **yes on/after 2026-10-09** (priced as output) | existing rows predate it → unavailable |
+| gemini | gemini-3.5-flash-lite | image/video review | input / output / thoughts | same | 0 | yes when present | yes | **yes on/after 2026-10-09** | — |
 | gemini | any | any | unknown usage | NULL | 0 | — | yes | no | `usage_unknown` |
 | kling | kling-v3 | text_to_video, image_to_video (REST) | — | `units` (`provider_reported`) | 2 | none (Kling has one tier) | none recorded | **yes for executions on/after 2026-10-09** | the 2 existing rows are from 2026-09-28: no price version was effective → `pricing_not_effective_at_execution` |
 | kling | kling-video-v3_0 | text_to_video (MCP) | — | `credits` (`balance_delta`) | 1 | none | none | **no** | MCP credits have no published USD mapping; and a balance delta is an inference, not a provider-reported charge |
@@ -64,7 +64,7 @@ Cost of the choice: one additive migration and PGlite coverage — both done. A 
 | `service_tier` | `standard` (provider default), `flex`, `priority`… only when the provider prices them apart |
 | `currency` (`^[A-Z]{3}$`), `unit_name`, `unit_quantity`, `price_amount` | *price_amount of unit_quantity of unit_name* (e.g. 1.50 USD / 1,000,000 tokens); `NUMERIC(24,12)` |
 | `effective_from`, `effective_to` | half-open window `[from, to)`; NULL `to` = current |
-| `effective_from_basis` | `official_effective_date` / `model_release_no_documented_change` / `retrieval_date` |
+| `effective_from_basis` | `official_effective_date` (the provider explicitly published the date) / `observed_at_source` (the day the rate was observed at the official source) |
 | `source_url` (https), `source_label`, `retrieved_at`, `notes` | provenance |
 
 Rules: `UNIQUE (provider, model, usage_category, service_tier, effective_from)`; windows of the same key may **never overlap, in any currency** (trigger, SQLSTATE `23P01`); `effective_to > effective_from`; RLS on, a single `SELECT` policy for `authenticated`; `GRANT SELECT` only. A price change is a **new row**; the previous row is closed with `effective_to` (by a reviewed migration). Rollback: `DROP TABLE provider_pricing_versions; DROP FUNCTION provider_pricing_versions_reject_overlap();`.
@@ -81,10 +81,10 @@ Rules: `UNIQUE (provider, model, usage_category, service_tier, effective_from)`;
 | Provider | Official source | What was taken |
 |---|---|---|
 | Gemini | `https://ai.google.dev/gemini-api/docs/pricing` (page dated 2026-10-09) | Paid-tier prices per 1M tokens for `gemini-3.5-flash` (std in $1.50 / cache $0.15 / out $9.00; flex $0.75 / $0.08 / $4.50; priority $2.70 / $0.27 / $16.20) and `gemini-3.5-flash-lite` (std $0.30 / $0.03 / $2.50; flex $0.15 / $0.02 / $1.25; priority $0.54 / $0.05 / $4.50). "Output price **(including thinking tokens)**" is a single rate. Input is one rate for text/image/video/audio. No prompt-size threshold. |
-| Gemini | `https://ai.google.dev/gemini-api/docs/changelog` | `gemini-3.5-flash` GA released **2026-05-19**; `gemini-3.5-flash-lite` GA **2026-07-21**; no price change listed for either since. |
+| Gemini | `https://ai.google.dev/gemini-api/docs/changelog` | Model GA dates only (`gemini-3.5-flash` 2026-05-19, `gemini-3.5-flash-lite` 2026-07-21). These prove when a model shipped, **not what it cost then**, and are deliberately **not** used as pricing start dates. |
 | Kling | `https://kling.ai/document-api/pricing/base/video` (JS-rendered; read in the in-app browser) | Prices are quoted in provider units with their USD equivalent at **1 unit = $0.14** (e.g. Kling 3.0 720P, no native audio: "0.6 Units ($0.084) /s"). The page is undated. |
 
-Not represented (deliberately): Gemini free tier ($0, not distinguishable from usage metadata), Gemini **batch** (a separate API surface that never reports a `serviceTier`), context-cache **storage** (per token-hour; the ledger records no cache duration), grounding/search per-request fees, Kling resource-package discounts (a larger package lowers the effective unit price), any negotiated pricing.
+Not represented (deliberately): Gemini free tier ($0, not distinguishable from usage metadata), Gemini **batch** (a separate API surface that never reports a `serviceTier`), context-cache **storage** (per token-hour; the ledger records no cache duration), grounding/search per-request fees, any negotiated or account-specific pricing, and anything about Kling beyond what the official pricing page itself prints (unit → USD list price).
 
 ## Effective-date contract
 
@@ -95,13 +95,18 @@ Not represented (deliberately): Gemini free tier ($0, not distinguishable from u
 - Two versions at that instant → `ambiguous / overlapping_pricing_versions` (the database makes this unreachable; the deriver refuses to guess anyway).
 - A "current equivalent" view (reprice history at today's rate) was **not** requested and is not offered.
 
-**Honesty about `effective_from`:** no provider page publishes a price history. The basis is stored so the UI can say so:
+**Pricing versions begin when a rate is factually observed or otherwise proven.** No provider page publishes a price history, so:
+
+- *Absence of evidence of a price change is not evidence of price continuity.* A changelog that lists no pricing entry does not prove that today's rate applied last month, so no rate is back-dated, and a model's GA date is never used as a price start.
+- Every seeded rate (Gemini and Kling) starts on **2026-10-09**, the day it was read at the official source, with basis `observed_at_source`.
+- Earlier executions stay **unavailable** (`pricing_not_effective_at_execution`) until authoritative historical pricing is added later as a **new version** (e.g. `[2026-05-19, 2026-10-09)` with basis `official_effective_date` and its own source). That is a registry-only change: it never mutates `provider_usage_events`, and the overlap trigger guarantees it cannot collide with the observed window.
+- If an official source explicitly states an earlier effective date for a specific rate, that exact date may be used with basis `official_effective_date`. None exists today.
 
 | Basis | Used for | Meaning |
 |---|---|---|
-| `model_release_no_documented_change` | Gemini 3.5 Flash (2026-05-19), 3.5 Flash-Lite (2026-07-21) | Model GA date from the official changelog; the changelog lists no price change since. This is an inference from absence and is surfaced as an assumption (`effective_from_inferred`). |
-| `retrieval_date` | Kling units (2026-10-09) | The page is undated, so the earliest instant we can prove is the day we read it. Earlier Kling executions are therefore **not** priced. |
+| `observed_at_source` | all 19 seeded rates (2026-10-09) | The rate was read at the official page that day; the page publishes no date or history. Surfaced to the user as an assumption (`price_observed_at_source`). |
 | `official_effective_date` | (none yet) | The provider published the date. |
+
 
 ## Derivation architecture
 
@@ -139,15 +144,15 @@ Costs are **not** stored. Options weighed: (a) derive on read from the versioned
 
 Existing rows are untouched and not backfilled with invented metadata. They are priced only if a version existed at their `occurred_at`:
 
-- 6 Gemini rows (2026-10-08, standard tier, BYOK): priced.
-- 2 Kling REST unit rows (2026-09-28): unavailable — the earliest provable Kling price is 2026-10-09.
+- 6 Gemini rows (2026-10-08, standard tier, BYOK): **unavailable** — the first evidenced rate is 2026-10-09 (`pricing_not_effective_at_execution`). Their usage (tokens, tier, funding) is shown exactly as before; no total is invented. A future authoritative historical rate would price them without any change to these rows.
+- 2 Kling REST unit rows (2026-09-28): unavailable — the first evidenced Kling rate is 2026-10-09.
 - 1 Kling MCP credit row (`balance_delta`): unavailable — no authoritative credit→USD mapping.
 - 2 Kling MCP rows with unknown usage: unavailable (`usage_unknown`).
 
 ## Provider notes
 
 - **OpenAI gap (documented, not fixed):** `lib/reviews/service.ts` records usage only for `gemini`; the OpenAI Review adapter returns `usage` but nothing stores it. A usage-instrumentation mission must come first; the registry already supports OpenAI structurally (add rows + a billing adapter).
-- **Kling:** unit price is a *list* price; resource-package discounts (reported by a search summary of Kling's purchase page, **not verified directly** in this mission) are not applied and are listed as an assumption on every Kling estimate. Credits (MCP) cannot be mapped — Kling publishes no credit→currency conversion on the API pricing page.
+- **Kling:** the only mapping used is the one printed on the official pricing page (units quoted with a USD equivalent at 1 unit = $0.14), applied to API `units` reported by the provider. Nothing else about Kling pricing (packages, discounts, plans) is claimed or modelled. Credits (MCP) cannot be mapped — the API pricing page publishes no credit→currency conversion.
 - No provider execution was modified.
 
 ## Settings → Uso e custos
@@ -163,8 +168,8 @@ Content Studio Credits, debits, margins, markup, plans, wallets, resale economic
 
 ## Residual risks
 
-1. `effective_from` for Gemini is inferred (GA date + no documented change). If Google changed the 3.5 Flash price between GA and 2026-10-09, executions in between would be mispriced; the basis is stored and shown.
+1. Rates are only known from 2026-10-09 onward. Executions before that date (including every Production Gemini Review row to date) have no estimate; this is intentional and stays so until authoritative historical pricing is added.
 2. Kling's pricing page is JS-rendered and undated; figures were read from the rendered official page only once.
 3. Free-tier BYOK users have a real cost of $0 that the estimate cannot see (labelled).
-4. Gemini tool-use prompt tokens, Kling package discounts and cache storage are unmodelled (explicit assumptions / ambiguity).
+4. Gemini tool-use prompt tokens and cache storage are unmodelled (explicit ambiguity / out of scope).
 5. Prices change: a stale registry silently stops matching only when a window is closed; otherwise it keeps estimating at the last known rate until someone re-verifies and adds a version.

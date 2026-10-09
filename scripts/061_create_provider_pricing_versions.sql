@@ -9,8 +9,9 @@
 --   * rows for the same (provider, model, usage_category, service_tier) may never overlap (trigger below):
 --     an ambiguous window is rejected at write time instead of being guessed at read time;
 --   * every row carries its provenance: the OFFICIAL source url/label, when it was retrieved, and the basis
---     of effective_from (a date the provider published, the model's release date with no documented price
---     change since, or - when the provider publishes no history at all - the day the price was observed).
+--     of effective_from: a date the provider EXPLICITLY published, or - when the source publishes no price
+--     history, which is the usual case - the day the price was observed at the source. A price is never
+--     back-dated: absence of a documented change is NOT evidence that a price stayed the same.
 --
 -- This table is NOT billing. It does not store what a provider charged anybody. Nothing here touches
 -- provider_usage_events (no column added, no row changed): cost is DERIVED ON READ from usage x pricing.
@@ -18,7 +19,7 @@
 -- Access model: public reference data (no tenant column). Signed-in users may read; nobody may write at
 -- runtime - not even the service role. The only write path is a reviewed migration.
 --
--- Prices are list prices. Free tiers, negotiated terms and discounts are not represented (see notes).
+-- Prices are list prices. Free tiers and negotiated terms are not represented (see notes).
 --
 -- Rollback (derived costs disappear from Settings; usage history is unaffected):
 --   DROP TABLE IF EXISTS provider_pricing_versions;
@@ -48,8 +49,7 @@ CREATE TABLE IF NOT EXISTS provider_pricing_versions (
   effective_to TIMESTAMPTZ,
   effective_from_basis TEXT NOT NULL CHECK (effective_from_basis IN (
     'official_effective_date',
-    'model_release_no_documented_change',
-    'retrieval_date'
+    'observed_at_source'
   )),
   CONSTRAINT provider_pricing_versions_window CHECK (effective_to IS NULL OR effective_to > effective_from),
 
@@ -115,43 +115,44 @@ GRANT SELECT ON TABLE provider_pricing_versions TO service_role;
 -- Gemini API, Paid Tier, USD per 1,000,000 tokens, https://ai.google.dev/gemini-api/docs/pricing
 --   * the page prices "Output (including thinking tokens)" as ONE rate, so thinking tokens are priced as output;
 --   * input is one rate for text / image / video / audio (3.5 Flash and 3.5 Flash-Lite); no prompt-size threshold;
---   * the page publishes no price history. effective_from is the model's GA date taken from the official
---     changelog (https://ai.google.dev/gemini-api/docs/changelog): gemini-3.5-flash 2026-05-19,
---     gemini-3.5-flash-lite 2026-07-21. The changelog lists no price change for either model since.
+--   * the page publishes no price history and no effective date, so every Gemini version starts on the day
+--     it was OBSERVED at the source (2026-10-09, basis observed_at_source). The model GA dates in the official
+--     changelog (gemini-3.5-flash 2026-05-19, gemini-3.5-flash-lite 2026-07-21) prove when a model shipped,
+--     NOT what it cost then, so they are deliberately NOT used. Earlier executions stay unpriced until an
+--     authoritative historical rate is added as a new version.
 --   * Batch pricing is not seeded: it is a separate API surface that never reports a serviceTier.
 --   * Context-cache STORAGE (per token-hour) is not seeded: the ledger records no cache duration.
 --
 -- Kling API, https://kling.ai/document-api/pricing/base/video (rendered page, read 2026-10-09):
 --   every price is quoted in provider units with its USD equivalent at 1 unit = $0.14 (e.g. Kling 3.0, 720P,
---   no native audio: "0.6 Units ($0.084) /s"). The page publishes no date, so effective_from is the retrieval
---   date. Resource-package discounts (a larger package lowers the effective unit price) live on the purchase
---   page and are not represented: this is the list price. Kling MCP "credits" have NO published USD mapping
---   and are deliberately not priced.
+--   no native audio: "0.6 Units ($0.084) /s"). The page publishes no date, so effective_from is the day it
+--   was observed (basis observed_at_source). Kling MCP "credits" have NO published USD mapping and are
+--   deliberately not priced.
 
 INSERT INTO provider_pricing_versions
   (provider, model, usage_category, service_tier, currency, unit_name, unit_quantity, price_amount,
    effective_from, effective_from_basis, source_url, source_label, retrieved_at, notes)
 VALUES
   -- gemini-3.5-flash
-  ('gemini', 'gemini-3.5-flash', 'input',        'standard', 'USD', 'tokens', 1000000,  1.500000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens. Free tier is $0 and is not distinguishable from usage metadata.'),
-  ('gemini', 'gemini-3.5-flash', 'cached_input', 'standard', 'USD', 'tokens', 1000000,  0.150000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price (per 1M tokens per hour) is not modelled.'),
-  ('gemini', 'gemini-3.5-flash', 'output',       'standard', 'USD', 'tokens', 1000000,  9.000000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens: thinking tokens are priced at this rate.'),
-  ('gemini', 'gemini-3.5-flash', 'input',        'flex',     'USD', 'tokens', 1000000,  0.750000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
-  ('gemini', 'gemini-3.5-flash', 'cached_input', 'flex',     'USD', 'tokens', 1000000,  0.080000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
-  ('gemini', 'gemini-3.5-flash', 'output',       'flex',     'USD', 'tokens', 1000000,  4.500000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
-  ('gemini', 'gemini-3.5-flash', 'input',        'priority', 'USD', 'tokens', 1000000,  2.700000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
-  ('gemini', 'gemini-3.5-flash', 'cached_input', 'priority', 'USD', 'tokens', 1000000,  0.270000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
-  ('gemini', 'gemini-3.5-flash', 'output',       'priority', 'USD', 'tokens', 1000000, 16.200000000000, '2026-05-19T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
+  ('gemini', 'gemini-3.5-flash', 'input',        'standard', 'USD', 'tokens', 1000000,  1.500000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens. Free tier is $0 and is not distinguishable from usage metadata.'),
+  ('gemini', 'gemini-3.5-flash', 'cached_input', 'standard', 'USD', 'tokens', 1000000,  0.150000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price (per 1M tokens per hour) is not modelled.'),
+  ('gemini', 'gemini-3.5-flash', 'output',       'standard', 'USD', 'tokens', 1000000,  9.000000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens: thinking tokens are priced at this rate.'),
+  ('gemini', 'gemini-3.5-flash', 'input',        'flex',     'USD', 'tokens', 1000000,  0.750000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
+  ('gemini', 'gemini-3.5-flash', 'cached_input', 'flex',     'USD', 'tokens', 1000000,  0.080000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
+  ('gemini', 'gemini-3.5-flash', 'output',       'flex',     'USD', 'tokens', 1000000,  4.500000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Flex - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
+  ('gemini', 'gemini-3.5-flash', 'input',        'priority', 'USD', 'tokens', 1000000,  2.700000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Input', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
+  ('gemini', 'gemini-3.5-flash', 'cached_input', 'priority', 'USD', 'tokens', 1000000,  0.270000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
+  ('gemini', 'gemini-3.5-flash', 'output',       'priority', 'USD', 'tokens', 1000000, 16.200000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash - Priority - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
   -- gemini-3.5-flash-lite
-  ('gemini', 'gemini-3.5-flash-lite', 'input',        'standard', 'USD', 'tokens', 1000000, 0.300000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens. Free tier is $0 and is not distinguishable from usage metadata.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'standard', 'USD', 'tokens', 1000000, 0.030000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'output',       'standard', 'USD', 'tokens', 1000000, 2.500000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens: thinking tokens are priced at this rate.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'input',        'flex',     'USD', 'tokens', 1000000, 0.150000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'flex',     'USD', 'tokens', 1000000, 0.020000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'output',       'flex',     'USD', 'tokens', 1000000, 1.250000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'input',        'priority', 'USD', 'tokens', 1000000, 0.540000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'priority', 'USD', 'tokens', 1000000, 0.050000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
-  ('gemini', 'gemini-3.5-flash-lite', 'output',       'priority', 'USD', 'tokens', 1000000, 4.500000000000, '2026-07-21T00:00:00Z', 'model_release_no_documented_change', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'input',        'standard', 'USD', 'tokens', 1000000, 0.300000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens. Free tier is $0 and is not distinguishable from usage metadata.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'standard', 'USD', 'tokens', 1000000, 0.030000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'output',       'standard', 'USD', 'tokens', 1000000, 2.500000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Standard - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens: thinking tokens are priced at this rate.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'input',        'flex',     'USD', 'tokens', 1000000, 0.150000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'flex',     'USD', 'tokens', 1000000, 0.020000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'output',       'flex',     'USD', 'tokens', 1000000, 1.250000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Flex - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'input',        'priority', 'USD', 'tokens', 1000000, 0.540000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Input (text / image / video / audio)', '2026-10-09T00:00:00Z', 'Paid-tier list price per 1M tokens.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'cached_input', 'priority', 'USD', 'tokens', 1000000, 0.050000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Context caching', '2026-10-09T00:00:00Z', 'Cached-content token rate. Storage price is not modelled.'),
+  ('gemini', 'gemini-3.5-flash-lite', 'output',       'priority', 'USD', 'tokens', 1000000, 4.500000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://ai.google.dev/gemini-api/docs/pricing', 'Gemini API pricing - Gemini 3.5 Flash-Lite - Priority - Paid Tier - Output (including thinking tokens)', '2026-10-09T00:00:00Z', 'Official output price includes thinking tokens.'),
   -- kling-v3 (Kling 3.0), REST: provider units
-  ('kling', 'kling-v3', 'unit', 'standard', 'USD', 'units', 1, 0.140000000000, '2026-10-09T00:00:00Z', 'retrieval_date', 'https://kling.ai/document-api/pricing/base/video', 'Kling AI API pricing - Video - Kling 3.0 (price per unit = $0.14)', '2026-10-09T00:00:00Z', 'List price: 1 unit = $0.14 as quoted by the official pricing page. The page is undated, so the window starts at retrieval. Resource-package discounts are not represented. Applies to API units (provider_reported), never to MCP credits.')
+  ('kling', 'kling-v3', 'unit', 'standard', 'USD', 'units', 1, 0.140000000000, '2026-10-09T00:00:00Z', 'observed_at_source', 'https://kling.ai/document-api/pricing/base/video', 'Kling AI API pricing - Video - Kling 3.0 (price per unit = $0.14)', '2026-10-09T00:00:00Z', 'List price: 1 unit = $0.14 as quoted by the official pricing page. The page is undated, so the window starts on the day it was observed. Applies to API units (provider_reported), never to MCP credits.')
 ON CONFLICT ON CONSTRAINT provider_pricing_versions_version_key DO NOTHING;

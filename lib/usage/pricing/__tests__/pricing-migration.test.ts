@@ -175,27 +175,56 @@ describe('migration 061 — the seeded official prices', () => {
     expect(price('kling-v3', 'standard', 'unit')).toBe(0.14)
   })
 
-  it('effective dates carry their basis: Gemini = model GA date per the official changelog; Kling = retrieval date', () => {
-    const flash = seeded.find((r) => r.model === 'gemini-3.5-flash')!
-    const lite = seeded.find((r) => r.model === 'gemini-3.5-flash-lite')!
-    const kling = seeded.find((r) => r.model === 'kling-v3')!
-    expect([flash.effective_from, flash.effective_from_basis]).toEqual(['2026-05-19T00:00:00.000Z', 'model_release_no_documented_change'])
-    expect([lite.effective_from, lite.effective_from_basis]).toEqual(['2026-07-21T00:00:00.000Z', 'model_release_no_documented_change'])
-    expect([kling.effective_from, kling.effective_from_basis]).toEqual(['2026-10-09T00:00:00.000Z', 'retrieval_date'])
+  it('every seeded rate starts on the day it was OBSERVED at the source (2026-10-09) - never on a model GA date', () => {
+    const official = seeded.filter((r) => ['gemini', 'kling'].includes(String(r.provider)))
+    expect(official).toHaveLength(19)
+    for (const row of official) {
+      expect([row.effective_from, row.effective_from_basis, row.effective_to]).toEqual(['2026-10-09T00:00:00.000Z', 'observed_at_source', null])
+    }
+    // The GA dates from the official changelog prove a model shipped, not what it cost then.
+    expect(official.some((r) => ['2026-05-19T00:00:00.000Z', '2026-07-21T00:00:00.000Z'].includes(String(r.effective_from)))).toBe(false)
+    expect(SQL).not.toMatch(/model_release_no_documented_change|retrieval_date/)
+  })
+
+  it('the basis vocabulary has no inference-from-absence value, and the database rejects one', async () => {
+    expect(SQL).toMatch(/effective_from_basis IN \(\s*'official_effective_date',\s*'observed_at_source'\s*\)/)
+    await expect(db.exec(insert({ model: "'m-basis'", effective_from_basis: "'model_release_no_documented_change'" }))).rejects.toThrow()
+  })
+
+  it('a verified historical version can be ADDED later without touching existing rows (append-only window)', async () => {
+    await db.exec(insert({ model: "'m-hist'", effective_from: "'2026-10-09T00:00:00Z'", price_amount: '2' }))
+    await db.exec(insert({ model: "'m-hist'", effective_from: "'2026-05-19T00:00:00Z'", effective_to: "'2026-10-09T00:00:00Z'", price_amount: '1.25' }))
+    const rows = (await db.query<Record<string, unknown>>("SELECT price_amount FROM provider_pricing_versions WHERE model = 'm-hist' ORDER BY effective_from")).rows
+    expect(rows.map((r) => String(r.price_amount))).toEqual(['1.250000000000', '2.000000000000'])
   })
 })
 
 describe('registry (from the real migration) x the usage rows that exist in Production', () => {
   const gemini = (overrides: Partial<ProviderUsageCostInput>): ProviderUsageCostInput => ({
     provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash', quantity: 1_000_000, unit: 'input_tokens',
-    measurementSource: 'provider_reported', occurredAt: '2026-10-08T17:38:46.650Z', funding: 'user_byok', serviceTier: 'standard', ...overrides,
+    measurementSource: 'provider_reported', occurredAt: '2026-10-12T17:38:46.650Z', funding: 'user_byok', serviceTier: 'standard', ...overrides,
+  })
+  const PRODUCTION_GEMINI_TIMES = ['2026-10-08T17:38:46.650515Z', '2026-10-08T17:39:03.609517Z']
+
+  it('the six existing Gemini Review rows (2026-10-08) predate the observed rates: ALL six are priceable = 0, all unavailable', () => {
+    const rows = PRODUCTION_GEMINI_TIMES.flatMap((occurredAt) => [
+      gemini({ occurredAt }),
+      gemini({ occurredAt, unit: 'output_tokens' }),
+      gemini({ occurredAt, unit: 'tokens', usageCategory: 'thoughts' }),
+    ])
+    expect(rows).toHaveLength(6)
+    const costs = rows.map((r) => deriveProviderUsageCost(r, versions))
+    expect(costs.filter((c) => c.status === 'estimated')).toHaveLength(0)
+    expect(costs.every((c) => c.status === 'unavailable' && c.reason === 'pricing_not_effective_at_execution')).toBe(true)
   })
 
-  it('the six Gemini Review rows (standard tier, BYOK) are priced; input, output and thinking each once', () => {
+  it('Gemini Review executions on/after 2026-10-09 are priced; input, output and thinking each once', () => {
     const input = deriveProviderUsageCost(gemini({}), versions)
     const output = deriveProviderUsageCost(gemini({ unit: 'output_tokens' }), versions)
     const thoughts = deriveProviderUsageCost(gemini({ unit: 'tokens', usageCategory: 'thoughts' }), versions)
     expect([input, output, thoughts].map((c) => (c.status === 'estimated' ? c.amount : c.status))).toEqual(['1.5', '9', '9'])
+    const boundary = deriveProviderUsageCost(gemini({ occurredAt: '2026-10-09T00:00:00Z' }), versions)
+    expect(boundary.status).toBe('estimated')
   })
 
   it('Flash-Lite and tiers resolve to their own rows', () => {

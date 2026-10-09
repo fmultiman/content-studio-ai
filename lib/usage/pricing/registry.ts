@@ -8,7 +8,7 @@ import { parseFixed, type Fixed } from './decimal'
 export const PRICING_CATEGORIES = ['input', 'cached_input', 'output', 'unit'] as const
 export type PricingCategory = (typeof PRICING_CATEGORIES)[number]
 
-export const EFFECTIVE_FROM_BASES = ['official_effective_date', 'model_release_no_documented_change', 'retrieval_date'] as const
+export const EFFECTIVE_FROM_BASES = ['official_effective_date', 'observed_at_source'] as const
 export type EffectiveFromBasis = (typeof EFFECTIVE_FROM_BASES)[number]
 
 /** One validated pricing version. Amounts are Fixed (BigInt), never floats. */

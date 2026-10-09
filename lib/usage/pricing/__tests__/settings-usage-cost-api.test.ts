@@ -10,19 +10,19 @@ import * as server from '@/lib/supabase/server'
 
 const price = (id: string, model: string, category: string, tier: string, amount: string) => ({
   id, provider: 'gemini', model, usage_category: category, service_tier: tier, currency: 'USD', unit_name: 'tokens', unit_quantity: '1000000',
-  price_amount: amount, effective_from: '2026-05-19T00:00:00+00:00', effective_to: null, effective_from_basis: 'model_release_no_documented_change',
+  price_amount: amount, effective_from: '2026-10-09T00:00:00+00:00', effective_to: null, effective_from_basis: 'observed_at_source',
   source_url: 'https://ai.google.dev/gemini-api/docs/pricing', source_label: `Gemini API pricing - ${model} - ${tier} - ${category}`, retrieved_at: '2026-10-09T00:00:00+00:00', notes: null,
 })
 const REGISTRY = [
   price('p-in', 'gemini-3.5-flash', 'input', 'standard', '1.500000000000'),
   price('p-cache', 'gemini-3.5-flash', 'cached_input', 'standard', '0.150000000000'),
   price('p-out', 'gemini-3.5-flash', 'output', 'standard', '9.000000000000'),
-  { ...price('k-unit', 'kling-v3', 'unit', 'standard', '0.140000000000'), provider: 'kling', unit_name: 'units', unit_quantity: '1', effective_from: '2026-10-09T00:00:00+00:00', effective_from_basis: 'retrieval_date' },
+  { ...price('k-unit', 'kling-v3', 'unit', 'standard', '0.140000000000'), provider: 'kling', unit_name: 'units', unit_quantity: '1', effective_from: '2026-10-09T00:00:00+00:00', effective_from_basis: 'observed_at_source' },
 ]
 
 const meta = (extra: Record<string, unknown> = {}) => ({ funding: 'user_byok', usage: { serviceTier: 'standard' }, ...extra })
 const gemini = (id: string, unit: string, quantity: number | string, extra: Record<string, unknown> = {}) => ({
-  id, user_id: 'user-a', occurred_at: '2026-10-08T17:38:46.650515+00:00', provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash',
+  id, user_id: 'user-a', occurred_at: '2026-10-12T17:38:46.650515+00:00', provider: 'gemini', transport: 'rest', operation: 'video_review', model: 'gemini-3.5-flash',
   quantity, unit, measurement_source: 'provider_reported', project_id: null, connection_id: null, provider_task_id: 'resp-SECRET', provider_metadata: meta(), idempotency_key: `k-${id}`, ...extra,
 })
 const kling = (id: string, extra: Record<string, unknown>) => ({
@@ -66,9 +66,29 @@ describe('GET /api/settings/usage — estimated cost derived on read', () => {
     expect(byId['g-think'].estimated_cost).toMatchObject({ status: 'estimated', amount: '0.00216' })
     expect(byId['g-think']).toMatchObject({ quantity: 240, unit: 'tokens', usage_category: 'thoughts' })
     expect(byId['g-in'].estimated_cost.pricing).toMatchObject({
-      sourceUrl: 'https://ai.google.dev/gemini-api/docs/pricing', retrievedAt: '2026-10-09T00:00:00+00:00', effectiveFrom: '2026-05-19T00:00:00.000Z', versionIds: ['p-in'],
+      sourceUrl: 'https://ai.google.dev/gemini-api/docs/pricing', retrievedAt: '2026-10-09T00:00:00+00:00', effectiveFrom: '2026-10-09T00:00:00.000Z', effectiveFromBasis: 'observed_at_source', versionIds: ['p-in'],
     })
     expect(byId['g-in'].estimated_cost.assumptions).toEqual(expect.arrayContaining(['list_price_equivalent', 'byok_invoice_may_differ']))
+  })
+
+  it('the six Gemini rows that exist in Production (2026-10-08) predate the observed rates: all stay unavailable, usage untouched', async () => {
+    const at = ['2026-10-08T17:38:46.650515+00:00', '2026-10-08T17:39:03.609517+00:00']
+    const production = at.flatMap((occurred_at, i) => [
+      gemini(`h${i}-in`, 'input_tokens', 20000, { occurred_at }),
+      gemini(`h${i}-out`, 'output_tokens', 600, { occurred_at }),
+      gemini(`h${i}-think`, 'tokens', 200, { occurred_at, provider_metadata: meta({ usage_category: 'thoughts' }) }),
+    ])
+    const db = dbWith(production)
+    signIn(db)
+    const body = await (await get()).json()
+    expect(body.events).toHaveLength(6)
+    for (const event of body.events) {
+      expect(event.estimated_cost).toEqual({ status: 'unavailable', reason: 'pricing_not_effective_at_execution' })
+      expect(event).toMatchObject({ measurement_source: 'provider_reported', funding: 'user_byok' })
+    }
+    expect(JSON.stringify(body)).not.toMatch(/"amount"/)
+    // and the usage rows themselves are exactly as stored
+    expect(db.tables.provider_usage_events.map((r: any) => r.quantity)).toEqual(production.map((r) => r.quantity))
   })
 
   it('none of the five Kling rows is priced, each with a reason and without an amount (unknown is not free)', async () => {

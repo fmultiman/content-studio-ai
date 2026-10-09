@@ -21,11 +21,11 @@ const estimatedCost = (amount: string, extra: Record<string, unknown> = {}): Cos
       sourceUrl: 'https://ai.google.dev/gemini-api/docs/pricing',
       sourceLabel: 'Gemini API pricing - Gemini 3.5 Flash - Standard - Paid Tier - Input',
       retrievedAt: '2026-10-09T00:00:00Z',
-      effectiveFrom: '2026-05-19T00:00:00.000Z',
-      effectiveFromBasis: 'model_release_no_documented_change',
+      effectiveFrom: '2026-10-09T00:00:00.000Z',
+      effectiveFromBasis: 'observed_at_source',
     },
     components: [{ category: 'input', quantity: '24800', amount, pricingVersionId: 'v1' }],
-    assumptions: ['list_price_equivalent', 'paid_tier_list_price', 'effective_from_inferred', 'byok_invoice_may_differ'],
+    assumptions: ['list_price_equivalent', 'paid_tier_list_price', 'price_observed_at_source', 'byok_invoice_may_differ'],
     ...extra,
   }) as Cost
 const unavailable = (reason: string): Cost => ({ status: 'unavailable', reason }) as Cost
@@ -105,8 +105,10 @@ describe('estimated cost on the usage screen', () => {
     const title = screen.getByTestId('usage-cost').getAttribute('title') ?? ''
     expect(title).toMatch(/preço de tabela público do provedor/)
     expect(title).toMatch(/fatura real na sua conta do provedor pode ser diferente/)
+    expect(title).toMatch(/observado na página oficial; execuções anteriores não são estimadas/)
+    expect(title).not.toMatch(/lançamento do modelo/)
     expect(title).toMatch(/Fonte: Gemini API pricing .*https:\/\/ai\.google\.dev\/gemini-api\/docs\/pricing/)
-    expect(title).toMatch(/Preço em vigor desde 19\/05\/2026; consultado em 09\/10\/2026/)
+    expect(title).toMatch(/Preço em vigor desde 09\/10\/2026; consultado em 09\/10\/2026/)
   })
 
   it('21. an unpriceable row says "Preço indisponível" with the reason - never a zero amount', async () => {
@@ -126,6 +128,25 @@ describe('estimated cost on the usage screen', () => {
     expect(document.body.textContent).not.toMatch(/US\$\s?0,00(?![0-9])/)
     expect(screen.getByTestId('usage-cost-none').textContent).toMatch(/Nenhum registro exibido tem preço disponível/)
     expect(screen.queryAllByTestId('usage-cost-total')).toHaveLength(0)
+  })
+
+  it('historical rows before the first evidenced rate: every row says "Preço indisponível", usage stays intact, no total is invented', async () => {
+    const rows = Array.from({ length: 6 }, (_, i) =>
+      event(`h${i}`, i % 3 === 0 ? 'input_tokens' : i % 3 === 1 ? 'output_tokens' : 'tokens', 1000 + i, unavailable('pricing_not_effective_at_execution'), {
+        occurred_at: '2026-10-08T17:38:46.000Z',
+        usage_category: i % 3 === 2 ? 'thoughts' : null,
+      }),
+    )
+    respond(payload(rows))
+    await ready()
+    expect(screen.getAllByTestId('usage-row')).toHaveLength(6)
+    expect(screen.getAllByTestId('usage-summary-group')).toHaveLength(3)
+    expect(screen.getAllByTestId('usage-cost').map((c) => c.textContent)).toEqual(Array(6).fill('Preço indisponível'))
+    expect(screen.getByTestId('usage-cost-none')).toBeTruthy()
+    expect(screen.queryAllByTestId('usage-cost-total')).toHaveLength(0)
+    expect(screen.getByTestId('usage-cost-unpriced').textContent).toMatch(/6 registros sem preço disponível/)
+    expect(screen.getAllByTestId('usage-cost')[0].getAttribute('title')).toMatch(/Nenhum preço cadastrado estava em vigor na data desta execução/)
+    expect(document.body.textContent).not.toMatch(/US\$/)
   })
 
   it('17. the summary sums only priced rows, counts the unpriced ones and says they are not zero', async () => {

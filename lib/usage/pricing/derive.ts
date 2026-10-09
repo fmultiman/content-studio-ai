@@ -75,8 +75,7 @@ export const COST_ASSUMPTIONS = [
   'paid_tier_list_price',
   'byok_invoice_may_differ',
   'cached_tokens_priced_separately',
-  'package_discounts_not_applied',
-  'effective_from_inferred',
+  'price_observed_at_source',
 ] as const
 export type CostAssumption = (typeof COST_ASSUMPTIONS)[number]
 
@@ -127,7 +126,7 @@ interface BillableLine {
 }
 
 type BillingPlan =
-  | { ok: true; lines: BillableLine[]; tier: string | null; paidTierListPrice: boolean; packageDiscountsNotApplied: boolean }
+  | { ok: true; lines: BillableLine[]; tier: string | null; paidTierListPrice: boolean }
   | { ok: false; result: ProviderUsageCost }
 
 const GEMINI_TIERS: readonly string[] = ['standard', 'flex', 'priority']
@@ -163,13 +162,13 @@ function planGemini(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan
   } else {
     return { ok: false, result: unavailable('unit_not_priceable') }
   }
-  return { ok: true, lines, tier, paidTierListPrice: true, packageDiscountsNotApplied: false }
+  return { ok: true, lines, tier, paidTierListPrice: true }
 }
 
 function planKling(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan {
   // Only API "units" have a published USD mapping. MCP "credits" (a consumer-plan currency) have none.
   if (input.unit !== 'units') return { ok: false, result: unavailable('unit_not_priceable') }
-  return { ok: true, lines: [{ category: 'unit', quantity }], tier: 'standard', paidTierListPrice: false, packageDiscountsNotApplied: true }
+  return { ok: true, lines: [{ category: 'unit', quantity }], tier: 'standard', paidTierListPrice: false }
 }
 
 const ADAPTERS: Record<string, (input: ProviderUsageCostInput, quantity: Fixed) => BillingPlan> = {
@@ -215,8 +214,7 @@ export function deriveProviderUsageCost(input: ProviderUsageCostInput, versions:
   const assumptions: CostAssumption[] = ['list_price_equivalent']
   if (plan.paidTierListPrice) assumptions.push('paid_tier_list_price')
   if (components.length > 1) assumptions.push('cached_tokens_priced_separately')
-  if (plan.packageDiscountsNotApplied) assumptions.push('package_discounts_not_applied')
-  if (used.some((v) => v.effectiveFromBasis !== 'official_effective_date')) assumptions.push('effective_from_inferred')
+  if (used.some((v) => v.effectiveFromBasis !== 'official_effective_date')) assumptions.push('price_observed_at_source')
   if (input.funding === 'user_byok') assumptions.push('byok_invoice_may_differ')
 
   return {

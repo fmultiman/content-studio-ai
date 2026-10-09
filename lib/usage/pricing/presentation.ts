@@ -50,8 +50,7 @@ const ASSUMPTION: Record<CostAssumption, string> = {
   paid_tier_list_price: 'Considera a tabela do plano pago; no plano gratuito do provedor não há cobrança.',
   byok_invoice_may_differ: 'Chave própria (BYOK): a fatura real na sua conta do provedor pode ser diferente.',
   cached_tokens_priced_separately: 'Tokens em cache foram calculados com a tarifa de cache.',
-  package_discounts_not_applied: 'Descontos de pacotes de recursos não são aplicados.',
-  effective_from_inferred: 'O provedor não publica o histórico de preços; o início de vigência foi inferido (lançamento do modelo ou data da consulta).',
+  price_observed_at_source: 'O provedor não publica histórico de preços: este preço vale a partir do dia em que foi observado na página oficial; execuções anteriores não são estimadas.',
 }
 
 /** One short line for why a row has no estimate; null for an estimated row. */
