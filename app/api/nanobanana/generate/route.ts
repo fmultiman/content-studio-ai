@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import {
@@ -17,6 +18,10 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+
+    // FUTURE-050: before the image Attempt is frozen/claimed and before any credential is read.
+    const blocked = providerExecutionBlockedResponse({ provider: 'nano_banana', operation: 'image_generation' })
+    if (blocked) return blocked
 
     const body = await request.json()
     const { prompt, aspectRatio = '1:1', projectId, model: requestModel, sessionId, clientRequestId } = body

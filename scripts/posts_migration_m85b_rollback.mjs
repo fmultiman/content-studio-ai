@@ -19,6 +19,7 @@
 import { readFileSync }  from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
@@ -55,6 +56,7 @@ if (!SUPABASE_URL || !SVC_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
   process.exit(1)
 }
+adminGuard.requireAdminAck({ script: 'posts_migration_m85b_rollback.mjs', target: SUPABASE_URL })
 
 async function sbGet(path) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {

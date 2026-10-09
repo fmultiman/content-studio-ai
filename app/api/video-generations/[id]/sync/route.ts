@@ -64,7 +64,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         )
       }
     } else {
-      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
+      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling', purpose: 'status_read' })
 
       if (execution.status !== 'ready') {
         return NextResponse.json(

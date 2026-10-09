@@ -5,6 +5,7 @@
 // (json_object response format, low-detail image, 1400 max tokens); only its
 // location moved out of the Review service.
 
+import { assertProviderExecutionAllowed } from '@/lib/providers/execution-policy'
 import {
   ReviewProviderError,
   assertMediaSupported,
@@ -32,6 +33,8 @@ export function createOpenAiReviewProvider(options: { fetchImpl?: typeof fetch }
     providerId: 'openai',
     capabilities: new Set(['image_review'] as const),
     async execute(request: ReviewExecutionRequest): Promise<ReviewExecutionResponse> {
+      // FUTURE-050 outbound-boundary backstop.
+      assertProviderExecutionAllowed({ provider: 'openai', operation: 'image_review' })
       assertMediaSupported(this, request.media)
       const content: Array<Record<string, unknown>> = [{ type: 'text', text: request.input }]
       for (const media of request.media) {

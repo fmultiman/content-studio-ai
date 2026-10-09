@@ -5,7 +5,7 @@ import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { buildRequestFingerprint, resolveImageReviewContext } from './context'
 import { resolveImageArtifact } from '@/lib/media-artifacts/image'
 import { buildImageEvaluationPrompt, IMAGE_EVALUATOR_PROMPT_VERSION, IMAGE_EVALUATOR_RESPONSE_SCHEMA, IMAGE_REVIEW_ADAPTER_KEY, IMAGE_REVIEW_ADAPTER_VERSION, mapImageEvaluatorResult, parseImageEvaluatorResponse } from './adapters/image'
-import { ReviewServiceError } from './errors'
+import { ReviewServiceError, assertReviewExecutionAllowed } from './errors'
 import { ReviewProviderError, parseProviderJson, toReviewServiceError, type AuthorizedReviewMedia, type ReviewProviderId } from './execution-provider'
 import { resolveAuthorizedReviewMedia, type ReviewObjectReader } from './media'
 import { DEFAULT_REVIEW_PROVIDER_ID, assertProviderModelSupportsMedia, getReviewExecutionProvider, resolveReviewModelId, type ReviewProviderOverrides } from './provider-registry'
@@ -40,6 +40,8 @@ export async function createImageReviewExecution(params: {
   /** Test seam for the stale-recovery clock (epoch ms). Never read from a request. */
   clock?: () => number
 }) {
+  // FUTURE-050: refuse BEFORE touching the database or the provider when this environment may not spend.
+  assertReviewExecutionAllowed(params.providerId ?? DEFAULT_REVIEW_PROVIDER_ID, 'image_review')
   const db = params.db ?? createServiceRoleSupabase()
   const resolved = await resolveImageReviewContext(db, params.userId, params.attemptId)
   const artifact = await resolveImageArtifact(db, {

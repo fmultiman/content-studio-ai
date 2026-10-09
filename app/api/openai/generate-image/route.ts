@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
@@ -117,6 +118,10 @@ export async function POST(request: Request) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
+
+    // FUTURE-050: before the image Attempt is frozen/claimed and before any credential is read.
+    const blocked = providerExecutionBlockedResponse({ provider: 'openai', operation: 'image_generation' })
+    if (blocked) return blocked
 
     const {
       prompt,

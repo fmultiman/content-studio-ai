@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { buildImageEvaluationContext } from '@/lib/context-compiler'
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
+
+    // FUTURE-050: paid provider execution is denied outside Production (and unopted local) — before any input is processed or credential read.
+    const blocked = providerExecutionBlockedResponse({ provider: 'openai', operation: 'image_evaluation' })
+    if (blocked) return blocked
 
     const {
       userInput,

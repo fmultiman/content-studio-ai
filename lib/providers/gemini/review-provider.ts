@@ -23,6 +23,7 @@ import {
   type ReviewExecutionResponse,
 } from '@/lib/reviews/execution-provider'
 import { assertReviewMediaWithinLimits } from '@/lib/reviews/media-limits'
+import { assertProviderExecutionAllowed } from '@/lib/providers/execution-policy'
 import { createGeminiClient, type GeminiClient, type GeminiContentPart, type GeminiRemoteFile } from './client'
 import { assertGeminiModelSupports } from './review-models'
 
@@ -32,6 +33,8 @@ export function createGeminiReviewProvider(options: { client?: GeminiClient } = 
     providerId: 'gemini',
     capabilities: new Set(['image_review', 'video_review'] as const),
     async execute(request: ReviewExecutionRequest): Promise<ReviewExecutionResponse> {
+      // FUTURE-050 outbound-boundary backstop: nothing below uploads or calls the model in a blocked environment.
+      assertProviderExecutionAllowed({ provider: 'gemini', operation: request.media.some((media) => media.kind === 'video') ? 'video_review' : 'image_review' })
       if (!request.apiKey) throw new ReviewProviderError('missing_credential', 'Gemini API key is not configured.')
       // All guards run BEFORE any upload or paid model call.
       assertMediaSupported(this, request.media)

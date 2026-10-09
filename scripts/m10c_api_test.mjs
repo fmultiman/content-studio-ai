@@ -9,12 +9,18 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 const SUPABASE_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51aGRobmFzdW9oaXp4dG15aWp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODA0NjUsImV4cCI6MjA5MjU1NjQ2NX0.I0gooqv1kwIbavvps0DUj12vT1HDu7RnnLulmU8jeJ0'
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51aGRobmFzdW9oaXp4dG15aWp1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njk4MDQ2NSwiZXhwIjoyMDkyNTU2NDY1fQ.RqW_rcM-SYS59dmwkDpKi6KZaBmjLhLBm5dBNG21vTA'
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 const LOCAL_BASE = 'http://localhost:3000'
 const PROJECT_REF = 'nuhdhnasuohizxtmyiju'
+
+// FUTURE-050: no credential is embedded in this file any more. Supply them through the environment, and name the
+// project you are about to administer: node scripts/m10c_api_test.mjs --admin-project-ref=<ref>
+if (!ANON_KEY || !SERVICE_ROLE_KEY) throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are required in the environment')
+adminGuard.requireAdminAck({ script: 'm10c_api_test', target: SUPABASE_URL })
 
 // Admin client — service role, bypasses RLS for fixture setup/teardown
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {

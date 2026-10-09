@@ -12,6 +12,7 @@
 // from a client-supplied value.
 
 import { KlingAdapter, type KlingSettings } from '@/lib/providers/kling/adapter'
+import { assertProviderExecutionAllowed } from '@/lib/providers/execution-policy'
 import type { UsageMeasurement } from '@/lib/usage/provider-usage'
 import {
   buildKlingMcpVideoCall,
@@ -87,6 +88,8 @@ export class KlingRestTransport implements KlingVideoTransport {
   }
 
   async submit(input: VideoSubmitInput): Promise<VideoSubmitResult> {
+    // FUTURE-050 outbound-boundary backstop (the route also guards earlier, before any durable state).
+    assertProviderExecutionAllowed({ provider: 'kling', operation: 'video_generation' })
     const { request } = input
     // REST supports every control (rest-capabilities.ts), so each is non-null.
     // REST resolution is never 4k; the adapter's own type says the same.
@@ -149,6 +152,8 @@ export class KlingMcpTransport implements KlingVideoTransport {
   }
 
   async submit(input: VideoSubmitInput): Promise<VideoSubmitResult> {
+    // FUTURE-050 outbound-boundary backstop: before the source upload and the paid generation tool.
+    assertProviderExecutionAllowed({ provider: 'kling', operation: 'video_generation' })
     // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1 — spend order: the source is uploaded to the provider FIRST. Only a valid
     // provider file URL lets the (paid) image_to_video be built and sent; any failure here throws before it exists.
     // image_to_video never receives a Content Studio URL (presigned S3 / browser) or a data URL, and text_to_video

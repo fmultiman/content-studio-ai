@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     if (!task || task.status !== 'processing') return ACK()
 
     // The owner's own credential, through the existing boundary: no platform fallback.
-    const credential = await resolveProviderExecution(db, { userId: task.user_id, provider: 'nano_banana' })
+    const credential = await resolveProviderExecution(db, { userId: task.user_id, provider: 'nano_banana', purpose: 'status_read' })
     if (credential.status !== 'ready') {
       console.warn('[NanoBanana Callback] no owner credential; task left untouched')
       return ACK()

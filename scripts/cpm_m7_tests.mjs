@@ -20,6 +20,7 @@ import http  from 'http'
 import https from 'https'
 import fs    from 'fs'
 import path  from 'path'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ const get = (k) => {
 
 const SVC    = get('SUPABASE_SERVICE_ROLE_KEY')
 const SB_URL = 'https://nuhdhnasuohizxtmyiju.supabase.co'
+adminGuard.requireAdminAck({ script: 'cpm_m7_tests.mjs', target: SB_URL })
 const BASE   = 'http://localhost:3000'
 const EMAIL  = 'flavio.multiman@gmail.com'
 

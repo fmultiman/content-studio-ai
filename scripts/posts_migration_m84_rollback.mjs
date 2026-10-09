@@ -22,6 +22,7 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3'
+import adminGuard from './lib/production-admin-guard.cjs'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
@@ -68,6 +69,7 @@ const SB_URL = get('SUPABASE_URL')
 const SVC    = get('SUPABASE_SERVICE_ROLE_KEY')
 
 if (!SB_URL || !SVC) throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente no .env.local')
+adminGuard.requireAdminAck({ script: 'posts_migration_m84_rollback.mjs', target: SB_URL })
 
 const BASE_URL = SB_URL.replace(/\/$/, '')
 const HDR      = { apikey: SVC, Authorization: `Bearer ${SVC}`, 'Content-Type': 'application/json' }

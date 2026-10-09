@@ -30,6 +30,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderCredential, type AiProvider } from './provider-credentials'
 import { resolvePlatformCredential } from './platform-credentials'
+import { assertProviderExecutionAllowed, type ProviderExecutionPurpose } from '@/lib/providers/execution-policy'
 
 export type ProviderExecutionMode = 'user_byok' | 'content_studio_credits'
 
@@ -94,10 +95,14 @@ export interface ProviderExecutionDependencies {
 
 export async function resolveProviderExecution(
   supabase: SupabaseClient,
-  params: { userId: string; provider: AiProvider; mode?: ProviderExecutionMode },
+  params: { userId: string; provider: AiProvider; mode?: ProviderExecutionMode; purpose?: ProviderExecutionPurpose },
   dependencies: ProviderExecutionDependencies = {},
 ): Promise<ProviderExecutionResult> {
   const { userId, provider } = params
+  // FUTURE-050 fail-closed backstop: a secret is never released in an environment that may not spend at a provider.
+  // Routes/services also guard earlier (before durable state); this catches any caller that forgot to.
+  // Throws ProviderExecutionDisabledError. `purpose: 'status_read'` (polling a submitted task) is not gated.
+  assertProviderExecutionAllowed({ provider, operation: 'credential_resolution', purpose: params.purpose })
   const mode = params.mode ?? DEFAULT_PROVIDER_EXECUTION_MODE
 
   if (mode === 'user_byok') {

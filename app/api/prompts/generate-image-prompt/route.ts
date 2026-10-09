@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { generateImagePrompt, PromptGenerationError } from '@/lib/ai-simulator'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
@@ -23,6 +24,10 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
+
+    // FUTURE-050: paid provider execution is denied outside Production (and unopted local) — before any input is processed or credential read.
+    const blocked = providerExecutionBlockedResponse({ provider: 'openai', operation: 'text_generation' })
+    if (blocked) return blocked
 
     const body = await request.json().catch(() => ({}))
     const userInput = typeof body?.userInput === 'string' ? body.userInput : ''
