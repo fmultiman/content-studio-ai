@@ -1,6 +1,6 @@
 # FUTURE-054 — Prompt Assistance usage accounting and pricing hardening V1
 
-Status: **code merged and deployed**; **pricing seed `062` authored but NOT applied to Production** (operator step); no live paid verification of the new fields (none was authorized). Follows FUTURE-053 Slice 1 (`FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1.md`). Video Slice 2 is out of scope.
+Status: **COMPLETE — code merged, deployed and live-validated.** Pricing seed `062` was applied to Production by the operator (22 pricing rows verified) and a bounded live smoke on 2026-10-10 confirmed the provider metadata, the ledger rows and the derived costs (see "Live provider metadata validation"). Follows FUTURE-053 Slice 1 (`FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1.md`). Video Slice 2 is out of scope.
 
 ## Phase A — accounting audit (read-only)
 
@@ -81,11 +81,11 @@ New/extended coverage: `lib/prompt-assistance/__tests__/usage.test.ts` (cardinal
 ## Migration verdict
 
 - **Ledger / metering: none required.** Existing columns suffice.
-- **Pricing: one data-only reviewed migration, `062`, authored in the repo. It has NOT been applied to Production.** Until an operator applies it, new OpenAI executions record the correct usage and descriptors but remain "Preço indisponível" (`no_pricing_for_model`). Apply (idempotent): run `scripts/062_seed_openai_gpt_4o_mini_pricing.sql` in the Supabase SQL editor; verify with `select usage_category, price_amount from provider_pricing_versions where provider='openai';` (3 rows: 0.075, 0.15, 0.6). Rollback is the `DELETE` in the file header.
+- **Pricing: one data-only reviewed migration, `062`, authored in the repo and since applied to Production by the operator.** (Before it was applied, new OpenAI executions recorded the correct usage and descriptors but showed "Preço indisponível" (`no_pricing_for_model`).) Apply (idempotent): run `scripts/062_seed_openai_gpt_4o_mini_pricing.sql` in the Supabase SQL editor; verify with `select usage_category, price_amount from provider_pricing_versions where provider='openai';` (3 rows: 0.075, 0.15, 0.6). Rollback is the `DELETE` in the file header.
 
 ## Remaining limitations
 
-- Live behaviour of the new fields (does each provider return a tier / thinking tokens for these requests) is unproven until a future authorized call; cost may therefore stay "ambiguous" for OpenAI if `service_tier` is not returned. We deliberately do not send a `service_tier` request parameter (it would change the provider request shape without a live check).
+- ~~Live behaviour of the new fields was unproven~~ — resolved by the live validation below: OpenAI returns `service_tier: "default"` without any request parameter, and Gemini returns `serviceTier` and `thoughtsTokenCount`. We still send no `service_tier` request parameter.
 - `gpt-3.5-turbo` (still selectable in Prompt Assistance) and every other OpenAI model remain unpriced; only `gpt-4o-mini` was verified and added.
 - Estimates are list-price equivalents (BYOK invoices may differ); Gemini free tier is not distinguishable.
 - The 8 historical smoke rows are unchanged and stay unpriced.
@@ -96,4 +96,65 @@ New/extended coverage: `lib/prompt-assistance/__tests__/usage.test.ts` (cardinal
 - PR [#160](https://github.com/fmultiman/content-studio-ai/pull/160), merged with a merge commit after the Vercel check passed: merge SHA `cfd963b1cd3b11d78c9199708bcffb72e7b0a3d7`.
 - Production deployment: GitHub deployment `6982264656`, environment Production, SHA `cfd963b`, state `success`. Read-only smoke: unauthenticated `POST /api/prompt-assistance` returns `401 UNAUTHORIZED`. No authenticated or paid request was made in this mission.
 - Production database: unchanged (no migration applied, no ledger row written or modified, no backfill).
-- Operator step pending: apply `scripts/062_seed_openai_gpt_4o_mini_pricing.sql` (see Migration verdict).
+- Operator step: `scripts/062_seed_openai_gpt_4o_mini_pricing.sql` was applied to Production afterwards (verified independently: `provider_pricing_versions` = 22 rows — OpenAI gpt-4o-mini 3, Gemini 18, Kling 1) and then exercised by the live validation below.
+
+## Live provider metadata validation (2026-10-10)
+
+Bounded, authenticated Production smoke of the FUTURE-054 build (Production deployment `6982319288`, SHA `85dd17b`, which carries code `cfd963b`). Authorization: exactly two paid text inferences, no retries, no substitute models, no image/video/Review/Evaluator calls. Read-only accounting verification; no code, database or preference change. Raw credentials and prompt/suggestion text were not read out or stored (only structural facts and the numeric `usage` object of each response were observed).
+
+**Pre-flight.** `origin/main` = `85dd17b`; Production = `85dd17b` (success). Ledger baseline: `provider_usage_events` 19 rows (8 Prompt Assistance); `provider_pricing_versions` 22 (OpenAI 3 / Gemini 18 / Kling 1). Test session: the empty pre-existing "Projeto teste · Smoke Test Final" session (revision 6, `working_prompt` `""`, `generatedPrompt` null, `autoMode` false). `automation_enabled` false and the Auto Mode switch disabled; the image evaluator setting is on but only acts on a generated image, and none was requested. All four assistance models were selectable.
+
+**Input** (both providers): "Documentary photograph of Atlantic rainforest at sunrise, natural light, realistic vegetation."
+
+### Provider response metadata (observed from the route response, compared to the ledger)
+
+| | OpenAI `gpt-4o-mini` CREATE | Gemini `gemini-3.5-flash` CREATE |
+| --- | --- | --- |
+| HTTP | 200, valid suggestion (326 chars) | 200, valid suggestion (694 chars) |
+| Logical request id | `chatcmpl-EXagwf…` | `A8nKaseVKvH5-…` |
+| Service tier reported | `service_tier: "default"` (**without** sending a tier parameter) | `serviceTier: "standard"` |
+| Input tokens | 259 (`prompt_tokens`) | 267 (`promptTokenCount`) |
+| Cached tokens | 0 reported (`cached_tokens`) | not reported |
+| Output tokens | 56 (`completion_tokens`) | 126 (`candidatesTokenCount`) |
+| Thinking tokens | n/a (not a thinking model; none reported) | **620** (`thoughtsTokenCount`, non-zero) |
+| Total | 315 = 259 + 56 | 1013 = 267 + 126 + 620 |
+
+The Gemini total equals prompt + candidates + thoughts, which confirms that candidates **exclude** thoughts (thinking is a separate, additional billable dimension) and that the total must not be added as a further dimension.
+
+### Ledger rows added (5 rows for 2 executions — one row per dimension, as per the contract)
+
+| Execution | Row | Unit | Quantity | Key |
+| --- | --- | --- | --- | --- |
+| OpenAI | input | `input_tokens` | 259 | `prompt_assistance:chatcmpl-EXagwf…:input` |
+| OpenAI | output | `output_tokens` | 56 | `…:output` |
+| Gemini | input | `input_tokens` | 267 | `prompt_assistance:A8nKaseVKvH5-…:input` |
+| Gemini | output | `output_tokens` | 126 | `…:output` |
+| Gemini | thinking | `tokens` + `usage_category: thoughts` | 620 | `…:thoughts` |
+
+All rows: `measurement_source = provider_reported`, `transport = api`, `resource_type = prompt_assistance`, owner `35428fd4-…`, Project "Projeto teste" / Production "Smoke Test Final", operation `create`, actual model, `provider_task_id` shared per execution, and `provider_metadata` = `{api, funding: "user_byok", operation, media_type: "image", usage: {serviceTier, totalTokenCount [, cachedContentTokenCount: 0 for OpenAI]}}` (+ `usage_category: thoughts` on the thinking row). Five distinct idempotency keys, two distinct executions, no duplicated billable quantity (the provider totals are descriptors, never rows), no prompt/Identity/response text. Ledger 19 → 24 rows; the 19 earlier rows are untouched (no modification, no backfill).
+
+### Derived cost (the app's own `/api/settings/usage` read model, Settings → "Uso e custos")
+
+All five rows are `estimated` list-price equivalents with BYOK and "observed at source" assumptions:
+
+| Row | Tier used | Price source | Amount (USD) |
+| --- | --- | --- | --- |
+| OpenAI input 259 | standard (response `default`) | OpenAI pricing, `gpt-4o-mini` input $0.15/1M, from 2026-10-10 | 0.00003885 |
+| OpenAI output 56 | standard | output $0.60/1M | 0.0000336 |
+| Gemini input 267 | standard (reported) | Gemini 3.5 Flash input $1.50/1M, from 2026-10-09 | 0.0004005 |
+| Gemini output 126 | standard | output $9.00/1M | 0.001134 |
+| Gemini thinking 620 | standard | priced once, as output $9.00/1M | 0.00558 |
+
+OpenAI execution ≈ **US$ 0.00007245**; Gemini execution ≈ **US$ 0.0071145**; total **US$ 0.00718695** (UI headline "US$ 0,0072 — 5 registros com preço"). These match a hand calculation from the registry. They are list-price equivalents, not invoices; Gemini's free tier cannot be distinguished. The 8 earlier smoke rows correctly remain "Preço indisponível" (no tier was recorded then) and the page states that 19 rows are unpriced; none was repriced.
+
+### Safety and cleanup
+
+- Exactly **2 paid requests**; each: assistance model confirmed, one CREATE, valid text, suggestion shown separately as "Não aplicada", then **Discarded**; authored description unchanged.
+- Observed non-GET requests during the whole smoke: the session autosave `PATCH` after typing and the two assistance `POST`s. **Image generation: 0; video generation: 0; Review/evaluation: 0; attempts: 0.** Row counts for the user before/after were identical for `images` (26), `video_generations` (10), `prompts` (36), `image_generation_attempts` (23) and `media_reviews` (19).
+- Test session restored through the UI (`working_prompt` `""`, `generatedPrompt` null, `autoMode` false, rest of the working state identical; only revision 6 → 8). No global preference was changed; no code or migration was run.
+
+### Findings
+
+1. **No defect found.** The recorder, the response metadata and the cost derivation agree end to end.
+2. The earlier FUTURE-053 Flash-Lite smoke (before FUTURE-054) did not capture thinking tokens; given this run (620 thinking tokens on a 126-token answer from `gemini-3.5-flash`), those four historical executions may have incurred thinking tokens that were never recorded. They are not reconstructible and are deliberately not backfilled.
+3. Remaining provider-metadata limits: Gemini returned no `cachedContentTokenCount` (absent, not zero); OpenAI `gpt-3.5-turbo` and Gemini Flash-Lite behaviour were not exercised in this run (Flash-Lite prices exist from 061; `gpt-3.5-turbo` has no price).
