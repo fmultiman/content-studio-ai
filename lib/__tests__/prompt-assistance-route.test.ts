@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { createFakeDb } from './helpers/fake-db'
+// The ledger recorder writes a provider execution's rows with ONE batched upsert; this stand-in supports that.
+import { createReviewTestDb } from '@/lib/reviews/__tests__/review-test-db'
 import * as server from '@/lib/supabase/server'
 import * as serviceRole from '@/lib/supabase/service-role'
 
@@ -58,7 +59,7 @@ describe('POST /api/prompt-assistance', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    resolveProviderExecution.mockResolvedValue({ status: 'ready', secret: 'server-secret' })
+    resolveProviderExecution.mockResolvedValue({ status: 'ready', secret: 'server-secret', executionMode: 'user_byok' })
     executePromptProvider.mockResolvedValue({
       text: 'A refined editorial cover featuring a river landscape.',
       usage: { inputTokens: 12, outputTokens: 9, totalTokens: 21, providerRequestId: 'req-1' },
@@ -67,7 +68,7 @@ describe('POST /api/prompt-assistance', () => {
   })
 
   it('authenticates, resolves Project/Production server-side and compiles Identity without returning raw JSON', async () => {
-    const db = createFakeDb({ seed: { provider_usage_events: [] } })
+    const db = createReviewTestDb()
     const supabase = buildSupabase({
       project: {
         id: PROJECT,
@@ -139,7 +140,7 @@ describe('POST /api/prompt-assistance', () => {
   })
 
   it('routes Gemini through the explicit catalog and does not duplicate usage events on an invocation id', async () => {
-    const db = createFakeDb({ seed: { provider_usage_events: [] } })
+    const db = createReviewTestDb()
     vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
     executePromptProvider.mockResolvedValue({ text: 'A cinematic river portrait.', usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5, providerRequestId: 'gemini-req' } })
@@ -154,7 +155,7 @@ describe('POST /api/prompt-assistance', () => {
   })
 
   it('records factual usage for a paid call that returned an unusable response, and returns a sanitized typed error', async () => {
-    const db = createFakeDb({ seed: { provider_usage_events: [] } })
+    const db = createReviewTestDb()
     vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
     const { PromptAssistanceError } = await import('@/lib/prompt-assistance/contract')
@@ -172,7 +173,7 @@ describe('POST /api/prompt-assistance', () => {
   })
 
   it('does not fabricate usage for a provider failure that reported none', async () => {
-    const db = createFakeDb({ seed: { provider_usage_events: [] } })
+    const db = createReviewTestDb()
     vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
     vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
     const { PromptAssistanceError } = await import('@/lib/prompt-assistance/contract')
@@ -181,6 +182,51 @@ describe('POST /api/prompt-assistance', () => {
     const response = await POST(request(base()))
     expect(response.status).toBe(429)
     expect((await response.json()).code).toBe('PROVIDER_RATE_LIMITED')
-    expect(db.tables.provider_usage_events).toHaveLength(0)
+    expect(db.tables.provider_usage_events ?? []).toHaveLength(0)
+  })
+
+  it('records Gemini thinking tokens as their own row, with the reported tier and the truthful funding, and exposes no extra response fields', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    executePromptProvider.mockResolvedValue({
+      text: 'A cinematic river portrait.',
+      usage: { inputTokens: 273, outputTokens: 79, totalTokens: 432, thoughtsTokens: 80, serviceTier: 'standard', providerRequestId: 'gem-think' },
+    })
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({ provider: 'gemini', model: 'gemini-3.5-flash-lite' })))
+    expect(response.status).toBe(200)
+    expect(Object.keys(await response.json()).sort()).toEqual(['model', 'operation', 'provider', 'suggestedPrompt', 'usage'])
+    const rows = db.tables.provider_usage_events
+    expect(rows.map((r: any) => [r.unit, Number(r.quantity)])).toEqual([['input_tokens', 273], ['output_tokens', 79], ['tokens', 80]])
+    expect(rows[2].provider_metadata).toMatchObject({ usage_category: 'thoughts', funding: 'user_byok', usage: { serviceTier: 'standard', totalTokenCount: 432 } })
+    expect(JSON.stringify(rows)).not.toMatch(/uma capa editorial|server-secret|cinematic river/)
+  })
+
+  it('a replay of the same provider execution never duplicates billable usage', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    await POST(request(base()))
+    await POST(request(base()))
+    expect(executePromptProvider).toHaveBeenCalledTimes(2)
+    expect(db.tables.provider_usage_events).toHaveLength(2)
+  })
+
+  it('a paid response that is unusable still records its thinking tokens, and no usage is recorded when none was reported', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { PromptAssistanceError } = await import('@/lib/prompt-assistance/contract')
+    executePromptProvider.mockRejectedValueOnce(new PromptAssistanceError('PROVIDER_INVALID_RESPONSE', 'x', 502, {
+      inputTokens: 20, outputTokens: 10, totalTokens: 4030, thoughtsTokens: 4000, providerRequestId: 'gem-cut2',
+    }))
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    expect((await POST(request(base({ provider: 'gemini', model: 'gemini-3.5-flash' })))).status).toBe(502)
+    expect(db.tables.provider_usage_events.map((r: any) => [r.unit, Number(r.quantity)])).toEqual([['input_tokens', 20], ['output_tokens', 10], ['tokens', 4000]])
+    executePromptProvider.mockRejectedValueOnce(new PromptAssistanceError('PROVIDER_UNAVAILABLE', 'x', 502))
+    await POST(request(base()))
+    expect(db.tables.provider_usage_events).toHaveLength(3)
   })
 })

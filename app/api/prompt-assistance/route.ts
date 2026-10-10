@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
       provider: input.provider,
       model: input.model,
       operation: input.operation,
+      funding: execution.executionMode,
       usage: result.usage,
     })
     return NextResponse.json({
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
           provider: input.provider,
           model: input.model,
           operation: input.operation,
+          funding: execution.executionMode,
           usage: error.usage,
         })
       }

@@ -33,7 +33,14 @@ export type PromptAssistanceUsage = {
   outputTokens: number | null
   totalTokens: number | null
   providerRequestId?: string
+  /** Service tier exactly as the provider reported it for this execution (never inferred). Absent = not reported. */
   serviceTier?: string | null
+  /** Gemini thinking tokens. Billed as output but reported apart from outputTokens (candidates exclude thoughts). */
+  thoughtsTokens?: number | null
+  /** The cached SUBSET of inputTokens (Gemini cachedContentTokenCount / OpenAI prompt_tokens_details.cached_tokens). */
+  cachedInputTokens?: number | null
+  /** Gemini tool-use prompt tokens: billed as input, not part of inputTokens. */
+  toolUsePromptTokens?: number | null
 }
 
 export type PromptAssistanceResponse = {

@@ -7,18 +7,25 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_TIMEOUT_MS = 60_000
 const GEMINI_TIMEOUT_MS = 120_000
 
-function openAiUsage(raw: unknown, requestId: unknown): PromptAssistanceUsage | null {
+const integer = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+
+// OpenAI: prompt_tokens INCLUDES the cached subset; completion_tokens already INCLUDES any reasoning tokens, so
+// nothing is added on top of either. service_tier is kept only when the response itself carries it.
+function openAiUsage(raw: unknown, requestId: unknown, serviceTier?: unknown): PromptAssistanceUsage | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const usage = raw as Record<string, unknown>
-  const integer = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
   const inputTokens = integer(usage.prompt_tokens)
   const outputTokens = integer(usage.completion_tokens)
   const totalTokens = integer(usage.total_tokens)
   if (inputTokens === null && outputTokens === null && totalTokens === null) return null
+  const details = usage.prompt_tokens_details
+  const cachedInputTokens = details && typeof details === 'object' ? integer((details as Record<string, unknown>).cached_tokens) : null
   return {
     inputTokens,
     outputTokens,
     totalTokens,
+    ...(cachedInputTokens !== null ? { cachedInputTokens } : {}),
+    ...(typeof serviceTier === 'string' && /^[a-z_]{1,32}$/.test(serviceTier) ? { serviceTier } : {}),
     ...(typeof requestId === 'string' ? { providerRequestId: requestId } : {}),
   }
 }
@@ -31,6 +38,9 @@ function geminiUsage(raw: unknown, requestId: unknown): PromptAssistanceUsage | 
     outputTokens: usage.candidatesTokens,
     totalTokens: usage.totalTokens,
     serviceTier: usage.serviceTier,
+    ...(usage.thoughtsTokens !== null ? { thoughtsTokens: usage.thoughtsTokens } : {}),
+    ...(usage.cachedContentTokens !== null ? { cachedInputTokens: usage.cachedContentTokens } : {}),
+    ...(usage.toolUsePromptTokens !== null ? { toolUsePromptTokens: usage.toolUsePromptTokens } : {}),
     ...(typeof requestId === 'string' ? { providerRequestId: requestId } : {}),
   }
 }
@@ -91,10 +101,10 @@ export async function executePromptProvider(input: PromptProviderInput): Promise
         'PROVIDER_INVALID_RESPONSE',
         'A OpenAI retornou uma sugestão vazia.',
         502,
-        openAiUsage(data?.usage, data?.id),
+        openAiUsage(data?.usage, data?.id, data?.service_tier),
       )
     }
-    return { text: text.trim(), usage: openAiUsage(data?.usage, data?.id) }
+    return { text: text.trim(), usage: openAiUsage(data?.usage, data?.id, data?.service_tier) }
   }
 
   try {

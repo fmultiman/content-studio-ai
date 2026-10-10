@@ -117,7 +117,7 @@ const ambiguous = (reason: CostAmbiguousReason): ProviderUsageCost => ({ status:
 
 // ---------------------------------------------------------------------------
 // Provider billing adapters: how a ledger row maps onto the provider's billable categories.
-// Only providers with real, evidenced usage semantics appear here. OpenAI and Nano Banana write no ledger rows.
+// Only providers with real, evidenced usage semantics appear here. Nano Banana writes no ledger rows.
 // ---------------------------------------------------------------------------
 
 interface BillableLine {
@@ -165,6 +165,36 @@ function planGemini(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan
   return { ok: true, lines, tier, paidTierListPrice: true }
 }
 
+// OpenAI Chat Completions (Prompt Assistance). `prompt_tokens` INCLUDES the cached subset (split out exactly like
+// Gemini); `completion_tokens` already contains any reasoning tokens, and no thinking row is ever written for OpenAI.
+// The service tier is proven ONLY by the response's own `service_tier`: "default" is OpenAI's Standard processing;
+// flex/priority/scale have no seeded price (so they are unavailable) and an absent tier is ambiguous - never assumed.
+const OPENAI_TIER_BY_REPORTED: Record<string, string> = { default: 'standard' }
+
+function planOpenAi(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan {
+  const reported = typeof input.serviceTier === 'string' ? input.serviceTier : null
+  const tier = reported === null ? null : (OPENAI_TIER_BY_REPORTED[reported] ?? reported)
+  let lines: BillableLine[]
+  if (input.unit === 'input_tokens') {
+    const cached = countOrNull(input.cachedInputTokens)
+    if (cached !== null && cached > 0) {
+      const cachedFixed = parseFixed(cached)!
+      if (cachedFixed > quantity) return { ok: false, result: unavailable('inconsistent_usage') }
+      lines = [
+        { category: 'input', quantity: quantity - cachedFixed },
+        { category: 'cached_input', quantity: cachedFixed },
+      ]
+    } else {
+      lines = [{ category: 'input', quantity }]
+    }
+  } else if (input.unit === 'output_tokens') {
+    lines = [{ category: 'output', quantity }]
+  } else {
+    return { ok: false, result: unavailable('unit_not_priceable') }
+  }
+  return { ok: true, lines, tier, paidTierListPrice: false }
+}
+
 function planKling(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan {
   // Only API "units" have a published USD mapping. MCP "credits" (a consumer-plan currency) have none.
   if (input.unit !== 'units') return { ok: false, result: unavailable('unit_not_priceable') }
@@ -173,6 +203,7 @@ function planKling(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan 
 
 const ADAPTERS: Record<string, (input: ProviderUsageCostInput, quantity: Fixed) => BillingPlan> = {
   gemini: planGemini,
+  openai: planOpenAi,
   kling: planKling,
 }
 
