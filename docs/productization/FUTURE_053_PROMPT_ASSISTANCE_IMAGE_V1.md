@@ -1,6 +1,6 @@
 # FUTURE-053 — AI Prompt Assistance V1 (Image Slice)
 
-Status: **CODE_READY and deployed** — merged and live on Production; the paid live-provider smoke is the only open item. Video Slice 2 is out of scope.
+Status: **COMPLETE** — merged, deployed and proven by an authenticated Production smoke (4 paid text-model attempts, 2026-10-09). Cost estimation for these events is unavailable by design (see "Production smoke"). Video Slice 2 is out of scope.
 
 ## Authority and scope
 
@@ -133,7 +133,7 @@ Additional corrections found during validation: typecheck errors in the route/pa
 | ESLint on changed files | 0 errors; 15 warnings, all pre-existing in `imagens/page.tsx` (none on lines added by this slice) |
 | Full test suite (final run, 274 files / 5026 tests) | 5019 passed, 7 failed — all classified below; the one slice-caused failure in that run was fixed and re-verified |
 | Build | Vercel build for PR #157 SUCCESS and Production deployment SUCCESS. A local `next build` (webpack, offline) compiles but trips the page-export type check on `ImagesPageShell`; the identical error reproduces on a clean checkout of `ec7afea`, so it is an environment/mode artefact, not a regression |
-| Paid live provider smoke | Not run; requires explicit bounded authorization |
+| Paid live provider smoke | PASS — 4 of 4 authorized attempts succeeded (see "Production smoke") |
 
 ### Full-suite classification
 
@@ -151,17 +151,74 @@ First full run: 15 failures; final run: 7 failures. All classified, none unexpla
 - Branch commit: `f2ba9f0`. Merge SHA on `origin/main`: `85b3648afcfe3577b98565a047acd5dd5bd59373`.
 - Production deployment: GitHub deployment `6974369553`, environment Production, SHA `85b3648`, state `success`.
 - Read-only Production smoke: `POST https://content.multihuman.com.br/api/prompt-assistance` without a session returns `401 UNAUTHORIZED` (route deployed, authentication enforced, no provider reached); `/imagens` without a session redirects to `/login`. No authenticated or paid invocation was performed.
-- Paid live provider smoke: **not run** — requires explicit, bounded user authorization (one `create` and one `improve` per provider is sufficient).
+- Paid live provider smoke: **run and passed** on 2026-10-09 (see "Production smoke").
 - Migration: none.
 - New persistence entity: none.
 - Render worker: unchanged.
 
+## Production smoke
+
+Date: 2026-10-09 (local, 23:23–23:25 BRT; ledger timestamps 2026-10-10 02:23–02:25 UTC). Authorization: exactly four paid text-model inferences, no image, video or evaluator calls, no retries.
+
+**Deployed state tested.** `origin/main` `ca7a34c` (docs-only on top of the feature merge `85b3648`); Production deployments `6974369553` (`85b3648`) and `6974418447` (`ca7a34c`) both `success`; application code identical. Tested at `https://content.multihuman.com.br`, authenticated as the owner account.
+
+**Pre-flight.** Workspace `/imagens/geracoes/295dce12-…` (Project "Projeto teste", Production "Smoke Test Final"; an empty pre-existing test session: `working_prompt` `""`, `generatedPrompt` null, `autoMode` false, revision 0, no image, no attempts). The workspace showed "Criar com IA" and "Melhorar com IA", the "Assistência" selector with all four catalog models (OpenAI GPT-4o mini / GPT-3.5 Turbo, Gemini 3.5 Flash / Flash-Lite), the Auto Mode switch disabled and labelled "(indisponível: a assistência de IA nunca gera imagem automaticamente)", and an editable prompt field.
+
+**Inputs.** CREATE: "A peaceful Atlantic rainforest at sunrise, soft natural light, documentary photography, realistic vegetation, no futuristic elements." IMPROVE: the deliberately basic prompt "A rainforest at sunrise." with the same intent as source.
+
+### Matrix
+
+| Test | Provider / model | Operation | HTTP | Result | Tokens in / out | Disposition of suggestion |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | OpenAI `gpt-4o-mini` | create | 200 | Valid English prompt shown as "Sugestão da IA — Não aplicada" | 265 / 74 | Applied |
+| B | OpenAI `gpt-4o-mini` | improve | 200 | Valid improved prompt | 285 / 26 | Discarded |
+| C | Gemini `gemini-3.5-flash-lite` | create | 200 | Valid plain-text prompt (no JSON shape — confirms the `text/plain` fix) | 273 / 79 | Discarded |
+| D | Gemini `gemini-3.5-flash-lite` | improve | 200 | Valid improved prompt | 296 / 56 | Applied |
+
+Exactly four `POST /api/prompt-assistance` requests were issued (browser request log), each with the selected provider/model, server-side Project/Production ids and no Identity or context payload. No errors, rate limits or retries occurred. The first click on "Criar com IA" did not register in the automation harness and sent nothing (verified: no request, no ledger row); it was repeated once, before any spend. Totals: OpenAI 550 in / 100 out; Gemini 569 in / 135 out.
+
+### Apply / Discard and persistence
+
+- Each suggestion appeared in a separate card marked "Não aplicada"; the intent field and the prompt field were unchanged until Apply.
+- **Apply (A, D)** wrote the suggestion only into the editable prompt field (still editable, `readOnly` false) and triggered one normal autosave `PATCH` of the session; the intent text was untouched.
+- **Discard (B, C)** removed the card and preserved the authored text exactly ("A rainforest at sunrise."); no write followed.
+- Between a request and Apply/Discard there were no session writes: the request log shows `PATCH` only after typing and after Apply. A reload does not restore a suggestion.
+- `images` (26), `prompts` (36) and `video_generations` (10) row counts for the user were identical before and after; no `image_generation_attempts` were created; `provider_usage_events` rows not from Prompt Assistance since the smoke started: 0.
+
+### Auto Mode
+
+The switch stayed disabled (`aria-checked=false`) with the accurate label throughout. Create, Improve, Apply and Discard issued no image, video, evaluator, review or attempt request: zero non-GET calls other than the four assistance `POST`s and the session autosave `PATCH`es.
+
+### Usage ledger (`provider_usage_events`)
+
+Eight rows (two per attempt), all `resource_type = prompt_assistance`, `transport = api`, owner user id, Project and Production ids of the test workspace, `measurement_source = provider_reported`, actual model, `operation` create/improve, `provider_metadata` exactly `{"media_type":"image","operation":"<op>"}` (no prompt, Identity or response text), idempotency key `prompt_assistance:<provider request id>:<input|output>`. Eight distinct keys, no duplicates; the user's ledger rose from 11 to 19 rows. The Settings "Uso e custos" page shows all eight as provider-reported tokens.
+
+### Cost
+
+Not estimated by the application, and none is asserted here:
+
+- OpenAI `gpt-4o-mini`: no pricing version exists in `provider_pricing_versions` → "Preço indisponível".
+- Gemini `gemini-3.5-flash-lite`: pricing versions exist, but the estimate requires a service tier proven by the event, and Prompt Assistance does not persist the provider-reported `serviceTier` on its ledger rows → "Preço indisponível" (ambiguity is surfaced rather than guessed).
+
+### Cleanup
+
+The test session was restored through the UI: `working_prompt` `""`, `generatedPrompt` null, `autoMode` false, all other working state identical to the recorded initial state; only `revision` (0 → 6) and `updated_at` differ. No suggestion remains. No ledger rows were modified, deleted or backfilled. No other user data was touched.
+
+### Findings (no fixes made in this mission)
+
+1. **Gemini thinking tokens are not recorded for Prompt Assistance.** The recorder stores input and output only; the Gemini Review integration also records "raciocínio" tokens. Whether these four Flash-Lite calls produced thinking tokens cannot be determined from stored data, so billable Gemini output may be under-recorded. Recording is truthful (nothing fabricated) but possibly incomplete.
+2. **`serviceTier` is not persisted**, which is why Gemini estimates stay unavailable (above).
+3. **No OpenAI pricing version** for `gpt-4o-mini` (or any OpenAI text model) in the registry.
+
+Recommended follow-up (separate mission): record Gemini thinking tokens and `serviceTier` on Prompt Assistance ledger rows and add an OpenAI `gpt-4o-mini` pricing version with evidence. Not required for Slice 1 acceptance.
+
 ## Known limitations
 
 - Auto Mode has no active behaviour on `/imagens` in this slice (see decision above).
-- Paid-provider behaviour (real OpenAI/Gemini responses, actual token counts) is untested here; automated tests mock both providers.
+- Automated tests mock both providers; real provider behaviour was proven once by the Production smoke above (one create and one improve per provider), not by a recurring test.
+- Prompt Assistance usage rows lack Gemini thinking tokens and the provider service tier, so cost stays unavailable (see Findings).
 - The reset-form abort path is covered by code review, not by a page-level test (only reachable outside the canonical workspace).
-- Estimated list-price cost is derived from the existing pricing registry only when token counts and price coverage exist; otherwise cost stays unknown.
+- Estimated list-price cost is derived from the existing pricing registry only when token counts, price coverage and (for Gemini) a proven service tier exist; otherwise cost stays unknown — currently true for all Prompt Assistance events.
 
 ## Video Slice 2 handoff
 
