@@ -125,7 +125,7 @@ describe('no provider secret reaches client code', () => {
     const page = readFileSync(join(ROOT, 'app/(dashboard)/imagens/page.tsx'), 'utf8')
     expect(page).not.toMatch(/generateImagePrompt\s*\(/)
     expect(page).not.toMatch(/import\s*\{[^}]*\bgenerateImagePrompt\b/)
-    expect(page).toContain("/api/prompts/generate-image-prompt")
+    expect(page).toContain("/api/prompt-assistance")
     expect(page).not.toMatch(/openaiApiKey|nanobananaApiKey/)
   })
 
@@ -133,7 +133,9 @@ describe('no provider secret reaches client code', () => {
     const callers = filesContaining('api.openai.com')
     for (const path of callers) {
       // GEMINI_REVIEW_PROVIDER_FOUNDATION_V1: the OpenAI Review execution provider is a server-only module.
-      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts' || path === 'lib/reviews/providers/openai.ts').toBe(true)
+      // FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1: the Prompt Assistance OpenAI adapter is server-only and receives the
+      // credential from the authenticated route (resolveProviderExecution).
+      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts' || path === 'lib/reviews/providers/openai.ts' || path === 'lib/prompt-assistance/providers.ts').toBe(true)
     }
   })
 })
@@ -174,6 +176,8 @@ describe('user_byok is the only execution mode wired into routes', () => {
         'app/api/nanobanana/generate/route.ts',
         'app/api/openai/generate-image/route.ts',
         'app/api/posts/generate-feed-text/route.ts',
+        // FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1: explicit text-model assistance for /imagens.
+        'app/api/prompt-assistance/route.ts',
         'app/api/prompts/generate-image-prompt/route.ts',
         'app/api/prompts/translate/route.ts',
         'app/api/video-generations/[id]/sync/route.ts',
@@ -252,6 +256,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // SHARED_REVIEW_CORE_AND_IMAGE_ADAPTER_V1: the server-only Review service writes immutable Review rows after
       // the authenticated route has verified the user; every operation is scoped to that user id.
       path === 'lib/reviews/service.ts' ||
+      // FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1: the server-only usage recorder writes factual provider_usage_events rows
+      // (no user INSERT policy) for the verified user id handed over by the authenticated Prompt Assistance route.
+      path === 'lib/prompt-assistance/usage.ts' ||
       // GEMINI_VIDEO_REVIEW_ADAPTER_V1: the server-only Video Review service is the Video counterpart of the Image
       // Review service. It writes media artifacts and immutable Review rows (RLS gives users SELECT only) after the
       // authenticated route has verified the user; every query is filtered by that user id and the browser sends

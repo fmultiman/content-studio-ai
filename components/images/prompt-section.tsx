@@ -20,6 +20,10 @@ export type ImageModel =
 interface PromptSectionProps {
   generatedPrompt: string
   setGeneratedPrompt: (value: string) => void
+  suggestedPrompt?: string
+  suggestedOperation?: 'create' | 'improve' | null
+  onApplySuggestion?: () => void
+  onDiscardSuggestion?: () => void
   generatedPromptPt?: string
   onTranslatePrompt?: () => Promise<void>
   isTranslatingPrompt?: boolean
@@ -41,6 +45,10 @@ interface PromptSectionProps {
 export function PromptSection({
   generatedPrompt,
   setGeneratedPrompt,
+  suggestedPrompt = '',
+  suggestedOperation = null,
+  onApplySuggestion,
+  onDiscardSuggestion,
   generatedPromptPt = '',
   onTranslatePrompt,
   isTranslatingPrompt = false,
@@ -59,7 +67,7 @@ export function PromptSection({
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(
-      activePromptLanguage === 'pt' ? generatedPromptPt || generatedPrompt : generatedPrompt,
+      activePromptLanguage === 'pt' ? generatedPromptPt || generatedPrompt || suggestedPrompt : generatedPrompt || suggestedPrompt,
     )
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -74,7 +82,7 @@ export function PromptSection({
     }
   }
 
-  if (!generatedPrompt) return null
+  if (!generatedPrompt && !suggestedPrompt) return null
 
   return (
     <div className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
@@ -111,8 +119,26 @@ export function PromptSection({
       </div>
 
       <div className="space-y-6">
+        {suggestedPrompt && (
+          <div className="rounded-lg border border-violet-400/40 bg-violet-500/10 p-4" data-testid="prompt-assistance-suggestion">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium text-foreground">Sugestão da IA</p>
+                <p className="text-xs text-muted-foreground">
+                  {suggestedOperation === 'improve' ? 'Melhoria proposta para o prompt atual.' : 'Prompt proposto a partir da sua intenção.'}
+                </p>
+              </div>
+              <Badge variant="secondary">Não aplicada</Badge>
+            </div>
+            <Textarea value={suggestedPrompt} readOnly rows={5} className="resize-none bg-background/50 font-mono text-sm" aria-label="Sugestão de prompt" />
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" onClick={onDiscardSuggestion} data-testid="prompt-assistance-discard">Descartar</Button>
+              <Button onClick={onApplySuggestion} data-testid="prompt-assistance-apply">Aplicar</Button>
+            </div>
+          </div>
+        )}
         {/* Prompt Details Badges — only render chips backed by real data */}
-        {promptDetails && (
+        {promptDetails && generatedPrompt && (
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary" className="border-transparent bg-[color:color-mix(in_oklch,var(--indicator-brand)_18%,transparent)] text-[var(--text-primary)]">
               {promptDetails.style}
@@ -131,7 +157,7 @@ export function PromptSection({
         )}
 
         {/* Editable Prompt */}
-        <Tabs value={activePromptLanguage} onValueChange={handleLanguageChange}>
+        {generatedPrompt && <Tabs value={activePromptLanguage} onValueChange={handleLanguageChange}>
           <div className="mb-2 flex items-center justify-between gap-3">
             <Label htmlFor="generated-prompt">
               {activePromptLanguage === 'pt' ? 'Versao em Portugues' : 'Prompt em Ingles'}
@@ -191,10 +217,10 @@ export function PromptSection({
               Esta versao e apenas para leitura. A imagem continua usando o prompt em ingles.
             </p>
           </TabsContent>
-        </Tabs>
+        </Tabs>}
 
         {/* Create Image - Single Button + Model Selector (Manual Mode Only) */}
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        {generatedPrompt && <div className="flex flex-wrap items-center justify-end gap-3">
           {/* Model Selector - Only show in manual mode */}
           {!automationEnabled && onModelChange && (
             <div className="flex items-center gap-2">
@@ -241,7 +267,7 @@ export function PromptSection({
               </>
             )}
           </Button>
-        </div>
+        </div>}
       </div>
     </div>
   )

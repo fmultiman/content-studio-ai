@@ -267,7 +267,11 @@ export function createGeminiClient(options: GeminiClientOptions = {}) {
     },
 
     async generateContent(input: GeminiGenerateInput & { apiKey: string }): Promise<GeminiGenerateOutput> {
-      const generationConfig: Record<string, unknown> = { responseMimeType: 'application/json', maxOutputTokens: 4096, temperature: 0.2 }
+      const generationConfig: Record<string, unknown> = {
+        responseMimeType: input.responseSchema ? 'application/json' : 'text/plain',
+        maxOutputTokens: 4096,
+        temperature: 0.2,
+      }
       if (input.responseSchema) generationConfig.responseJsonSchema = input.responseSchema
       const response = await request(`${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(input.model)}:generateContent`, {
         method: 'POST',

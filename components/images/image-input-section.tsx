@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Sparkles, Loader2, Wand2, Save, Plus } from 'lucide-react'
 import type { Project } from '@/lib/types'
+import type { PromptAssistanceModel } from '@/lib/prompt-assistance/models'
 
 interface ImageInputSectionProps {
   projects: Project[]
@@ -23,7 +24,12 @@ interface ImageInputSectionProps {
   setSelectedProject: (value: string | null) => void
   autoMode: boolean
   setAutoMode: (value: boolean) => void
-  onGeneratePrompt: () => void
+  onCreateWithAI: () => void
+  onImproveWithAI: () => void
+  canImprove: boolean
+  assistantModel: PromptAssistanceModel
+  assistantModels: readonly PromptAssistanceModel[]
+  onAssistantModelChange: (model: PromptAssistanceModel) => void
   isGeneratingPrompt: boolean
   onSaveDraft: () => void
   isSavingDraft: boolean
@@ -41,7 +47,12 @@ export function ImageInputSection({
   setSelectedProject,
   autoMode,
   setAutoMode,
-  onGeneratePrompt,
+  onCreateWithAI,
+  onImproveWithAI,
+  canImprove,
+  assistantModel,
+  assistantModels,
+  onAssistantModelChange,
   isGeneratingPrompt,
   onSaveDraft,
   isSavingDraft,
@@ -120,14 +131,12 @@ export function ImageInputSection({
               id="auto-mode"
               checked={autoMode}
               onCheckedChange={setAutoMode}
-              disabled={!automationEnabled}
+              disabled
             />
             <Label htmlFor="auto-mode" className="cursor-pointer">
               <span className="font-medium">Modo Automático</span>
               <span className="ml-2 text-sm text-muted-foreground">
-                {automationEnabled 
-                  ? '(Gerar prompt + imagem automaticamente)' 
-                  : '(Ative em Configurações > Automação)'}
+                (indisponível: a assistência de IA nunca gera imagem automaticamente)
               </span>
             </Label>
           </div>
@@ -143,9 +152,30 @@ export function ImageInputSection({
               {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar Rascunho
             </Button>}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground">Assistência:</Label>
+              <Select
+                value={`${assistantModel.provider}:${assistantModel.id}`}
+                onValueChange={(value) => {
+                  const selected = assistantModels.find((entry) => `${entry.provider}:${entry.id}` === value)
+                  if (selected) onAssistantModelChange(selected)
+                }}
+              >
+                <SelectTrigger className="w-[205px]" aria-label="Modelo de assistência">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {assistantModels.map((model) => (
+                    <SelectItem key={`${model.provider}:${model.id}`} value={`${model.provider}:${model.id}`}>
+                      {model.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button
-              onClick={onGeneratePrompt}
-              disabled={!userInput.trim() || isGeneratingPrompt}
+              onClick={onCreateWithAI}
+              disabled={!userInput.trim() || isGeneratingPrompt || assistantModels.length === 0}
               className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600"
             >
               {isGeneratingPrompt ? (
@@ -153,12 +183,21 @@ export function ImageInputSection({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Gerando...
                 </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  {automationEnabled ? 'Gerar Prompt + Imagem' : 'Gerar Prompt (IA)'}
-                </>
-              )}
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  Criar com IA
+                  </>
+                )}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={onImproveWithAI}
+              disabled={!canImprove || isGeneratingPrompt || assistantModels.length === 0}
+              className="gap-2"
+            >
+              <Sparkles className="h-4 w-4" />
+              Melhorar com IA
             </Button>
           </div>
         </div>
