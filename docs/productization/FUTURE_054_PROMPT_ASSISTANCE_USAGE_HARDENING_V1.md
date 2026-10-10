@@ -1,6 +1,6 @@
 # FUTURE-054 — Prompt Assistance usage accounting and pricing hardening V1
 
-Status: code merged (see Delivery evidence); **pricing seed `062` authored but not applied to Production** (operator step); no live paid verification of the new fields (none was authorized). Follows FUTURE-053 Slice 1 (`FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1.md`). Video Slice 2 is out of scope.
+Status: **code merged and deployed**; **pricing seed `062` authored but NOT applied to Production** (operator step); no live paid verification of the new fields (none was authorized). Follows FUTURE-053 Slice 1 (`FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1.md`). Video Slice 2 is out of scope.
 
 ## Phase A — accounting audit (read-only)
 
@@ -92,4 +92,8 @@ New/extended coverage: `lib/prompt-assistance/__tests__/usage.test.ts` (cardinal
 
 ## Delivery evidence
 
-Filled at merge time (see below).
+- Starting `origin/main`: `400ef3b3e7fb9e5dc777f72c216c2aa85ecdde55` (verified before changes).
+- PR [#160](https://github.com/fmultiman/content-studio-ai/pull/160), merged with a merge commit after the Vercel check passed: merge SHA `cfd963b1cd3b11d78c9199708bcffb72e7b0a3d7`.
+- Production deployment: GitHub deployment `6982264656`, environment Production, SHA `cfd963b`, state `success`. Read-only smoke: unauthenticated `POST /api/prompt-assistance` returns `401 UNAUTHORIZED`. No authenticated or paid request was made in this mission.
+- Production database: unchanged (no migration applied, no ledger row written or modified, no backfill).
+- Operator step pending: apply `scripts/062_seed_openai_gpt_4o_mini_pricing.sql` (see Migration verdict).
