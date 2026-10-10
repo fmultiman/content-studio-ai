@@ -272,9 +272,10 @@ describe('deriveProviderUsageCost — Kling and unsupported providers', () => {
     expect(deriveProviderUsageCost(klingRest({ model: 'kling-v2-6' }), kling)).toEqual({ status: 'unavailable', reason: 'no_pricing_for_model' })
   })
 
-  it('providers without ledger semantics (OpenAI, Nano Banana...) are unsupported even if a price existed', () => {
-    const openai = [version({ provider: 'openai', model: 'gpt-4o-mini' })]
-    expect(deriveProviderUsageCost({ provider: 'openai', transport: 'rest', operation: 'image_review', model: 'gpt-4o-mini', quantity: 100, unit: 'input_tokens', measurementSource: 'provider_reported', occurredAt: EXECUTED }, openai))
+  // FUTURE-054: OpenAI now has billing semantics for Prompt Assistance (see prompt-assistance-pricing.test.ts).
+  it('providers without ledger semantics (Nano Banana...) are unsupported even if a price existed', () => {
+    const nano = [version({ provider: 'nano_banana', model: 'nano-banana-2' })]
+    expect(deriveProviderUsageCost({ provider: 'nano_banana', transport: 'rest', operation: 'image_generation', model: 'nano-banana-2', quantity: 100, unit: 'input_tokens', measurementSource: 'provider_reported', occurredAt: EXECUTED }, nano))
       .toEqual({ status: 'unavailable', reason: 'provider_not_supported' })
   })
 })

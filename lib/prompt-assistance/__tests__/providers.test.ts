@@ -60,4 +60,66 @@ describe('Prompt Assistance provider adapters', () => {
     await expect(executePromptProvider({ provider: 'openai', model: 'gpt-4o-mini', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' }))
       .rejects.toMatchObject({ code: 'PROVIDER_INVALID_RESPONSE', usage: { inputTokens: 30, outputTokens: 0, totalTokens: 30, providerRequestId: 'openai-empty' } })
   })
+
+  it('captures Gemini thinking tokens, the cached subset, tool-use tokens and the service tier ONLY as reported, without adding them to the other counts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      responseId: 'gem-think',
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ thought: true, text: 'hidden reasoning' }, { text: 'Visible prompt.' }] } }],
+      usageMetadata: { promptTokenCount: 100, cachedContentTokenCount: 20, candidatesTokenCount: 30, thoughtsTokenCount: 50, toolUsePromptTokenCount: 4, totalTokenCount: 184, serviceTier: 'flex' },
+    }), { status: 200 }))
+    const { executePromptProvider } = await import('../providers')
+    const result = await executePromptProvider({ provider: 'gemini', model: 'gemini-3.5-flash-lite', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' })
+    expect(result.text).toBe('Visible prompt.')
+    expect(result.usage).toEqual({
+      inputTokens: 100, outputTokens: 30, totalTokens: 184, serviceTier: 'flex', thoughtsTokens: 50, cachedInputTokens: 20, toolUsePromptTokens: 4, providerRequestId: 'gem-think',
+    })
+  })
+
+  it('does not invent Gemini thinking or tier data the provider did not send', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      responseId: 'gem-plain',
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Plain.' }] } }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 6, totalTokenCount: 16 },
+    }), { status: 200 }))
+    const { executePromptProvider } = await import('../providers')
+    const { usage } = await executePromptProvider({ provider: 'gemini', model: 'gemini-3.5-flash-lite', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' })
+    expect(usage).toEqual({ inputTokens: 10, outputTokens: 6, totalTokens: 16, serviceTier: null, providerRequestId: 'gem-plain' })
+    expect(usage).not.toHaveProperty('thoughtsTokens')
+  })
+
+  it('Gemini thinking tokens survive a rejected (truncated) paid response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      responseId: 'gem-cut2',
+      candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: 'x' }] } }],
+      usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 10, thoughtsTokenCount: 4000, totalTokenCount: 4030 },
+    }), { status: 200 }))
+    const { executePromptProvider } = await import('../providers')
+    await expect(executePromptProvider({ provider: 'gemini', model: 'gemini-3.5-flash', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' }))
+      .rejects.toMatchObject({ code: 'PROVIDER_INVALID_RESPONSE', usage: { inputTokens: 20, outputTokens: 10, thoughtsTokens: 4000, providerRequestId: 'gem-cut2' } })
+  })
+
+  it('captures the OpenAI cached subset and the service tier the response itself reports, and nothing else', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'openai-tier',
+      service_tier: 'default',
+      choices: [{ message: { content: 'Prompt.' } }],
+      usage: { prompt_tokens: 1200, completion_tokens: 40, total_tokens: 1240, prompt_tokens_details: { cached_tokens: 1024 }, completion_tokens_details: { reasoning_tokens: 0 } },
+    }), { status: 200 }))
+    const { executePromptProvider } = await import('../providers')
+    const { usage } = await executePromptProvider({ provider: 'openai', model: 'gpt-4o-mini', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' })
+    expect(usage).toEqual({ inputTokens: 1200, outputTokens: 40, totalTokens: 1240, cachedInputTokens: 1024, serviceTier: 'default', providerRequestId: 'openai-tier' })
+  })
+
+  it('ignores an OpenAI service_tier that is not a plain token and never defaults a missing one', async () => {
+    const run = async (service_tier: unknown) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+        id: 'o', ...(service_tier === undefined ? {} : { service_tier }), choices: [{ message: { content: 'P.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }), { status: 200 }))
+      const { executePromptProvider } = await import('../providers')
+      return (await executePromptProvider({ provider: 'openai', model: 'gpt-4o-mini', apiKey: 'secret', systemInstruction: 's', userInstruction: 'u' })).usage
+    }
+    expect(await run(undefined)).not.toHaveProperty('serviceTier')
+    expect(await run('<script>alert(1)</script>')).not.toHaveProperty('serviceTier')
+    expect(await run(null)).not.toHaveProperty('serviceTier')
+  })
 })
