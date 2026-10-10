@@ -1,6 +1,6 @@
 # FUTURE-053 — AI Prompt Assistance V1 (Image Slice)
 
-Status: code complete and validated; delivery evidence (PR, merge, deployment) is recorded at the end. Video Slice 2 is out of scope.
+Status: **CODE_READY and deployed** — merged and live on Production; the paid live-provider smoke is the only open item. Video Slice 2 is out of scope.
 
 ## Authority and scope
 
@@ -131,25 +131,27 @@ Additional corrections found during validation: typecheck errors in the route/pa
 | Credential-boundary / governance scans after allow-list updates | PASS |
 | Typecheck (`tsc --noEmit -p tsconfig.typecheck.json`) | PASS, 0 errors |
 | ESLint on changed files | 0 errors; 15 warnings, all pre-existing in `imagens/page.tsx` (none on lines added by this slice) |
-| Full test suite | See "Full-suite classification" below |
-| Build | See delivery evidence |
+| Full test suite (final run, 274 files / 5026 tests) | 5019 passed, 7 failed — all classified below; the one slice-caused failure in that run was fixed and re-verified |
+| Build | Vercel build for PR #157 SUCCESS and Production deployment SUCCESS. A local `next build` (webpack, offline) compiles but trips the page-export type check on `ImagesPageShell`; the identical error reproduces on a clean checkout of `ec7afea`, so it is an environment/mode artefact, not a regression |
 | Paid live provider smoke | Not run; requires explicit bounded authorization |
 
 ### Full-suite classification
 
-First full run: 15 failures, all classified, none unexplained:
+First full run: 15 failures; final run: 7 failures. All classified, none unexplained:
 
 - 4 caused by this slice and fixed: the credential-boundary allow-lists for the OpenAI adapter, the credential-resolving route and the service-role usage recorder, and the `params:` regex in `image-route-convergence` (renamed a local parameter).
 - 2 pre-existing on `ec7afea` (`editor-workspace.test.ts`, `static-parity.test.ts` expect "Estilo"; the source label is "Estilos") — reproduced on a clean checkout of `ec7afea`, unrelated to this slice.
 - 1 flaky timing test (`video-generation-workspace.test.tsx` optimistic-concurrency case) — passes 3/3 on this branch in isolation and failed 1/3 on clean `ec7afea`.
-- 8 repository-scanning tests that exceed the 5 s default timeout when the whole suite loads the machine; they pass in isolation with a raised timeout.
+- Repository-scanning tests that exceed the 5 s default timeout when the whole suite loads the machine (8 in the first run; 4 in the final run: `environment-isolation`, `supabase-admin-credential`, `renderer-isolation`, `single-writer`); they pass in isolation with a raised timeout.
+- 1 in the final run caused by this slice and fixed afterwards: `provider-usage-ledger` forbids any file other than the recorder naming the ledger table, and `lib/prompt-assistance/usage.ts` named it in a comment (reworded; test passes).
 
 ## Delivery evidence
 
-- PR: pending creation from this branch.
-- Merge SHA: pending.
-- Production deployment and exact SHA: pending.
-- Production UI/API smoke: read-only checks may be performed after merge; no live assistance invocation is performed without explicit paid-call authorization.
+- PR: [#157](https://github.com/fmultiman/content-studio-ai/pull/157), merged with a merge commit (repository convention) after the Vercel check passed.
+- Branch commit: `f2ba9f0`. Merge SHA on `origin/main`: `85b3648afcfe3577b98565a047acd5dd5bd59373`.
+- Production deployment: GitHub deployment `6974369553`, environment Production, SHA `85b3648`, state `success`.
+- Read-only Production smoke: `POST https://content.multihuman.com.br/api/prompt-assistance` without a session returns `401 UNAUTHORIZED` (route deployed, authentication enforced, no provider reached); `/imagens` without a session redirects to `/login`. No authenticated or paid invocation was performed.
+- Paid live provider smoke: **not run** — requires explicit, bounded user authorization (one `create` and one `improve` per provider is sufficient).
 - Migration: none.
 - New persistence entity: none.
 - Render worker: unchanged.
