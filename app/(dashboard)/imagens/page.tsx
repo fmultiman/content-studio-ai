@@ -14,7 +14,7 @@ import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
-import { PromptGenerationError, regeneratePrompt, type PromptGenerationResult } from '@/lib/ai-simulator'
+import { PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -51,6 +51,7 @@ import { useGenerationSessionNavigation } from '@/components/generation-session/
 import type { GenerationSessionAutosaveAdapter } from '@/lib/generation-session/autosave'
 import type { ImageGenerationWorkingStateV1 } from '@/lib/image-generation/session'
 import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
+import { DEFAULT_PROMPT_ASSISTANCE_MODEL, PROMPT_ASSISTANCE_MODELS, type PromptAssistanceModel } from '@/lib/prompt-assistance/models'
 import {
   buildImageDraftHubCards,
   filterDraftHubCards,
@@ -150,13 +151,47 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   // Provider configuration status — booleans only. The full secret never
   // reaches the browser; see /api/settings/providers (AI_PROVIDER_CREDENTIALS_BYOK_V1).
   const [openaiConfigured, setOpenaiConfigured] = useState(false)
+  const [geminiConfigured, setGeminiConfigured] = useState(false)
+  const [providerStatusLoaded, setProviderStatusLoaded] = useState(false)
   const [nanobananaConfigured, setNanobananaConfigured] = useState(false)
   const [isGeneratingNanoBanana, setIsGeneratingNanoBanana] = useState(false)
   const imageClientRequestIdRef = useRef<string>(crypto.randomUUID())
   const [automationEnabled, setAutomationEnabled] = useState(false)
   const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>('gpt-image-2')
   const [selectedModel, setSelectedModel] = useState<ImageModel>('gpt-image-2')
+  const [preferredAssistantModel, setAssistantModel] = useState<PromptAssistanceModel>(DEFAULT_PROMPT_ASSISTANCE_MODEL)
+  const [suggestedPrompt, setSuggestedPrompt] = useState('')
+  const [suggestedOperation, setSuggestedOperation] = useState<'create' | 'improve' | null>(null)
+  const promptAssistanceRequestIdRef = useRef(0)
+  const promptAssistanceAbortRef = useRef<AbortController | null>(null)
+  const promptAssistanceStateRef = useRef({
+    projectId: null as string | null,
+    productionId: null as string | null,
+    modelKey: `${DEFAULT_PROMPT_ASSISTANCE_MODEL.provider}:${DEFAULT_PROMPT_ASSISTANCE_MODEL.id}`,
+    originalText: '',
+    currentText: '',
+  })
+  // No capability is advertised until provider status is known; a failed lookup leaves both providers unconfigured.
+  const availableAssistantModels = useMemo(
+    () => providerStatusLoaded
+      ? PROMPT_ASSISTANCE_MODELS.filter((model) => model.provider === 'openai' ? openaiConfigured : geminiConfigured)
+      : [],
+    [geminiConfigured, openaiConfigured, providerStatusLoaded],
+  )
+  const assistantModel = availableAssistantModels.find((model) => model.provider === preferredAssistantModel.provider && model.id === preferredAssistantModel.id)
+    ?? availableAssistantModels[0]
+    ?? preferredAssistantModel
   const [currentAttempt, setCurrentAttempt] = useState(1)
+
+  // Invalidates any in-flight assistance request (generation counter + client abort) and drops a pending suggestion.
+  const cancelPromptAssistance = () => {
+    promptAssistanceRequestIdRef.current += 1
+    promptAssistanceAbortRef.current?.abort()
+    promptAssistanceAbortRef.current = null
+    setSuggestedPrompt('')
+    setSuggestedOperation(null)
+    setIsGeneratingPrompt(false)
+  }
 
   const currentImageAutosaveState = useMemo<ImageAutosaveState>(() => ({
     workingPrompt: userInput,
@@ -429,6 +464,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       for (const image of data || []) imageById.set(image.id, image as ImageType)
     }
     const current = session.currentImageId ? imageById.get(session.currentImageId) || null : null
+    cancelPromptAssistance()
     setCurrentDraftId(null)
     setSelectedProject(session.projectId || null)
     setProductionId(session.productionId || null)
@@ -574,6 +610,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setImageUrl(currentDisplayUrl || draft.image_url || null)
     setImageStatus(draft.image_status || 'draft')
 
+    cancelPromptAssistance()
     setCurrentDraftId(draft.id)
     setUserInput(draft.user_input)
     setSelectedProject(draft.project_id)
@@ -701,11 +738,16 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
               const providersPayload = await providersResponse.json()
               if (!cancelled) {
                 setOpenaiConfigured(providersPayload?.providers?.openai?.status === 'configured')
+                setGeminiConfigured(providersPayload?.providers?.gemini?.status === 'configured')
+                setProviderStatusLoaded(true)
                 setNanobananaConfigured(providersPayload?.providers?.nano_banana?.status === 'configured')
               }
+            } else if (!cancelled) {
+              setProviderStatusLoaded(true)
             }
           } catch (providerStatusError) {
             console.error('[v0] Provider status load error:', providerStatusError)
+            if (!cancelled) setProviderStatusLoaded(true)
           }
         }
 
@@ -851,6 +893,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   }
 
   const resetImageForm = () => {
+    cancelPromptAssistance()
     setUserInput('')
     setGeneratedPrompt('')
     setGeneratedPromptPt('')
@@ -905,6 +948,97 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setGeneratedPrompt(prompt)
     setGeneratedPromptPt('')
     setPromptTranslationError(null)
+  }
+
+  const handlePromptAssistance = async (operation: 'create' | 'improve') => {
+    const originalText = userInput.trim()
+    const currentText = generatedPrompt.trim()
+    if (operation === 'create' && !originalText) return
+    if (operation === 'improve' && !currentText) return
+
+    promptAssistanceAbortRef.current?.abort()
+    const controller = new AbortController()
+    promptAssistanceAbortRef.current = controller
+    const requestId = ++promptAssistanceRequestIdRef.current
+    const projectId = selectedProject
+    const production = productionId
+    const model = assistantModel
+    const modelKey = `${model.provider}:${model.id}`
+    const stateAtRequest = { projectId, productionId: production, modelKey, originalText, currentText }
+    promptAssistanceStateRef.current = stateAtRequest
+    setIsGeneratingPrompt(true)
+    setSuggestedPrompt('')
+    setSuggestedOperation(null)
+
+    try {
+      const response = await fetch('/api/prompt-assistance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          productionId: production,
+          mediaType: 'image',
+          operation,
+          originalText: originalText || currentText,
+          ...(operation === 'improve' ? { currentText } : {}),
+          provider: model.provider,
+          model: model.id,
+        }),
+        signal: controller.signal,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (requestId !== promptAssistanceRequestIdRef.current) return
+      const currentState = promptAssistanceStateRef.current
+      const inputStillMatches = operation === 'create'
+        ? currentState.originalText === originalText
+        : currentState.currentText === currentText
+      if (
+        currentState.projectId !== projectId
+        || currentState.productionId !== production
+        || currentState.modelKey !== modelKey
+        || !inputStillMatches
+      ) return
+      if (!response.ok) {
+        throw new PromptGenerationError(
+          payload?.code || 'PROMPT_PROVIDER_FAILED',
+          payload?.message || 'Não foi possível preparar uma sugestão agora.',
+          response.status,
+        )
+      }
+      if (typeof payload.suggestedPrompt !== 'string' || !payload.suggestedPrompt.trim()) {
+        throw new PromptGenerationError('PROMPT_PROVIDER_INVALID_RESPONSE', 'O provider retornou uma sugestão vazia.', 502)
+      }
+      setSuggestedPrompt(payload.suggestedPrompt.trim())
+      setSuggestedOperation(operation)
+      toast({ title: 'Sugestão pronta', description: 'Revise a proposta e escolha Aplicar ou Descartar.' })
+      setTimeout(() => promptSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    } catch (error) {
+      if (requestId !== promptAssistanceRequestIdRef.current) return
+      const promptError = error instanceof PromptGenerationError ? error : null
+      toast({
+        // The server returns the Prompt Assistance code verbatim (payload.code), which is wider than PromptGenerationErrorCode.
+        title: (promptError?.code as string | undefined) === 'PROVIDER_NOT_CONFIGURED' ? 'Provedor de IA necessário' : 'Erro na assistência',
+        description: promptError?.message || 'Não foi possível preparar uma sugestão agora. Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      if (requestId === promptAssistanceRequestIdRef.current) {
+        promptAssistanceAbortRef.current = null
+        setIsGeneratingPrompt(false)
+      }
+    }
+  }
+
+  const applyPromptAssistanceSuggestion = () => {
+    if (!suggestedPrompt) return
+    updateGeneratedPrompt(suggestedPrompt)
+    setSuggestedPrompt('')
+    setSuggestedOperation(null)
+    toast({ title: 'Sugestão aplicada', description: 'O prompt continua editável antes da geração.' })
+  }
+
+  const discardPromptAssistanceSuggestion = () => {
+    cancelPromptAssistance()
   }
 
   const handleTranslatePrompt = async () => {
@@ -1425,113 +1559,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
   }
 
-  // Generate prompt handler
-  const handleGeneratePrompt = async () => {
-    if (!userInput.trim()) return
-
-    setIsGeneratingPrompt(true)
-
-    try {
-      // Get project context and identity if a project is selected
-      let projectContext: string | null = null
-      let evaluationMode: 'default' | 'conceptual' | 'aesthetic' | 'commercial' | 'experimental' = 'default'
-      let projectIdentity: ProjectIdentity | null = null
-
-      if (selectedProject) {
-        const project = projects.find(p => p.id === selectedProject)
-        if (project) {
-          projectContext = project.context
-          evaluationMode = project.evaluation_mode || 'default'
-
-          // Normalize identity — invalid identity blocks generation to avoid silent data loss
-          try {
-            projectIdentity = normalizeProjectIdentity(project.identity)
-          } catch (err) {
-            const detail = err instanceof ProjectIdentityParseError
-              ? 'Os dados estruturados não correspondem ao schema V1.'
-              : 'Erro inesperado ao ler a identidade.'
-            toast({
-              title: 'Identidade do Project inválida',
-              description: `${detail} Acesse o Project e corrija a configuração de identidade antes de gerar prompts.`,
-              variant: 'destructive',
-            })
-            return
-          }
-        }
-      }
-
-      const promptResponse = await fetch('/api/prompts/generate-image-prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userInput,
-          projectContext,
-          evaluationMode,
-          identity: projectIdentity,
-        }),
-      })
-      const promptPayload = await promptResponse.json()
-
-      if (!promptResponse.ok) {
-        throw new PromptGenerationError(
-          promptPayload?.code || 'PROMPT_PROVIDER_FAILED',
-          promptPayload?.message || 'Não foi possível gerar o prompt agora. Verifique a configuração do provedor ou tente novamente.',
-          promptResponse.status,
-        )
-      }
-
-      const result: PromptGenerationResult = promptPayload
-
-      updateGeneratedPrompt(result.prompt)
-      setPromptDetails({
-        style: result.style,
-        lighting: result.lighting,
-        composition: result.composition,
-      })
-
-      // Save prompt to database
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        await supabase.from('prompts').insert({
-          user_id: user.id,
-          original_input: userInput,
-          generated_prompt: result.prompt,
-          type: 'image',
-        })
-      }
-
-      toast({
-        title: 'Prompt gerado!',
-        description: 'O prompt foi criado com sucesso. Você pode editá-lo antes de criar a imagem.',
-      })
-
-      // Scroll automático para a seção do prompt
-      setTimeout(() => {
-        promptSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 100)
-
-      // If auto mode AND automation enabled, automatically create image with default model
-      if (autoMode && automationEnabled) {
-        await handleCreateImageWithModel(defaultImageModel)
-      } else if (autoMode) {
-        await handleCreateImage(result.prompt, selectedModel)
-      }
-    } catch (error) {
-      const promptError = error instanceof PromptGenerationError ? error : null
-      toast({
-        title: promptError?.code === 'PROMPT_PROVIDER_NOT_CONFIGURED'
-          ? 'Provedor de IA necessario'
-          : 'Erro ao gerar prompt',
-        description: promptError?.message || 'Nao foi possivel gerar o prompt agora. Verifique a configuracao do provedor ou tente novamente.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsGeneratingPrompt(false)
-    }
-  }
-
   // Create image handler
   const handleCreateImage = async (
     promptOverride?: string,
@@ -1734,6 +1761,16 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   }
 
   const requestedDraftId = searchParams.get('draft')
+  // Latest authored inputs for the stale-response guard; refreshed after every commit, before any response can resolve.
+  useEffect(() => {
+    promptAssistanceStateRef.current = {
+      projectId: selectedProject,
+      productionId,
+      modelKey: `${assistantModel.provider}:${assistantModel.id}`,
+      originalText: userInput.trim(),
+      currentText: generatedPrompt.trim(),
+    }
+  })
   const selectedProjectData = selectedProject
     ? projects.find((project) => project.id === selectedProject) ?? null
     : null
@@ -2264,7 +2301,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 setSelectedProject={setSelectedProject}
                 autoMode={autoMode}
                 setAutoMode={setAutoMode}
-                onGeneratePrompt={handleGeneratePrompt}
+                onCreateWithAI={() => handlePromptAssistance('create')}
+                onImproveWithAI={() => handlePromptAssistance('improve')}
+                canImprove={Boolean(generatedPrompt.trim())}
+                assistantModel={assistantModel}
+                assistantModels={availableAssistantModels}
+                onAssistantModelChange={setAssistantModel}
                 isGeneratingPrompt={isGeneratingPrompt}
                 onSaveDraft={handleSaveDraft}
                 isSavingDraft={isSavingDraft}
@@ -2279,6 +2321,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 <PromptSection
                   generatedPrompt={generatedPrompt}
                   setGeneratedPrompt={updateGeneratedPrompt}
+                  suggestedPrompt={suggestedPrompt}
+                  suggestedOperation={suggestedOperation}
+                  onApplySuggestion={applyPromptAssistanceSuggestion}
+                  onDiscardSuggestion={discardPromptAssistanceSuggestion}
                   generatedPromptPt={generatedPromptPt}
                   onTranslatePrompt={handleTranslatePrompt}
                   isTranslatingPrompt={isTranslatingPrompt}

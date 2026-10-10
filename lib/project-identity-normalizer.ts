@@ -39,13 +39,15 @@ function isNonNullObject(v: unknown): v is Record<string, unknown> {
 
 /** Returns true if the identity has at least one non-empty content field. */
 function hasContent(identity: ProjectIdentity): boolean {
-  const { foundation, relationship, expression, governance, practice } = identity
+  const { foundation, relationship, expression, governance, practice, visuals } = identity
 
   if (foundation?.purpose) return true
   if (relationship?.audience) return true
   if (expression?.visual_identity || expression?.voice) return true
   if (governance?.principles?.length || governance?.restrictions?.length) return true
   if (practice?.generation_preferences?.length) return true
+  if (visuals?.colors && Object.values(visuals.colors).some(Boolean)) return true
+  if (visuals?.typography && Object.values(visuals.typography).some(Boolean)) return true
 
   return false
 }

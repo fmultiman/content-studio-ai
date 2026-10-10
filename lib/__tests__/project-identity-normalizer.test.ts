@@ -78,6 +78,14 @@ describe('normalizeProjectIdentity — legitimate absence returns null', () => {
     // { schema_version: 1 } passes validation but has no fields — treated as absent
     expect(normalizeProjectIdentity(emptyZones)).toBeNull()
   })
+
+  it('keeps a valid Identity that only contains authored visual tokens', () => {
+    const identity = normalizeProjectIdentity({
+      schema_version: 1,
+      visuals: { colors: { accent: '#ff0066' } },
+    })
+    expect(identity?.visuals?.colors?.accent).toBe('#ff0066')
+  })
 })
 
 // ─── normalizeProjectIdentity — structural errors throw ───────────────────────
