@@ -625,18 +625,18 @@ export default function SettingsPage() {
                 <CardContent className="space-y-6">
                   <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                     <p className="text-sm text-amber-200/80">
-                      <strong>Modo Manual:</strong> Você escreve a descrição, gera o prompt, revisa/edita, e depois escolhe o modelo para criar a imagem.
+                      <strong>Manual:</strong> você escreve o prompt e cria a imagem. <strong>Assistido:</strong> a IA sugere um prompt; você aplica ou descarta e cria a imagem.
                     </p>
                     <p className="mt-2 text-sm text-amber-200/80">
-                      <strong>Modo Automático:</strong> Você escreve a descrição e o sistema gera o prompt e a imagem automaticamente.
+                      <strong>Automático:</strong> a cada clique em “Gerar automaticamente”, uma chamada de texto cria o prompt e uma geração de imagem é enviada. A execução roda no seu navegador enquanto a página está aberta e nunca começa sozinha.
                     </p>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label>Ativar Automação</Label>
+                      <Label>Permitir o modo Automático</Label>
                       <p className="text-sm text-muted-foreground">
-                        Gerar prompt e imagem automaticamente ao clicar
+                        Mostra a opção Automático em Imagens. Nada é executado sem você clicar em “Gerar automaticamente”.
                       </p>
                     </div>
                     <Switch
@@ -650,7 +650,7 @@ export default function SettingsPage() {
                   <div className="space-y-3">
                     <Label>Modelo Padrão de Imagem</Label>
                     <p className="text-sm text-muted-foreground">
-                      Usado no modo automático para gerar imagens
+                      Modelo de imagem selecionado por padrão ao abrir o workspace de Imagens (Manual, Assistido e Automático)
                     </p>
                     <RadioGroup
                       value={settings.default_image_model || 'gpt-image-2'}
@@ -664,7 +664,7 @@ export default function SettingsPage() {
                         <Label htmlFor="model-gpt-image-2" className="flex-1 cursor-pointer">
                           <span className="font-medium">GPT Image 2</span>
                           <p className="text-sm text-muted-foreground">
-                            DALL-E para geração de imagens
+                            Modelo de imagem mais recente da OpenAI
                           </p>
                         </Label>
                       </div>
@@ -728,7 +728,7 @@ export default function SettingsPage() {
                     
                     <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-4">
                       <p className="text-sm text-cyan-200/80">
-                        O avaliador analisa as imagens geradas com base no seu <strong>style profile</strong> do projeto e sugere melhorias automaticamente.
+                        O avaliador analisa uma imagem gerada com base no contexto e na identidade do projeto <strong>quando você clica em Avaliar</strong> e sugere um prompt refinado. A avaliação é manual: nenhuma imagem é avaliada ou refeita automaticamente.
                       </p>
                     </div>
 
@@ -736,7 +736,7 @@ export default function SettingsPage() {
                       <div>
                         <Label>Ativar Avaliador</Label>
                         <p className="text-sm text-muted-foreground">
-                          Avaliar imagens automaticamente após geração
+                          Mostra o botão Avaliar nas imagens geradas (avaliação manual)
                         </p>
                       </div>
                       <Switch
@@ -756,58 +756,18 @@ export default function SettingsPage() {
                           </span>
                         </div>
                         <Slider
-                          value={[settings.max_refinement_iterations || 2]}
-                          onValueChange={([value]) =>
-                            setSettings({ ...settings, max_refinement_iterations: value })
-                          }
+                          value={[settings.max_refinement_iterations ?? 2]}
                           min={0}
                           max={3}
                           step={1}
+                          disabled
                           className="py-2"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Número de tentativas automáticas para melhorar a imagem (0 = apenas avaliação, sem refinamento automático)
+                        <p className="text-xs text-muted-foreground" data-testid="refinement-reserved-note">
+                          Reservado: o refinamento automático ainda não está disponível e este valor não tem efeito hoje. Seu valor salvo é preservado.
                         </p>
                       </div>
                     )}
-                  </div>
-
-                  <div className="border-t border-border/50" />
-
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-semibold">Preferências adicionais</h3>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <Label>Modo Automático Padrão</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Ativar modo automático por padrão na geração de imagens
-                        </p>
-                      </div>
-                      <Switch
-                        checked={settings.auto_mode_default}
-                        onCheckedChange={(checked) =>
-                          setSettings({ ...settings, auto_mode_default: checked })
-                        }
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <Label>Salvar Histórico de Prompts</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Manter histórico de todos os prompts gerados
-                        </p>
-                      </div>
-                      <Switch
-                        checked={settings.save_prompt_history}
-                        onCheckedChange={(checked) =>
-                          setSettings({ ...settings, save_prompt_history: checked })
-                        }
-                      />
-                    </div>
                   </div>
 
                   <Button onClick={handleSaveSettings} disabled={isSaving} className="w-full">

@@ -3,6 +3,10 @@ import { z } from 'zod'
 export const PROMPT_ASSISTANCE_PROVIDERS = ['openai', 'gemini'] as const
 export type PromptAssistanceProvider = (typeof PROMPT_ASSISTANCE_PROVIDERS)[number]
 
+// Analytics label only (usage metadata). It never selects a provider, authorizes anything or affects billing.
+export const PROMPT_ASSISTANCE_WORKFLOWS = ['assisted', 'automatic'] as const
+export type PromptAssistanceWorkflow = (typeof PROMPT_ASSISTANCE_WORKFLOWS)[number]
+
 export const PROMPT_ASSISTANCE_OPERATIONS = ['create', 'improve'] as const
 export type PromptAssistanceOperation = (typeof PROMPT_ASSISTANCE_OPERATIONS)[number]
 
@@ -12,6 +16,7 @@ export const PromptAssistanceRequestSchema = z.object({
   mediaType: z.literal('image'),
   videoMode: z.undefined().optional(),
   operation: z.enum(PROMPT_ASSISTANCE_OPERATIONS),
+  workflow: z.enum(PROMPT_ASSISTANCE_WORKFLOWS).optional(),
   originalText: z.string().trim().min(1).max(12_000),
   currentText: z.string().trim().max(12_000).optional(),
   provider: z.enum(PROMPT_ASSISTANCE_PROVIDERS),
@@ -20,6 +25,10 @@ export const PromptAssistanceRequestSchema = z.object({
 }).strict().superRefine((value, ctx) => {
   if (value.productionId && !value.projectId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['productionId'], message: 'productionId requires projectId.' })
+  }
+  // The automatic workflow starts from the creative description only: one `create`, never an improvement loop.
+  if (value.workflow === 'automatic' && value.operation !== 'create') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['workflow'], message: 'automatic workflow only supports create.' })
   }
   if (value.operation === 'improve' && !value.currentText?.trim()) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['currentText'], message: 'currentText is required for improve.' })

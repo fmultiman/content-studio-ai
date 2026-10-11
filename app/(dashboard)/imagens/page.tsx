@@ -14,7 +14,7 @@ import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import { ImageResult } from '@/components/images/image-result'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
-import { PromptGenerationError, regeneratePrompt } from '@/lib/ai-simulator'
+import { PromptGenerationError } from '@/lib/ai-simulator'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { resolveInheritedIdentitySummary } from '@/lib/inherited-project-identity'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
@@ -53,6 +53,13 @@ import type { ImageGenerationWorkingStateV1 } from '@/lib/image-generation/sessi
 import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
 import { DEFAULT_PROMPT_ASSISTANCE_MODEL, PROMPT_ASSISTANCE_MODELS, type PromptAssistanceModel } from '@/lib/prompt-assistance/models'
 import {
+  AutomaticRunPanel,
+  WorkflowModeControl,
+  isAutomaticRunBusy,
+  type AutomaticRunView,
+  type WorkflowMode,
+} from '@/components/images/image-workflow-controls'
+import {
   buildImageDraftHubCards,
   filterDraftHubCards,
   getDraftHubEmptyState,
@@ -90,6 +97,27 @@ function persistableImageUrl(url: string | null | undefined) {
   return url
 }
 
+/** Outcome of ONE image submission. The automatic run needs to know whether it succeeded; the handlers still toast. */
+type ImageSubmitResult = { ok: true } | { ok: false; message: string }
+
+const IMAGE_MODEL_LABELS: Record<ImageModel, string> = {
+  'gpt-image-2': 'GPT Image 2',
+  'gpt-image-1.5': 'GPT Image 1.5',
+  'gpt-image-1': 'GPT Image 1',
+  'gpt-image-1-mini': 'GPT Image 1 Mini',
+  'nanobanana-v1': 'NanoBanana V1',
+  'nanobanana-v2': 'NanoBanana V2',
+}
+
+const isOpenAIImageModel = (model: ImageModel) =>
+  model === 'gpt-image-2' ||
+  model === 'gpt-image-1.5' ||
+  model === 'gpt-image-1' ||
+  model === 'gpt-image-1-mini'
+
+// One browser-owned automatic run: it lives only while the workspace is mounted (not a background job).
+type AutomaticRunHandle = { id: string; controller: AbortController; cancelled: boolean }
+
 export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?: string } = {}) {
   const { toast } = useToast()
   const router = useRouter()
@@ -112,7 +140,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   
   // Input state
   const [userInput, setUserInput] = useState('')
+  // `autoMode` persists only that the Automatic flow is SELECTED (selection, never execution). `manualMode` selects Manual.
   const [autoMode, setAutoMode] = useState(false)
+  const [manualMode, setManualMode] = useState(false)
   
   // Prompt state
   const [generatedPrompt, setGeneratedPrompt] = useState('')
@@ -182,6 +212,30 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     ?? availableAssistantModels[0]
     ?? preferredAssistantModel
   const [currentAttempt, setCurrentAttempt] = useState(1)
+
+  // ---- FUTURE-057 Slice A: workflow mode + the single automatic run -------------------------------------------
+  const [automaticRun, setAutomaticRun] = useState<AutomaticRunView>({ stage: 'idle' })
+  const [pendingOverwriteConfirm, setPendingOverwriteConfirm] = useState(false)
+  const automaticRunRef = useRef<AutomaticRunHandle | null>(null) // synchronous double-start lock
+  const imageSubmitLockRef = useRef(false) // synchronous double-submit lock for every image submission
+  const workflowBusy = isAutomaticRunBusy(automaticRun)
+
+  // Structural availability of Automatic. `automationEnabled` is a client-writable PREFERENCE (UX opt-in), never server authorization:
+  // the routes stay authenticated, owner-scoped, environment-guarded and idempotent regardless of it.
+  const automaticOptionReason: string | null = !canonicalWorkspace
+    ? 'disponível no workspace de geração (use “Nova Imagem”).'
+    : !automationEnabled
+      ? 'ative “Permitir o modo Automático” em Configurações → Automação.'
+      : !providerStatusLoaded
+        ? 'verificando os provedores…'
+        : availableAssistantModels.length === 0
+          ? 'configure um provedor de texto (OpenAI ou Gemini) em Configurações → API.'
+          : null
+  const imageProviderReady = isOpenAIImageModel(selectedModel) ? openaiConfigured : nanobananaConfigured
+  const automaticStartReason: string | null = automaticOptionReason
+    ?? (!imageProviderReady ? 'configure o provedor do modelo de imagem selecionado em Configurações → API.' : null)
+    ?? (userInput.trim() ? null : 'escreva a descrição da imagem.')
+  const mode: WorkflowMode = autoMode && automaticOptionReason === null ? 'automatic' : manualMode ? 'manual' : 'assisted'
 
   // Invalidates any in-flight assistance request (generation counter + client abort) and drops a pending suggestion.
   const cancelPromptAssistance = () => {
@@ -955,6 +1009,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     const currentText = generatedPrompt.trim()
     if (operation === 'create' && !originalText) return
     if (operation === 'improve' && !currentText) return
+    if (automaticRunRef.current) return
 
     promptAssistanceAbortRef.current?.abort()
     const controller = new AbortController()
@@ -979,6 +1034,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
           productionId: production,
           mediaType: 'image',
           operation,
+          workflow: 'assisted',
           originalText: originalText || currentText,
           ...(operation === 'improve' ? { currentText } : {}),
           provider: model.provider,
@@ -1041,6 +1097,134 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     cancelPromptAssistance()
   }
 
+  const changeWorkflowMode = (next: WorkflowMode) => {
+    if (automaticRunRef.current) return
+    if (next === 'automatic' && automaticOptionReason !== null) return
+    setAutoMode(next === 'automatic')
+    setManualMode(next === 'manual')
+    setPendingOverwriteConfirm(false)
+    setAutomaticRun({ stage: 'idle' })
+    if (next !== 'assisted') cancelPromptAssistance()
+  }
+
+  // Runs the image stage for an already-applied prompt. Shared by the automatic run and "Tentar só a imagem".
+  const runAutomaticImageStage = async (run: AutomaticRunHandle, model: ImageModel, prompt: string) => {
+    setAutomaticRun({ stage: 'image' })
+    // The run id is the idempotency key of THIS submission: a replay returns the same Attempt instead of a second paid call.
+    imageClientRequestIdRef.current = run.id
+    const result = await submitImageRef.current(model, prompt)
+    if (result.ok) {
+      setAutomaticRun({ stage: 'idle' })
+    } else {
+      // A failed submission is retried only by a NEW explicit user action, which gets a NEW request id.
+      imageClientRequestIdRef.current = crypto.randomUUID()
+      setAutomaticRun({ stage: 'image_failed', message: result.message })
+    }
+  }
+
+  // ONE explicit run: description -> /api/prompt-assistance (create) -> exact resulting prompt -> ONE image submission.
+  const startAutomaticRun = async (confirmedOverwrite = false) => {
+    if (automaticRunRef.current) return
+    if (mode !== 'automatic' || automaticStartReason !== null) return
+    const description = userInput.trim()
+    if (!description) return
+    if (!confirmedOverwrite && generatedPrompt.trim()) {
+      setPendingOverwriteConfirm(true)
+      return
+    }
+    setPendingOverwriteConfirm(false)
+
+    const run: AutomaticRunHandle = { id: crypto.randomUUID(), controller: new AbortController(), cancelled: false }
+    automaticRunRef.current = run
+    // Immutable request-time snapshot: nothing the user does afterwards can change what this run sends.
+    const snapshot = Object.freeze({
+      projectId: selectedProject,
+      productionId,
+      description,
+      assistantProvider: assistantModel.provider,
+      assistantModelId: assistantModel.id,
+      imageModel: selectedModel,
+    })
+    cancelPromptAssistance()
+    setAutomaticRun({ stage: 'prompt' })
+
+    try {
+      let promptText = ''
+      try {
+        const response = await fetch('/api/prompt-assistance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: snapshot.projectId,
+            productionId: snapshot.productionId,
+            mediaType: 'image',
+            operation: 'create',
+            workflow: 'automatic',
+            originalText: snapshot.description,
+            provider: snapshot.assistantProvider,
+            model: snapshot.assistantModelId,
+          }),
+          signal: run.controller.signal,
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new PromptGenerationError(payload?.code || 'PROMPT_PROVIDER_FAILED', payload?.message || 'Não foi possível gerar o prompt agora.', response.status)
+        }
+        const text = typeof payload.suggestedPrompt === 'string' ? payload.suggestedPrompt.trim() : ''
+        if (!text) throw new PromptGenerationError('PROMPT_PROVIDER_INVALID_RESPONSE', 'O provider retornou um prompt vazio.', 502)
+        // No silent provider/model substitution: the answer must come from the model that was selected.
+        if (payload.provider !== snapshot.assistantProvider || payload.model !== snapshot.assistantModelId) {
+          throw new PromptGenerationError('PROMPT_PROVIDER_INVALID_RESPONSE', 'A resposta veio de um modelo diferente do selecionado.', 502)
+        }
+        promptText = text
+      } catch (error) {
+        if (run.cancelled || (error as { name?: string })?.name === 'AbortError') {
+          setAutomaticRun({ stage: 'cancelled', message: 'Execução cancelada antes da imagem. Sua descrição e seu prompt foram mantidos.' })
+          return
+        }
+        const message = error instanceof Error ? error.message : 'Não foi possível gerar o prompt agora.'
+        setAutomaticRun({ stage: 'prompt_failed', message })
+        toast({ title: 'Erro ao gerar o prompt', description: message, variant: 'destructive' })
+        return
+      }
+
+      if (run.cancelled) {
+        // The paid text result arrived after the user cancelled: keep it as an UNAPPLIED suggestion, request no image.
+        setSuggestedPrompt(promptText)
+        setSuggestedOperation('create')
+        setAutomaticRun({ stage: 'cancelled', message: 'Execução cancelada. O prompt gerado ficou como sugestão (não aplicada) e nenhuma imagem foi pedida.' })
+        return
+      }
+
+      updateGeneratedPrompt(promptText)
+      setPromptDetails(null)
+      await runAutomaticImageStage(run, snapshot.imageModel, promptText)
+    } finally {
+      if (automaticRunRef.current === run) automaticRunRef.current = null
+    }
+  }
+
+  const cancelAutomaticRun = () => {
+    const run = automaticRunRef.current
+    if (!run || automaticRun.stage !== 'prompt') return
+    run.cancelled = true
+    run.controller.abort()
+  }
+
+  // "Tentar só a imagem": the same as clicking Criar Imagem with the prompt that is in the editor, with a new request id.
+  const retryAutomaticImage = async () => {
+    if (automaticRunRef.current) return
+    const prompt = generatedPrompt.trim()
+    if (!prompt) return
+    const run: AutomaticRunHandle = { id: crypto.randomUUID(), controller: new AbortController(), cancelled: false }
+    automaticRunRef.current = run
+    try {
+      await runAutomaticImageStage(run, selectedModel, prompt)
+    } finally {
+      if (automaticRunRef.current === run) automaticRunRef.current = null
+    }
+  }
+
   const handleTranslatePrompt = async () => {
     if (!generatedPrompt.trim() || isTranslatingPrompt) return
 
@@ -1097,12 +1281,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
 
     return 'gpt-image-2'
   }
-
-  const isOpenAIImageModel = (model: ImageModel) =>
-    model === 'gpt-image-2' ||
-    model === 'gpt-image-1.5' ||
-    model === 'gpt-image-1' ||
-    model === 'gpt-image-1-mini'
 
   // Evaluate image with AI
   const handleEvaluateImage = async () => {
@@ -1245,14 +1423,46 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   }
 
   // Unified image creation handler
-  const handleCreateImageWithModel = async (model: ImageModel) => {
-    if (isOpenAIImageModel(model)) {
-      await handleCreateImage(undefined, model)
-    } else {
-      // NanoBanana V1 or V2
-      await handleGenerateNanoBanana(model)
+  // The prompt is resolved ONCE and passed down explicitly: no submit path reads `generatedPrompt` state after a set
+  // (the historical automatic chain generated from a stale closure). The lock makes double-clicks harmless synchronously.
+  const handleCreateImageWithModel = async (model: ImageModel, promptOverride?: string): Promise<ImageSubmitResult> => {
+    const prompt = (promptOverride ?? generatedPrompt).trim()
+    if (!prompt) return { ok: false, message: 'Escreva ou gere um prompt antes de criar a imagem.' }
+    if (imageSubmitLockRef.current) return { ok: false, message: 'Já existe uma geração de imagem em andamento.' }
+    imageSubmitLockRef.current = true
+    try {
+      return isOpenAIImageModel(model)
+        ? await handleCreateImage(prompt, model)
+        : await handleGenerateNanoBanana(model, prompt)
+    } finally {
+      imageSubmitLockRef.current = false
     }
   }
+
+  const submitImageRef = useRef<(model: ImageModel, prompt?: string) => Promise<ImageSubmitResult>>(async () => ({ ok: false, message: 'indisponível' }))
+  useEffect(() => {
+    submitImageRef.current = handleCreateImageWithModel
+  })
+
+  // Leaving the workspace (or switching session) cancels a run that has not submitted the image yet. A submitted image
+  // request cannot be recalled, but no further stage starts from an unmounted workspace.
+  useEffect(() => () => {
+    const run = automaticRunRef.current
+    if (run) {
+      run.cancelled = true
+      run.controller.abort()
+    }
+  }, [canonicalSessionId])
+
+  useEffect(() => {
+    if (!workflowBusy) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [workflowBusy])
 
   const generateOpenAIImage = async (prompt: string, model: ImageModel, clientRequestId?: string) => {
     const response = await fetch('/api/openai/generate-image', {
@@ -1403,17 +1613,17 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const handleGenerateNanoBanana = async (
     model: ImageModel = selectedModel,
     promptOverride?: string,
-  ) => {
-    // Usar generatedPrompt se disponível, senão userInput como fallback
-    const promptToUse = promptOverride?.trim() || generatedPrompt.trim() || userInput.trim()
+  ): Promise<ImageSubmitResult> => {
+    // Never falls back to the raw description: an image is only ever generated from an explicit prompt.
+    const promptToUse = (promptOverride ?? generatedPrompt).trim()
     
     if (!promptToUse) {
       toast({
         title: 'Prompt obrigatório',
-        description: 'Digite uma descrição ou gere um prompt antes de criar a imagem.',
+        description: 'Escreva ou gere um prompt antes de criar a imagem.',
         variant: 'destructive',
       })
-      return
+      return { ok: false, message: 'Prompt obrigatório.' }
     }
 
     if (!nanobananaConfigured) {
@@ -1422,8 +1632,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         description: 'Configure sua API Key do NanoBanana em Configurações > API.',
         variant: 'destructive',
       })
-      return
+      return { ok: false, message: 'API Key do NanoBanana não configurada.' }
     }
+
+    let outcome: ImageSubmitResult = { ok: false, message: 'A geração não foi concluída.' }
 
     setIsGeneratingNanoBanana(true)
     setImageStatus('generating')
@@ -1488,6 +1700,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             imageClientRequestIdRef.current = crypto.randomUUID()
             setIsGeneratingNanoBanana(false)
             toast({ title: 'Imagem gerada!', description: 'Sua imagem foi criada com sucesso.' })
+            outcome = { ok: true }
             return
           }
           const storageResponse = await fetch('/api/storage/upload-image', {
@@ -1529,6 +1742,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
           setTimeout(() => {
             resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }, 100)
+          outcome = { ok: true }
           return
         }
 
@@ -1551,21 +1765,23 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       console.error('[v0] NanoBanana generation error:', error)
       setImageStatus('draft')
       setIsGeneratingNanoBanana(false)
+      outcome = { ok: false, message: error instanceof Error ? error.message : 'Erro na API NanoBanana' }
       toast({
         title: 'Erro na geração',
         description: error instanceof Error ? error.message : 'Erro na API NanoBanana',
         variant: 'destructive',
       })
     }
+    return outcome
   }
 
   // Create image handler
   const handleCreateImage = async (
     promptOverride?: string,
     model: ImageModel = selectedModel,
-  ) => {
-    const prompt = promptOverride || generatedPrompt
-    if (!prompt.trim()) return
+  ): Promise<ImageSubmitResult> => {
+    const prompt = (promptOverride ?? generatedPrompt).trim()
+    if (!prompt) return { ok: false, message: 'Escreva ou gere um prompt antes de criar a imagem.' }
 
     setIsCreatingImage(true)
     setImageStatus('generating')
@@ -1588,7 +1804,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         await refreshCanonicalExecution()
         imageClientRequestIdRef.current = crypto.randomUUID()
         toast({ title: 'Imagem criada!', description: 'A imagem foi gerada com sucesso.' })
-        return
+        return { ok: true }
       }
 
       // Create image record in database
@@ -1627,78 +1843,28 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         title: 'Imagem criada!',
         description: 'A imagem foi gerada com sucesso.',
       })
+      return { ok: true }
     } catch (error) {
       setImageStatus('draft')
+      const message = error instanceof Error ? error.message : 'Nao foi possivel criar a imagem. Tente novamente.'
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Nao foi possivel criar a imagem. Tente novamente.',
+        description: message,
         variant: 'destructive',
       })
+      return { ok: false, message }
     } finally {
       setIsCreatingImage(false)
     }
   }
 
-  // Regenerate handler
+  // Regenerate: a new image from the EXACT, complete current prompt. The prompt is never rewritten or truncated here.
   const handleRegenerate = async () => {
+    const prompt = generatedPrompt.trim()
+    if (!prompt) return
     setIsRegenerating(true)
-    setImageStatus('generating')
-
     try {
-      // Regenerate prompt with variations
-      const result = await regeneratePrompt(generatedPrompt)
-      updateGeneratedPrompt(result.prompt)
-      setPromptDetails({
-        style: result.style,
-        lighting: result.lighting,
-        composition: result.composition,
-      })
-
-      // Generate new image
-      if (!isOpenAIImageModel(selectedModel)) {
-        await handleGenerateNanoBanana(selectedModel, result.prompt)
-        return
-      }
-
-      if (canonicalSessionId) {
-        await flushImageSubmission(result.prompt, selectedModel)
-        setGeneratedPrompt(result.prompt)
-        setSelectedModel(selectedModel)
-        const generatedImage = await generateOpenAIImage(result.prompt, selectedModel, imageClientRequestIdRef.current)
-        if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
-        setCurrentImage(generatedImage.image)
-        setImageUrl(generatedImage.imageUrl)
-        setImageStatus('draft')
-        await refreshCanonicalExecution()
-        imageClientRequestIdRef.current = crypto.randomUUID()
-        toast({ title: 'Imagem regenerada!', description: 'Uma nova variação foi criada.' })
-        return
-      }
-
-      const generatedImage = await generateOpenAIImage(result.prompt, selectedModel)
-
-      const savedImage = await saveGeneratedImageRecord(
-        generatedImage,
-        result.prompt,
-        selectedModel,
-      )
-
-      setCurrentImage(savedImage)
-      setImageUrl(generatedImage.imageUrl)
-      setImageStatus('draft')
-      recordGenerationAttempt(savedImage, generatedImage.imageUrl, result.prompt, selectedModel)
-
-      toast({
-        title: 'Imagem regenerada!',
-        description: 'Uma nova variação foi criada.',
-      })
-    } catch (error) {
-      setImageStatus('draft')
-      toast({
-        title: 'Erro',
-        description: error instanceof Error ? error.message : 'Nao foi possivel regenerar a imagem. Tente novamente.',
-        variant: 'destructive',
-      })
+      await handleCreateImageWithModel(selectedModel, prompt)
     } finally {
       setIsRegenerating(false)
     }
@@ -2299,8 +2465,30 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 setUserInput={setUserInput}
                 selectedProject={selectedProject}
                 setSelectedProject={setSelectedProject}
-                autoMode={autoMode}
-                setAutoMode={setAutoMode}
+                mode={mode}
+                workflowBusy={workflowBusy}
+                modeControl={
+                  <WorkflowModeControl
+                    mode={mode}
+                    onChange={changeWorkflowMode}
+                    automaticUnavailableReason={automaticOptionReason}
+                    disabled={workflowBusy}
+                  />
+                }
+                automaticPanel={
+                  <AutomaticRunPanel
+                    run={automaticRun}
+                    canStart={automaticStartReason === null && !workflowBusy && !isCreatingImage && !isGeneratingNanoBanana && !isGeneratingPrompt}
+                    startDisabledReason={automaticStartReason ? `Para gerar: ${automaticStartReason}` : null}
+                    summary={`Prompt: ${assistantModel.label} → Imagem: ${IMAGE_MODEL_LABELS[selectedModel]}. 1 chamada de texto + 1 geração de imagem.`}
+                    confirmOverwrite={pendingOverwriteConfirm}
+                    onStart={() => void startAutomaticRun(false)}
+                    onConfirmOverwrite={() => void startAutomaticRun(true)}
+                    onDismissOverwrite={() => setPendingOverwriteConfirm(false)}
+                    onCancel={cancelAutomaticRun}
+                    onRetryImage={() => void retryAutomaticImage()}
+                  />
+                }
                 onCreateWithAI={() => handlePromptAssistance('create')}
                 onImproveWithAI={() => handlePromptAssistance('improve')}
                 canImprove={Boolean(generatedPrompt.trim())}
@@ -2313,7 +2501,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 canonical={canonicalWorkspace}
                 onNewImage={handleNewImage}
                 generatedPrompt={generatedPrompt}
-                automationEnabled={automationEnabled}
               />
 
               {/* Prompt Section */}
@@ -2334,7 +2521,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   onCreateImage={handleCreateImageWithModel}
                   isCreatingImage={isCreatingImage || isGeneratingNanoBanana}
                   hasNanoBananaKey={nanobananaConfigured}
-                  automationEnabled={automationEnabled}
+                  workflowBusy={workflowBusy}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
                 />

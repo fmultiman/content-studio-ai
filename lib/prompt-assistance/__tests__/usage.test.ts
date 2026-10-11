@@ -88,6 +88,16 @@ describe('promptAssistanceUsageEvents — one execution, one row per provider-na
     expect(JSON.stringify(promptAssistanceUsageEvents(context(OPENAI))[0].providerMetadata)).not.toMatch(/cachedContentTokenCount|toolUsePromptTokenCount/)
   })
 
+  it('stores the validated workflow label as analytics metadata only: it changes no quantity, key, unit or attribution', () => {
+    const plain = promptAssistanceUsageEvents(context(OPENAI))
+    const labelled = promptAssistanceUsageEvents(context(OPENAI, { workflow: 'automatic' }))
+    expect(labelled[0].providerMetadata).toMatchObject({ workflow: 'automatic' })
+    expect(JSON.stringify(plain[0].providerMetadata)).not.toMatch(/workflow/)
+    expect(labelled.map((e) => [e.measurement, e.idempotencyKey, e.userId, e.projectId, e.productionId, e.provider, e.model])).toEqual(
+      plain.map((e) => [e.measurement, e.idempotencyKey, e.userId, e.projectId, e.productionId, e.provider, e.model]),
+    )
+  })
+
   it('attributes owner, scope, provider, model, operation and the truthful funding; metadata holds no prompt/Identity/response text', () => {
     const [event] = promptAssistanceUsageEvents(context(OPENAI, { operation: 'improve' }))
     expect(event).toMatchObject({ userId: USER, projectId: PROJECT, productionId: PRODUCTION, provider: 'openai', transport: 'api', operation: 'improve', model: 'gpt-4o-mini', resourceType: 'prompt_assistance' })

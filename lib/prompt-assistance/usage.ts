@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { InvalidUsageEventError, recordProviderUsageEvents, type ProviderUsageEventInput } from '@/lib/usage/provider-usage-recorder'
-import type { PromptAssistanceUsage } from './contract'
+import type { PromptAssistanceUsage, PromptAssistanceWorkflow } from './contract'
 
 // Server-only. The provider usage ledger has no user INSERT policy, so the authenticated route hands this module the
 // verified user id and it writes with the service-role client. Only numeric provider-reported facts and
@@ -29,6 +29,8 @@ export type PromptAssistanceUsageContext = {
   operation: string
   /** `ProviderExecutionResult.executionMode` of the credential that paid for the call. */
   funding: string
+  /** Optional validated analytics label. Never read for billing, authorization or ownership. */
+  workflow?: PromptAssistanceWorkflow
   usage: PromptAssistanceUsage | null
 }
 
@@ -65,6 +67,7 @@ export function promptAssistanceUsageEvents(context: PromptAssistanceUsageContex
     operation: context.operation,
     api: context.provider === 'gemini' ? 'gemini_generate_content' : 'openai_chat_completions',
     funding: context.funding,
+    ...(context.workflow ? { workflow: context.workflow } : {}),
     ...descriptors(usage),
   }
   const events: ProviderUsageEventInput[] = []

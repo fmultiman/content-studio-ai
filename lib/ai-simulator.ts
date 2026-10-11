@@ -345,24 +345,6 @@ export async function generateImagePrompt(
   return generateWithOpenAI(userInput, projectContext, apiKey, evaluationMode, identity)
 }
 
-export async function regeneratePrompt(currentPrompt: string): Promise<PromptGenerationResult> {
-  await delay(1000)
-
-  const newLighting = getRandomElement(lightingOptions)
-  const newComposition = getRandomElement(compositionOptions)
-  const newQuality = getRandomElement(qualityEnhancements)
-
-  const basePrompt = currentPrompt.split(',').slice(0, 2).join(',')
-  const enhancedPrompt = `${basePrompt}, ${newLighting}, ${newComposition}, ${newQuality}, highly detailed, masterpiece, trending on artstation`
-
-  return {
-    prompt: enhancedPrompt,
-    style: 'varied artistic interpretation',
-    lighting: newLighting,
-    composition: newComposition,
-  }
-}
-
 // Simulated image generation (returns placeholder URL)
 export async function simulateImageGeneration(prompt: string): Promise<string> {
   await delay(2000)

@@ -37,7 +37,8 @@ interface PromptSectionProps {
   onCreateImage: (model: ImageModel) => void
   isCreatingImage: boolean
   hasNanoBananaKey?: boolean
-  automationEnabled?: boolean
+  /** An automatic run owns the inputs: the prompt and the image controls are read-only until it finishes. */
+  workflowBusy?: boolean
   selectedModel?: ImageModel
   onModelChange?: (model: ImageModel) => void
 }
@@ -58,11 +59,14 @@ export function PromptSection({
   onCreateImage,
   isCreatingImage,
   hasNanoBananaKey = false,
-  automationEnabled = false,
+  workflowBusy = false,
   selectedModel = 'gpt-image-2',
   onModelChange,
 }: PromptSectionProps) {
   const [copied, setCopied] = useState(false)
+  const [confirmingApply, setConfirmingApply] = useState(false)
+  // Applying a CREATE suggestion replaces an authored prompt: ask first (Improve is the user's own refinement).
+  const applyReplacesAuthoredPrompt = suggestedOperation === 'create' && generatedPrompt.trim().length > 0 && generatedPrompt.trim() !== suggestedPrompt.trim()
   const [activePromptLanguage, setActivePromptLanguage] = useState<'en' | 'pt'>('en')
 
   const handleCopy = async () => {
@@ -82,8 +86,6 @@ export function PromptSection({
     }
   }
 
-  if (!generatedPrompt && !suggestedPrompt) return null
-
   return (
     <div className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
       <div className="mb-6 flex items-center justify-between">
@@ -92,9 +94,9 @@ export function PromptSection({
             <ImageIcon className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Prompt Gerado</h2>
+            <h2 className="text-lg font-semibold text-foreground">Prompt</h2>
             <p className="text-sm text-muted-foreground">
-              Edite o prompt se necessário antes de criar a imagem
+              Escreva o prompt ou edite o gerado e crie a imagem quando quiser
             </p>
           </div>
         </div>
@@ -102,6 +104,7 @@ export function PromptSection({
           variant="outline"
           size="sm"
           onClick={handleCopy}
+          disabled={!generatedPrompt && !suggestedPrompt}
           className="gap-2"
         >
           {copied ? (
@@ -132,9 +135,24 @@ export function PromptSection({
             </div>
             <Textarea value={suggestedPrompt} readOnly rows={5} className="resize-none bg-background/50 font-mono text-sm" aria-label="Sugestão de prompt" />
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="ghost" onClick={onDiscardSuggestion} data-testid="prompt-assistance-discard">Descartar</Button>
-              <Button onClick={onApplySuggestion} data-testid="prompt-assistance-apply">Aplicar</Button>
+              <Button variant="ghost" onClick={() => { setConfirmingApply(false); onDiscardSuggestion?.() }} disabled={workflowBusy} data-testid="prompt-assistance-discard">Descartar</Button>
+              {!confirmingApply && (
+                <Button
+                  onClick={() => (applyReplacesAuthoredPrompt ? setConfirmingApply(true) : onApplySuggestion?.())}
+                  disabled={workflowBusy}
+                  data-testid="prompt-assistance-apply"
+                >
+                  Aplicar
+                </Button>
+              )}
             </div>
+            {confirmingApply && (
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200" data-testid="prompt-assistance-apply-confirm">
+                <span>Aplicar vai substituir o prompt atual.</span>
+                <Button variant="ghost" size="sm" onClick={() => setConfirmingApply(false)} data-testid="prompt-assistance-apply-cancel">Manter o atual</Button>
+                <Button size="sm" onClick={() => { setConfirmingApply(false); onApplySuggestion?.() }} data-testid="prompt-assistance-apply-confirmed">Substituir</Button>
+              </div>
+            )}
           </div>
         )}
         {/* Prompt Details Badges — only render chips backed by real data */}
@@ -157,7 +175,7 @@ export function PromptSection({
         )}
 
         {/* Editable Prompt */}
-        {generatedPrompt && <Tabs value={activePromptLanguage} onValueChange={handleLanguageChange}>
+        <Tabs value={activePromptLanguage} onValueChange={handleLanguageChange}>
           <div className="mb-2 flex items-center justify-between gap-3">
             <Label htmlFor="generated-prompt">
               {activePromptLanguage === 'pt' ? 'Versao em Portugues' : 'Prompt em Ingles'}
@@ -173,11 +191,13 @@ export function PromptSection({
               id="generated-prompt"
               value={generatedPrompt}
               onChange={(e) => setGeneratedPrompt(e.target.value)}
+              disabled={workflowBusy}
+              placeholder="Escreva aqui o prompt da imagem (em inglês, para melhor compatibilidade) ou use a assistência de IA acima."
               rows={6}
               className="resize-none bg-background/50 font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              O prompt foi gerado em ingles para melhor compatibilidade com modelos de IA.
+              Prompts em ingles têm melhor compatibilidade com modelos de IA.
             </p>
           </TabsContent>
 
@@ -217,19 +237,19 @@ export function PromptSection({
               Esta versao e apenas para leitura. A imagem continua usando o prompt em ingles.
             </p>
           </TabsContent>
-        </Tabs>}
+        </Tabs>
 
-        {/* Create Image - Single Button + Model Selector (Manual Mode Only) */}
-        {generatedPrompt && <div className="flex flex-wrap items-center justify-end gap-3">
-          {/* Model Selector - Only show in manual mode */}
-          {!automationEnabled && onModelChange && (
+        {/* Image model selector + explicit generation: visible in Manual, Assisted and Automatic flows */}
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {onModelChange && (
             <div className="flex items-center gap-2">
               <Label className="text-sm text-muted-foreground">Modelo:</Label>
               <Select
                 value={selectedModel}
                 onValueChange={(value: ImageModel) => onModelChange(value)}
+                disabled={workflowBusy}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[180px]" aria-label="Modelo de imagem">
                   <SelectValue placeholder="Selecione o modelo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -251,7 +271,7 @@ export function PromptSection({
           {/* Single Create Image Button */}
           <Button
             onClick={() => onCreateImage(selectedModel)}
-            disabled={!generatedPrompt.trim() || isCreatingImage}
+            disabled={!generatedPrompt.trim() || isCreatingImage || workflowBusy}
             size="lg"
             className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600"
           >
@@ -267,7 +287,7 @@ export function PromptSection({
               </>
             )}
           </Button>
-        </div>}
+        </div>
       </div>
     </div>
   )
