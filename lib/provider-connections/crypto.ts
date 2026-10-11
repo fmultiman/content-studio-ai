@@ -27,11 +27,11 @@
 //
 // Never log a key, plaintext, or ciphertext from this module.
 
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-
-const FORMAT_VERSION = 'v1'
-const KEY_BYTES = 32
-const IV_BYTES = 12
+import {
+  EnvelopeDecryptError,
+  EnvelopeKeyMissingError,
+  createEnvelopeCodec,
+} from '@/lib/security/aes-gcm-envelope'
 
 export class ConnectionEncryptionNotConfiguredError extends Error {
   readonly code = 'CONNECTION_ENCRYPTION_NOT_CONFIGURED'
@@ -49,67 +49,44 @@ export class ConnectionSecretDecryptionError extends Error {
   }
 }
 
-interface KeyEntry {
-  id: string
-  key: Buffer
-}
-
-function parseKey(raw: string | undefined): Buffer | null {
-  if (!raw) return null
-  const key = Buffer.from(raw.trim(), 'base64')
-  return key.length === KEY_BYTES ? key : null
-}
-
-function loadKeyring(): { current: KeyEntry; byId: Map<string, Buffer> } {
-  const currentKey = parseKey(process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY)
-  if (!currentKey) throw new ConnectionEncryptionNotConfiguredError()
-
-  const current: KeyEntry = {
-    id: process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY_ID?.trim() || 'k1',
-    key: currentKey,
-  }
-  const byId = new Map<string, Buffer>([[current.id, current.key]])
-
-  const previousKey = parseKey(process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY_PREVIOUS)
-  const previousId = process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY_PREVIOUS_ID?.trim()
-  if (previousKey && previousId && previousId !== current.id) byId.set(previousId, previousKey)
-
-  return { current, byId }
-}
+// The algorithm lives in the shared envelope codec (also used, with a DIFFERENT key identity, by the BYOK provider
+// credential store). The environment variable names below are this module's own and are read nowhere else.
+const codec = createEnvelopeCodec({
+  keyEnv: 'PROVIDER_CONNECTION_ENCRYPTION_KEY',
+  keyIdEnv: 'PROVIDER_CONNECTION_ENCRYPTION_KEY_ID',
+  previousKeyEnv: 'PROVIDER_CONNECTION_ENCRYPTION_KEY_PREVIOUS',
+  previousKeyIdEnv: 'PROVIDER_CONNECTION_ENCRYPTION_KEY_PREVIOUS_ID',
+  defaultKeyId: 'k1',
+})
 
 /** True when a valid encryption key is configured. Never reveals the key. */
 export function isConnectionEncryptionConfigured(): boolean {
-  return parseKey(process.env.PROVIDER_CONNECTION_ENCRYPTION_KEY) !== null
+  return codec.isConfigured()
 }
 
-const b64 = (buffer: Buffer) => buffer.toString('base64url')
+/**
+ * True when `candidateBase64` is the same key material as the connection-secret key (constant-time). Lets the BYOK
+ * credential module refuse to share this master key without ever reading or exposing it.
+ */
+export function isConnectionKeyMaterial(candidateBase64: string | undefined): boolean {
+  return codec.currentKeyEquals(candidateBase64)
+}
 
 export function encryptConnectionSecret(plaintext: string, aad: string): string {
-  const { current } = loadKeyring()
-  const iv = randomBytes(IV_BYTES)
-  const cipher = createCipheriv('aes-256-gcm', current.key, iv)
-  cipher.setAAD(Buffer.from(aad, 'utf8'))
-  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
-  const tag = cipher.getAuthTag()
-  return [FORMAT_VERSION, current.id, b64(iv), b64(tag), b64(ciphertext)].join('.')
+  try {
+    return codec.encrypt(plaintext, aad)
+  } catch (error) {
+    if (error instanceof EnvelopeKeyMissingError) throw new ConnectionEncryptionNotConfiguredError()
+    throw error
+  }
 }
 
 export function decryptConnectionSecret(token: string, aad: string): string {
-  const { byId } = loadKeyring()
-  const parts = token.split('.')
-  if (parts.length !== 5 || parts[0] !== FORMAT_VERSION) throw new ConnectionSecretDecryptionError()
-
-  const key = byId.get(parts[1])
-  if (!key) throw new ConnectionSecretDecryptionError()
-
   try {
-    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(parts[2], 'base64url'))
-    decipher.setAAD(Buffer.from(aad, 'utf8'))
-    decipher.setAuthTag(Buffer.from(parts[3], 'base64url'))
-    const plaintext = Buffer.concat([decipher.update(Buffer.from(parts[4], 'base64url')), decipher.final()])
-    return plaintext.toString('utf8')
-  } catch {
-    // Wrong key, wrong AAD, or tampering: never surface crypto internals.
-    throw new ConnectionSecretDecryptionError()
+    return codec.decrypt(token, aad)
+  } catch (error) {
+    if (error instanceof EnvelopeKeyMissingError) throw new ConnectionEncryptionNotConfiguredError()
+    if (error instanceof EnvelopeDecryptError) throw new ConnectionSecretDecryptionError()
+    throw error
   }
 }

@@ -298,6 +298,8 @@ policy) and as a single-row, single-column, `.eq('user_id', owner)` query. A sto
 configured". The columns are **still plaintext** and the browser role **still holds column privileges** — both are
 tracked as later FUTURE-059 slices. See `docs/productization/FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1_V1.md`.
 
+FUTURE-059 Slice 3A added (inactive, default `legacy`) an encrypted credential store behind the same boundary — a separate BYOK master-key identity on the shared AES-256-GCM envelope, a `PROVIDER_API_CREDENTIAL_MODE` of `legacy | dual | encrypted`, and an unapplied `provider_api_credentials` migration. Production credentials remain plaintext until an operator completes the activation steps in `docs/productization/FUTURE_059_BYOK_CREDENTIAL_SLICE_3A_V1.md`.
+
 ## Storage at rest
 
 Provider keys remain plaintext `TEXT` columns on `user_settings`, protected by

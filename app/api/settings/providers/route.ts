@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { AI_PROVIDERS, getProviderConfigurationStatuses } from '@/lib/credentials/provider-credentials'
 import { primaryConnectionMethod } from '@/lib/credentials/provider-metadata'
 import { describeProviderExecutionPolicy } from '@/lib/providers/execution-policy'
+import { describeCredentialStorage } from '@/lib/credentials/credential-storage-mode'
 import { describeAdminCredential } from '@/lib/supabase/admin-credential'
 import { describePublicCredential } from '@/lib/supabase/public-credential'
 
@@ -45,6 +46,9 @@ export async function GET() {
       // FUTURE-052B: same idea for the browser/SSR/middleware key — which NEXT_PUBLIC_* variable and shape class this build
       // selected (names only, never a value; the publishable key is not a secret but is still not echoed).
       publicCredential: describePublicCredential(),
+      // FUTURE_059 Slice 3A: which credential store mode this runtime uses and whether the separate BYOK master key is usable
+      // (state classes only — never a key, id or value), so an activation can be verified without reading any secret.
+      credentialStorage: describeCredentialStorage(),
     })
   } catch (error) {
     console.error('[Settings Providers] Error:', error)
