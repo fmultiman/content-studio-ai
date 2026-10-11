@@ -144,3 +144,12 @@ Each step needs its own explicit authorization; none is performed by merging thi
 - `dual` has a bounded window in which the encrypted and legacy copies can differ after a partial write; the next user save reconciles them, and reads always prefer the encrypted copy.
 - The refactor of the Kling connection crypto is behaviour-preserving and pinned by a golden vector, but it is a change to a live path; the Kling MCP suites pass unchanged.
 - Slices 3B (lazy backfill), 4 (cut-over) and 5 (retirement) are not started.
+
+## 11. Delivery evidence
+
+- Starting `origin/main`: `f04d6f5783978c355a7412e45ff99bb873243f54` (verified; Production on the same SHA).
+- PR [#175](https://github.com/fmultiman/content-studio-ai/pull/175): the required Vercel check was SUCCESS before the merge (merge commit): `9bc91a66889b08111ab2e432afbdfde9bd16d566`.
+- Production deployment: GitHub deployment for `9bc91a6`, environment Production, state `success`.
+- Post-deploy checks (read-only, 2026-10-11 ~19:20 UTC): unauthenticated `GET /api/settings/providers` → `401`. Authenticated `GET /api/settings/providers` → `200`; statuses unchanged (OpenAI, Gemini, NanoBanana, Kling REST `configured`; Replicate `missing`); entries still contain only `status` and `connectionMethod`; the new field reads `credentialStorage: { mode: "legacy", invalidModeValue: false, encryptionKey: "not_required" }`; no "Indisponível no momento"; Settings loads normally.
+- Database (metadata only): `to_regclass('public.provider_api_credentials')` is `NULL` (the table does not exist, as intended); `user_settings` ACL still `{postgres=arwdDxtm, service_role=arwdDxtm, authenticated=d}` with 16 column ACLs (Slice 2 unchanged). No SQL was executed against Production; no environment variable was added or changed; no key was created, read or rotated; no provider was called.
+- Worker: none. Migration: prepared, not applied.
