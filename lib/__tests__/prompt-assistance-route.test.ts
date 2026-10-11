@@ -229,4 +229,27 @@ describe('POST /api/prompt-assistance', () => {
     await POST(request(base()))
     expect(db.tables.provider_usage_events).toHaveLength(3)
   })
+
+  it('records the automatic/assisted label in usage metadata without changing billing dimensions or authorization', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    expect((await POST(request(base({ workflow: 'automatic' })))).status).toBe(200)
+    const rows = db.tables.provider_usage_events
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r: any) => r.provider_metadata.workflow === 'automatic')).toBe(true)
+    expect(rows.map((r: any) => [r.unit, Number(r.quantity), r.user_id])).toEqual([['input_tokens', 12, USER], ['output_tokens', 9, USER]])
+  })
+
+  it('an invalid workflow label is a 400 before any provider call, and the label never bypasses Project ownership', async () => {
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: null }) as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const invalid = await POST(request(base({ workflow: 'background' })))
+    expect(invalid.status).toBe(400)
+    const foreign = await POST(request(base({ workflow: 'automatic' })))
+    expect(foreign.status).toBe(403)
+    expect((await foreign.json()).code).toBe('PROJECT_NOT_FOUND')
+    expect(executePromptProvider).not.toHaveBeenCalled()
+  })
 })

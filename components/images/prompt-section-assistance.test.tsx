@@ -24,7 +24,8 @@ describe('PromptSection AI assistance suggestion', () => {
     expect(screen.getByDisplayValue('A refined editorial river cover.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Aplicar' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Criar Imagem' })).toBeNull()
+    // Generation is a separate explicit action: with no prompt in the editor the button is disabled.
+    expect((screen.getByRole('button', { name: /Criar Imagem/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('delegates Apply and Discard without changing authored state itself', () => {

@@ -159,19 +159,20 @@ describe('FUTURE-053 Prompt Assistance — /imagens workspace', () => {
     const card = await screen.findByTestId('prompt-assistance-suggestion')
     expect((screen.getByLabelText('Sugestão de prompt') as HTMLTextAreaElement).value).toBe(SUGGESTION)
     expect(card.textContent).toContain('Não aplicada')
-    // Nothing was applied: there is still no editable generated prompt and no image button.
-    expect(screen.queryByRole('button', { name: /Criar Imagem/ })).toBeNull()
+    // Nothing was applied: the prompt editor is still empty.
+    // The prompt editor and image controls are always present; with no prompt the explicit generation button is disabled.
+    expect((screen.getByRole('button', { name: /Criar Imagem/ }) as HTMLButtonElement).disabled).toBe(true)
     expect(nonAssistancePosts(server.calls)).toHaveLength(0)
     expect(server.calls.filter((c) => FORBIDDEN.test(c.url))).toHaveLength(0)
   })
 
-  it('Auto Mode is shown as unavailable and enabling it cannot make assistance submit an image request', async () => {
+  it('a session saved with the legacy autoMode flag never starts anything: Automatic is only a selectable option behind the preference', async () => {
     mount()
     await startCreate()
-    // The session was persisted with autoMode: true.
-    const autoMode = screen.getByRole('switch') as HTMLButtonElement
-    expect(autoMode.disabled).toBe(true)
-    expect(screen.getByText(/nunca gera imagem automaticamente/)).toBeTruthy()
+    // The preference is OFF in this mock (no user_settings row): Automatic is unavailable and the legacy flag is inert.
+    const automatic = screen.getByTestId('workflow-mode-automatic') as HTMLButtonElement
+    expect(automatic.disabled).toBe(true)
+    expect(screen.queryByTestId('automatic-run-panel')).toBeNull()
 
     reply(0, 200, success())
     await screen.findByTestId('prompt-assistance-suggestion')
@@ -187,7 +188,8 @@ describe('FUTURE-053 Prompt Assistance — /imagens workspace', () => {
     fireEvent.click(await screen.findByTestId('prompt-assistance-discard'))
     expect(screen.queryByTestId('prompt-assistance-suggestion')).toBeNull()
     expect(field.value).toBe(INTENT)
-    expect(screen.queryByRole('button', { name: /Criar Imagem/ })).toBeNull()
+    // The prompt editor and image controls are always present; with no prompt the explicit generation button is disabled.
+    expect((screen.getByRole('button', { name: /Criar Imagem/ }) as HTMLButtonElement).disabled).toBe(true)
 
     await waitFor(() => expect(createButton().disabled).toBe(false))
     fireEvent.click(createButton())
