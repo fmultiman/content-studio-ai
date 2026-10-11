@@ -92,11 +92,11 @@ describe('KLING_WEBHOOK_SECRET isolation', () => {
 })
 
 describe('no provider secret reaches client code', () => {
-  const SECRET_COLUMNS = /(openai_api_key|nanobanana_api_key|kling_api_key|replicate_api_key)/
+  const SECRET_COLUMNS = /(openai_api_key|gemini_api_key|nanobanana_api_key|kling_api_key|replicate_api_key)/
 
-  it('secret columns are referenced only by server-side credential code, API routes and types', () => {
-    const allowed = (path: string) =>
-      path.startsWith('app/api/') || path.startsWith('lib/credentials/') || path === 'lib/types.ts'
+  // FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1: narrowed from "lib/credentials/ and app/api/" to the one store module.
+  it('secret columns are referenced only by the server-only credential store and types', () => {
+    const allowed = (path: string) => path === 'lib/credentials/api-credential-store.ts' || path === 'lib/types.ts'
     const offenders = sourceFiles
       .filter((file) => SECRET_COLUMNS.test(codeOnly(file.text)) && !allowed(file.path))
       .map((file) => file.path)
@@ -279,7 +279,10 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path === 'app/api/creative/static-authoring/render/route.ts' ||
       path === 'app/api/gallery/video-outputs/route.ts' ||
       path === 'app/api/channel-piece-media/upload/route.ts' ||
-      path === 'app/api/kling/callback/route.ts'
+      path === 'app/api/kling/callback/route.ts' ||
+      // FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1: the server-only BYOK credential store reads/writes the provider
+      // key columns with the privileged client AFTER an ownership proof through the caller's own client.
+      path === 'lib/credentials/api-credential-store.ts'
     for (const path of filesContaining('createServiceRoleSupabase')) expect(allowed(path)).toBe(true)
   })
 
@@ -440,5 +443,95 @@ describe('Gemini Review provider boundary — GEMINI_REVIEW_PROVIDER_FOUNDATION_
     const contracts = readFileSync(join(ROOT, 'lib/reviews/contracts.ts'), 'utf8')
     expect(route).not.toMatch(/providerId|provider:|\.model\b/)
     expect(contracts).toMatch(/ReviewRequestSchema = z\.object\(\{\s*attemptId: z\.string\(\)\.uuid\(\),\s*clientRequestId: z\.string\(\)\.uuid\(\),\s*\}\)\.strict\(\)/)
+  })
+})
+
+describe('BYOK credential store boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1', () => {
+  const STORE = 'lib/credentials/api-credential-store.ts'
+  const store = sourceFiles.find((file) => file.path === STORE)
+
+  it('the store exists and is the only module that creates a client for the secret columns', () => {
+    expect(store).toBeDefined()
+    expect(codeFilesContaining(/createServiceRoleSupabase\(\)/).filter((p) => p === STORE)).toEqual([STORE])
+  })
+
+  it('the secret-bearing store functions are imported only by the resolver and the Settings write route', () => {
+    const secretFunctions = /\b(readStoredApiCredential|readStoredApiCredentialStatuses|writeStoredApiCredential|removeStoredApiCredential)\b/
+    const users = sourceFiles
+      .filter((file) => file.path !== STORE && secretFunctions.test(codeOnly(file.text)))
+      .map((file) => file.path)
+      .sort()
+    expect(users).toEqual(['app/api/settings/providers/[provider]/route.ts', 'lib/credentials/provider-credentials.ts'])
+  })
+
+  it('no server or client source selects user_settings with a wildcard', () => {
+    const offenders = sourceFiles
+      .filter((file) => /from\(\s*['"]user_settings['"]\s*\)\s*\.select\(\s*(['"]\*['"])?\s*\)/.test(codeOnly(file.text)))
+      .map((file) => file.path)
+    expect(offenders).toEqual([])
+  })
+
+  it('Kling MCP stays on its own encrypted path: the store knows nothing about provider connections', () => {
+    expect(codeOnly(store!.text)).not.toMatch(/provider_connection|provider-connections|oauth|access_token|refresh_token|ciphertext/i)
+    expect(codeFilesContaining('api-credential-store').filter((p) => p.startsWith('lib/provider-connections/'))).toEqual([])
+  })
+
+  it('every select inside the store is an explicit column list', () => {
+    const selects = [...codeOnly(store!.text).matchAll(/\.select\(([^)]*)\)/g)].map((match) => match[1].trim())
+    expect(selects.length).toBeGreaterThan(0)
+    for (const argument of selects) {
+      expect(argument).not.toMatch(/^['"]\*['"]$/)
+      expect(argument).not.toBe('')
+      expect(argument).toMatch(/^(column|columns|'user_id')$/)
+    }
+  })
+
+  it('the store never writes a secret, row or database message to a log or into an error', () => {
+    const lines = codeOnly(store!.text).split('\n')
+    for (const line of lines.filter((l) => /console\./.test(l))) {
+      expect(line).toMatch(/\[credential-store\]/)
+      expect(line).not.toMatch(/secret|\bdata\b|\brow\b|value|\.message|ciphertext/i)
+    }
+    expect(codeOnly(store!.text)).not.toMatch(/super\([^)]*(secret|\$\{)/)
+  })
+
+  it('the store and the resolver are unreachable from any client component (transitive import graph)', () => {
+    const byPath = new Map(sourceFiles.map((file) => [file.path, file]))
+    const resolveImport = (from: string, spec: string): string | null => {
+      const base = spec.startsWith('@/')
+        ? spec.slice(2)
+        : spec.startsWith('.')
+          ? join(from, '..', spec).replaceAll(String.fromCharCode(92), '/')
+          : null
+      if (!base) return null
+      for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base]) {
+        if (byPath.has(candidate)) return candidate
+      }
+      return null
+    }
+    const FORBIDDEN = new Set([
+      STORE,
+      'lib/credentials/provider-credentials.ts',
+      'lib/credentials/provider-execution.ts',
+      'lib/credentials/provider-credential-http.ts',
+      'lib/supabase/service-role.ts',
+    ])
+    const offenders: string[] = []
+    for (const client of sourceFiles.filter((file) => isClientFile(file.text))) {
+      const seen = new Set<string>([client.path])
+      const queue = [client.path]
+      while (queue.length) {
+        const current = byPath.get(queue.pop()!)
+        if (!current) continue
+        for (const match of current.text.matchAll(/(?:import|export)[^'"`;]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+          const target = resolveImport(current.path, match[1] ?? match[2])
+          if (!target || seen.has(target)) continue
+          seen.add(target)
+          if (FORBIDDEN.has(target)) offenders.push(`${client.path} -> ${target}`)
+          queue.push(target)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })

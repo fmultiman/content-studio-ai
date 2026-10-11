@@ -7,9 +7,11 @@
 //
 // Ownership model: USER-OWNED. There is no workspace/project sharing in
 // this V1 — a credential belongs to exactly one authenticated user, and
-// resolution is always scoped to `userId` (enforced twice: the Postgres
-// RLS policy on `user_settings`, and the explicit `.eq('user_id', userId)`
-// filter below).
+// resolution is always scoped to `userId`. FUTURE_059 Slice 1: the
+// secret column is read only by `api-credential-store.ts` (server-side
+// privileged client). Ownership is proven first through the caller's own
+// client (the `user_settings` own-row RLS policy) and the read is an explicit
+// `.eq('user_id', userId)` single-column query.
 //
 // This module is the USER credential source only. It never consults an
 // environment/platform credential — platform-funded execution lives behind
@@ -22,6 +24,11 @@
 // `resolveProviderExecution`), immediately before the outbound provider call.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  isProviderCredentialUnavailableError,
+  readStoredApiCredential,
+  readStoredApiCredentialStatuses,
+} from './api-credential-store'
 
 export type AiProvider = 'openai' | 'nano_banana' | 'kling' | 'replicate' | 'gemini'
 
@@ -29,14 +36,6 @@ export const AI_PROVIDERS: readonly AiProvider[] = ['openai', 'nano_banana', 'kl
 
 export function isAiProvider(value: string): value is AiProvider {
   return (AI_PROVIDERS as readonly string[]).includes(value)
-}
-
-const PROVIDER_SECRET_COLUMN: Record<AiProvider, string> = {
-  openai: 'openai_api_key',
-  nano_banana: 'nanobanana_api_key',
-  kling: 'kling_api_key',
-  replicate: 'replicate_api_key',
-  gemini: 'gemini_api_key',
 }
 
 export type ProviderCredentialResult =
@@ -47,55 +46,31 @@ export type ProviderCredentialResult =
  * Resolves the authenticated user's own provider credential. Never falls
  * back to a platform/env-level secret — a missing user credential is
  * reported as `{ status: 'missing' }`, not silently substituted.
+ *
+ * FUTURE_059 Slice 1: the secret is read by `api-credential-store.ts` with a
+ * server-side privileged client after an ownership proof through `supabase`
+ * (the caller's client). A store/database failure THROWS
+ * `ProviderCredentialUnavailableError`; it is never reported as `missing`.
  */
 export async function resolveProviderCredential(
   supabase: SupabaseClient,
   params: { userId: string; provider: AiProvider },
 ): Promise<ProviderCredentialResult> {
-  const column = PROVIDER_SECRET_COLUMN[params.provider]
-  const { data } = await supabase
-    .from('user_settings')
-    .select(column)
-    .eq('user_id', params.userId)
-    .maybeSingle()
-
-  const secret = (data as Record<string, unknown> | null)?.[column]
-  if (typeof secret === 'string' && secret.trim().length > 0) {
-    return { status: 'configured', secret }
-  }
-  return { status: 'missing' }
+  return readStoredApiCredential(supabase, params)
 }
 
-export type ProviderConfigurationStatusMap = Record<AiProvider, 'configured' | 'missing'>
+export type ProviderConfigurationStatusMap = Record<AiProvider, 'configured' | 'missing' | 'unavailable'>
 
 /**
  * Status-only view for Settings/UI consumption — never includes the
- * secret value itself, only whether each provider is configured.
+ * secret value itself, only whether each provider is configured. A store
+ * failure is `unavailable`, not `missing`.
  */
 export async function getProviderConfigurationStatuses(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ProviderConfigurationStatusMap> {
-  const { data } = await supabase
-    .from('user_settings')
-    .select('openai_api_key, nanobanana_api_key, kling_api_key, replicate_api_key, gemini_api_key')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  const row = data as Record<string, unknown> | null
-  const isConfigured = (value: unknown) => typeof value === 'string' && value.trim().length > 0
-
-  return {
-    openai: isConfigured(row?.openai_api_key) ? 'configured' : 'missing',
-    nano_banana: isConfigured(row?.nanobanana_api_key) ? 'configured' : 'missing',
-    kling: isConfigured(row?.kling_api_key) ? 'configured' : 'missing',
-    replicate: isConfigured(row?.replicate_api_key) ? 'configured' : 'missing',
-    gemini: isConfigured(row?.gemini_api_key) ? 'configured' : 'missing',
-  }
-}
-
-export function providerSecretColumn(provider: AiProvider): string {
-  return PROVIDER_SECRET_COLUMN[provider]
+  return readStoredApiCredentialStatuses(supabase, userId)
 }
 
 export type ProviderConfigurationState = 'configured' | 'missing' | 'unavailable'
@@ -103,20 +78,17 @@ export type ProviderConfigurationState = 'configured' | 'missing' | 'unavailable
 /**
  * Status of ONE provider credential that tells "the store could not be read"
  * apart from "no credential": a database error is `unavailable`, never
- * `missing`. Never returns the secret.
+ * `missing`. Never returns the secret and never throws for an unreadable store.
  */
 export async function getProviderConfigurationState(
   supabase: SupabaseClient,
   params: { userId: string; provider: AiProvider },
 ): Promise<ProviderConfigurationState> {
-  const column = PROVIDER_SECRET_COLUMN[params.provider]
-  const { data, error } = await supabase
-    .from('user_settings')
-    .select(column)
-    .eq('user_id', params.userId)
-    .maybeSingle()
-
-  if (error) return 'unavailable'
-  const secret = (data as Record<string, unknown> | null)?.[column]
-  return typeof secret === 'string' && secret.trim().length > 0 ? 'configured' : 'missing'
+  try {
+    const result = await readStoredApiCredential(supabase, params)
+    return result.status
+  } catch (error) {
+    if (isProviderCredentialUnavailableError(error)) return 'unavailable'
+    throw error
+  }
 }

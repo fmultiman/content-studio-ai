@@ -16,6 +16,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { isProviderCredentialUnavailableError } from '@/lib/credentials/api-credential-store'
 import { recordGeminiReviewUsage, type GeminiReviewUsageContext } from '@/lib/usage/gemini-review-usage'
 import { MediaArtifactError } from '@/lib/media-artifacts/errors'
 import type { ObjectStreamOpener } from '@/lib/media-artifacts/streaming'
@@ -191,7 +192,16 @@ export async function createVideoReviewExecution(params: {
   const row = inserted.data
 
   // 6. Credential (user BYOK, resolved server-side). A missing credential is a recorded failure, like Image.
-  const execution = await resolveProviderExecution(db, { userId: params.userId, provider: VIDEO_REVIEW_PROVIDER })
+  let execution: Awaited<ReturnType<typeof resolveProviderExecution>>
+  try {
+    execution = await resolveProviderExecution(db, { userId: params.userId, provider: VIDEO_REVIEW_PROVIDER })
+  } catch (error) {
+    if (!isProviderCredentialUnavailableError(error)) throw error
+    // The credential store could not be read: a retryable pre-provider failure, NOT "provider not configured".
+    const failed = await markReviewFailed(db, row.id, 'provider_error', 'Video evaluator credentials could not be read.')
+    if (failed.error || !failed.data) throw storeError(failed.error)
+    throw new ReviewServiceError(503, 'REVIEW_STORE_UNAVAILABLE', 'Video evaluator credentials could not be read.', { reviewId: failed.data.id })
+  }
   if (execution.status !== 'ready') {
     const failed = await markReviewFailed(db, row.id, 'provider_error', 'Video evaluator provider is not configured.')
     if (failed.error || !failed.data) throw storeError(failed.error)

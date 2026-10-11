@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { createMcpTransportForGeneration, syncGenerationWithProvider } from '@/lib/video-generation/polling'
@@ -112,6 +113,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     return NextResponse.json({ generation: responseGeneration, outcome: result.outcome })
   } catch (err: any) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(err)
+    if (credentialUnavailable) return credentialUnavailable
     console.error('Video generation sync error:', err instanceof Error ? err.name : 'unknown')
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }

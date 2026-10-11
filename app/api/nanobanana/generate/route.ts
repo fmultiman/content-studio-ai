@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import {
   failImageAttempt,
   freezeAndClaimImageAttempt,
@@ -50,7 +51,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'nano_banana' })
+    let execution: Awaited<ReturnType<typeof resolveProviderExecution>>
+    try {
+      execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'nano_banana' })
+    } catch (error) {
+      const unavailable = providerCredentialUnavailableResponse(error)
+      if (!unavailable) throw error
+      // Pre-submission failure: no provider call was made, so the claimed Attempt is closed instead of left pending.
+      if (canonicalAttempt) await failImageAttempt(canonicalAttempt.attempt, 'Credenciais do provedor indisponíveis')
+      return unavailable
+    }
     if (execution.status !== 'ready') {
       if (canonicalAttempt) await failImageAttempt(canonicalAttempt.attempt, 'API Key do NanoBanana não configurada')
       return NextResponse.json({ error: 'API Key do NanoBanana não configurada', code: execution.code, provider: 'nano_banana', attemptId: canonicalAttempt?.attempt.id }, { status: 400 })

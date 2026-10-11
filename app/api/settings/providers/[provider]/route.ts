@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { isAiProvider, providerSecretColumn } from '@/lib/credentials/provider-credentials'
+import { isAiProvider } from '@/lib/credentials/provider-credentials'
+import { removeStoredApiCredential, writeStoredApiCredential } from '@/lib/credentials/api-credential-store'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
 //
 // Save/replace and remove a single user-owned AI provider credential.
 // Hard contract for this route: the full secret is NEVER returned in the
 // response body, in either PUT or DELETE — only `{ provider, status }`.
+//
+// FUTURE_059 Slice 1: the owner is the server-verified session user
+// (`supabase.auth.getUser()`); the secret column is written by
+// `api-credential-store.ts` with a server-side privileged client, not by the
+// browser-session client. The request never names the owner.
 
 export async function PUT(
   request: NextRequest,
@@ -36,18 +42,15 @@ export async function PUT(
       return NextResponse.json({ error: 'API key obrigatoria' }, { status: 400 })
     }
 
-    const column = providerSecretColumn(provider)
-    const updatePayload: Record<string, unknown> = { user_id: user.id, [column]: apiKey }
-    if (provider === 'nano_banana' && baseUrl) {
-      updatePayload.nanobanana_base_url = baseUrl
-    }
-
-    const { error: upsertError } = await supabase
-      .from('user_settings')
-      .upsert(updatePayload, { onConflict: 'user_id' })
-
-    if (upsertError) {
-      console.error('[Settings Providers] Save error:', upsertError.message)
+    try {
+      await writeStoredApiCredential(supabase, {
+        userId: user.id,
+        provider,
+        secret: apiKey,
+        nanobananaBaseUrl: provider === 'nano_banana' ? baseUrl : undefined,
+      })
+    } catch {
+      // The store logs a code-only line; nothing from the error (or the key) reaches the log or the response.
       return NextResponse.json({ error: 'Nao foi possivel salvar a credencial' }, { status: 500 })
     }
 
@@ -78,14 +81,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
     }
 
-    const column = providerSecretColumn(provider)
-    const { error: updateError } = await supabase
-      .from('user_settings')
-      .update({ [column]: null })
-      .eq('user_id', user.id)
-
-    if (updateError) {
-      console.error('[Settings Providers] Remove error:', updateError.message)
+    try {
+      await removeStoredApiCredential(supabase, { userId: user.id, provider })
+    } catch {
       return NextResponse.json({ error: 'Nao foi possivel remover a credencial' }, { status: 500 })
     }
 

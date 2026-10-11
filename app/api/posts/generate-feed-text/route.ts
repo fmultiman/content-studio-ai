@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -143,6 +144,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ feedText, model: DEFAULT_MODEL })
   } catch (error) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     console.error('[Generate Feed Text] Error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro interno' },

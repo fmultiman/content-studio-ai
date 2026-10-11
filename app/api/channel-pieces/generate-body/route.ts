@@ -3,6 +3,7 @@ import { providerExecutionBlockedResponse } from '@/lib/providers/execution-poli
 import { createClient } from '@/lib/supabase/server'
 import { isValidChannel, isValidFormat, isValidChannelFormat } from '@/lib/publication-channels'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 const DEFAULT_MODEL = 'gpt-4o-mini'
@@ -270,6 +271,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ generatedBody, model: DEFAULT_MODEL })
   } catch (error) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     if (error instanceof Error && error.name === 'TimeoutError') {
       return NextResponse.json({ error: 'Tempo limite excedido. Tente novamente.' }, { status: 504 })
     }
