@@ -149,7 +149,7 @@ No 503, no `PROVIDER_CREDENTIAL_UNAVAILABLE`, and no "Indisponível no momento" 
 | Kling via MCP | connection `connected` | "Conectada - Pronta para gerar" | no |
 | Replicate | missing | Não configurado | no |
 
-These match the previously recorded aggregate configuration counts for this account (aggregate counts only; no value was ever read). `executionPolicy` reported `environment: production`, `paidExecution: allowed`.
+These are consistent with the previously recorded project-wide aggregate counts (4 users: OpenAI 2, NanoBanana 1, Kling 1, Gemini 1, Replicate 0); no value was ever read. `executionPolicy` reported `environment: production`, `paidExecution: allowed`.
 
 ### What this does and does not prove
 
