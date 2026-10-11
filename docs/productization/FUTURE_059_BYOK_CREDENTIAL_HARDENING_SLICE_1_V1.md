@@ -115,3 +115,11 @@ None, none, none. No `scripts/*.sql`, no grant, no RLS policy, no environment va
 2. Approval of the design's open decisions for Slice 2: ordering (containment before encryption), the exact non-secret column allow-list for `authenticated`, and a verification path (PGlite role tests plus a dummy-user live probe, or a Supabase branch).
 3. A written rollback (`GRANT`) and an operator able to apply the migration (no migration is applied by the agent).
 4. Confirmation that no other code reads the key columns with the browser-session client (this slice's scans guarantee this for the repository; check dashboards/SQL consumers outside it).
+
+## 11. Delivery evidence
+
+- Starting `origin/main`: `dbaa7bd1babd720f035a1b4e7e25de69bee04141` (verified).
+- PR [#169](https://github.com/fmultiman/content-studio-ai/pull/169): the required Vercel check was SUCCESS before the merge (merge commit): `747d5eb451eeef2d70aebfea01556e19138692ec`.
+- Production deployment: GitHub deployment for `747d5eb`, environment Production, state `success`. Read-only unauthenticated probes: `GET /api/settings/providers` → `401`, `POST /api/prompts/translate` → `401`.
+- Not performed (by design): no authenticated Production smoke, no provider call, no credential read or write, no migration, no environment-variable change. Whether authenticated Settings status renders correctly against the live service-role path is therefore **not yet observed in Production**; it is covered by mocked tests only and is the first item of the Slice 2 prerequisites (§10).
+- Worker, migration, data: none.
