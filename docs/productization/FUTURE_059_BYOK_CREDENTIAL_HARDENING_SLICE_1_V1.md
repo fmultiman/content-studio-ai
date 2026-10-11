@@ -123,3 +123,41 @@ None, none, none. No `scripts/*.sql`, no grant, no RLS policy, no environment va
 - Production deployment: GitHub deployment for `747d5eb`, environment Production, state `success`. Read-only unauthenticated probes: `GET /api/settings/providers` → `401`, `POST /api/prompts/translate` → `401`.
 - Not performed (by design): no authenticated Production smoke, no provider call, no credential read or write, no migration, no environment-variable change. Whether authenticated Settings status renders correctly against the live service-role path is therefore **not yet observed in Production**; it is covered by mocked tests only and is the first item of the Slice 2 prerequisites (§10).
 - Worker, migration, data: none.
+
+## 12. Authenticated Production smoke (read-only)
+
+Date: 2026-10-11. Production = `https://content.multihuman.com.br`, deployed SHA `411d13d15bccdda7c6f09bcbf913b61d55f93db9` (the latest GitHub Production deployment, state `success`; it contains the Slice 1 code from `747d5eb`). Method: the existing authenticated browser session of the account owner; two `GET` requests issued from the page and rendered Settings → API. No provider call, no credential value read or displayed, no write, no configuration change, no migration. Only response **shapes** and status strings were recorded; no cookie, header, token or request/response body was captured. The Kling MCP account hint shown in the UI is deliberately not recorded here.
+
+### Safe HTTP results
+
+| Request | HTTP | Safe shape |
+| --- | --- | --- |
+| `GET /api/settings/providers` | 200 | top-level keys `providers`, `nanobananaBaseUrl`, `executionPolicy`, `adminCredential`, `publicCredential`; every provider entry has exactly the keys `status` and `connectionMethod` |
+| `GET /api/provider-connections` | 200 | `connections`, `connectionsAvailable`; one Kling `mcp_oauth` connection, `status: connected` |
+| Settings page (`/configuracoes`) | loads | no "Carregando…" left over, no error state |
+
+No 503, no `PROVIDER_CREDENTIAL_UNAVAILABLE`, and no "Indisponível no momento" anywhere on the page.
+
+### Provider status matrix (this account; displayed vs API)
+
+| Provider | API `status` | Rendered card badge | Unexpected `unavailable` |
+| --- | --- | --- | --- |
+| OpenAI | configured | Configurado ✓ (Remover available) | no |
+| Gemini | configured | Configurado ✓ | no |
+| Nano Banana | configured | Configurado ✓ | no |
+| Kling API (key) | configured | Configurado ✓ | no |
+| Kling via MCP | connection `connected` | "Conectada - Pronta para gerar" | no |
+| Replicate | missing | Não configurado | no |
+
+These match the previously recorded aggregate configuration counts for this account (aggregate counts only; no value was ever read). `executionPolicy` reported `environment: production`, `paidExecution: allowed`.
+
+### What this does and does not prove
+
+- **Service-role resolution worked.** In a Production runtime the credential store always uses the service-role client (the caller-client test harness exists only when set by the vitest setup file). A failure to build or use it makes the store throw and every status `unavailable`; all four key providers returned `configured`, which is only reachable through the privileged read that follows the ownership proof. This is an inference from the deployed code plus the observed result — **server logs were not available** to show the query itself, and the Supabase `edge_logs` query is unsupported by the tooling, so absence of server-side errors is not independently confirmed.
+- **Browser response security.** The status responses carry `status` and `connectionMethod` only. The Settings card remains status-only (no input prefilled, no value fetched). Not tested, by instruction: direct retrieval of stored key values — consequently this smoke does **not** show that the owner's own session can no longer read the key columns through PostgREST (it still can; Slice 2).
+- **Code verification on deployed `main`** (read-only): the resolver (`provider-credentials.ts`) and the Settings routes call only `api-credential-store.ts`; the Settings write route takes the owner from `supabase.auth.getUser()` and never from the request; the store rejects blank/padded/over-long owner ids and prototype-style provider names before any query; when the service-role client cannot be created the store throws `store_client_unavailable` and never reads through the browser-session client; outside the store the key column names appear only in `lib/types.ts` and comments.
+- **Not exercised in Production:** save, replace, remove (would write), any provider execution, an `unavailable` path (cannot be forced without changing configuration), Review/Image/Video flows, the NanoBanana callback.
+
+### Verdict
+
+Slice 1 behaves as designed for authenticated read paths in Production: Settings loads, statuses are correct, nothing is `unavailable`, and no credential value reaches the browser through these endpoints. Remaining limitations are those of §9 (plaintext at rest; browser column privileges still open; service-role dependency). Readiness for Slice 2 prerequisite 1 (§10) is met; items 2–4 still need approval and an operator.
