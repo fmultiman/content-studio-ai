@@ -22,6 +22,10 @@ export function isEncryptedProvider(provider: AiProvider): provider is Encrypted
 
 const TABLE = 'provider_api_credentials'
 const COLUMNS = 'provider, ciphertext, key_id, format_version, secret_version'
+const OWNED_COLUMNS = 'user_id, provider, ciphertext, key_id, format_version, secret_version'
+// FUTURE_059 Slice 3B: the atomic "insert only if the legacy value is still unchanged" function
+// (docs/productization/sql/FUTURE_059_SLICE_3B_backfill_function.up.sql). Callable by service_role only.
+const BACKFILL_FUNCTION = 'backfill_provider_api_credential'
 
 export interface EncryptedRow {
   provider: EncryptedProvider
@@ -30,6 +34,12 @@ export interface EncryptedRow {
   formatVersion: number
   secretVersion: number
 }
+
+export interface OwnedEncryptedRow extends EncryptedRow {
+  userId: string
+}
+
+export type BackfillRpcOutcome = 'inserted' | 'exists' | 'legacy_changed' | 'no_settings_row'
 
 function toRow(raw: unknown, provider: AiProvider | null): EncryptedRow {
   const row = raw as Record<string, unknown> | null
@@ -94,4 +104,41 @@ export async function upsertEncryptedRow(
 export async function deleteEncryptedRow(client: SupabaseClient, userId: string, provider: EncryptedProvider): Promise<void> {
   const { error } = await client.from(TABLE).delete().eq('user_id', userId).eq('provider', provider)
   if (error) throw new ProviderCredentialUnavailableError('store_failure', provider)
+}
+
+/** Every encrypted row of a SET of owners (operator sweep). At most one row per owner and provider. */
+export async function selectEncryptedRowsForUsers(client: SupabaseClient, userIds: string[]): Promise<OwnedEncryptedRow[]> {
+  if (userIds.length === 0) return []
+  const { data, error } = await client.from(TABLE).select(OWNED_COLUMNS).in('user_id', userIds)
+  if (error) throw new ProviderCredentialUnavailableError('store_failure')
+  return ((data as unknown[] | null) ?? []).map((raw) => {
+    const row = toRow(raw, null)
+    const userId = (raw as { user_id?: unknown }).user_id
+    if (typeof userId !== 'string') throw new ProviderCredentialUnavailableError('payload_invalid')
+    return { ...row, userId }
+  })
+}
+
+/**
+ * Atomic backfill of ONE legacy credential. The database function locks the owner's settings row, refuses unless the legacy
+ * value still hashes to `expectedLegacySha256`, and inserts with ON CONFLICT DO NOTHING — it can neither overwrite a newer
+ * encrypted credential nor resurrect a removed one. The plaintext key is never sent (only its hash and the ciphertext).
+ */
+export async function backfillEncryptedRow(
+  client: SupabaseClient,
+  params: { userId: string; provider: EncryptedProvider; expectedLegacySha256: string; ciphertext: string; keyId: string; formatVersion: number },
+): Promise<BackfillRpcOutcome> {
+  const { data, error } = await client.rpc(BACKFILL_FUNCTION, {
+    p_user_id: params.userId,
+    p_provider: params.provider,
+    p_expected_legacy_sha256: params.expectedLegacySha256,
+    p_ciphertext: params.ciphertext,
+    p_key_id: params.keyId,
+    p_format_version: params.formatVersion,
+  })
+  if (error) throw new ProviderCredentialUnavailableError('store_failure', params.provider)
+  if (data !== 'inserted' && data !== 'exists' && data !== 'legacy_changed' && data !== 'no_settings_row') {
+    throw new ProviderCredentialUnavailableError('payload_invalid', params.provider)
+  }
+  return data
 }

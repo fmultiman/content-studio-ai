@@ -55,7 +55,9 @@ import {
   encryptCredential,
 } from './byok-crypto'
 import { getCredentialStorageMode, type CredentialStorageMode } from './credential-storage-mode'
+import { lazyBackfillLegacyCredential } from './credential-backfill'
 import {
+  ENCRYPTED_PROVIDERS,
   deleteEncryptedRow,
   isEncryptedProvider,
   selectEncryptedRow,
@@ -359,7 +361,12 @@ export async function readStoredApiCredential(
 
     if ((mode as ActiveMode) === 'dual') {
       logFallback(provider)
-      return await readLegacyCredential(caller, params)
+      const legacy = await readLegacyCredential(caller, params)
+      // FUTURE_059 Slice 3B — lazy migrate-on-read. Best-effort and never blocking: it cannot throw, cannot change what this
+      // read returns, and the database function refuses unless the legacy value is still the one just read. Only reached when
+      // NO encrypted row exists; an encrypted row that exists but is invalid threw above and never gets here.
+      if (legacy.status === 'configured') await lazyBackfillLegacyCredential(access.client, { userId, provider, legacySecret: legacy.secret })
+      return legacy
     }
     return { status: 'missing' }
   } catch (error) {
@@ -493,4 +500,53 @@ export async function removeStoredApiCredential(caller: SupabaseClient, params: 
     if (error instanceof ProviderCredentialUnavailableError) logUnavailable('remove', error)
     throw error
   }
+}
+
+// ---------------------------------------------------------------------------
+// Operator surface (FUTURE_059 Slice 3B) — used ONLY by credential-backfill-sweep.ts and its internal operator route.
+// ---------------------------------------------------------------------------
+
+/**
+ * The privileged client for the operator sweep: the service-role client only (never a browser-session client), through the
+ * same factory and local-runtime guard as every other server credential access. There is no caller and no owner here: the sweep
+ * enumerates owners itself and never accepts one from a request.
+ */
+export function createOperatorPrivilegedClient(): SupabaseClient {
+  const override = slot[OVERRIDE_KEY] as SupabaseClient | null | undefined
+  if (override) return override
+  try {
+    return createServiceRoleSupabase()
+  } catch {
+    throw new ProviderCredentialUnavailableError('store_client_unavailable')
+  }
+}
+
+export interface LegacyCredentialPageRow {
+  userId: string
+  /** Non-blank legacy values of the providers the encrypted store supports. Memory only — never log or return it. */
+  secrets: Partial<Record<EncryptedProvider, string>>
+}
+
+/**
+ * One keyset page of owners (ordered by user id, strictly after `afterUserId`) with their legacy credentials. Every owner with a
+ * settings row appears — including owners with no legacy credential — so the sweep covers accounts that never trigger a read.
+ */
+export async function readLegacyCredentialPage(
+  client: SupabaseClient,
+  params: { afterUserId: string | null; limit: number },
+): Promise<LegacyCredentialPageRow[]> {
+  const columns = ['user_id', ...ENCRYPTED_PROVIDERS.map((provider) => SECRET_COLUMN[provider])].join(', ')
+  let query = client.from('user_settings').select(columns).order('user_id', { ascending: true }).limit(params.limit)
+  if (params.afterUserId) query = query.gt('user_id', params.afterUserId)
+  const { data, error } = await query
+  if (error) throw new ProviderCredentialUnavailableError('store_failure')
+
+  return ((data as unknown as Array<Record<string, unknown>> | null) ?? []).map((row) => {
+    const secrets: Partial<Record<EncryptedProvider, string>> = {}
+    for (const provider of ENCRYPTED_PROVIDERS) {
+      const value = row[SECRET_COLUMN[provider]]
+      if (typeof value === 'string' && value.trim().length > 0) secrets[provider] = value
+    }
+    return { userId: String(row.user_id), secrets }
+  })
 }

@@ -298,7 +298,10 @@ describe.skipIf(!ENABLED).sequential('Slice 3A encrypted credential store agains
       const info = vi.spyOn(console, 'info')
       info.mockClear()
       await expect(store.readStoredApiCredential(owner$(), { userId: A, provider: 'openai' })).resolves.toEqual({ status: 'configured', secret: LEGACY })
-      expect(info.mock.calls.map((call) => String(call[0]))).toEqual(['[credential-store] read outcome=legacy_fallback provider=openai'])
+      // Slice 3B adds a lazy migration after the fallback when its SQL function exists; every line is a code-only log
+      const logged = info.mock.calls.map((call) => String(call[0]))
+      expect(logged[0]).toBe('[credential-store] read outcome=legacy_fallback provider=openai')
+      for (const line of logged) expect(line).toMatch(/^\[credential-(store|backfill)\] [a-z ]+ outcome=[a-z_]+( provider=[a-z_]+)?$/)
     })
   })
 

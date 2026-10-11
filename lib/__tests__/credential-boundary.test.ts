@@ -522,6 +522,9 @@ describe('BYOK credential store boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENIN
       'lib/credentials/encrypted-credential-table.ts',
       'lib/security/aes-gcm-envelope.ts',
       'lib/provider-connections/crypto.ts',
+      // FUTURE_059 Slice 3B
+      'lib/credentials/credential-backfill.ts',
+      'lib/credentials/credential-backfill-sweep.ts',
     ])
     const offenders: string[] = []
     for (const client of sourceFiles.filter((file) => isClientFile(file.text))) {
@@ -571,21 +574,22 @@ describe('Encrypted BYOK storage boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENI
 
   it('the encrypted table and its ciphertext column are named in exactly one module, imported only by the store', () => {
     expect(codeFilesContaining('provider_api_credentials')).toEqual([TABLE])
-    expect(sourceFiles.filter((file) => file.path !== TABLE && /encrypted-credential-table/.test(codeOnly(file.text))).map((file) => file.path)).toEqual([STORE])
+    // Slice 3B: the dormant backfill core and the operator sweep also use it (select/rpc helpers), nothing else does
+    expect(sourceFiles.filter((file) => file.path !== TABLE && /encrypted-credential-table/.test(codeOnly(file.text))).map((file) => file.path).sort()).toEqual([STORE, 'lib/credentials/credential-backfill-sweep.ts', 'lib/credentials/credential-backfill.ts'].sort())
   })
 
   it('decryption and the BYOK crypto module are reachable only from the store (and the mode diagnostic, which never decrypts)', () => {
     const importers = sourceFiles.filter((file) => file.path !== BYOK && /byok-crypto/.test(codeOnly(file.text))).map((file) => file.path).sort()
-    expect(importers).toEqual([MODE, STORE].sort())
+    expect(importers).toEqual([MODE, STORE, 'lib/credentials/credential-backfill-sweep.ts', 'lib/credentials/credential-backfill.ts'].sort())
     const decrypters = sourceFiles.filter((file) => file.path !== BYOK && /\bdecryptCredential\b/.test(codeOnly(file.text))).map((file) => file.path)
-    expect(decrypters).toEqual([STORE])
+    expect(decrypters).toEqual([STORE, 'lib/credentials/credential-backfill-sweep.ts'].sort())
     expect(sourceFiles.filter((file) => file.path !== ENVELOPE && /aes-gcm-envelope/.test(codeOnly(file.text))).map((file) => file.path).sort()).toEqual([BYOK, 'lib/provider-connections/crypto.ts'].sort())
   })
 
   it('every select in the table module is an explicit column list (never a wildcard)', () => {
     const selects = [...text(TABLE).matchAll(/\.select\(([^)]*)\)/g)].map((match) => match[1].trim())
     expect(selects.length).toBeGreaterThan(0)
-    for (const argument of selects) expect(argument).toBe('COLUMNS')
+    for (const argument of selects) expect(argument).toMatch(/^(COLUMNS|OWNED_COLUMNS)$/)
     expect(text(TABLE)).not.toMatch(/select\(\s*['"]\*/)
   })
 
@@ -613,5 +617,100 @@ describe('Encrypted BYOK storage boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENI
     expect(scripts).toEqual([])
     const pkg = readFileSync(join(ROOT, 'package.json'), 'utf8')
     expect(pkg).not.toMatch(/provider_api_credentials/)
+  })
+})
+
+describe('Lazy backfill and operator sweep boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_3B', () => {
+  const STORE = 'lib/credentials/api-credential-store.ts'
+  const TABLE = 'lib/credentials/encrypted-credential-table.ts'
+  const BACKFILL = 'lib/credentials/credential-backfill.ts'
+  const SWEEP = 'lib/credentials/credential-backfill-sweep.ts'
+  const ROUTE = 'app/api/internal/credential-backfill/route.ts'
+  const file = (path: string) => sourceFiles.find((f) => f.path === path)!
+  const code = (path: string) => codeOnly(file(path).text)
+
+  it('lazy migration is reachable from exactly one place: the dual-mode fallback in the store', () => {
+    expect(sourceFiles.filter((f) => f.path !== BACKFILL && /lazyBackfillLegacyCredential/.test(codeOnly(f.text))).map((f) => f.path)).toEqual([STORE])
+    // it is called only after the legacy read of the dual-mode fallback, never from the legacy or encrypted branches
+    const store = code(STORE)
+    const index = store.indexOf('await lazyBackfillLegacyCredential(')
+    expect(index).toBeGreaterThan(store.indexOf("logFallback(provider)"))
+    expect(store.slice(store.indexOf("logFallback(provider)") - 200, index)).toMatch(/dual/)
+  })
+
+  it('the database function name is known to exactly one module', () => {
+    expect(codeFilesContaining('backfill_provider_api_credential')).toEqual([TABLE])
+  })
+
+  it('the sweep and the operator client are used only by the internal operator route', () => {
+    expect(sourceFiles.filter((f) => f.path !== SWEEP && /credential-backfill-sweep/.test(codeOnly(f.text))).map((f) => f.path)).toEqual([ROUTE])
+    expect(sourceFiles.filter((f) => f.path !== STORE && f.path !== SWEEP && /\b(createOperatorPrivilegedClient|readLegacyCredentialPage)\b/.test(codeOnly(f.text))).map((f) => f.path).sort()).toEqual([ROUTE].sort())
+    expect(sourceFiles.filter((f) => f.path !== SWEEP && /\brunCredentialSweep\b/.test(codeOnly(f.text))).map((f) => f.path)).toEqual([ROUTE])
+  })
+
+  it('the operator route is POST-only, secret-guarded, fail-closed, and never takes an owner from the request', () => {
+    const route = code(ROUTE)
+    expect(route).toMatch(/export async function POST/)
+    expect(route).not.toMatch(/export (async )?function (GET|PUT|PATCH|DELETE|HEAD)/)
+    expect(route).toContain('CREDENTIAL_BACKFILL_OPERATOR_SECRET')
+    expect(route).toContain('timingSafeEqual')
+    expect(route).toContain('MIN_SECRET_LENGTH')
+    expect(route).toContain('fail(503,')
+    expect(route).toMatch(/status: 401/)
+    expect(route).toContain('classifyExecutionEnvironment')
+    expect(route).not.toContain('createServiceRoleSupabase')
+    expect(route).not.toMatch(/searchParams|nextUrl/)
+    expect(route).not.toMatch(/\.(userId|user_id|ownerId|provider)\b/) // no owner/provider is read from the request
+    expect(route).toContain("ALLOWED_FIELDS = new Set(['dryRun', 'batchSize', 'maxBatches', 'cursor', 'confirm'])")
+    expect(route).toContain('migrate-legacy-credentials')
+    expect(file(ROUTE).text).toMatch(/export const dynamic = 'force-dynamic'/)
+  })
+
+  it('the operator secret is read only by the route and is set in no source or deployment file', () => {
+    expect(codeFilesContaining('CREDENTIAL_BACKFILL_OPERATOR_SECRET')).toEqual([ROUTE])
+    for (const name of ['vercel.json', 'vercel.ts', 'next.config.mjs', '.env.example', '.env.production', '.env']) {
+      let content = ''
+      try { content = readFileSync(join(ROOT, name), 'utf8') } catch { /* absent */ }
+      expect(content, name).not.toMatch(/CREDENTIAL_BACKFILL_OPERATOR_SECRET|credential-backfill/)
+    }
+  })
+
+  it('nothing schedules or auto-starts the sweep: no cron, no package script, no startup hook, no deployment step', () => {
+    const pkg = readFileSync(join(ROOT, 'package.json'), 'utf8')
+    expect(pkg).not.toMatch(/credential-backfill|backfill_provider|runCredentialSweep/)
+    for (const name of ['vercel.json', 'vercel.ts']) {
+      let content = ''
+      try { content = readFileSync(join(ROOT, name), 'utf8') } catch { /* absent */ }
+      expect(content, name).not.toMatch(/crons?/)
+    }
+    for (const startup of ['instrumentation.ts', 'instrumentation.js', 'proxy.ts']) {
+      let content = ''
+      try { content = readFileSync(join(ROOT, startup), 'utf8') } catch { /* absent */ }
+      expect(content, startup).not.toMatch(/backfill|runCredentialSweep/i)
+    }
+    expect(sourceFiles.filter((f) => f.path.startsWith('app/') && f.path !== ROUTE && /credential-backfill|runCredentialSweep/.test(codeOnly(f.text))).map((f) => f.path)).toEqual([])
+    expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /backfill|slice_3b/i.test(name) && /credential/i.test(name))).toEqual([])
+  })
+
+  it('the sweep logs nothing, and the backfill core logs only code-only lines', () => {
+    expect(code(SWEEP)).not.toMatch(/console\./)
+    const lines = code(BACKFILL).split('\n').filter((line) => /console\./.test(line))
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(line).toMatch(/\[credential-backfill\]/)
+      expect(line).not.toMatch(/secret|\bdata\b|\brow\b|value|\.message|ciphertext|token|digest|sha/i)
+    }
+  })
+
+  it('the sweep contains no column name, request, or client creation of its own', () => {
+    const sweep = code(SWEEP)
+    expect(sweep).not.toMatch(/_api_key|user_settings|provider_api_credentials/)
+    expect(sweep).not.toMatch(/createServiceRoleSupabase|NextRequest|fetch\(/)
+  })
+
+  it('the Slice 3B SQL is a reviewed artifact under docs/, never under scripts/', () => {
+    for (const name of ['FUTURE_059_SLICE_3B_backfill_function.up.sql', 'FUTURE_059_SLICE_3B_backfill_function.down.sql']) {
+      expect(() => readFileSync(join(ROOT, 'docs/productization/sql', name), 'utf8'), name).not.toThrow()
+    }
   })
 })

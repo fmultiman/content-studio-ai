@@ -94,7 +94,9 @@ describe('dual mode', () => {
   it('a user with no encrypted row falls back to the legacy value, and logs only a code', async () => {
     const { caller } = setup()
     await expect(store.readStoredApiCredential(caller, { userId: A, provider: 'openai' })).resolves.toEqual({ status: 'configured', secret: LEGACY_A })
-    expect(logs).toEqual(['[credential-store] read outcome=legacy_fallback provider=openai'])
+    // Slice 3B: the fallback also migrates the credential lazily; both log lines are code-only
+    expect(logs).toEqual(['[credential-store] read outcome=legacy_fallback provider=openai', '[credential-backfill] lazy outcome=inserted provider=openai'])
+    expect(encryptedRow(A, 'openai')).toMatchObject({ source: 'legacy_backfill', secret_version: 1 })
     expect(logs.join('\n')).not.toContain(LEGACY_A)
   })
 
