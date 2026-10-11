@@ -106,4 +106,10 @@ One bounded Automatic run on the Production test session: GPT-4o mini (text) + `
 
 ## Delivery evidence
 
-Filled at merge time.
+- Starting `origin/main`: `10184614c37ea557635140b3272bac1714e8d23f` (verified).
+- PR [#163](https://github.com/fmultiman/content-studio-ai/pull/163), merged with a merge commit after the Vercel check passed: merge SHA `d143731fc8006c79906ab7e2c7ed66fffa15c429`.
+- Production deployment: GitHub deployment `6989512798`, environment Production, SHA `d143731`, state `success`.
+- Build: the Vercel build of the PR passed. A local `next build --webpack` compiles (112 s) and then trips the page-export type check on `ImagesPageShell`, which also fails identically on clean `ec7afea` (environment/mode artefact).
+- Read-only Production checks (no paid call, nothing clicked): unauthenticated `POST /api/prompt-assistance` → `401 UNAUTHORIZED`; the authenticated test session shows the mode control (Manual / Assistido selectable, Assistido selected), **Automático disabled** with "ative "Permitir o modo Automático" em Configurações → Automação" (the global preference is OFF for every user), the prompt editor editable from the empty state, the image-model selector and a disabled **Criar Imagem**; no automatic panel is rendered.
+- Production database: unchanged (no migration, no ledger row, no preference value written).
+- **Paid smoke: not run.** Status stays `CODE_READY` until a separately authorized real-provider smoke succeeds.
