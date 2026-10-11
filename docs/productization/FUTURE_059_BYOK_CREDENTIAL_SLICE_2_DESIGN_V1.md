@@ -6,6 +6,8 @@ Status: **DESIGN ONLY.** No SQL was applied, no source runtime behaviour changed
 
 ## Verdict
 
+> **Update:** a local PostgreSQL 17.6 + PostgREST 13.0.8/14.18 + JWT proof has since passed (see `FUTURE_059_BYOK_CREDENTIAL_SLICE_2_LOCAL_STACK_PROOF_V1.md`); a hosted-Supabase proof has not been performed and Production SQL is still unauthorized.
+>
 > **NEEDS ADDITIONAL STAGING PROOF.** The migration is small, reversible, passes 28 PGlite proofs and every application consumer was audited — but it is **not** declared safe to apply on static inspection and PGlite alone. There is no staging environment, a Supabase branch cannot replicate production (the migration history starts after `user_settings` was created), and PGlite is not Supabase's PostgREST/JWT stack. See §8 and §13.
 
 ## 1. Sources and preflight
@@ -135,7 +137,7 @@ There is **no staging environment**, and `list_branches` is empty. A Supabase br
 Steps (dummy users `A`, `B`; dummy values `sk-DUMMY-…`; no real credential anywhere):
 
 1. Record `relacl`, `attacl`, `has_column_privilege` matrix. Create users A and B, then **before** applying, with A's JWT: `GET /rest/v1/user_settings?select=openai_api_key` returns the dummy key (baseline proof of the exposure) — only ever against staging.
-2. Apply `up.sql` (transaction + in-transaction verification). Confirm `NOTIFY` took effect (`GET /rest/v1/` OpenAPI no longer lists key columns for A).
+2. Apply `up.sql` (transaction + in-transaction verification). Confirm `NOTIFY` took effect (the table answers again after the reload; NOTE: the local proof showed PostgREST OpenAPI still lists the key column **names** to `authenticated` — only the table is hidden from `anon`).
 3. With A's JWT through real PostgREST: `select=theme,…` (all 16) → 200 own row only; `select=openai_api_key` → denied (HTTP 401/403, code `42501`); `select=*` → denied; `?select=user_id&openai_api_key=like.sk-*` → denied; `PATCH {openai_api_key:…}` → denied; `POST` upsert with a key column → denied; `PATCH {theme:…}` → 200; supabase-js `upsert({user_id,…10 prefs}, {onConflict:'user_id'})` → ok and keys unchanged; `PATCH {nanobanana_base_url}` → denied. With B's JWT: cannot see/alter A's row. With `anon` key: 401/403 on everything.
 4. Deploy the current app (`94ecd05`) against staging (service role + dummy provider keys, **mock provider transport** — no paid call): Settings load/save of preferences; `PUT/DELETE /api/settings/providers/openai` create/replace/remove; `GET /api/settings/providers` → statuses only; a resolver call (`getProviderConfigurationStatuses`) via the app; NanoBanana base URL saved; confirm no key in any browser-visible response.
 5. Apply `down.sql`; confirm ACL restored and key readable again (documents the tradeoff); re-apply `up.sql`.
