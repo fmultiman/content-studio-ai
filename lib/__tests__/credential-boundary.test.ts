@@ -171,6 +171,8 @@ describe('user_byok is the only execution mode wired into routes', () => {
       [
         'app/api/channel-pieces/generate-body/route.ts',
         'app/api/evaluate-image/route.ts',
+        // FUTURE_064 Slice A: official Gemini image generation (user_byok Gemini key, disabled by default).
+        'app/api/gemini/generate-image/route.ts',
         // NANOBANANA_CALLBACK_AUTHENTICATION_V1: reads the task OWNER's own credential to query the provider.
         'app/api/nanobanana/callback/route.ts',
         'app/api/nanobanana/generate/route.ts',
