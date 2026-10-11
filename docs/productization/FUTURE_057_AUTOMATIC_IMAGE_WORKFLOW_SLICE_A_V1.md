@@ -1,6 +1,6 @@
 # FUTURE-057 — Automatic image workflow restoration, Slice A (core automation + manual authoring)
 
-Status: **CODE_READY** — implemented and validated with mocked providers; **no paid smoke has been run** (none authorized). `COMPLETE` requires a separately authorized real-provider smoke (see "Paid smoke plan"). Slice B (evaluation/refinement automation) and Video Slice 2 are out of scope.
+Status: **COMPLETE** — implemented, validated with mocked providers, and proven by one authorized Production smoke on 2026-10-11 (see "Production smoke"). Slice B (evaluation/refinement automation) and Video Slice 2 are out of scope.
 
 Source audit: Traycer artifact `future-057-automatic-image-workflow-audit` (starting point `origin/main` `10184614c37ea557635140b3272bac1714e8d23f`).
 
@@ -91,7 +91,7 @@ Coverage (new `automatic-image-workflow.test.tsx`, 25 tests on the real `/imagen
 - **Migration:** none. **Worker:** none. **New persistence entity:** none. Existing `user_settings` columns, session `autoMode` and ledger metadata are reused; no value is rewritten or backfilled.
 - **Rollback:** revert the PR; no data to undo; Settings values are untouched.
 
-## Paid smoke plan (NOT run — needs separate authorization)
+## Paid smoke plan (executed — results in "Production smoke")
 
 One bounded Automatic run on the Production test session: GPT-4o mini (text) + `gpt-image-1-mini` (cheapest image) → verify exactly one `POST /api/prompt-assistance` and one image Attempt, the prompt sent equals the generated prompt, ledger rows (`workflow: "automatic"`), zero Review/evaluation, cancellation UX, cleanup. Optionally one NanoBanana run. Report as COMPLETE only after it succeeds.
 
@@ -112,4 +112,61 @@ One bounded Automatic run on the Production test session: GPT-4o mini (text) + `
 - Build: the Vercel build of the PR passed. A local `next build --webpack` compiles (112 s) and then trips the page-export type check on `ImagesPageShell`, which also fails identically on clean `ec7afea` (environment/mode artefact).
 - Read-only Production checks (no paid call, nothing clicked): unauthenticated `POST /api/prompt-assistance` → `401 UNAUTHORIZED`; the authenticated test session shows the mode control (Manual / Assistido selectable, Assistido selected), **Automático disabled** with "ative "Permitir o modo Automático" em Configurações → Automação" (the global preference is OFF for every user), the prompt editor editable from the empty state, the image-model selector and a disabled **Criar Imagem**; no automatic panel is rendered.
 - Production database: unchanged (no migration, no ledger row, no preference value written).
-- **Paid smoke: not run.** Status stays `CODE_READY` until a separately authorized real-provider smoke succeeds.
+- Paid smoke: run and passed on 2026-10-11 (see "Production smoke").
+
+## Production smoke (2026-10-11)
+
+Authorization: exactly one Automatic run — at most one OpenAI `gpt-4o-mini` text inference and one OpenAI `gpt-image-1-mini` image generation; no retry, no evaluator/Review, no refinement, no video, no other model. The normal authenticated Production UI was used; no guard, capability check or ownership validation was bypassed.
+
+**Deployed state tested.** `origin/main` and Production `c164815e8fe152115fc8117a060fce7dd846b18b` (Production deployment `6989535329`, success), carrying feature merge `d143731`. Workspace: the existing empty test session "Projeto teste · Smoke Test Final" (`295dce12-…`, owner and Project/Production verified from the session row), authenticated as the owner.
+
+**Pre-flight (recorded before any spend).** Session: revision 8, `working_prompt` `""`, `generatedPrompt` null, `autoMode` false, `selectedModel` `gpt-image-2`, no image, no Attempt. `user_settings` of the user: `automation_enabled` **false** (the only field changed during the smoke), `default_image_model` `gpt-image-2`, `image_evaluator_enabled` true, `max_refinement_iterations` 3, `auto_mode_default` true, `save_prompt_history` true, theme/notification fields as stored. Ledger baseline for the user: 24 `provider_usage_events`, 23 image Attempts (0 in this session), 26 images, 19 media reviews, 10 video generations, 36 `prompts`. OpenAI pricing rows: 3.
+
+**Enabling the preference.** Settings → Automação → "Permitir o modo Automático" → Salvar Preferências. A diff of the full settings row showed **only `automation_enabled` changed** (false → true); no provider request was made by the change, and the Automático option became selectable in `/imagens` while the image-model selector stayed visible. The assistant selector showed `OpenAI · GPT-4o mini`; the image model was set to `GPT Image 1 Mini` in the visible selector. The summary line read "Prompt: OpenAI · GPT-4o mini → Imagem: GPT Image 1 Mini. 1 chamada de texto + 1 geração de imagem." The prompt was empty, so no overwrite confirmation was needed.
+
+**Input.** "Documentary photograph of the Atlantic rainforest at sunrise, soft morning mist, natural lighting, realistic vegetation, peaceful atmosphere."
+
+### One run — observed requests (browser request log + database)
+
+| Stage | Observation |
+| --- | --- |
+| Start | A single click on "Gerar automaticamente". Wall time to completion ≈ 16 s |
+| A. Text | Exactly one `POST /api/prompt-assistance` → 200. Body: `operation: "create"`, `workflow: "automatic"`, `provider: "openai"`, `model: "gpt-4o-mini"`, `mediaType: "image"`, `originalText` = the typed description (no stale text), server-resolved Project/Production ids. The response reported the same `openai` / `gpt-4o-mini` / `create` (no silent substitution) and a 425-character prompt |
+| B. Image | Exactly one `POST /api/openai/generate-image` → 200, `replayed: false`. Body: `model: "gpt-image-1-mini"`, `size 1024x1024`, `quality medium`, `sessionId` = the test session, `clientRequestId` = the run id. **The submitted prompt was byte-identical to the generated prompt** (425 chars; `promptEqualsGenerated: true`, not equal to the description) and the session's saved `generatedPrompt` equals the Attempt's `submitted_prompt` |
+| Other | **0** NanoBanana, **0** Review/evaluator POSTs, **0** video requests, no retry. The only other calls were the session autosave `PATCH`es and read-only `GET`s (including `GET /api/reviews/image`, the existing Review-history *read* run after a refresh — not an execution) |
+| UI | Prompt applied to the editor; description unchanged; image displayed; "Gerar Novamente" available; panel back to idle; no failure state |
+
+### Persistence
+
+One Attempt: `bcca9ed8-b12c-4e1f-945c-8b728f171378` — session `295dce12-…`, owner and Project/Production as the session, `sequence 1`, provider `openai`, model `gpt-image-1-mini`, status `succeeded`, `client_request_id` = the run id sent by the browser, config `{size: 1024x1024, quality: medium}`, no failure details, `result_image_id` = the same id (an `images` row owned by the user, status `draft`, model `gpt-image-1-mini`), submitted→completed in 11.7 s. Counts: Attempts 23 → 24 (session 0 → 1), images 26 → 27. **No duplicate Attempt.**
+
+### Usage ledger and cost
+
+Two new `provider_usage_events` rows (24 → 26), both owner/Project/Production-attributed, `provider openai`, `model gpt-4o-mini`, `operation create`, `measurement_source provider_reported`, sharing `provider_task_id` `chatcmpl-EXefGZ…`:
+
+| Row | Unit | Quantity | Idempotency key |
+| --- | --- | --- | --- |
+| input | `input_tokens` | 267 | `prompt_assistance:chatcmpl-EXefGZ…:input` |
+| output | `output_tokens` | 77 | `prompt_assistance:chatcmpl-EXefGZ…:output` |
+
+`provider_metadata` on both: `{api: "openai_chat_completions", funding: "user_byok", workflow: "automatic", operation: "create", media_type: "image", usage: {serviceTier: "default", totalTokenCount: 344, cachedContentTokenCount: 0}}` — the reported tier is present, the `workflow` label is stored as analytics only, and no prompt text is in the ledger. The app's cost view derived **Standard-tier** estimates from the reported `service_tier: "default"`: input 267 × $0.15/1M = **$0.00004005**, output 77 × $0.60/1M = **$0.0000462** (total ≈ **$0.00008625**, list-price equivalent, BYOK invoice may differ). **No image-generation cost** exists or is shown: image generation writes no usage-ledger rows today and none was invented.
+
+### Safety checks
+
+Reviews (19), video generations (10) and `prompts` (36) are unchanged; no draft or library write; the `GET .../save-to-library` call is a status read. The preference change was the only settings write; no unrelated Project or Production was touched.
+
+### Cleanup
+
+- `automation_enabled` restored to **false** through the same Settings UI; a full-row comparison shows every other preference identical to the pre-flight values.
+- The test session was restored through the UI: `working_prompt` `""`, `generatedPrompt` null, `selectedModel` `gpt-image-2`, `autoMode` false, no residual suggestion. Revision 8 → 17 and `updated_at` changed (autosave).
+- **Remaining test artifacts (not removed — only destructive deletes could):** the one Attempt and its image row/object above, and the session's `current_image_id` pointing to it. All usage-ledger rows are preserved as billing evidence.
+
+### Findings
+
+1. **No defect in the Automatic workflow.** Counts, bodies, parity, idempotency, persistence and ledger all matched the design.
+2. **Observation, not reproduced (no further paid request was allowed):** the first cleanup attempt, made on the same page that had just generated the image, was not persisted (the database kept revision 13 until the page was reloaded; the same edits made on a freshly loaded page saved normally). Post-generation autosave in a long-lived page may therefore stall; the save-status indicator was not captured during that attempt. This is **unverified** and should be investigated separately (it may pre-date Slice A).
+3. **Security hygiene (unrelated to Slice A):** while recording the pre-flight preferences, a `select *` on `user_settings` showed that legacy plaintext provider-key columns still exist on that table. The values were not recorded anywhere. Recommend a separate review of those legacy columns.
+
+### Remaining limitations
+
+Unchanged from the section above, plus: the 16 s run depends on the browser staying open; NanoBanana was not exercised live; automatic evaluation/refinement (Slice B) is not implemented and the manual Avaliar / Usar prompt refinado actions were not touched.
