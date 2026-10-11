@@ -174,7 +174,26 @@ export function createGenerationSessionAutosave<S, T extends SaveToken>(
   const isCurrent = (requestEpoch: number, requestSequence: number) =>
     !disposed && requestEpoch === epoch && inFlight?.sequence === requestSequence
 
-  const send = async (target: Target<S>, keepalive = false): Promise<void> => {
+  // A server-owned write (e.g. an image generation linking its output to the Session) can advance the revision without
+  // touching any authored field. That 409 is "benign": the server snapshot it carries is identical, field for field
+  // (adapter fingerprint), to the last state THIS controller acknowledged, and only the token moved. Anything else -
+  // no server snapshot, an unchanged token, or a different authored fingerprint - is a real conflict and is never
+  // reconciled. The decision uses the acknowledged baseline, never React/local state.
+  const benignRevisionConflict = (result: SaveFailure<S, T>, expectedToken: T): { snapshot: S; token: T } | null => {
+    if (result.kind !== 'conflict' || !result.server) return null
+    if (result.server.token === expectedToken) return null
+    try {
+      const serverTarget = targetFor(result.server.snapshot)
+      return serverTarget.fingerprint === acknowledgedFingerprint()
+        ? { snapshot: serverTarget.snapshot, token: result.server.token }
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  // `reconciled` marks the single automatic retry: a second 409 is never reconciled again.
+  const send = async (target: Target<S>, keepalive = false, reconciled = false): Promise<void> => {
     const requestEpoch = epoch
     const requestSequence = ++sequence
     const expectedToken = acknowledged.token
@@ -195,6 +214,15 @@ export function createGenerationSessionAutosave<S, T extends SaveToken>(
     inFlight = null
 
     if (!result.ok) {
+      const benign = reconciled ? null : benignRevisionConflict(result, expectedToken)
+      if (benign) {
+        // Adopt the canonical revision and re-send the SAME target exactly once. Edits typed meanwhile stay in
+        // `pending` and follow through the normal success path below; nothing is dropped and nothing is overwritten.
+        inFlight = null
+        acknowledged = { snapshot: benign.snapshot, token: benign.token }
+        await send(target, keepalive, true)
+        return
+      }
       failed = { target, token: expectedToken }
       pending = null
       setState(result.kind === 'conflict' ? 'conflict' : 'error')
