@@ -472,7 +472,7 @@ describe('BYOK credential store boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENIN
   })
 
   it('Kling MCP stays on its own encrypted path: the store knows nothing about provider connections', () => {
-    expect(codeOnly(store!.text)).not.toMatch(/provider_connection|provider-connections|oauth|access_token|refresh_token|ciphertext/i)
+    expect(codeOnly(store!.text)).not.toMatch(/provider_connection|provider-connections|oauth|access_token|refresh_token/i)
     expect(codeFilesContaining('api-credential-store').filter((p) => p.startsWith('lib/provider-connections/'))).toEqual([])
   })
 
@@ -515,6 +515,13 @@ describe('BYOK credential store boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENIN
       'lib/credentials/provider-execution.ts',
       'lib/credentials/provider-credential-http.ts',
       'lib/supabase/service-role.ts',
+      // FUTURE_059 Slice 3A
+      'lib/credentials/byok-crypto.ts',
+      'lib/credentials/credential-storage-mode.ts',
+      'lib/credentials/credential-errors.ts',
+      'lib/credentials/encrypted-credential-table.ts',
+      'lib/security/aes-gcm-envelope.ts',
+      'lib/provider-connections/crypto.ts',
     ])
     const offenders: string[] = []
     for (const client of sourceFiles.filter((file) => isClientFile(file.text))) {
@@ -533,5 +540,78 @@ describe('BYOK credential store boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENIN
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe('Encrypted BYOK storage boundary — FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_3A', () => {
+  const STORE = 'lib/credentials/api-credential-store.ts'
+  const TABLE = 'lib/credentials/encrypted-credential-table.ts'
+  const BYOK = 'lib/credentials/byok-crypto.ts'
+  const MODE = 'lib/credentials/credential-storage-mode.ts'
+  const ENVELOPE = 'lib/security/aes-gcm-envelope.ts'
+  const text = (path: string) => codeOnly(sourceFiles.find((file) => file.path === path)!.text)
+
+  it('the BYOK master-key variables are read in exactly one module, and are a different identity from the Kling key', () => {
+    expect(codeFilesContaining('BYOK_CREDENTIAL_ENCRYPTION_KEY')).toEqual([BYOK])
+    expect(codeFilesContaining('PROVIDER_CONNECTION_ENCRYPTION_KEY')).toEqual(['lib/provider-connections/crypto.ts'])
+    expect(text(BYOK)).not.toContain('PROVIDER_CONNECTION_ENCRYPTION_KEY')
+  })
+
+  it('the mode variable is read in exactly one module and is not set by any source or deployment file', () => {
+    expect(codeFilesContaining('PROVIDER_API_CREDENTIAL_MODE')).toEqual([MODE])
+    expect(codeFilesContaining('CREDENTIAL_STORAGE_MODE_ENV').filter((p) => p !== MODE)).toEqual([])
+    expect(text(MODE)).toContain("DEFAULT_CREDENTIAL_STORAGE_MODE: CredentialStorageMode = 'legacy'")
+    const deploymentFiles = ['vercel.json', 'vercel.ts', 'next.config.mjs', '.env.example', '.env.production', '.env']
+    for (const file of deploymentFiles) {
+      let content = ''
+      try { content = readFileSync(join(ROOT, file), 'utf8') } catch { /* absent */ }
+      expect(content, file).not.toMatch(/PROVIDER_API_CREDENTIAL_MODE|BYOK_CREDENTIAL_ENCRYPTION_KEY/)
+    }
+  })
+
+  it('the encrypted table and its ciphertext column are named in exactly one module, imported only by the store', () => {
+    expect(codeFilesContaining('provider_api_credentials')).toEqual([TABLE])
+    expect(sourceFiles.filter((file) => file.path !== TABLE && /encrypted-credential-table/.test(codeOnly(file.text))).map((file) => file.path)).toEqual([STORE])
+  })
+
+  it('decryption and the BYOK crypto module are reachable only from the store (and the mode diagnostic, which never decrypts)', () => {
+    const importers = sourceFiles.filter((file) => file.path !== BYOK && /byok-crypto/.test(codeOnly(file.text))).map((file) => file.path).sort()
+    expect(importers).toEqual([MODE, STORE].sort())
+    const decrypters = sourceFiles.filter((file) => file.path !== BYOK && /\bdecryptCredential\b/.test(codeOnly(file.text))).map((file) => file.path)
+    expect(decrypters).toEqual([STORE])
+    expect(sourceFiles.filter((file) => file.path !== ENVELOPE && /aes-gcm-envelope/.test(codeOnly(file.text))).map((file) => file.path).sort()).toEqual([BYOK, 'lib/provider-connections/crypto.ts'].sort())
+  })
+
+  it('every select in the table module is an explicit column list (never a wildcard)', () => {
+    const selects = [...text(TABLE).matchAll(/\.select\(([^)]*)\)/g)].map((match) => match[1].trim())
+    expect(selects.length).toBeGreaterThan(0)
+    for (const argument of selects) expect(argument).toBe('COLUMNS')
+    expect(text(TABLE)).not.toMatch(/select\(\s*['"]\*/)
+  })
+
+  it('no module in the encrypted path logs a secret, a token or a database message', () => {
+    for (const path of [TABLE, BYOK, MODE, ENVELOPE, 'lib/credentials/credential-errors.ts']) {
+      expect(text(path), path).not.toMatch(/console\./)
+    }
+    const lines = text(STORE).split('\n').filter((line) => /console\./.test(line))
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(line).toMatch(/\[credential-store\]/)
+      expect(line).not.toMatch(/secret|\bdata\b|\brow\b|value|\.message|ciphertext|token/i)
+    }
+  })
+
+  it('the Settings routes expose no ciphertext, token or key field', () => {
+    for (const path of ['app/api/settings/providers/route.ts', 'app/api/settings/providers/[provider]/route.ts']) {
+      expect(text(path), path).not.toMatch(/ciphertext|key_id|secret_version|decrypt|encrypt/i)
+    }
+  })
+
+  it('the migration SQL is a reviewed artifact under docs/, never under scripts/ or a deploy hook', () => {
+    expect(() => readFileSync(join(ROOT, 'docs/productization/sql/FUTURE_059_SLICE_3_provider_api_credentials.up.sql'), 'utf8')).not.toThrow()
+    const scripts = readdirSync(join(ROOT, 'scripts')).filter((name) => /provider_api_credentials|slice_3/i.test(name))
+    expect(scripts).toEqual([])
+    const pkg = readFileSync(join(ROOT, 'package.json'), 'utf8')
+    expect(pkg).not.toMatch(/provider_api_credentials/)
   })
 })

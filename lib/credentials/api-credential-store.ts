@@ -34,11 +34,36 @@
 // and a coarse reason — never a column value, a query string or the database
 // error text.
 //
+// FUTURE_059 Slice 3A: the same boundary now also fronts the ENCRYPTED credential table, selected by the operator-controlled
+// PROVIDER_API_CREDENTIAL_MODE (legacy | dual | encrypted; default and fallback: legacy — see credential-storage-mode.ts).
+// In `legacy` mode nothing below the "Mode-aware public API" marker changes behaviour: the encrypted table and the BYOK
+// master key are never touched. The encrypted table is only named in encrypted-credential-table.ts; decryption lives in
+// byok-crypto.ts.
+//
 // This module never logs, returns in an error, or otherwise surfaces a secret.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import type { AiProvider } from './provider-credentials'
+import { CredentialAccessDeniedError, ProviderCredentialUnavailableError } from './credential-errors'
+import {
+  BYOK_CREDENTIAL_FORMAT_VERSION,
+  ByokEncryptionNotConfiguredError,
+  ByokPayloadError,
+  decryptCredential,
+  describeByokKey,
+  encryptCredential,
+} from './byok-crypto'
+import { getCredentialStorageMode, type CredentialStorageMode } from './credential-storage-mode'
+import {
+  deleteEncryptedRow,
+  isEncryptedProvider,
+  selectEncryptedRow,
+  selectEncryptedRows,
+  upsertEncryptedRow,
+  type EncryptedProvider,
+  type EncryptedRow,
+} from './encrypted-credential-table'
 
 const SECRET_COLUMN: Record<AiProvider, string> = {
   openai: 'openai_api_key',
@@ -50,47 +75,14 @@ const SECRET_COLUMN: Record<AiProvider, string> = {
 
 const PROVIDERS = Object.keys(SECRET_COLUMN) as AiProvider[]
 
-export const PROVIDER_CREDENTIAL_UNAVAILABLE = 'PROVIDER_CREDENTIAL_UNAVAILABLE'
-export const CREDENTIAL_ACCESS_DENIED = 'CREDENTIAL_ACCESS_DENIED'
-
-export type CredentialUnavailableReason =
-  /** The privileged server client could not be created (not configured / not permitted in this runtime). */
-  | 'store_client_unavailable'
-  /** A database read or write failed. */
-  | 'store_failure'
-  /** A stored value exists but is not a string. */
-  | 'malformed'
-
-/** The credential store could not be read or written. NOT "credential missing". */
-export class ProviderCredentialUnavailableError extends Error {
-  readonly code = PROVIDER_CREDENTIAL_UNAVAILABLE
-  readonly status = 503
-  readonly reason: CredentialUnavailableReason
-  readonly provider: AiProvider | null
-
-  constructor(reason: CredentialUnavailableReason, provider: AiProvider | null = null) {
-    // Browser-safe: no column, value, query or database message.
-    super('As credenciais do provedor estão temporariamente indisponíveis. Tente novamente.')
-    this.name = 'ProviderCredentialUnavailableError'
-    this.reason = reason
-    this.provider = provider
-  }
-}
-
-export function isProviderCredentialUnavailableError(error: unknown): error is ProviderCredentialUnavailableError {
-  return error instanceof ProviderCredentialUnavailableError
-}
-
-/** The requested owner/provider is not acceptable for a credential access. */
-export class CredentialAccessDeniedError extends Error {
-  readonly code = CREDENTIAL_ACCESS_DENIED
-  readonly status = 403
-
-  constructor() {
-    super('Acesso à credencial negado.')
-    this.name = 'CredentialAccessDeniedError'
-  }
-}
+export {
+  CREDENTIAL_ACCESS_DENIED,
+  CredentialAccessDeniedError,
+  PROVIDER_CREDENTIAL_UNAVAILABLE,
+  ProviderCredentialUnavailableError,
+  isProviderCredentialUnavailableError,
+  type CredentialUnavailableReason,
+} from './credential-errors'
 
 export type StoredCredentialRead = { status: 'configured'; secret: string } | { status: 'missing' }
 
@@ -189,7 +181,7 @@ function logUnavailable(operation: string, error: ProviderCredentialUnavailableE
  * One provider's stored credential for `userId`. Throws `ProviderCredentialUnavailableError` when the store cannot
  * be read or the stored value is malformed, and `CredentialAccessDeniedError` for an unacceptable owner/provider.
  */
-export async function readStoredApiCredential(
+async function readLegacyCredential(
   caller: SupabaseClient,
   params: { userId: string; provider: AiProvider },
 ): Promise<StoredCredentialRead> {
@@ -213,7 +205,7 @@ export async function readStoredApiCredential(
  * Configured / missing / unavailable for every provider, for status display. Never returns a value. A store failure
  * makes every provider `unavailable` (not `missing`); a malformed value makes only that provider `unavailable`.
  */
-export async function readStoredApiCredentialStatuses(
+async function readLegacyStatuses(
   caller: SupabaseClient,
   userId: string,
 ): Promise<Record<AiProvider, StoredCredentialStatus>> {
@@ -256,7 +248,7 @@ export async function readStoredApiCredentialStatuses(
  * Save or replace one provider credential for the already-authenticated `userId`. The optional NanoBanana base URL
  * is a non-secret preference stored in the same row so the write stays a single atomic upsert.
  */
-export async function writeStoredApiCredential(caller: SupabaseClient, params: {
+async function writeLegacyCredential(caller: SupabaseClient, params: {
   userId: string
   provider: AiProvider
   secret: string
@@ -279,7 +271,7 @@ export async function writeStoredApiCredential(caller: SupabaseClient, params: {
 }
 
 /** Remove one provider credential for the already-authenticated `userId`. */
-export async function removeStoredApiCredential(caller: SupabaseClient, params: { userId: string; provider: AiProvider }): Promise<void> {
+async function removeLegacyCredential(caller: SupabaseClient, params: { userId: string; provider: AiProvider }): Promise<void> {
   const { userId, provider } = params
   assertOwner(userId)
   const column = secretColumnFor(provider)
@@ -289,5 +281,216 @@ export async function removeStoredApiCredential(caller: SupabaseClient, params: 
     const failure = new ProviderCredentialUnavailableError('store_failure', provider)
     logUnavailable('remove', failure)
     throw failure
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mode-aware public API (FUTURE_059 Slice 3A)
+//
+// `legacy` (the default) delegates, unchanged, to the plaintext-column implementation above. `dual` and `encrypted` add the
+// encrypted table (docs/productization/FUTURE_059_BYOK_CREDENTIAL_SLICE_3A_V1.md). The ownership proof, the privileged
+// client and the typed errors are the SAME boundary as in legacy mode — there is no second credential path.
+//
+// Rules shared by the active modes:
+//   * a MISSING encrypted row is "missing" (encrypted) or a bounded legacy fallback (dual);
+//   * an encrypted row that exists but cannot be verified is `unavailable` — it NEVER falls back to a legacy value;
+//   * configuration problems (no separate BYOK master key) and database problems are reported as `unavailable` with
+//     different reasons, never as "missing";
+//   * Replicate (no consumer, no configured user) stays on the legacy store in every mode.
+// ---------------------------------------------------------------------------
+
+type ActiveMode = Exclude<CredentialStorageMode, 'legacy'>
+
+/** The effective mode for a provider (`null` = whole-user operation). Replicate is always legacy. */
+function effectiveMode(provider: AiProvider | null): CredentialStorageMode {
+  if (provider !== null && !isEncryptedProvider(provider)) return 'legacy'
+  return getCredentialStorageMode()
+}
+
+function assertEncryptionReady(provider: AiProvider | null) {
+  if (describeByokKey() !== 'configured') throw new ProviderCredentialUnavailableError('encryption_not_configured', provider)
+}
+
+function openEncrypted(row: EncryptedRow, userId: string, provider: EncryptedProvider): string {
+  if (row.formatVersion !== BYOK_CREDENTIAL_FORMAT_VERSION) throw new ProviderCredentialUnavailableError('payload_invalid', provider)
+  try {
+    return decryptCredential({ userId, provider, token: row.ciphertext })
+  } catch (error) {
+    if (error instanceof ByokEncryptionNotConfiguredError) throw new ProviderCredentialUnavailableError('encryption_not_configured', provider)
+    if (error instanceof ByokPayloadError) throw new ProviderCredentialUnavailableError('payload_invalid', provider)
+    // Integrity failure (tampered, wrong owner/provider/format, unknown key id) or anything unexpected: no detail, no fallback.
+    throw new ProviderCredentialUnavailableError('decryption_failed', provider)
+  }
+}
+
+/** Every owner has a settings row once they store an encrypted credential, so the Slice 1 ownership proof keeps working. */
+async function ensureSettingsRow(client: SupabaseClient, userId: string, provider: AiProvider) {
+  const { error } = await client.from('user_settings').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true })
+  if (error) throw new ProviderCredentialUnavailableError('store_failure', provider)
+}
+
+function logFallback(provider: AiProvider) {
+  console.info(`[credential-store] read outcome=legacy_fallback provider=${provider}`)
+}
+
+/**
+ * One provider's stored credential for `userId`. Throws `ProviderCredentialUnavailableError` when the store cannot be
+ * read, an encrypted credential cannot be verified, or encryption is misconfigured; `CredentialAccessDeniedError` for an
+ * unacceptable owner/provider.
+ */
+export async function readStoredApiCredential(
+  caller: SupabaseClient,
+  params: { userId: string; provider: AiProvider },
+): Promise<StoredCredentialRead> {
+  const { userId, provider } = params
+  assertOwner(userId)
+  secretColumnFor(provider) // validates the provider (own-property lookup) before anything else
+  const mode = effectiveMode(provider)
+  if (mode === 'legacy') return readLegacyCredential(caller, params)
+
+  try {
+    assertEncryptionReady(provider)
+    const access = privilegedAccess(caller, provider)
+    if (access.proveOwnership && !(await proveOwnership(caller, userId, provider))) return { status: 'missing' }
+
+    const encryptedProvider = provider as EncryptedProvider
+    const row = await selectEncryptedRow(access.client, userId, encryptedProvider)
+    if (row) return { status: 'configured', secret: openEncrypted(row, userId, encryptedProvider) }
+
+    if ((mode as ActiveMode) === 'dual') {
+      logFallback(provider)
+      return await readLegacyCredential(caller, params)
+    }
+    return { status: 'missing' }
+  } catch (error) {
+    if (error instanceof ProviderCredentialUnavailableError) logUnavailable('read', error)
+    throw error
+  }
+}
+
+/**
+ * Configured / missing / unavailable for every provider, for status display. Never returns a value. A store failure or a
+ * misconfiguration makes every provider `unavailable`; an unverifiable encrypted credential makes only that provider
+ * `unavailable` (the status check decrypts in memory so Settings never claims "configured" for an unreadable credential).
+ */
+export async function readStoredApiCredentialStatuses(
+  caller: SupabaseClient,
+  userId: string,
+): Promise<Record<AiProvider, StoredCredentialStatus>> {
+  assertOwner(userId)
+  const mode = effectiveMode(null)
+  if (mode === 'legacy') return readLegacyStatuses(caller, userId)
+
+  const allWith = (status: StoredCredentialStatus) => Object.fromEntries(PROVIDERS.map((p) => [p, status])) as Record<AiProvider, StoredCredentialStatus>
+  try {
+    assertEncryptionReady(null)
+    const access = privilegedAccess(caller, null)
+    if (access.proveOwnership && !(await proveOwnership(caller, userId, null))) return allWith('missing')
+
+    const rows = await selectEncryptedRows(access.client, userId)
+    const legacy = await readLegacyStatuses(caller, userId) // replicate always; every provider in dual mode
+    const statuses = {} as Record<AiProvider, StoredCredentialStatus>
+    for (const provider of PROVIDERS) {
+      if (!isEncryptedProvider(provider)) {
+        statuses[provider] = legacy[provider]
+        continue
+      }
+      const row = rows.find((candidate) => candidate.provider === provider)
+      if (row) {
+        try {
+          openEncrypted(row, userId, provider)
+          statuses[provider] = 'configured'
+        } catch {
+          statuses[provider] = 'unavailable'
+        }
+      } else {
+        statuses[provider] = mode === 'dual' ? legacy[provider] : 'missing'
+      }
+    }
+    return statuses
+  } catch (error) {
+    if (error instanceof ProviderCredentialUnavailableError) {
+      logUnavailable('status', error)
+      return allWith('unavailable')
+    }
+    throw error
+  }
+}
+
+/**
+ * Save or replace one provider credential for the already-authenticated `userId`. The optional NanoBanana base URL is a
+ * non-secret preference that stays in `user_settings` in every mode.
+ *
+ * Active modes, in order (each step is idempotent, and the order never loses a stored credential):
+ *   1. make sure the owner's settings row exists (ownership proof for later reads);
+ *   2. write the encrypted credential (version = previous + 1; user writes are last-writer-wins);
+ *   3. dual: also write the legacy column (rollback to `legacy` keeps the current key);
+ *      encrypted: clear the legacy column so no stale plaintext remains.
+ * A failure in step 3 leaves the NEW encrypted credential in place and reports `unavailable`; the user simply retries.
+ */
+export async function writeStoredApiCredential(caller: SupabaseClient, params: {
+  userId: string
+  provider: AiProvider
+  secret: string
+  nanobananaBaseUrl?: string
+}): Promise<void> {
+  const { userId, provider, secret } = params
+  assertOwner(userId)
+  const column = secretColumnFor(provider)
+  if (typeof secret !== 'string' || secret.trim().length === 0) throw new CredentialAccessDeniedError()
+  const mode = effectiveMode(provider)
+  if (mode === 'legacy') return writeLegacyCredential(caller, params)
+
+  try {
+    assertEncryptionReady(provider)
+    const client = privilegedWriteClient(caller, provider)
+    const encryptedProvider = provider as EncryptedProvider
+
+    await ensureSettingsRow(client, userId, provider)
+    const existing = await selectEncryptedRow(client, userId, encryptedProvider)
+    const encrypted = encryptCredential({ userId, provider: encryptedProvider, secret })
+    await upsertEncryptedRow(client, {
+      userId,
+      provider: encryptedProvider,
+      ciphertext: encrypted.token,
+      keyId: encrypted.keyId,
+      formatVersion: encrypted.formatVersion,
+      secretVersion: (existing?.secretVersion ?? 0) + 1,
+    })
+
+    const settings: Record<string, unknown> = { user_id: userId, [column]: mode === 'dual' ? secret : null }
+    if (provider === 'nano_banana' && params.nanobananaBaseUrl) settings.nanobanana_base_url = params.nanobananaBaseUrl
+    const { error } = await client.from('user_settings').upsert(settings, { onConflict: 'user_id' })
+    if (error) throw new ProviderCredentialUnavailableError('store_failure', provider)
+  } catch (error) {
+    if (error instanceof ProviderCredentialUnavailableError) logUnavailable('write', error)
+    else if (error instanceof ByokEncryptionNotConfiguredError) {
+      const failure = new ProviderCredentialUnavailableError('encryption_not_configured', provider)
+      logUnavailable('write', failure)
+      throw failure
+    }
+    throw error
+  }
+}
+
+/**
+ * Remove one provider credential for the already-authenticated `userId`. Active modes clear the legacy column FIRST and
+ * delete the encrypted row second, so a half-finished removal can never resurrect an older plaintext value through the
+ * dual-mode fallback; if the second step fails the credential is still (consistently) configured and the user retries.
+ */
+export async function removeStoredApiCredential(caller: SupabaseClient, params: { userId: string; provider: AiProvider }): Promise<void> {
+  const { userId, provider } = params
+  assertOwner(userId)
+  secretColumnFor(provider)
+  const mode = effectiveMode(provider)
+  if (mode === 'legacy') return removeLegacyCredential(caller, params)
+
+  try {
+    const client = privilegedWriteClient(caller, provider)
+    await removeLegacyCredential(caller, params)
+    await deleteEncryptedRow(client, userId, provider as EncryptedProvider)
+  } catch (error) {
+    if (error instanceof ProviderCredentialUnavailableError) logUnavailable('remove', error)
+    throw error
   }
 }
