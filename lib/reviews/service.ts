@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { isProviderCredentialUnavailableError } from '@/lib/credentials/api-credential-store'
 import { recordGeminiReviewUsage, type GeminiReviewUsageContext } from '@/lib/usage/gemini-review-usage'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { buildRequestFingerprint, resolveImageReviewContext } from './context'
@@ -117,7 +118,16 @@ export async function createImageReviewExecution(params: {
   }
   const row = inserted.data
   const providerId = params.providerId ?? DEFAULT_REVIEW_PROVIDER_ID
-  const execution = await resolveProviderExecution(db, { userId: params.userId, provider: providerId })
+  let execution: Awaited<ReturnType<typeof resolveProviderExecution>>
+  try {
+    execution = await resolveProviderExecution(db, { userId: params.userId, provider: providerId })
+  } catch (error) {
+    if (!isProviderCredentialUnavailableError(error)) throw error
+    // The credential store could not be read: a retryable pre-provider failure, NOT "provider not configured".
+    const failed = await markReviewFailed(db, row.id, 'provider_error', 'Image evaluator credentials could not be read.')
+    if (failed.error || !failed.data) throw storeError(failed.error)
+    throw new ReviewServiceError(503, 'REVIEW_STORE_UNAVAILABLE', 'Image evaluator credentials could not be read.', { reviewId: failed.data.id })
+  }
   if (execution.status !== 'ready') {
     const failed = await markReviewFailed(db, row.id, 'provider_error', 'Image evaluator provider is not configured.')
     if (failed.error || !failed.data) throw storeError(failed.error)

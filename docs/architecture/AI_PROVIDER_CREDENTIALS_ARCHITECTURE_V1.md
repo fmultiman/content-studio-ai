@@ -289,6 +289,15 @@ sharing.
   regression.
 - Save/replace/remove routes return only `{ provider, status }`.
 
+## Server-only credential access (FUTURE-059 Slice 1)
+
+The key columns of `user_settings` are read and written **only** by `lib/credentials/api-credential-store.ts`, with a
+server-side privileged (service-role) client, after an ownership proof through the caller's own client (the own-row RLS
+policy) and as a single-row, single-column, `.eq('user_id', owner)` query. A store/database failure throws
+`ProviderCredentialUnavailableError` (HTTP 503 `PROVIDER_CREDENTIAL_UNAVAILABLE`); it is never reported as "not
+configured". The columns are **still plaintext** and the browser role **still holds column privileges** — both are
+tracked as later FUTURE-059 slices. See `docs/productization/FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1_V1.md`.
+
 ## Storage at rest
 
 Provider keys remain plaintext `TEXT` columns on `user_settings`, protected by

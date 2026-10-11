@@ -3,6 +3,7 @@ import { providerExecutionBlockedResponse } from '@/lib/providers/execution-poli
 import { createClient } from '@/lib/supabase/server'
 import { generateImagePrompt, PromptGenerationError } from '@/lib/ai-simulator'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
@@ -74,6 +75,8 @@ export async function POST(request: NextRequest) {
       throw err
     }
   } catch (error) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     console.error('[Generate Image Prompt] Error:', error)
     return NextResponse.json({ error: 'INTERNAL_ERROR', message: 'Erro interno' }, { status: 500 })
   }

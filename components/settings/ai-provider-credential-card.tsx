@@ -26,7 +26,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 
-export type AiProviderCredentialStatus = 'configured' | 'missing' | 'loading'
+// `unavailable`: the credential store could not be read right now (distinct from `missing`).
+export type AiProviderCredentialStatus = 'configured' | 'missing' | 'loading' | 'unavailable'
 
 interface AiProviderCredentialCardProps {
   providerId: string
@@ -109,6 +110,8 @@ export function AiProviderCredentialCard({
           <StatusBadge label="Carregando..." tone="neutral" />
         ) : isConfigured ? (
           <StatusBadge label="Configurado ✓" tone="success" />
+        ) : status === 'unavailable' ? (
+          <StatusBadge label="Indisponível no momento" tone="unavailable" />
         ) : (
           <StatusBadge label="Não configurado" tone="unavailable" />
         )}

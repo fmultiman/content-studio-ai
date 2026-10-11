@@ -5,10 +5,18 @@
 // 2. No test can reach a real provider by accident: the DEFAULT global fetch refuses provider hosts. A test that
 //    installs its own fetch mock (global.fetch = vi.fn(), vi.stubGlobal, vi.spyOn(...).mockImplementation) replaces
 //    this guard and is therefore calling a fake, never the network.
+// 3. (FUTURE_059 Slice 1) The credential store reads through the caller's fake client unless a test opts out (below).
 import { __setMockedProvidersHarnessForTests } from '@/lib/providers/execution-policy'
 import { PROVIDER_HOSTS, PROVIDER_HOST_SUFFIXES } from '@/lib/providers/__tests__/provider-hosts'
 
 __setMockedProvidersHarnessForTests(true)
+
+// FUTURE_059 Slice 1: suites that run provider flows against ONE fake database keep working — the credential store
+// reads through the fake caller client. Credential-store security tests turn this off and install a separate
+// privileged fake (lib/credentials/__tests__/api-credential-store.test.ts).
+// Set on globalThis directly (same key as api-credential-store.ts) on purpose: IMPORTING the store here would load the real
+// service-role module before a suite's own vi.mock('@/lib/supabase/service-role') is registered and defeat that mock.
+;(globalThis as Record<symbol, unknown>)[Symbol.for('content-studio.credentialStore.callerClientHarness')] = true
 
 
 function hostOf(input: unknown): string | null {

@@ -3,6 +3,8 @@ import { providerExecutionBlockedResponse } from '@/lib/providers/execution-poli
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { PROVIDER_CREDENTIAL_UNAVAILABLE, isProviderCredentialUnavailableError } from '@/lib/credentials/api-credential-store'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, ImageSubmissionError } from '@/lib/image-generation/execution'
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
@@ -103,6 +105,8 @@ async function runCanonicalOpenAI(input: {
   } catch (error) {
     if (error instanceof ImageSubmissionError) throw error
     try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha na geração', true) } catch { /* preserve original error */ }
+    // The credential store could not be read: a retryable pre-submission failure, not "not configured".
+    if (isProviderCredentialUnavailableError(error)) throw new ImageSubmissionError(503, PROVIDER_CREDENTIAL_UNAVAILABLE, error.message)
     throw new ImageSubmissionError(500, 'GENERATION_FAILED', error instanceof Error ? error.message : 'Erro interno')
   }
 }
@@ -244,6 +248,8 @@ export async function POST(request: Request) {
       model,
     })
   } catch (error) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     console.error('[OpenAI Generate Image] Error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro interno' },

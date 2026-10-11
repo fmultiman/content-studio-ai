@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
 import { PromptAssistanceRequestSchema, PromptAssistanceError } from '@/lib/prompt-assistance/contract'
@@ -79,7 +80,15 @@ export async function POST(request: NextRequest) {
     throw error
   }
 
-  const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: input.provider })
+  let execution: Awaited<ReturnType<typeof resolveProviderExecution>>
+  try {
+    execution = await resolveProviderExecution(supabase, { userId: user.id, provider: input.provider })
+  } catch (error) {
+    // A credential store that cannot be read is not "provider not configured" (nothing has been spent or recorded yet).
+    const unavailable = providerCredentialUnavailableResponse(error)
+    if (unavailable) return unavailable
+    throw error
+  }
   if (execution.status !== 'ready') return jsonError('PROVIDER_NOT_CONFIGURED', `Configure a credencial de ${model.label.split(' · ')[0]} em Configurações.`, 422, { provider: input.provider })
 
   const context = buildPromptAssistanceContext({

@@ -3,6 +3,7 @@ import { providerExecutionBlockedResponse } from '@/lib/providers/execution-poli
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { forceRefreshAccessToken, getValidAccessToken } from '@/lib/provider-connections/token-store'
 import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
@@ -401,6 +402,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ generation: toClientGeneration(recorded.data) })
   } catch (error: any) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     // Everything that reaches here happened BEFORE a provider call (the submit and the recording of its
     // result have their own handling above): a definitive failure, with a code and a generic message.
     console.error('Create video generation route error:', error instanceof Error ? error.name : 'unknown')

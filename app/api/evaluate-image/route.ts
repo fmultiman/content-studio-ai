@@ -5,6 +5,7 @@ import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/proje
 import { buildImageEvaluationContext } from '@/lib/context-compiler'
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
+import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { z } from 'zod'
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
@@ -318,6 +319,8 @@ Responda apenas com JSON valido no formato solicitado. O feedback e as melhorias
 
     return NextResponse.json(evaluation)
   } catch (error) {
+    const credentialUnavailable = providerCredentialUnavailableResponse(error)
+    if (credentialUnavailable) return credentialUnavailable
     console.error('[Evaluate Image] Error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro ao avaliar imagem' },
