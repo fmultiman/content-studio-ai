@@ -176,3 +176,12 @@ Not proven here: Kong, GoTrue, the hosted PostgREST configuration and event trig
 - `legacy`-mode writes while encrypted rows exist make them stale (see rollback matrix); the `divergent` count is the detector.
 - Lazy migration adds one rpc (plus an in-memory encryption) to the first read of each legacy-only credential in `dual` mode.
 - Slice 3B does not retire the plaintext columns, does not touch Kling MCP, FUTURE-057 workflows or any model default. Slices 4 (cut-over) and 5 (retirement) are not started.
+
+## 11. Delivery evidence
+
+- Starting `origin/main`: `1eccbcfa43c865617d594d8081bdc487502b822f` (verified).
+- PR [#177](https://github.com/fmultiman/content-studio-ai/pull/177): the required Vercel check was SUCCESS before the merge (merge commit): `f46c3d479ab3bb9f735ba247ec9a4bd92cdec91e`.
+- Production deployment: GitHub deployment for `f46c3d4`, environment Production, state `success`.
+- Post-deploy checks (read-only, 2026-10-11 ~20:55 UTC): the operator route answers `POST` → `503 CREDENTIAL_BACKFILL_NOT_CONFIGURED` for any caller (no secret is provisioned — it is disabled and performs nothing, including for a wrong bearer), `GET` → `405`; unauthenticated `GET /api/settings/providers` → `401`. Authenticated `GET /api/settings/providers` → `200`, statuses unchanged (OpenAI, Gemini, NanoBanana, Kling REST `configured`; Replicate `missing`), entries still only `status` and `connectionMethod`, `credentialStorage: { mode: "legacy", invalidModeValue: false, encryptionKey: "not_required" }`, no "Indisponível no momento".
+- Database (metadata only): `provider_api_credentials` does not exist; `backfill_provider_api_credential` does not exist; `user_settings` ACL still `{postgres=arwdDxtm, service_role=arwdDxtm, authenticated=d}` with 16 column ACLs (Slice 2 unchanged). No SQL was executed against Production; no environment variable was added or changed; no key was created, read, moved or rotated; no sweep or migration ran; no provider was called.
+- Worker: none. Migrations: prepared, not applied.
