@@ -1,6 +1,6 @@
 # FUTURE-058 — Post-generation autosave revision-conflict fix V1
 
-Status: implemented, validated with mocked providers, merged and deployed (evidence at the end). No migration, no worker change, no provider call, no Production data manipulation.
+Status: implemented, validated with mocked providers, merged (`a82101a`) and deployed. No migration, no worker change, no provider call, no Production data manipulation.
 
 Source: Traycer audit artifact `future-057-post-smoke-hardening-audit` (Part B). Baseline `origin/main` `d5624082df7558f4022646ad071151e301a5507c`.
 
@@ -64,4 +64,8 @@ None, none, none.
 
 ## Delivery evidence
 
-Filled at merge time.
+- Starting `origin/main`: `d5624082df7558f4022646ad071151e301a5507c` (verified).
+- PR [#166](https://github.com/fmultiman/content-studio-ai/pull/166): the required Vercel check was SUCCESS before the merge (merge commit): `a82101a0ea23128654c150e635ac915da95289ce`.
+- Production deployment: GitHub deployment `6991084738`, environment Production, SHA `a82101a`, state `success`. Read-only check: unauthenticated `POST /api/prompt-assistance` → `401`.
+- Build: the Vercel build passed. A local `next build --webpack` compiles (2.5 min) and then trips the page-export type check on `ImagesPageShell`, which also fails on clean `ec7afea`/main in this environment.
+- Production data and database: untouched (no migration, no write, no paid call). The Production behaviour change is observable only after a real generation followed by an edit; it was verified by the mocked tests above, not by a new paid generation.
