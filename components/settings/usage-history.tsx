@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { summarizeEstimatedCost } from '@/lib/usage/pricing/aggregate'
 import {
   ESTIMATED_COST_LABEL,
+  PARTIAL_ESTIMATED_COST_LABEL,
   PRICING_UNAVAILABLE_LABEL,
   estimatedCostDetails,
   formatEstimatedAmount,
@@ -227,7 +228,9 @@ export function UsageHistory() {
             )}
             {showCost && (
               <div className="space-y-1 border-t border-border/50 pt-2" data-testid="usage-cost-summary">
-                <p className="text-sm font-medium">{ESTIMATED_COST_LABEL} (preço de tabela)</p>
+                <p className="text-sm font-medium" data-testid="usage-cost-heading" data-complete={costSummary.complete ? 'true' : 'false'}>
+                  {costSummary.totals.length > 0 && !costSummary.complete ? PARTIAL_ESTIMATED_COST_LABEL : ESTIMATED_COST_LABEL} (preço de tabela)
+                </p>
                 {costSummary.totals.length === 0 ? (
                   <p className="text-sm text-muted-foreground" data-testid="usage-cost-none">
                     Nenhum registro exibido tem preço disponível.

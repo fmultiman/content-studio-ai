@@ -5,7 +5,9 @@
 
 import { parseFixed, type Fixed } from './decimal'
 
-export const PRICING_CATEGORIES = ['input', 'cached_input', 'output', 'unit'] as const
+// `image_output` (FUTURE-064 Slice D) = the price of IMAGE-modality output tokens. It is a category of its own on purpose:
+// image output is billed at a different rate than text/thinking output and must never fall back to the `output` price.
+export const PRICING_CATEGORIES = ['input', 'cached_input', 'output', 'image_output', 'unit'] as const
 export type PricingCategory = (typeof PRICING_CATEGORIES)[number]
 
 export const EFFECTIVE_FROM_BASES = ['official_effective_date', 'observed_at_source'] as const

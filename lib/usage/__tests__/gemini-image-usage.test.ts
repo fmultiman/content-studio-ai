@@ -188,13 +188,14 @@ describe('the price boundary — image output is never priced at a text rate, an
     expect(costFor(geminiImageUsageEvents(context(), null)[0], [])).toEqual({ status: 'unavailable', reason: 'usage_unknown' })
   })
 
-  it('even if TEXT rates existed for the model, IMAGE-output and unattributed rows are NOT priceable (they would be mispriced as text)', () => {
+  it('even if only TEXT rates exist for the model, IMAGE-output rows are NOT priced as text and unattributed rows stay unpriced', () => {
     const rows = byKey(geminiImageUsageEvents(context(), usageOf({ promptTokenCount: 14, serviceTier: 'standard', candidatesTokenCount: 1295, candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 5 }, { modality: 'IMAGE', tokenCount: 1290 }] })))
-    expect(costFor(rows.image_output_tokens, versions)).toEqual({ status: 'unavailable', reason: 'unit_not_priceable' })
+    // FUTURE-064 Slice D: IMAGE output resolves to its own `image_output` dimension, which this text-only registry lacks
+    expect(costFor(rows.image_output_tokens, versions)).toEqual({ status: 'unavailable', reason: 'no_pricing_for_category' })
     expect(costFor(rows.input_tokens, versions).status).toBe('estimated') // ordinary text input has a (hypothetical) rate
     expect(costFor(rows.text_output_tokens, versions).status).toBe('estimated') // genuine TEXT output, priced as text output
     const unattributed = byKey(geminiImageUsageEvents(context(), usageOf({ promptTokenCount: 14, candidatesTokenCount: 1290, serviceTier: 'standard' })))
-    expect(costFor(unattributed.output_unattributed_tokens, versions)).toEqual({ status: 'unavailable', reason: 'unit_not_priceable' })
+    expect(costFor(unattributed.output_unattributed_tokens, versions)).toEqual({ status: 'unavailable', reason: 'output_modality_unattributed' })
   })
 })
 

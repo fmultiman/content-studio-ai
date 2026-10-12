@@ -27,6 +27,12 @@ export interface EstimatedCostSummary {
   /** unavailable + ambiguous: every row that is NOT in a numeric total. */
   unpricedEvents: number
   totalEvents: number
+  /**
+   * FUTURE-064 Slice D. true ONLY when there is at least one row and EVERY row is priced. When false, `totals` is just the sum of
+   * the priced rows (a lower bound), never "the cost": presentation must call it partial. A known zero amount is a priced row;
+   * an unknown amount is never zero and never makes a total complete.
+   */
+  complete: boolean
 }
 
 /** A missing cost (an older payload) counts as unavailable - never as zero. */
@@ -62,5 +68,6 @@ export function summarizeEstimatedCost(costs: ReadonlyArray<ProviderUsageCost | 
     ambiguousEvents,
     unpricedEvents: unavailableEvents + ambiguousEvents,
     totalEvents: costs.length,
+    complete: costs.length > 0 && unavailableEvents + ambiguousEvents === 0,
   }
 }

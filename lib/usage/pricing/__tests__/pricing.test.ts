@@ -313,6 +313,8 @@ describe('aggregation', () => {
     expect(summarizeEstimatedCost(costs)).toEqual({
       totals: [{ currency: 'USD', amount: '3', pricedEvents: 2 }],
       pricedEvents: 2, unavailableEvents: 2, ambiguousEvents: 1, unpricedEvents: 3, totalEvents: 5,
+      // FUTURE-064 Slice D: three rows are unpriced, so the known sum is a partial lower bound, not a complete total
+      complete: false,
     })
   })
 

@@ -196,3 +196,63 @@ describe('estimated cost on the usage screen', () => {
     expect(screen.getAllByTestId('usage-summary-group')).toHaveLength(2)
   })
 })
+
+// FUTURE-064 Slice D — an aggregate that omits unpriced rows is a PARTIAL cost and must say so; a fully priced one keeps the normal label.
+describe('partial vs complete estimated cost (aggregate label only)', () => {
+  const image = (id: string, unit: UsageEventView['unit'], quantity: number | null, cost: Cost | undefined, extra: Partial<UsageEventView> = {}) =>
+    event(id, unit, quantity, cost, { operation: 'image_generation', model: 'gemini-nano-banana-2.1', ...extra })
+  const heading = () => screen.getByTestId('usage-cost-heading')
+
+  it('every row priced -> the normal label "Custo estimado" and data-complete=true', async () => {
+    respond(payload([image('a', 'input_tokens', 14, estimatedCost('0.000021')), image('b', 'tokens', 1120, estimatedCost('0.0336'), { usage_category: 'image_output' })]))
+    await ready()
+    expect(heading().textContent).toBe('Custo estimado (preço de tabela)')
+    expect(heading().getAttribute('data-complete')).toBe('true')
+    expect(screen.queryByTestId('usage-cost-unpriced')).toBeNull()
+    expect(screen.getByTestId('usage-cost-total').textContent).toMatch(/US\$\s0,0336/)
+  })
+
+  it('some rows unpriced -> "Custo estimado parcial" with the known sum, the unpriced count, and the detailed rows untouched', async () => {
+    respond(payload([
+      image('a', 'input_tokens', 14, estimatedCost('0.000021')),
+      image('b', 'tokens', 1120, unavailable('output_modality_unattributed'), { usage_category: 'output_unattributed' }),
+    ]))
+    await ready()
+    expect(heading().textContent).toBe('Custo estimado parcial (preço de tabela)')
+    expect(heading().getAttribute('data-complete')).toBe('false')
+    expect(screen.getByTestId('usage-cost-total').textContent).toMatch(/1 registro com preço/)
+    expect(screen.getByTestId('usage-cost-unpriced').textContent).toMatch(/1 registro sem preço disponível — não entram no total e não valem zero/)
+    // detailed rows are preserved: one estimated row, one "Preço indisponível" row with its reason, no zero anywhere
+    const costs = screen.getAllByTestId('usage-cost')
+    expect(costs.map((c) => c.getAttribute('data-status'))).toEqual(['estimated', 'unavailable'])
+    expect(costs[1].textContent).toBe('Preço indisponível')
+    expect(costs[1].getAttribute('title')).toMatch(/não informou a modalidade da saída/)
+    expect(document.body.textContent).not.toMatch(/US\$\s?0,00(?![0-9])/)
+  })
+
+  it('an unknown-usage execution next to priced rows also makes the total partial', async () => {
+    respond(payload([image('a', 'input_tokens', 14, estimatedCost('0.000021')), image('u', null, null, unavailable('usage_unknown'))]))
+    await ready()
+    expect(heading().textContent).toBe('Custo estimado parcial (preço de tabela)')
+  })
+
+  it('nothing priced -> no total and no "parcial" claim (there is no sum to qualify)', async () => {
+    respond(payload([image('u', null, null, unavailable('usage_unknown')), image('v', 'input_tokens', 5, unavailable('no_pricing_for_model'))]))
+    await ready()
+    expect(heading().textContent).toBe('Custo estimado (preço de tabela)')
+    expect(screen.getByTestId('usage-cost-none')).toBeTruthy()
+    expect(screen.queryAllByTestId('usage-cost-total')).toHaveLength(0)
+  })
+
+  it('the label follows the filters: filtering away the unpriced rows turns the remaining total into a complete one', async () => {
+    respond(payload([
+      image('a', 'input_tokens', 14, estimatedCost('0.000021')),
+      event('k', 'credits', 18, unavailable('unit_not_priceable'), { provider: 'kling', transport: 'mcp', model: 'kling-v3', funding: null }),
+    ]))
+    await ready()
+    expect(heading().textContent).toBe('Custo estimado parcial (preço de tabela)')
+    await selectOption('usage-filter-provider', 'Gemini')
+    expect(heading().textContent).toBe('Custo estimado (preço de tabela)')
+    expect(heading().getAttribute('data-complete')).toBe('true')
+  })
+})
