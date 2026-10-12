@@ -95,4 +95,10 @@ Recheck OFF on the active domain. Leave the canary absent. Preserve Attempts, im
 
 Mocked route/canary/environment boundaries, shared readiness, Settings, Manual/Assisted/Automatic workflows, network/in-progress recovery and legacy NanoBanana regression passed: **385 tests across 9 files**, run in bounded groups (269 gate/workflow + 47 real workspace + 69 client/legacy). Typecheck passed; changed-file lint passed with 0 errors and 15 existing workspace warnings. The first combined run hit a forks worker startup timeout; the threads rerun had one cold-import NanoBanana timeout, which passed isolated with a larger command timeout and no product/test changes. Independent review resolved the Automatic recovery finding and passed 5 real UI cases plus 9 actual helper/provider-outcome probes. Full-suite/build limits from the accounting task are not reclassified as green; this bounded audit uses focused tests, typecheck, lint and the PR's Vercel build. PR/build disposition is recorded in the epic readiness report.
 
+## Code deployment closure — activation remains OFF
+
+On 2026-10-12 the operator authorized closing [PR #188](https://github.com/fmultiman/content-studio-ai/pull/188) with a merge commit, without activation. The audited implementation HEAD is `b64c7766c512f429660da192fb09e79423712d52`, based on `7eaf801`. Its Vercel and Vercel Preview Comments checks passed and the PR was CLEAN; GitHub listed no additional required checks. The Preview deployment `dpl_3N4v6kKMF8vWhehDZcccq6CAVQPo` was READY at that exact implementation SHA. This documentation update must also pass the published checks before merging.
+
+The final closure evidence in the linked PR records the final checked HEAD, merge SHA, exact-SHA Production READY deployment and read-only confirmation of `release_switch_off` and absent canary/release variables. Do not treat the earlier Preview or an older Production deployment as proof of the merged code deployment. No activation, variable/database/credential change or paid request is part of this closure. Lite remains blocked; future activation still requires separate authorization.
+
 FUTURE_064_STAGED_RELEASE_READY
