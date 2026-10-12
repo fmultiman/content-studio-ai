@@ -4,18 +4,15 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ImageIcon, Loader2, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
+import { isGeminiImageModel, type ImageModel } from '@/lib/images/image-models'
+import { GEMINI_IMAGE_COST_NOTICE, buildImageModelGroups } from '@/lib/images/image-readiness'
+import type { GeminiImageAvailability } from '@/lib/images/gemini-availability'
 
-export type ImageModel =
-  | 'gpt-image-2'
-  | 'gpt-image-1.5'
-  | 'gpt-image-1'
-  | 'gpt-image-1-mini'
-  | 'nanobanana-v1'
-  | 'nanobanana-v2'
+export type { ImageModel }
 
 interface PromptSectionProps {
   generatedPrompt: string
@@ -36,7 +33,17 @@ interface PromptSectionProps {
   } | null
   onCreateImage: (model: ImageModel) => void
   isCreatingImage: boolean
+  /** Whether the user's NanoBananaAPI.ai (third-party, legacy) key exists. */
   hasNanoBananaKey?: boolean
+  /**
+   * FUTURE-064 Slice B. Omit to leave the official Google models out of the selector (callers that predate Slice B).
+   * `availability` is the server-derived capability class; it is independent of the credential.
+   */
+  geminiImage?: { availability: GeminiImageAvailability | null; canonicalWorkspace: boolean }
+  /** A saved model id this build does not know. The selector shows no selection until the user chooses one. */
+  unrecognizedModel?: string | null
+  /** Why "Criar Imagem" is blocked for provider-specific reasons (Google capability/credential, unrecognized model). */
+  createDisabledReason?: string | null
   /** An automatic run owns the inputs: the prompt and the image controls are read-only until it finishes. */
   workflowBusy?: boolean
   selectedModel?: ImageModel
@@ -59,6 +66,9 @@ export function PromptSection({
   onCreateImage,
   isCreatingImage,
   hasNanoBananaKey = false,
+  geminiImage,
+  unrecognizedModel = null,
+  createDisabledReason = null,
   workflowBusy = false,
   selectedModel = 'gpt-image-2',
   onModelChange,
@@ -68,6 +78,13 @@ export function PromptSection({
   // Applying a CREATE suggestion replaces an authored prompt: ask first (Improve is the user's own refinement).
   const applyReplacesAuthoredPrompt = suggestedOperation === 'create' && generatedPrompt.trim().length > 0 && generatedPrompt.trim() !== suggestedPrompt.trim()
   const [activePromptLanguage, setActivePromptLanguage] = useState<'en' | 'pt'>('en')
+  const modelGroups = buildImageModelGroups({
+    selectedModel: unrecognizedModel ? null : selectedModel,
+    nanobananaConfigured: hasNanoBananaKey,
+    gemini: geminiImage,
+  })
+  const googleNote = modelGroups.find((group) => group.provider === 'gemini')?.note ?? null
+  const showGoogleCostNotice = !unrecognizedModel && isGeminiImageModel(selectedModel)
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(
@@ -245,24 +262,24 @@ export function PromptSection({
             <div className="flex items-center gap-2">
               <Label className="text-sm text-muted-foreground">Modelo:</Label>
               <Select
-                value={selectedModel}
+                value={unrecognizedModel ? '' : selectedModel}
                 onValueChange={(value: ImageModel) => onModelChange(value)}
                 disabled={workflowBusy}
               >
-                <SelectTrigger className="w-[180px]" aria-label="Modelo de imagem">
+                <SelectTrigger className="w-[260px]" aria-label="Modelo de imagem">
                   <SelectValue placeholder="Selecione o modelo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gpt-image-2">GPT Image 2</SelectItem>
-                  <SelectItem value="gpt-image-1.5">GPT Image 1.5</SelectItem>
-                  <SelectItem value="gpt-image-1">GPT Image 1</SelectItem>
-                  <SelectItem value="gpt-image-1-mini">GPT Image 1 Mini</SelectItem>
-                  {hasNanoBananaKey && (
-                    <>
-                      <SelectItem value="nanobanana-v1">NanoBanana V1</SelectItem>
-                      <SelectItem value="nanobanana-v2">NanoBanana V2</SelectItem>
-                    </>
-                  )}
+                  {modelGroups.map((group) => (
+                    <SelectGroup key={group.provider}>
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {group.options.map((option) => (
+                        <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -271,7 +288,7 @@ export function PromptSection({
           {/* Single Create Image Button */}
           <Button
             onClick={() => onCreateImage(selectedModel)}
-            disabled={!generatedPrompt.trim() || isCreatingImage || workflowBusy}
+            disabled={!generatedPrompt.trim() || isCreatingImage || workflowBusy || Boolean(createDisabledReason)}
             size="lg"
             className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600"
           >
@@ -288,6 +305,13 @@ export function PromptSection({
             )}
           </Button>
         </div>
+        {(googleNote || createDisabledReason || showGoogleCostNotice) && (
+          <div className="space-y-1 text-right text-xs text-muted-foreground" data-testid="image-model-notices">
+            {googleNote && <p data-testid="google-model-note">Google Gemini (oficial): {googleNote}</p>}
+            {createDisabledReason && <p role="status" data-testid="create-disabled-reason">{createDisabledReason}</p>}
+            {showGoogleCostNotice && <p data-testid="google-cost-notice">{GEMINI_IMAGE_COST_NOTICE}</p>}
+          </div>
+        )}
       </div>
     </div>
   )

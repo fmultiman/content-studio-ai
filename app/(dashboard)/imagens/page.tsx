@@ -12,6 +12,19 @@ import {
 import { PageHeader } from '@/components/layout/page-header'
 import { ImageInputSection } from '@/components/images/image-input-section'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
+import {
+  DEFAULT_IMAGE_MODEL,
+  GEMINI_IMAGE_DEFAULT_ASPECT_RATIO,
+  IMAGE_MODEL_LABELS,
+  NANOBANANA_THIRD_PARTY_LABEL,
+  imageModelProvider,
+  interpretStoredImageModel,
+  isGeminiImageModel,
+  parseImageModel,
+} from '@/lib/images/image-models'
+import { GEMINI_IMAGE_COST_NOTICE, evaluateImageReadiness } from '@/lib/images/image-readiness'
+import { describeGeminiImageFailure, interpretGeminiReplay } from '@/lib/images/gemini-image-errors'
+import { parseGeminiImageAvailability, type GeminiImageAvailability } from '@/lib/images/gemini-availability'
 import { ImageResult } from '@/components/images/image-result'
 import { WorkspaceIdentityContext } from '@/components/projects/inherited-project-identity'
 import { PromptGenerationError } from '@/lib/ai-simulator'
@@ -100,20 +113,8 @@ function persistableImageUrl(url: string | null | undefined) {
 /** Outcome of ONE image submission. The automatic run needs to know whether it succeeded; the handlers still toast. */
 type ImageSubmitResult = { ok: true } | { ok: false; message: string }
 
-const IMAGE_MODEL_LABELS: Record<ImageModel, string> = {
-  'gpt-image-2': 'GPT Image 2',
-  'gpt-image-1.5': 'GPT Image 1.5',
-  'gpt-image-1': 'GPT Image 1',
-  'gpt-image-1-mini': 'GPT Image 1 Mini',
-  'nanobanana-v1': 'NanoBanana V1',
-  'nanobanana-v2': 'NanoBanana V2',
-}
-
-const isOpenAIImageModel = (model: ImageModel) =>
-  model === 'gpt-image-2' ||
-  model === 'gpt-image-1.5' ||
-  model === 'gpt-image-1' ||
-  model === 'gpt-image-1-mini'
+// FUTURE-064 Slice B: the model catalog (labels, provider of each model, strict parsing) lives in lib/images/image-models.ts.
+// Dispatch is by explicit provider (OpenAI / Google Gemini / third-party NanoBananaAPI.ai); there is no "everything else".
 
 // One browser-owned automatic run: it lives only while the workspace is mounted (not a background job).
 type AutomaticRunHandle = { id: string; controller: AbortController; cancelled: boolean }
@@ -184,11 +185,17 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [geminiConfigured, setGeminiConfigured] = useState(false)
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false)
   const [nanobananaConfigured, setNanobananaConfigured] = useState(false)
+  // FUTURE-064 Slice B: server-derived capability class for official Gemini image generation (null = not known = unavailable).
+  const [geminiImageAvailability, setGeminiImageAvailability] = useState<GeminiImageAvailability | null>(null)
   const [isGeneratingNanoBanana, setIsGeneratingNanoBanana] = useState(false)
   const imageClientRequestIdRef = useRef<string>(crypto.randomUUID())
   const [automationEnabled, setAutomationEnabled] = useState(false)
-  const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>('gpt-image-2')
-  const [selectedModel, setSelectedModel] = useState<ImageModel>('gpt-image-2')
+  const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL)
+  const [selectedModel, setSelectedModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL)
+  // A saved model id this build does not know. It blocks generation until the user picks a model, and it is what gets
+  // persisted back while it stands, so an unknown value is neither rewritten nor silently replaced by gpt-image-2.
+  const [unrecognizedModel, setUnrecognizedModel] = useState<string | null>(null)
+  const persistedModelValue: string = unrecognizedModel ?? selectedModel
   const [preferredAssistantModel, setAssistantModel] = useState<PromptAssistanceModel>(DEFAULT_PROMPT_ASSISTANCE_MODEL)
   const [suggestedPrompt, setSuggestedPrompt] = useState('')
   const [suggestedOperation, setSuggestedOperation] = useState<'create' | 'improve' | null>(null)
@@ -231,10 +238,23 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         : availableAssistantModels.length === 0
           ? 'configure um provedor de texto (OpenAI ou Gemini) em Configurações → API.'
           : null
-  const imageProviderReady = isOpenAIImageModel(selectedModel) ? openaiConfigured : nanobananaConfigured
+  // Provider-specific: OpenAI, Google Gemini (official, capability + credential) and NanoBananaAPI.ai (third party) differ.
+  const imageReadiness = evaluateImageReadiness({
+    model: unrecognizedModel ? null : selectedModel,
+    unrecognizedModel,
+    providerStatusLoaded,
+    openaiConfigured,
+    geminiConfigured,
+    nanobananaConfigured,
+    geminiImageAvailability,
+    canonicalWorkspace,
+  })
   const automaticStartReason: string | null = automaticOptionReason
-    ?? (!imageProviderReady ? 'configure o provedor do modelo de imagem selecionado em Configurações → API.' : null)
+    ?? (!imageReadiness.ready ? imageReadiness.message.charAt(0).toLowerCase() + imageReadiness.message.slice(1) : null)
     ?? (userInput.trim() ? null : 'escreva a descrição da imagem.')
+  // The manual button is only blocked for Google models and an unrecognized model (OpenAI/NanoBanana keep their existing behavior).
+  const createDisabledReason: string | null =
+    !imageReadiness.ready && (unrecognizedModel || isGeminiImageModel(selectedModel)) ? imageReadiness.message : null
   const mode: WorkflowMode = autoMode && automaticOptionReason === null ? 'automatic' : manualMode ? 'manual' : 'assisted'
 
   // Invalidates any in-flight assistance request (generation counter + client abort) and drops a pending suggestion.
@@ -255,7 +275,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       generatedPromptPt: generatedPromptPt || null,
       promptDetails,
       autoMode,
-      selectedModel,
+      selectedModel: persistedModelValue,
       imageStatus,
       currentAttempt,
       currentImageId: currentImage?.id || null,
@@ -263,7 +283,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       generationConfig: imageGenerationConfigRef.current,
       legacyImageUrl: persistableImageUrl(imageUrl),
     },
-  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, selectedModel, imageStatus, currentAttempt, currentImage?.id, imageUrl])
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl])
 
   const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
   imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
@@ -466,7 +486,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       imageStatus,
       autoMode,
       currentImageId: currentImage?.id || null,
-      selectedModel,
+      selectedModel: persistedModelValue,
     }
 
     if (safeImageUrl) {
@@ -527,7 +547,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setGeneratedPromptPt(state.generatedPromptPt || '')
     setPromptDetails(state.promptDetails || null)
     setAutoMode(Boolean(state.autoMode))
-    if (state.selectedModel) setSelectedModel(normalizeImageModel(state.selectedModel))
+    applyStoredImageModel(state.selectedModel)
     setCurrentAttempt(state.currentAttempt || 1)
     setImageStatus(state.imageStatus || 'draft')
     imageSourceReferencesRef.current = state.sourceReferences || []
@@ -684,9 +704,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setGeneratedPrompt(draft.generated_prompt || '')
     setGeneratedPromptPt(draft.generated_prompt_pt || '')
     setAutoMode(draft.auto_mode)
-    if (draft.selected_model) {
-      setSelectedModel(normalizeImageModel(draft.selected_model))
-    }
+    applyStoredImageModel(draft.selected_model)
   }
 
   // Auto save do rascunho de imagem
@@ -735,7 +753,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     productionId,
     autoMode,
     imageUrl,
-    selectedModel,
+    persistedModelValue,
     currentDraftId,
     isDataReady,
     canonicalWorkspace,
@@ -780,9 +798,13 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             .single()
 
           setAutomationEnabled(settingsData?.automation_enabled ?? false)
-          const model = normalizeImageModel(settingsData?.default_image_model)
-          setDefaultImageModel(model)
-          setSelectedModel(model)
+          const storedDefault = interpretStoredImageModel(settingsData?.default_image_model)
+          if (storedDefault.kind === 'model') {
+            setDefaultImageModel(storedDefault.model)
+            setSelectedModel(storedDefault.model)
+          } else if (storedDefault.kind === 'unknown') {
+            setUnrecognizedModel(storedDefault.raw)
+          }
           setEvaluatorEnabled(settingsData?.image_evaluator_enabled ?? false)
           setMaxRefinements(settingsData?.max_refinement_iterations ?? 2)
 
@@ -795,6 +817,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 setGeminiConfigured(providersPayload?.providers?.gemini?.status === 'configured')
                 setProviderStatusLoaded(true)
                 setNanobananaConfigured(providersPayload?.providers?.nano_banana?.status === 'configured')
+                setGeminiImageAvailability(parseGeminiImageAvailability(providersPayload?.imageGeneration?.gemini))
               }
             } else if (!cancelled) {
               setProviderStatusLoaded(true)
@@ -977,7 +1000,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
           workingPrompt: '',
           workingState: {
             schemaVersion: 1, generatedPrompt: null, generatedPromptPt: null,
-            promptDetails: null, autoMode: false, selectedModel,
+            promptDetails: null, autoMode: false, selectedModel: persistedModelValue,
             imageStatus: 'draft', currentAttempt: 1, currentImageId: null,
             sourceReferences: [],
             generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
@@ -1267,19 +1290,25 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
   }
 
-  const normalizeImageModel = (model: string | null | undefined): ImageModel => {
-    if (
-      model === 'gpt-image-2' ||
-      model === 'gpt-image-1.5' ||
-      model === 'gpt-image-1' ||
-      model === 'gpt-image-1-mini' ||
-      model === 'nanobanana-v1' ||
-      model === 'nanobanana-v2'
-    ) {
-      return model
+  // Interprets a saved selector (session state or draft). Absent keeps the current selection. An id this build does not
+  // know is surfaced (generation blocked until the user chooses) instead of silently becoming another model/provider.
+  function applyStoredImageModel(raw: string | null | undefined) {
+    const stored = interpretStoredImageModel(raw)
+    if (stored.kind === 'absent') return
+    if (stored.kind === 'model') {
+      setSelectedModel(stored.model)
+      setUnrecognizedModel(null)
+    } else {
+      setUnrecognizedModel(stored.raw)
     }
+  }
 
-    return 'gpt-image-2'
+  // The user explicitly chose a model: that resolves an unrecognized saved value.
+  const handleModelChange = (value: string) => {
+    const model = parseImageModel(value)
+    if (!model) return
+    setSelectedModel(model)
+    setUnrecognizedModel(null)
   }
 
   // Evaluate image with AI
@@ -1428,12 +1457,26 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const handleCreateImageWithModel = async (model: ImageModel, promptOverride?: string): Promise<ImageSubmitResult> => {
     const prompt = (promptOverride ?? generatedPrompt).trim()
     if (!prompt) return { ok: false, message: 'Escreva ou gere um prompt antes de criar a imagem.' }
+    // An unrecognized saved model or an id outside the catalog never reaches a provider, and never becomes another one.
+    const known = parseImageModel(model)
+    if (!known || unrecognizedModel) {
+      const message = unrecognizedModel
+        ? `O modelo de imagem salvo (“${unrecognizedModel}”) não é reconhecido. Selecione um modelo para continuar.`
+        : 'Modelo de imagem inválido. Selecione um modelo para continuar.'
+      toast({ title: 'Modelo de imagem inválido', description: message, variant: 'destructive' })
+      return { ok: false, message }
+    }
     if (imageSubmitLockRef.current) return { ok: false, message: 'Já existe uma geração de imagem em andamento.' }
     imageSubmitLockRef.current = true
     try {
-      return isOpenAIImageModel(model)
-        ? await handleCreateImage(prompt, model)
-        : await handleGenerateNanoBanana(model, prompt)
+      switch (imageModelProvider(known)) {
+        case 'openai':
+          return await handleCreateImage(prompt, known)
+        case 'gemini':
+          return await handleGenerateGeminiImage(known, prompt)
+        case 'nanobanana':
+          return await handleGenerateNanoBanana(known, prompt)
+      }
     } finally {
       imageSubmitLockRef.current = false
     }
@@ -1609,6 +1652,89 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     })
   }
 
+  // FUTURE-064 Slice B: official Google Gemini ("Nano Banana") text-to-image through POST /api/gemini/generate-image.
+  // Exactly one request per call, no retry, no provider fallback, no source images. The backend owns resolution (1K) and the
+  // model alias -> official id mapping; this sends only { prompt, model, aspectRatio, sessionId, clientRequestId }.
+  const handleGenerateGeminiImage = async (model: ImageModel, prompt: string): Promise<ImageSubmitResult> => {
+    const fail = (message: string, title = 'Erro na geração'): ImageSubmitResult => {
+      toast({ title, description: message, variant: 'destructive' })
+      return { ok: false, message }
+    }
+    // Defense in depth: readiness is checked again at submit time. Not ready => ZERO requests.
+    const readiness = evaluateImageReadiness({
+      model, unrecognizedModel, providerStatusLoaded, openaiConfigured, geminiConfigured, nanobananaConfigured, geminiImageAvailability, canonicalWorkspace,
+    })
+    if (!readiness.ready) return fail(readiness.message, 'Google Gemini indisponível')
+    if (!canonicalSessionId) return fail('Os modelos Google Gemini estão disponíveis no workspace de geração.', 'Google Gemini indisponível')
+
+    setIsCreatingImage(true)
+    setImageStatus('generating')
+    try {
+      await flushImageSubmission(prompt, model)
+      setGeneratedPrompt(prompt)
+      setSelectedModel(model)
+      const clientRequestId = imageClientRequestIdRef.current
+      let response: Response
+      try {
+        response = await fetch('/api/gemini/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            model,
+            aspectRatio: GEMINI_IMAGE_DEFAULT_ASPECT_RATIO,
+            sessionId: canonicalSessionId,
+            clientRequestId,
+          }),
+        })
+      } catch {
+        // The outcome of the request is unknown. The SAME request id is kept so a retry replays instead of paying twice.
+        setImageStatus('draft')
+        return fail('Falha de rede ao falar com o servidor. Verifique o histórico antes de tentar novamente: a geração pode ter sido iniciada.')
+      }
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        // The server answered definitively (the Attempt is closed or never existed): the next click is a NEW request.
+        imageClientRequestIdRef.current = crypto.randomUUID()
+        const failure = describeGeminiImageFailure(response.status, data)
+        // The server proved the capability is off for this deployment: stop offering Google models (no substitution).
+        if (failure.capabilityOff) {
+          setGeminiImageAvailability({ available: false, reason: data?.code === 'GEMINI_IMAGE_GENERATION_DISABLED' ? 'release_switch_off' : 'environment_blocked' })
+        }
+        setImageStatus('draft')
+        return fail(failure.message)
+      }
+
+      if (data.replayed) {
+        const replay = interpretGeminiReplay(data)
+        if (replay.kind !== 'image') {
+          if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
+          setImageStatus('draft')
+          return fail(replay.message, replay.kind === 'failed' ? 'Tentativa anterior falhou' : 'Geração em andamento')
+        }
+      }
+      if (!data.image || typeof data.imageUrl !== 'string' || !data.imageUrl) {
+        imageClientRequestIdRef.current = crypto.randomUUID()
+        setImageStatus('draft')
+        return fail('O Google Gemini não retornou uma imagem.')
+      }
+
+      setCurrentImage(data.image as ImageType)
+      setImageUrl(data.imageUrl as string)
+      setImageStatus('draft')
+      await refreshCanonicalExecution()
+      imageClientRequestIdRef.current = crypto.randomUUID()
+      toast({ title: 'Imagem criada!', description: 'A imagem foi gerada com sucesso pelo Google Gemini.' })
+      return { ok: true }
+    } catch (error) {
+      setImageStatus('draft')
+      return fail(error instanceof Error ? error.message : 'Não foi possível criar a imagem. Tente novamente.')
+    } finally {
+      setIsCreatingImage(false)
+    }
+  }
+
   // Generate image with NanoBanana (via server route for security)
   const handleGenerateNanoBanana = async (
     model: ImageModel = selectedModel,
@@ -1629,7 +1755,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (!nanobananaConfigured) {
       toast({
         title: 'API Key não configurada',
-        description: 'Configure sua API Key do NanoBanana em Configurações > API.',
+        description: `Configure sua API Key do ${NANOBANANA_THIRD_PARTY_LABEL} em Configurações > API.`,
         variant: 'destructive',
       })
       return { ok: false, message: 'API Key do NanoBanana não configurada.' }
@@ -1995,7 +2121,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         workingPrompt: '',
         workingState: {
           schemaVersion: 1, generatedPrompt: null, generatedPromptPt: null,
-          promptDetails: null, autoMode: false, selectedModel,
+          promptDetails: null, autoMode: false, selectedModel: persistedModelValue,
           imageStatus: 'draft', currentAttempt: 1, currentImageId: null,
           sourceReferences: [],
           generationConfig: { size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {} },
@@ -2433,8 +2559,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
               {!nanobananaConfigured && (
                 <StateMessage
                   tone="info"
-                  title="NanoBanana indisponível neste workspace"
-                  description="Você ainda pode criar imagens com os modelos já disponíveis. Configure a chave NanoBanana apenas se quiser esse provider."
+                  title="NanoBananaAPI.ai (terceiros — legado) indisponível neste workspace"
+                  description="Este é um serviço de terceiros, não a API oficial do Google. Você ainda pode criar imagens com os modelos já disponíveis. Configure a chave do NanoBananaAPI.ai apenas se quiser esse provider."
                   actionLabel="Ver API"
                   onAction={() => router.push('/configuracoes?tab=api')}
                   compact
@@ -2480,7 +2606,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                     run={automaticRun}
                     canStart={automaticStartReason === null && !workflowBusy && !isCreatingImage && !isGeneratingNanoBanana && !isGeneratingPrompt}
                     startDisabledReason={automaticStartReason ? `Para gerar: ${automaticStartReason}` : null}
-                    summary={`Prompt: ${assistantModel.label} → Imagem: ${IMAGE_MODEL_LABELS[selectedModel]}. 1 chamada de texto + 1 geração de imagem.`}
+                    summary={`Prompt: ${assistantModel.label} → Imagem: ${unrecognizedModel ? 'modelo não reconhecido' : IMAGE_MODEL_LABELS[selectedModel]}. 1 chamada de texto + 1 geração de imagem.${!unrecognizedModel && isGeminiImageModel(selectedModel) ? ` ${GEMINI_IMAGE_COST_NOTICE}` : ''}`}
                     confirmOverwrite={pendingOverwriteConfirm}
                     onStart={() => void startAutomaticRun(false)}
                     onConfirmOverwrite={() => void startAutomaticRun(true)}
@@ -2521,9 +2647,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   onCreateImage={handleCreateImageWithModel}
                   isCreatingImage={isCreatingImage || isGeneratingNanoBanana}
                   hasNanoBananaKey={nanobananaConfigured}
+                  geminiImage={{ availability: geminiImageAvailability, canonicalWorkspace }}
+                  unrecognizedModel={unrecognizedModel}
+                  createDisabledReason={createDisabledReason}
                   workflowBusy={workflowBusy}
                   selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
+                  onModelChange={handleModelChange}
                 />
               </div>
 

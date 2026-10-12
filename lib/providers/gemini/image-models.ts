@@ -25,8 +25,8 @@ export type GeminiImageModel = {
 }
 
 const REGISTRY: ReadonlyArray<GeminiImageModel> = Object.freeze([
-  Object.freeze({ alias: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', label: 'Google Gemini · Nano Banana 2.1 (oficial)' }),
-  Object.freeze({ alias: 'gemini-nb-lite', providerModel: 'gemini-3.1-flash-lite-image', label: 'Google Gemini · Nano Banana 2 Lite (oficial)' }),
+  Object.freeze({ alias: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', label: 'Google Gemini — Nano Banana 2.1 (oficial)' }),
+  Object.freeze({ alias: 'gemini-nb-lite', providerModel: 'gemini-3.1-flash-lite-image', label: 'Google Gemini — Nano Banana 2 Lite (oficial)' }),
 ])
 
 export const GEMINI_IMAGE_ALIASES: ReadonlyArray<GeminiImageAlias> = REGISTRY.map((entry) => entry.alias)

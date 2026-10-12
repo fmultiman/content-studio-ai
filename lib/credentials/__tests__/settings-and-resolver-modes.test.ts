@@ -59,7 +59,8 @@ describe('default (legacy) mode: Settings API is unchanged', () => {
     const payload = await (await GET()).json()
     expect(Object.fromEntries(Object.entries(payload.providers).map(([k, v]) => [k, (v as { status: string }).status]))).toEqual({ openai: 'configured', nano_banana: 'missing', kling: 'missing', replicate: 'missing', gemini: 'missing' })
     expect(payload.credentialStorage).toEqual({ mode: 'legacy', invalidModeValue: false, encryptionKey: 'not_required' })
-    expect(Object.keys(payload).sort()).toEqual(['adminCredential', 'credentialStorage', 'executionPolicy', 'nanobananaBaseUrl', 'providers', 'publicCredential'])
+    // FUTURE-064 Slice B added the browser-safe `imageGeneration` availability class (no credential data) to this response.
+    expect(Object.keys(payload).sort()).toEqual(['adminCredential', 'credentialStorage', 'executionPolicy', 'imageGeneration', 'nanobananaBaseUrl', 'providers', 'publicCredential'])
     expect(access.filter((a) => a.table === 'provider_api_credentials')).toEqual([])
     expect(JSON.stringify(payload)).not.toContain(LEGACY)
   })
