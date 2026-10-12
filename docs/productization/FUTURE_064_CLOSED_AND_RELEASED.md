@@ -17,7 +17,7 @@ Compatibilidade Lite confirmada na [documentação de imagens](https://ai.google
 
 ## Validação e publicação
 
-494 testes focados passaram em 14 arquivos, cobrindo os dois modelos, os três modos, idempotência/recuperação, autenticação/BYOK, Preview/OFF, armazenamento, contabilização, custos parciais e legado. A revisão independente não identificou bloqueios. Typecheck, lint e checks publicados do HEAD devem estar verdes antes do merge. O fechamento operacional registra PR, SHA final, deployment READY, domínio e probes não cobradas no registro de execução associado à entrega.
+494 testes focados passaram em 14 arquivos, cobrindo os dois modelos, os três modos, idempotência/recuperação, autenticação/BYOK, Preview/OFF, armazenamento, contabilização, custos parciais e legado. Typecheck e lint passaram; a revisão independente não identificou bloqueios. A [PR #189](https://github.com/fmultiman/content-studio-ai/pull/189) registra os checks do HEAD final, merge SHA, deployment READY, domínio e probes não cobradas. O merge é condicionado aos checks publicados verdes e estado CLEAN; o registro final de execução acompanha a entrega.
 
 ## Rollback
 
