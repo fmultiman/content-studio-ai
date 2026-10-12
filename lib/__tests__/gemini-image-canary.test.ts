@@ -251,12 +251,12 @@ describe('POST /api/gemini/generate-image with the global switch OFF and a canar
     }
   })
 
-  it('with the GLOBAL switch ON the canary is ignored: any signed-in user is served exactly as before, no grant needed', async () => {
+  it('with the GLOBAL switch ON the canary is ignored for the released 2.1 model, no grant needed', async () => {
     vi.stubEnv(GEMINI_IMAGE_GENERATION_FLAG, 'enabled')
     asUser(OTHER)
     setDb(createFakeDb({ image_generation_sessions: [sessionRow(OTHER)] }))
     mocks.settings.current = { gemini_api_key: 'AIza-other-dummy' }
-    const response = await post(body({ clientRequestId: OTHER_REQ, model: 'gemini-nb-lite', aspectRatio: '16:9' }))
+    const response = await post(body({ clientRequestId: OTHER_REQ, model: 'gemini-nb-2.1', aspectRatio: '16:9' }))
     expect(response.status).toBe(200)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })

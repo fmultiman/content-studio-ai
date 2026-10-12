@@ -13,6 +13,7 @@ import { GEMINI_IMAGE_ALIASES, resolveGeminiImageModel, type GeminiImageAlias } 
 export type { GeminiImageAlias }
 // Re-exported so client components import the catalog only (the Gemini server registry stays an implementation detail).
 export { GEMINI_IMAGE_DEFAULT_ASPECT_RATIO } from '@/lib/providers/gemini/image-models'
+export { GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, isGeminiImageReleasedModel } from '@/lib/providers/gemini/image-models'
 
 export const OPENAI_IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'] as const
 export type OpenAIImageModel = (typeof OPENAI_IMAGE_MODELS)[number]

@@ -8,8 +8,8 @@
 //     (user_settings.default_image_model, image_drafts.selected_model). The official Google ids are longer.
 //   * Official ids come from https://ai.google.dev/gemini-api/docs/models (verified 2026-10-11). `gemini-2.5-flash-image`
 //     (deprecated, shutdown 2026-10-02), Pro and `gemini-3.1-flash-image` are intentionally NOT V1 models.
-//   * No price lives here. Pricing is a migration-governed registry (provider_pricing_versions); image output has no
-//     price rows yet, so cost is never computed from this file.
+//   * No price lives here. Pricing comes from the reviewed provider_pricing_versions registry;
+//     release eligibility does not imply a complete price for every reported usage component.
 
 export const GEMINI_IMAGE_PROVIDER = 'gemini' as const
 
@@ -30,6 +30,16 @@ const REGISTRY: ReadonlyArray<GeminiImageModel> = Object.freeze([
 ])
 
 export const GEMINI_IMAGE_ALIASES: ReadonlyArray<GeminiImageAlias> = REGISTRY.map((entry) => entry.alias)
+
+// Staged V1: only the model with a successful paid canary is eligible for release.
+// The catalog keeps Lite readable in saved sessions; the global switch must never enable it.
+export const GEMINI_IMAGE_RELEASE_ALIASES: ReadonlyArray<GeminiImageAlias> = Object.freeze(['gemini-nb-2.1'])
+export const GEMINI_IMAGE_MODEL_NOT_RELEASED = 'GEMINI_IMAGE_MODEL_NOT_RELEASED'
+export const GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE = 'Nano Banana 2 Lite ainda não foi liberado para geração de imagem.'
+
+export function isGeminiImageReleasedModel(alias: unknown): boolean {
+  return typeof alias === 'string' && (GEMINI_IMAGE_RELEASE_ALIASES as readonly string[]).includes(alias)
+}
 
 /** Aspect ratios documented for the Gemini image models (generationConfig.imageConfig.aspectRatio). */
 export const GEMINI_IMAGE_ASPECT_RATIOS = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] as const

@@ -300,10 +300,13 @@ describe('successful generation', () => {
     })
   })
 
-  it('resolves the second approved alias to its own official model id', async () => {
-    expect((await post(body({ model: 'gemini-nb-lite' }))).status).toBe(200)
-    expect((fetchSpy.mock.calls[0] as [string])[0]).toContain('/models/gemini-3.1-flash-lite-image:generateContent')
-    expect(attempts()[0]).toMatchObject({ model: 'gemini-nb-lite', submitted_config: { providerModel: 'gemini-3.1-flash-lite-image' } })
+  it('blocks Lite with the global switch ON before any claim, credential read, ledger write or provider call', async () => {
+    const response = await post(body({ model: 'gemini-nb-lite' }))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'GEMINI_IMAGE_MODEL_NOT_RELEASED' })
+    expect(mocks.settingsReads).not.toHaveBeenCalled()
+    expect(db.writes).toEqual([])
+    nothingHappened()
   })
 
   it('defaults the aspect ratio to 1:1 and never invents cost or usage fields', async () => {
@@ -343,13 +346,23 @@ describe('idempotency and one canonical Attempt per request', () => {
 
   it('answers 409 IDEMPOTENCY_CONFLICT when a request id is reused with different parameters', async () => {
     await post(body())
-    for (const changed of [{ prompt: 'a blue fox' }, { model: 'gemini-nb-lite' }, { aspectRatio: '9:16' }]) {
+    for (const changed of [{ prompt: 'a blue fox' }, { aspectRatio: '9:16' }]) {
       const response = await post(body(changed))
       expect(response.status).toBe(409)
       expect(await response.json()).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
     }
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(attempts()).toHaveLength(1)
+  })
+
+  it('a Lite request reusing a succeeded 2.1 request id is blocked without replaying or executing another model', async () => {
+    await post(body())
+    const response = await post(body({ model: 'gemini-nb-lite' }))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'GEMINI_IMAGE_MODEL_NOT_RELEASED' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(attempts()).toHaveLength(1)
+    expect(images()).toHaveLength(1)
   })
 
   it('creates a new Attempt with a new clientRequestId and increments the sequence', async () => {

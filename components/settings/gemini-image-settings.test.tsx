@@ -54,6 +54,18 @@ const radio = (id: string) => document.getElementById(id) as HTMLButtonElement
 const text = () => document.body.textContent ?? ''
 
 describe('Settings → Automação → Modelo Padrão de Imagem', () => {
+  it('keeps a saved Lite default readable and unchanged with capability ON, with its release warning', async () => {
+    stored.current = { ...baseSettings, default_image_model: 'gemini-nb-lite' }
+    providersPayload = { providers: { gemini: { status: 'configured' } }, imageGeneration: { gemini: { available: true, reason: 'available' } } }
+    await openTab('automation')
+    await screen.findByText('Modelo Padrão de Imagem')
+    expect(radio('model-gemini-nb-lite').getAttribute('aria-checked')).toBe('true')
+    expect(text()).toMatch(/Lite ainda não foi liberado/)
+    const save = screen.getAllByRole('button', { name: /Salvar Preferências/ })
+    fireEvent.click(save[save.length - 1])
+    await waitFor(() => expect(upserts).toHaveLength(1))
+    expect(upserts[0].default_image_model).toBe('gemini-nb-lite')
+  })
   it('shows the official Google models and the legacy third-party models with distinct, accurate labels', async () => {
     await openTab('automation')
     await screen.findByText('Modelo Padrão de Imagem')
@@ -83,6 +95,8 @@ describe('Settings → Automação → Modelo Padrão de Imagem', () => {
     await openTab('automation')
     await screen.findByText('Modelo Padrão de Imagem')
     await waitFor(() => expect(radio('model-gemini-nb-21').disabled).toBe(false))
+    expect(radio('model-gemini-nb-lite').disabled).toBe(true)
+    expect(text()).toMatch(/Lite ainda não foi liberado/)
     expect(screen.queryByTestId('settings-google-model-note')).toBeNull()
     fireEvent.click(radio('model-gemini-nb-21'))
     const save = screen.getAllByRole('button', { name: /Salvar Preferências/ })

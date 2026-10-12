@@ -8,7 +8,7 @@ import {
   type GeminiImageAvailability,
   geminiImageAvailabilityMessage,
 } from '@/lib/images/gemini-availability'
-import { GEMINI_IMAGE_ALIASES } from '@/lib/providers/gemini/image-models'
+import { GEMINI_IMAGE_ALIASES, GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, isGeminiImageReleasedModel } from '@/lib/providers/gemini/image-models'
 import {
   IMAGE_MODEL_LABELS,
   IMAGE_PROVIDER_LABELS,
@@ -29,6 +29,7 @@ export type ImageReadinessCode =
   | 'gemini_capability_disabled'
   | 'gemini_capability_unknown'
   | 'gemini_not_configured'
+  | 'gemini_model_not_released'
 
 export type ImageReadiness = { ready: true } | { ready: false; code: ImageReadinessCode; message: string }
 
@@ -75,6 +76,7 @@ export function evaluateImageReadiness(input: ImageReadinessInput): ImageReadine
       if (!availability) return blocked('gemini_capability_unknown', geminiImageAvailabilityMessage(null))
       // Capability first: a disabled route must never be reported as a missing credential.
       if (!availability.available) return blocked('gemini_capability_disabled', geminiImageAvailabilityMessage(availability))
+      if (!isGeminiImageReleasedModel(input.model)) return blocked('gemini_model_not_released', GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE)
       return input.geminiConfigured
         ? ready()
         : blocked('gemini_not_configured', 'Configure o provedor do modelo de imagem selecionado (chave do Google Gemini) em Configurações → API.')
@@ -110,7 +112,7 @@ export function buildImageModelGroups(input: ImageModelGroupsInput): ImageModelG
     const availability = input.gemini.availability
     const usable = Boolean(availability?.available) && input.gemini.canonicalWorkspace
     const note = usable
-      ? null
+      ? GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE
       : !input.gemini.canonicalWorkspace
         ? 'Disponível no workspace de geração (use “Nova Imagem”).'
         : geminiImageAvailabilityMessage(availability)
@@ -118,7 +120,7 @@ export function buildImageModelGroups(input: ImageModelGroupsInput): ImageModelG
       provider: 'gemini',
       label: IMAGE_PROVIDER_LABELS.gemini,
       // The current selection is never disabled: that would make the Select display nothing for a value the user already holds.
-      options: GEMINI_IMAGE_ALIASES.map((value) => ({ value, label: IMAGE_MODEL_LABELS[value], disabled: !usable && value !== input.selectedModel })),
+      options: GEMINI_IMAGE_ALIASES.map((value) => ({ value, label: IMAGE_MODEL_LABELS[value], disabled: (!usable || !isGeminiImageReleasedModel(value)) && value !== input.selectedModel })),
       note,
     })
   }
