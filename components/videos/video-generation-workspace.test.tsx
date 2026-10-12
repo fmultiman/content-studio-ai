@@ -375,7 +375,7 @@ describe('VIDEO_GENERATION_WORKSPACE_AUTOSAVE_V1 — Workspace & Autosave Tests'
       expect(screen.getByDisplayValue('Server authoritative version from another tab')).toBeTruthy()
       expect(screen.queryByTestId('conflict-banner')).toBeNull()
       expect(screen.getByTestId('save-status-saved')).toBeTruthy()
-    })
+    }, { timeout: 3000 }) // Reconciled controls may need the real 800ms autosave debounce after reload.
   })
 
   it('10. Conflict resolution: Keep local version explicitly saves local state against new token', async () => {

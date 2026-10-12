@@ -19,17 +19,20 @@ export function WorkflowModeControl({
   onChange,
   automaticUnavailableReason,
   disabled = false,
+  mediaType = 'image',
 }: {
   mode: WorkflowMode
   onChange: (mode: WorkflowMode) => void
   /** Non-null = the Automatic option cannot be used, and why. */
   automaticUnavailableReason: string | null
   disabled?: boolean
+  mediaType?: 'image' | 'video'
 }) {
+  const modes = mediaType === 'image' ? MODES : MODES.map((entry) => ({ ...entry, hint: entry.hint.replace(/a imagem/g, 'o vídeo').replace('é gerada', 'é gerado') }))
   return (
     <div className="space-y-1" data-testid="workflow-mode-control">
       <div role="radiogroup" aria-label="Modo de criação" className="inline-flex rounded-lg border border-border/60 bg-background/40 p-1">
-        {MODES.map((entry) => {
+        {modes.map((entry) => {
           const unavailable = entry.value === 'automatic' && automaticUnavailableReason !== null
           const selected = mode === entry.value
           return (
@@ -52,7 +55,7 @@ export function WorkflowModeControl({
         })}
       </div>
       <p className="text-xs text-muted-foreground" data-testid="workflow-mode-hint">
-        {MODES.find((entry) => entry.value === mode)?.hint}
+        {modes.find((entry) => entry.value === mode)?.hint}
         {automaticUnavailableReason ? ` Automático indisponível: ${automaticUnavailableReason}` : ''}
       </p>
     </div>

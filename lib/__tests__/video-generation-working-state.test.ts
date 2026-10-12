@@ -8,6 +8,38 @@ import { REST_CONNECTION_REF, accountConnectionRef } from '../video-generation/c
 
 describe('Video Generation Working State Core', () => {
   describe('Schema Validation', () => {
+    const assistanceState = () => attemptToWorkingState({ prompt: 'river', mode: 'text_to_video', model: 'video-model' })
+
+    it.each(['manual', 'assisted', 'automatic'])('round-trips optional %s assistance choices without changing the prompt or video settings', (mode) => {
+      const state = { ...assistanceState(), assistance: { description: 'Water flowing in sunlight.', provider: 'gemini', model: 'gemini-3.5-flash', mode } }
+      expect(VideoGenerationWorkingStateV1Schema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state)
+    })
+
+    it('keeps legacy and reconstructed historical state unchanged without injecting assistance defaults', () => {
+      const state = assistanceState()
+      expect(state).not.toHaveProperty('assistance')
+      expect(VideoGenerationWorkingStateV1Schema.parse(state)).toEqual(state)
+      expect(VideoGenerationWorkingStateV1Schema.parse(state)).not.toHaveProperty('assistance')
+    })
+
+    it('preserves exact authored assistance strings and accepts the specified upper bounds', () => {
+      const assistance = { description: ' '.repeat(12_000), provider: 'openai', model: 'm'.repeat(120), mode: 'assisted' }
+      expect(VideoGenerationWorkingStateV1Schema.parse({ ...assistanceState(), assistance }).assistance).toEqual(assistance)
+      expect(VideoGenerationWorkingStateV1Schema.parse({ ...assistanceState(), assistance: { ...assistance, description: '', model: '' } }).assistance?.description).toBe('')
+    })
+
+    it.each([
+      null,
+      { description: 'x', provider: 'kling', model: 'm', mode: 'manual' },
+      { description: 'x', provider: 'openai', model: 'm', mode: 'background' },
+      { description: 'x'.repeat(12_001), provider: 'openai', model: 'm', mode: 'assisted' },
+      { description: 'x', provider: 'gemini', model: 'm'.repeat(121), mode: 'automatic' },
+      { description: 'x', provider: 'openai', mode: 'manual' },
+      { description: 'x', provider: 'openai', model: 'm', mode: 'manual', apiKey: 'secret' },
+    ])('rejects malformed or over-limit assistance: %j', (assistance) => {
+      expect(VideoGenerationWorkingStateV1Schema.safeParse({ ...assistanceState(), assistance }).success).toBe(false)
+    })
+
     it('validates a correct V1 working state', () => {
       const state = {
         schemaVersion: 1,

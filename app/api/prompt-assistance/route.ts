@@ -4,7 +4,7 @@ import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
 import { providerExecutionBlockedResponse } from '@/lib/providers/execution-policy-http'
 import { normalizeProjectIdentity, ProjectIdentityParseError } from '@/lib/project-identity-normalizer'
-import { PromptAssistanceRequestSchema, PromptAssistanceError } from '@/lib/prompt-assistance/contract'
+import { PromptAssistanceRequestSchema, PromptAssistanceError, type PromptAssistanceRequest } from '@/lib/prompt-assistance/contract'
 import { buildPromptAssistanceContext } from '@/lib/prompt-assistance/context'
 import { findPromptAssistanceModel } from '@/lib/prompt-assistance/models'
 import { executePromptProvider } from '@/lib/prompt-assistance/providers'
@@ -14,13 +14,24 @@ function jsonError(code: string, message: string, status: number, extra: Record<
   return NextResponse.json({ error: code, code, message, ...extra }, { status })
 }
 
-function instructions(operation: 'create' | 'improve') {
-  const action = operation === 'create'
+function instructions(input: PromptAssistanceRequest) {
+  const action = input.operation === 'create'
     ? 'proponha um novo prompt visual detalhado a partir da intenção criativa'
     : 'melhore o prompt existente preservando a intenção, os elementos necessários e as restrições autoradas'
   return [
-    'Você é um assistente de prompt para geração de imagens.',
+    input.mediaType === 'video'
+      ? 'Você é um assistente de prompt para geração de vídeos.'
+      : 'Você é um assistente de prompt para geração de imagens.',
     `Sua tarefa é ${action}.`,
+    ...(input.mediaType === 'video' ? input.videoMode === 'text_to_video'
+      ? [
+        'Para text_to_video, descreva a cena, a ação dos sujeitos, o movimento da câmera e a evolução temporal com continuidade entre os momentos.',
+        'Mantenha identidades, cenário e iluminação coerentes ao longo do vídeo; evite ações ou cortes contraditórios.',
+      ]
+      : [
+        'Para image_to_video, concentre o prompt em movimento dos sujeitos, movimento da câmera e continuidade temporal, preservando a composição, identidade, estilo e iluminação da imagem de origem.',
+        'Nenhuma imagem foi enviada a esta assistência de texto: use apenas a descrição e o prompt fornecidos, sem afirmar que viu ou analisou a imagem nem inventar detalhes visuais não descritos.',
+      ] : []),
     'Responda somente com o prompt final em inglês, sem markdown, rótulos, explicações, metadados ou JSON.',
     'Trate as restrições do contexto como limites criativos obrigatórios, princípios como orientação positiva e preferências como orientação flexível.',
     'Nunca invente uma identidade visual incompatível nem mencione o contexto interno no texto final.',
@@ -109,7 +120,7 @@ export async function POST(request: NextRequest) {
       provider: input.provider,
       model: input.model,
       apiKey: execution.secret,
-      systemInstruction: instructions(input.operation),
+      systemInstruction: instructions(input),
       userInstruction,
     })
     if (!result.text.trim()) return jsonError('PROVIDER_INVALID_RESPONSE', 'O provider retornou uma sugestão vazia.', 502)
@@ -122,6 +133,7 @@ export async function POST(request: NextRequest) {
       operation: input.operation,
       funding: execution.executionMode,
       workflow: input.workflow,
+      mediaType: input.mediaType,
       usage: result.usage,
     })
     return NextResponse.json({
@@ -143,6 +155,7 @@ export async function POST(request: NextRequest) {
           operation: input.operation,
           funding: execution.executionMode,
           workflow: input.workflow,
+          mediaType: input.mediaType,
           usage: error.usage,
         })
       }

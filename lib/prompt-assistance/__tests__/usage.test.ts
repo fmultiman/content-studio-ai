@@ -21,6 +21,14 @@ const GEMINI: PromptAssistanceUsage = {
 }
 
 describe('promptAssistanceUsageEvents — one execution, one row per provider-native billable dimension', () => {
+  it.each([OPENAI, GEMINI, null])('labels video usage including thoughts and unknowns without altering billing facts', (usage) => {
+    const provider = usage === GEMINI ? 'gemini' : 'openai'
+    const image = promptAssistanceUsageEvents(context(usage, { provider }), 'same-invocation')
+    const video = promptAssistanceUsageEvents(context(usage, { provider, mediaType: 'video' }), 'same-invocation')
+    expect(video).toEqual(image.map((event) => ({ ...event, providerMetadata: { ...event.providerMetadata, media_type: 'video' } })))
+    expect(promptAssistanceUsageEvents(context(usage, { provider, mediaType: 'image' }), 'same-invocation')).toEqual(image)
+  })
+
   it('a usual request is exactly TWO rows (input + output) sharing one provider request id — the documented model, not a duplicate', () => {
     const events = promptAssistanceUsageEvents(context(OPENAI))
     expect(events.map((e) => [e.measurement?.unit, e.measurement?.quantity, e.measurement?.source, e.idempotencyKey, e.providerTaskId])).toEqual([

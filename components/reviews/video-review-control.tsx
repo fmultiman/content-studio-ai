@@ -12,6 +12,7 @@
 //    definitive answer the next intentional "Revisar novamente" gets a brand-new id.
 //  - A missing Gemini credential is explained, with the existing Configurações → API navigation, before any request.
 //  - Review is advisory: this control never edits a generation, a prompt, a VideoDraft or a Library file.
+//    An explicit refined-prompt action can hand a suggestion to the workspace's callback.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -47,11 +48,17 @@ export function VideoReviewControl({
   source,
   size = 'sm',
   subjectLabel,
+  onUseRefinedPrompt,
+  refinedPromptDisabled = false,
 }: {
   source: VideoReviewSource
   size?: 'sm' | 'default'
   /** Optional human name of the video, only used for accessible labels. */
   subjectLabel?: string
+  /** Explicitly copy a Review suggestion into the workspace's editable prompt. */
+  onUseRefinedPrompt?: (prompt: string) => void
+  /** The workspace is busy and cannot accept prompt edits. */
+  refinedPromptDisabled?: boolean
 }) {
   const { toast } = useToast()
   const router = useRouter()
@@ -146,6 +153,11 @@ export function VideoReviewControl({
 
   const hasCompleted = history.items.some((item) => item.status === 'completed')
   const busy = running || freshInFlight
+  const handleUseRefinedPrompt = onUseRefinedPrompt ? (prompt: string) => {
+    if (refinedPromptDisabled || busy) return
+    onUseRefinedPrompt(prompt)
+    setOpen(false)
+  } : undefined
   const label = busy ? 'Revisão em andamento…' : hasCompleted ? 'Revisar novamente' : 'Revisar vídeo'
   const total = history.items.length
 
@@ -234,7 +246,7 @@ export function VideoReviewControl({
               <div className="space-y-3" data-testid="video-review-history">
                 {history.items.map((item, index) => {
                   const position = total - index
-                  if (index === 0) return <VideoReviewResult key={item.id} item={item} position={position} total={total} nowMs={now} />
+                  if (index === 0) return <VideoReviewResult key={item.id} item={item} position={position} total={total} nowMs={now} onUseRefinedPrompt={handleUseRefinedPrompt} refinedPromptDisabled={refinedPromptDisabled || busy} />
                   return (
                     <details key={item.id} className="rounded-lg border border-border-subtle" data-testid={`video-review-older-${item.id}`}>
                       <summary className="cursor-pointer break-words p-3 text-sm">
@@ -242,7 +254,7 @@ export function VideoReviewControl({
                         {item.result ? ` · ${item.result.overall.score}/100` : item.status === 'failed' ? ' · falhou' : ' · em andamento'}
                       </summary>
                       <div className="p-3 pt-0">
-                        <VideoReviewResult item={item} position={position} total={total} nowMs={now} />
+                        <VideoReviewResult item={item} position={position} total={total} nowMs={now} onUseRefinedPrompt={handleUseRefinedPrompt} refinedPromptDisabled={refinedPromptDisabled || busy} />
                       </div>
                     </details>
                   )

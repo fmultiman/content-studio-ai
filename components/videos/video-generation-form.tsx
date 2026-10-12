@@ -98,7 +98,14 @@ export function VideoGenerationForm({
   )
 
   if (connections.length === 0 || !connection) {
-    return null
+    return (
+      <fieldset disabled={disabled} className="w-full min-w-0 space-y-2">
+        {header}
+        <Label htmlFor="video-working-prompt">Prompt</Label>
+        <Textarea id="video-working-prompt" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="Escreva seu prompt enquanto configura uma conexão Kling." className="min-h-[140px]" />
+        <p className="text-xs text-muted-foreground" role="status">Configure uma conexão Kling em Configurações para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
+      </fieldset>
+    )
   }
 
   const consumptionNoun = connection.funding === 'kling_web_credits' ? 'créditos' : 'unidades'
@@ -107,7 +114,7 @@ export function VideoGenerationForm({
     (selection.resolution !== null && selection.resolution !== '720p')
 
   return (
-    <div className={cn("w-full min-w-0", disabled && "opacity-60 pointer-events-none")}>
+    <fieldset disabled={disabled} className={cn("w-full min-w-0", disabled && "opacity-60 pointer-events-none")}>
       {header}
 
       {operationChoices.length > 0 && selection.operation && model && (
@@ -189,8 +196,9 @@ export function VideoGenerationForm({
             <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={sourceSelection} onChange={onSourceSelectionChange} />
 
             <div className="space-y-2">
-              <Label>Motion Prompt (Dicas de animação)</Label>
+              <Label htmlFor="video-motion-prompt">Motion Prompt (Dicas de animação)</Label>
               <Textarea
+                id="video-motion-prompt"
                 placeholder="Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)"
                 value={prompt}
                 onChange={(e) => onPromptChange(e.target.value)}
@@ -201,8 +209,9 @@ export function VideoGenerationForm({
 
           <TabsContent value="text_to_video" className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label>Prompt</Label>
+              <Label htmlFor="video-working-prompt">Prompt</Label>
               <Textarea
+                id="video-working-prompt"
                 placeholder="Descreva a cena do vídeo detalhadamente..."
                 value={prompt}
                 onChange={(e) => onPromptChange(e.target.value)}
@@ -377,6 +386,6 @@ export function VideoGenerationForm({
           )}
         </Tabs>
       )}
-    </div>
+    </fieldset>
   )
 }

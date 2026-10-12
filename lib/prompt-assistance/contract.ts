@@ -10,11 +10,12 @@ export type PromptAssistanceWorkflow = (typeof PROMPT_ASSISTANCE_WORKFLOWS)[numb
 export const PROMPT_ASSISTANCE_OPERATIONS = ['create', 'improve'] as const
 export type PromptAssistanceOperation = (typeof PROMPT_ASSISTANCE_OPERATIONS)[number]
 
-export const PromptAssistanceRequestSchema = z.object({
+export const PROMPT_ASSISTANCE_VIDEO_MODES = ['text_to_video', 'image_to_video'] as const
+export type PromptAssistanceVideoMode = (typeof PROMPT_ASSISTANCE_VIDEO_MODES)[number]
+
+const sharedRequestFields = {
   projectId: z.string().uuid().nullable().optional(),
   productionId: z.string().uuid().nullable().optional(),
-  mediaType: z.literal('image'),
-  videoMode: z.undefined().optional(),
   operation: z.enum(PROMPT_ASSISTANCE_OPERATIONS),
   workflow: z.enum(PROMPT_ASSISTANCE_WORKFLOWS).optional(),
   originalText: z.string().trim().min(1).max(12_000),
@@ -22,7 +23,13 @@ export const PromptAssistanceRequestSchema = z.object({
   provider: z.enum(PROMPT_ASSISTANCE_PROVIDERS),
   model: z.string().trim().min(1).max(120),
   sourceReference: z.undefined().optional(),
-}).strict().superRefine((value, ctx) => {
+}
+
+// Text assistance never receives source media, URLs or storage references. Each branch stays closed.
+export const PromptAssistanceRequestSchema = z.discriminatedUnion('mediaType', [
+  z.object({ ...sharedRequestFields, mediaType: z.literal('image'), videoMode: z.undefined().optional() }).strict(),
+  z.object({ ...sharedRequestFields, mediaType: z.literal('video'), videoMode: z.enum(PROMPT_ASSISTANCE_VIDEO_MODES) }).strict(),
+]).superRefine((value, ctx) => {
   if (value.productionId && !value.projectId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['productionId'], message: 'productionId requires projectId.' })
   }
