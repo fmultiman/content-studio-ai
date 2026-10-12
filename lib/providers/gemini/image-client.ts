@@ -64,8 +64,23 @@ const OUTCOME_UNKNOWN: Record<GeminiImageErrorKind, boolean> = {
   image_too_large: true,
 }
 
+/**
+ * FUTURE-064 Slice C. What Google DID send back when a response was received (HTTP 2xx) but turned out unusable as an
+ * image (blocked, no image, invalid image...). It exists so the server can account for a provider execution whose usage
+ * Google reported even though no image could be kept. `usage: null` = the response reported none (unknown, NOT zero).
+ * It is never set for a transport failure, a timeout, an HTTP error status or an unreadable body: in those cases Content
+ * Studio holds no provider response, so it holds no usage and must not invent a ledger row.
+ */
+export type GeminiImageReceived = {
+  usage: GeminiUsage | null
+  responseId: string | null
+  modelVersion: string | null
+}
+
 export class GeminiImageError extends Error {
   readonly outcomeUnknown: boolean
+  /** Set (once) only when a 2xx response envelope was received; see GeminiImageReceived. */
+  received: GeminiImageReceived | null = null
   constructor(readonly kind: GeminiImageErrorKind, message: string, readonly status?: number) {
     super(message)
     this.name = 'GeminiImageError'
@@ -219,7 +234,11 @@ export async function generateGeminiImage(input: GeminiImageRequest, options: Ge
     try {
       raw = await readBounded(response, GEMINI_IMAGE_MAX_RESPONSE_BYTES)
     } catch (error) {
-      if (isGeminiImageError(error)) throw error
+      if (isGeminiImageError(error)) {
+        // A 2xx answer too large to read is still a response Google produced: the execution is known, its usage is not.
+        if (response.ok && error.kind === 'image_too_large') error.received = { usage: null, responseId: null, modelVersion: null }
+        throw error
+      }
       if ((error as { name?: string })?.name === 'AbortError') throw new GeminiImageError('timeout', 'Gemini image request timed out.')
       throw new GeminiImageError('network', 'Gemini image response could not be read.')
     }
@@ -244,6 +263,31 @@ export async function generateGeminiImage(input: GeminiImageRequest, options: Ge
     responseId?: unknown
     modelVersion?: unknown
   }
+  // From here on a response envelope was received: any failure carries what Google reported, so usage can be accounted.
+  const received: GeminiImageReceived = {
+    usage: extractGeminiUsage(envelope.usageMetadata),
+    responseId: typeof envelope.responseId === 'string' ? envelope.responseId : null,
+    modelVersion: typeof envelope.modelVersion === 'string' ? envelope.modelVersion : null,
+  }
+  try {
+    const image = await imageFromEnvelope(envelope)
+    return { ...image, responseId: received.responseId, modelVersion: received.modelVersion, usage: received.usage }
+  } catch (error) {
+    if (isGeminiImageError(error) && !error.received) error.received = received
+    throw error
+  }
+}
+
+type GeminiEnvelope = {
+  candidates?: unknown
+  promptFeedback?: { blockReason?: unknown }
+  usageMetadata?: unknown
+  responseId?: unknown
+  modelVersion?: unknown
+}
+
+/** Validates the candidate and returns the decoded image, or throws a typed GeminiImageError. */
+async function imageFromEnvelope(envelope: GeminiEnvelope): Promise<Pick<GeminiImageResult, 'bytes' | 'mimeType' | 'width' | 'height'>> {
   const candidates = Array.isArray(envelope.candidates) ? (envelope.candidates as Array<{ content?: { parts?: unknown }; finishReason?: unknown }>) : []
   const blockReason = envelope.promptFeedback && typeof envelope.promptFeedback.blockReason === 'string' ? envelope.promptFeedback.blockReason : null
   if (candidates.length === 0) {
@@ -282,13 +326,5 @@ export async function generateGeminiImage(input: GeminiImageRequest, options: Ge
     throw new GeminiImageError('invalid_image', 'Gemini image dimensions were out of range.')
   }
 
-  return {
-    bytes,
-    mimeType: mime,
-    width,
-    height,
-    responseId: typeof envelope.responseId === 'string' ? envelope.responseId : null,
-    modelVersion: typeof envelope.modelVersion === 'string' ? envelope.modelVersion : null,
-    usage: extractGeminiUsage(envelope.usageMetadata),
-  }
+  return { bytes, mimeType: mime, width, height }
 }

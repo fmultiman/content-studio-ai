@@ -24,6 +24,7 @@ import { providerCredentialUnavailableResponse } from '@/lib/credentials/provide
 import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, ImageSubmissionError } from '@/lib/image-generation/execution'
 import type { ImageGenerationAttemptRow } from '@/lib/image-generation/attempt'
 import { generateGeminiImage, isGeminiImageError, type GeminiImageError } from '@/lib/providers/gemini/image-client'
+import { accountGeminiImageUsage, type GeminiImageUsageContext } from '@/lib/usage/gemini-image-usage'
 import {
   GEMINI_IMAGE_ALIASES,
   GEMINI_IMAGE_DEFAULT_ASPECT_RATIO,
@@ -120,6 +121,21 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       throw new ImageSubmissionError(400, 'PROVIDER_NOT_CONFIGURED', 'API Key do Google Gemini não configurada')
     }
 
+    // FUTURE-064 Slice C: usage accounting identity of this ONE provider execution (the canonical Attempt).
+    const usageContext = (response: Pick<GeminiImageUsageContext, 'providerResponse' | 'rejectedAs' | 'responseId' | 'modelVersion'>): GeminiImageUsageContext => ({
+      userId: input.userId,
+      attemptId: attempt.id,
+      projectId: attempt.project_id,
+      productionId: attempt.production_id,
+      modelAlias: input.model.alias,
+      providerModel: input.model.providerModel,
+      aspectRatio: input.aspectRatio,
+      imageSize: GEMINI_IMAGE_SIZE,
+      funding: execution.executionMode,
+      credentialSource: execution.credentialSource,
+      ...response,
+    })
+
     // Exactly one provider call. A failure closes the Attempt; the user decides whether to submit again.
     let generated: Awaited<ReturnType<typeof generateGeminiImage>>
     try {
@@ -132,9 +148,24 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       })
     } catch (error) {
       if (!isGeminiImageError(error)) throw error
+      // Google answered (2xx) but no image could be kept: account for the usage it reported (or one unknown-usage event).
+      // No response at all (network, timeout, HTTP error, unreadable body) => nothing to account; the Attempt carries outcome_unknown.
+      if (error.received) {
+        await accountGeminiImageUsage(
+          usageContext({ providerResponse: 'received_rejected', rejectedAs: error.kind, responseId: error.received.responseId, modelVersion: error.received.modelVersion }),
+          error.received.usage,
+        )
+      }
       await failImageAttempt(attempt, `Gemini image generation failed (${error.kind})`, error.outcomeUnknown)
       throw submissionFailure(error)
     }
+
+    // The provider answered with a usable image: account for what Google reported BEFORE touching storage, so a storage or
+    // link failure below can never lose the usage of a paid execution. Never throws; never calls the provider again.
+    await accountGeminiImageUsage(
+      usageContext({ providerResponse: 'received', responseId: generated.responseId, modelVersion: generated.modelVersion }),
+      generated.usage,
+    )
 
     // The provider answered. From here a failure means a paid image we could not keep: record it as such.
     let stored: Awaited<ReturnType<typeof uploadImageToS3>>

@@ -44,7 +44,9 @@ export interface UsageMeasurement {
   source: Exclude<MeasurementSource, 'unknown'>
 }
 
-export const USAGE_CATEGORIES = ['thoughts'] as const
+// `image_output` = Gemini IMAGE-modality output tokens; `output_unattributed` = Gemini output tokens reported without a modality
+// breakdown. Both are unit `tokens` on purpose: they are never `output_tokens`, which is priced as ordinary text output.
+export const USAGE_CATEGORIES = ['thoughts', 'image_output', 'output_unattributed'] as const
 export type UsageCategory = (typeof USAGE_CATEGORIES)[number]
 export const USAGE_FUNDING = ['user_byok', 'content_studio_credits'] as const
 export type UsageFunding = (typeof USAGE_FUNDING)[number]
@@ -139,6 +141,7 @@ const OPERATION_LABEL: Record<string, string> = {
   text_to_video: 'Texto → Vídeo',
   image_to_video: 'Imagem → Vídeo',
   image_review: 'Revisão de imagem',
+  image_generation: 'Geração de imagem',
   video_review: 'Revisão de vídeo',
 }
 
@@ -166,6 +169,12 @@ export function formatUsageQuantity(event: Pick<UsageEventView, 'quantity' | 'un
   if (event.quantity === null || event.unit === null) return 'Uso não informado'
   if (event.usage_category === 'thoughts' && event.unit === 'tokens') {
     return `${NUMBER_FORMAT.format(event.quantity)} ${event.quantity === 1 ? 'token de raciocínio' : 'tokens de raciocínio'}`
+  }
+  if (event.usage_category === 'image_output' && event.unit === 'tokens') {
+    return `${NUMBER_FORMAT.format(event.quantity)} ${event.quantity === 1 ? 'token de saída de imagem' : 'tokens de saída de imagem'}`
+  }
+  if (event.usage_category === 'output_unattributed' && event.unit === 'tokens') {
+    return `${NUMBER_FORMAT.format(event.quantity)} ${event.quantity === 1 ? 'token de saída (modalidade não informada)' : 'tokens de saída (modalidade não informada)'}`
   }
   return `${NUMBER_FORMAT.format(event.quantity)} ${unitLabel(event.unit, event.quantity)}`
 }
