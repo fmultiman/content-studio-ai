@@ -136,4 +136,4 @@ export function buildImageModelGroups(input: ImageModelGroupsInput): ImageModelG
 
 /** Concise BYOK cost notice for official Google image generation. Makes no price claim and never states a free tier or $0. */
 export const GEMINI_IMAGE_COST_NOTICE =
-  'Os modelos oficiais do Google usam a sua chave Gemini (BYOK): cada geração de imagem pode gerar cobrança na sua conta Google. O custo estimado ainda não está disponível no Content Studio.'
+  'Os modelos oficiais do Google usam sua chave Gemini (BYOK): cada geração pode gerar cobrança na sua conta Google. Em Uso, o custo estimado inclui os componentes com preço conhecido e pode ser parcial ou indisponível.'

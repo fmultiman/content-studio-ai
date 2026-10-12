@@ -16,7 +16,7 @@
 //       image output tokens   candidatesTokensDetails[IMAGE]  -> unit `tokens`, usage_category `image_output`
 //       text output tokens    candidatesTokensDetails[TEXT]   -> unit `output_tokens`
 //       thinking tokens       thoughtsTokenCount              -> unit `tokens`, usage_category `thoughts`
-//       unattributed output   candidatesTokenCount when Google gave NO modality breakdown
+//       unattributed output   positive candidatesTokenCount minus ALL reported candidate modality counts
 //                              -> unit `tokens`, usage_category `output_unattributed`
 //     IMAGE output tokens are deliberately NOT the `output_tokens` unit: that unit is priced at the ordinary text-output
 //     rate by the cost deriver. A `tokens` row with an image/unattributed category is "not priceable" until Slice D adds
@@ -78,6 +78,10 @@ export type GeminiImageOutputAttribution = 'by_modality' | 'by_modality_incomple
 const sumModality = (details: GeminiModalityTokens[], modality: GeminiModalityTokens['modality']) =>
   details.filter((d) => d.modality === modality).reduce((total, d) => total + d.tokens, 0)
 
+const sumCandidateModalities = (usage: GeminiUsage) => usage.candidateModalityTokens === undefined
+  ? usage.candidatesTokensDetails.reduce((total, d) => total + d.tokens, 0)
+  : usage.candidateModalityTokens
+
 /** How much of the usage Google actually reported (informational; the rows are the truth). */
 export function describeGeminiImageUsage(usage: GeminiUsage | null): { completeness: GeminiImageUsageCompleteness; attribution: GeminiImageOutputAttribution } {
   if (!usage) return { completeness: 'unknown', attribution: 'none' }
@@ -85,8 +89,8 @@ export function describeGeminiImageUsage(usage: GeminiUsage | null): { completen
   const hasOutput = usage.candidatesTokens !== null || details.length > 0
   let attribution: GeminiImageOutputAttribution = 'none'
   if (details.length) {
-    const attributed = details.reduce((total, d) => total + d.tokens, 0)
-    attribution = usage.candidatesTokens !== null && attributed < usage.candidatesTokens ? 'by_modality_incomplete' : 'by_modality'
+    const attributed = sumCandidateModalities(usage)
+    attribution = usage.candidatesTokens !== null && attributed !== usage.candidatesTokens ? 'by_modality_incomplete' : 'by_modality'
   } else if (usage.candidatesTokens !== null) {
     attribution = 'unattributed'
   }
@@ -160,9 +164,14 @@ export function geminiImageUsageEvents(context: GeminiImageUsageContext, usage: 
     // IMAGE output tokens are their own dimension: never the plain output_tokens unit (that is priced as text output).
     if (image > 0) events.push(row('image_output_tokens', 'tokens', image, 'image_output'))
     if (text > 0) events.push(row('text_output_tokens', 'output_tokens', text))
-  } else if (usage?.candidatesTokens != null) {
-    // Google gave a total but no modality breakdown: it is NOT assumed to be image or text.
-    events.push(row('output_unattributed_tokens', 'tokens', usage.candidatesTokens, 'output_unattributed'))
+  }
+  if (usage?.candidatesTokens != null) {
+    const attributed = sumCandidateModalities(usage)
+    // Thoughts are reported separately and are NEVER subtracted from candidates. Missing totals and inconsistent
+    // (over-attributed / unsafe) counts cannot prove a positive remainder: preserve reported rows, invent nothing.
+    if (attributed !== null && Number.isSafeInteger(attributed) && usage.candidatesTokens > attributed) {
+      events.push(row('output_unattributed_tokens', 'tokens', usage.candidatesTokens - attributed, 'output_unattributed'))
+    }
   }
   // Thinking tokens are billed as output but reported separately; kept separate. A reported 0 adds no row.
   if (usage?.thoughtsTokens != null && usage.thoughtsTokens > 0) events.push(row('thoughts_tokens', 'tokens', usage.thoughtsTokens, 'thoughts'))

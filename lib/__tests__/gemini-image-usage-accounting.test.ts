@@ -27,6 +27,7 @@ import { POST } from '@/app/api/gemini/generate-image/route'
 import { GEMINI_IMAGE_GENERATION_FLAG } from '@/lib/providers/gemini/image-feature'
 import { costInputFromRow, deriveProviderUsageCost } from '@/lib/usage/pricing/derive'
 import { createFakeDb, type FakeDb, type Injected, type Row } from './helpers/fake-image-db'
+import { GEMINI_IMAGE_CANARY_USAGE } from './helpers/gemini-image-canary'
 
 const USER = 'user-1'
 const SESSION = '11111111-1111-4111-8111-111111111111'
@@ -80,6 +81,30 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('a successful execution is accounted once, linked to the canonical Attempt', () => {
+  it.each(['success', 'storage failure', 'unusable response'] as const)('exact canary usage survives %s and duplicate Attempt recording', async (outcome) => {
+    fetchSpy.mockImplementation(async () => outcome === 'unusable response'
+      ? json({ usageMetadata: GEMINI_IMAGE_CANARY_USAGE, candidates: [{ content: { parts: [{ text: 'no image' }] } }] })
+      : ok(GEMINI_IMAGE_CANARY_USAGE))
+    if (outcome === 'storage failure') mocks.upload.mockRejectedValue(new Error('S3 down'))
+    const response = await post(body())
+    expect(response.status).toBe(outcome === 'success' ? 200 : outcome === 'storage failure' ? 503 : 502)
+    expect(Object.fromEntries(ledger().map((row) => [String(row.idempotency_key).split(':')[2], row.quantity])))
+      .toEqual({ input_tokens: 29, image_output_tokens: 1120, thoughts_tokens: 868, output_unattributed_tokens: 315 })
+    const before = JSON.stringify(ledger())
+    const { recordGeminiImageUsage } = await import('@/lib/usage/gemini-image-usage')
+    const { extractGeminiUsage } = await import('@/lib/providers/gemini/usage')
+    await recordGeminiImageUsage({
+      userId: USER, attemptId: attempts()[0].id as string, projectId: null, productionId: null,
+      modelAlias: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', aspectRatio: '1:1', imageSize: '1K',
+      funding: 'user_byok', credentialSource: 'user', providerResponse: outcome === 'unusable response' ? 'received_rejected' : 'received',
+    }, extractGeminiUsage(GEMINI_IMAGE_CANARY_USAGE))
+    expect(JSON.stringify(ledger())).toBe(before)
+    await post(body())
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(ledger()).toHaveLength(4)
+    expect(metadataOf().usage_accounting).toMatchObject({ ledger: 'recorded', rows: 4, output_attribution: 'by_modality_incomplete' })
+  })
+
   it('Nano Banana 2.1: input + IMAGE-output rows keyed by the Attempt, official model id, alias in metadata, funding BYOK', async () => {
     const response = await post(body())
     expect(response.status).toBe(200)

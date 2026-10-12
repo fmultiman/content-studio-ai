@@ -21,6 +21,7 @@ describe('extractGeminiUsage', () => {
       promptTokens: 18_432, cachedContentTokens: 1_024, candidatesTokens: 612, thoughtsTokens: 240, toolUsePromptTokens: 7, totalTokens: 19_284,
       promptTokensDetails: [{ modality: 'TEXT', tokens: 432 }, { modality: 'VIDEO', tokens: 17_400 }, { modality: 'AUDIO', tokens: 600 }],
       candidatesTokensDetails: [{ modality: 'TEXT', tokens: 612 }],
+      candidateModalityTokens: 612,
       serviceTier: 'standard',
     })
   })
