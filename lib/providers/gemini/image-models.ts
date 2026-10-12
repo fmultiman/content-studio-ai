@@ -31,11 +31,10 @@ const REGISTRY: ReadonlyArray<GeminiImageModel> = Object.freeze([
 
 export const GEMINI_IMAGE_ALIASES: ReadonlyArray<GeminiImageAlias> = REGISTRY.map((entry) => entry.alias)
 
-// Staged V1: only the model with a successful paid canary is eligible for release.
-// The catalog keeps Lite readable in saved sessions; the global switch must never enable it.
-export const GEMINI_IMAGE_RELEASE_ALIASES: ReadonlyArray<GeminiImageAlias> = Object.freeze(['gemini-nb-2.1'])
+// Owner-approved V1 release: both official models, still bounded by the global switch and Gemini BYOK.
+export const GEMINI_IMAGE_RELEASE_ALIASES: ReadonlyArray<GeminiImageAlias> = Object.freeze(['gemini-nb-2.1', 'gemini-nb-lite'])
 export const GEMINI_IMAGE_MODEL_NOT_RELEASED = 'GEMINI_IMAGE_MODEL_NOT_RELEASED'
-export const GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE = 'Nano Banana 2 Lite ainda não foi liberado para geração de imagem.'
+export const GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE = 'O modelo de imagem selecionado ainda não foi liberado.'
 
 export function isGeminiImageReleasedModel(alias: unknown): boolean {
   return typeof alias === 'string' && (GEMINI_IMAGE_RELEASE_ALIASES as readonly string[]).includes(alias)

@@ -13,7 +13,7 @@
 //   7. ONE Gemini call, no retry         - failures close the Attempt; a retry is a new, explicit request
 //   8. store the bytes, link the output  - a storage/link failure after the provider answered closes the Attempt
 //
-// Usage is captured by the client (`result.usage`) for Slice C and is deliberately not recorded or priced here.
+// Reported usage is recorded before storage; estimated prices and completeness are derived by the Usage page.
 import { NextResponse } from 'next/server'
 import { providerExecutionBlockedResponse, providerExecutionDisabledResponse } from '@/lib/providers/execution-policy-http'
 import { createClient } from '@/lib/supabase/server'
@@ -39,9 +39,7 @@ import {
 } from '@/lib/providers/gemini/image-models'
 import {
   GEMINI_IMAGE_GENERATION_DISABLED_CODE,
-  geminiImageCanaryAllows,
   isGeminiImageGenerationEnabled,
-  parseGeminiImageCanary,
 } from '@/lib/providers/gemini/image-feature'
 
 const MAX_BODY_CHARS = 64 * 1024
@@ -241,12 +239,9 @@ export async function POST(request: Request) {
     if (authError || !user) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
 
     // Release switch: disabled by default. Checked before any durable state and before any credential is read.
-    // Release-gate canary: only while the GLOBAL switch is off, and only for the one verified owner id in a valid, unexpired grant.
-    // Everyone else (and every invalid/expired/absent grant) gets exactly the disabled answer below, before any state or credential.
     const globalEnabled = isGeminiImageGenerationEnabled()
-    const canary = globalEnabled ? null : parseGeminiImageCanary()
     const disabled = () => NextResponse.json({ error: 'A geração de imagens com o Google Gemini ainda não está habilitada.', code: GEMINI_IMAGE_GENERATION_DISABLED_CODE }, { status: 403 })
-    if (!globalEnabled && !(canary && canary.userId === user.id)) return disabled()
+    if (!globalEnabled) return disabled()
     // FUTURE-050: before the Attempt is frozen/claimed and before any credential is read.
     const blocked = providerExecutionBlockedResponse({ provider: GEMINI_IMAGE_PROVIDER, operation: 'image_generation' })
     if (blocked) return blocked
@@ -259,10 +254,7 @@ export async function POST(request: Request) {
       throw error
     }
 
-    // Canary mode: the validated request must be EXACTLY the authorized one (fixed request id, gemini-nb-2.1, 1:1, not expired).
-    if (canary && !geminiImageCanaryAllows(canary, { userId: user.id, clientRequestId: valid.clientRequestId, model: valid.model.alias, aspectRatio: valid.aspectRatio })) return disabled()
-
-    // Before claim, credential lookup or provider execution, even for saved or crafted Lite requests.
+    // Before claim, credential lookup or provider execution, for every approved model.
     if (!isGeminiImageReleasedModel(valid.model.alias)) {
       return NextResponse.json({ error: GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, code: GEMINI_IMAGE_MODEL_NOT_RELEASED }, { status: 403 })
     }

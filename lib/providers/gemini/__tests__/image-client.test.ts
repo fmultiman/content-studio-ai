@@ -88,12 +88,20 @@ describe('Gemini image release switch', () => {
 })
 
 describe('generateGeminiImage — official generateContent contract', () => {
-  it('sends one POST to the model endpoint with the key only in x-goog-api-key and image-only output', async () => {
-    const { fetchImpl, promise } = run(ok(imageBody(png)))
+  it.each(GEMINI_IMAGE_ASPECT_RATIOS)('uses Lite 1K with the supported ratio %s and parses one inline image', async (aspectRatio) => {
+    const { fetchImpl, promise } = run(ok(imageBody(png)), { providerModel: 'gemini-3.1-flash-lite-image', aspectRatio })
+    const result = await promise
+    expect(result.bytes.equals(png)).toBe(true)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string).generationConfig).toEqual({ responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '1K' } })
+  })
+  it.each(['gemini-nano-banana-2.1', 'gemini-3.1-flash-lite-image'])('sends one image-only POST to %s with the key only in x-goog-api-key', async (providerModel) => {
+    const { fetchImpl, promise } = run(ok(imageBody(png)), { providerModel })
     await promise
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1:generateContent')
+    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${providerModel}:generateContent`)
     expect(url).not.toContain(KEY)
     expect(init.method).toBe('POST')
     expect(init.headers).toEqual({ 'x-goog-api-key': KEY, 'content-type': 'application/json' })

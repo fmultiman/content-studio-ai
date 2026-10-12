@@ -270,13 +270,13 @@ describe('credential resolution (existing Gemini BYOK resolver)', () => {
 })
 
 describe('successful generation', () => {
-  it('sends the resolved official model id, persists the image, links the Attempt and returns the contract', async () => {
-    const response = await post(body({ aspectRatio: '16:9' }))
+  it.each([['gemini-nb-2.1', 'gemini-nano-banana-2.1'], ['gemini-nb-lite', 'gemini-3.1-flash-lite-image']])('persists one image and Attempt for %s using the official endpoint', async (model, providerModel) => {
+    const response = await post(body({ model, aspectRatio: '16:9' }))
     const payload = await response.json()
     expect(response.status).toBe(200)
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1:generateContent')
+    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${providerModel}:generateContent`)
     expect(JSON.parse(init.body as string).generationConfig).toEqual({ responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '16:9', imageSize: '1K' } })
 
     expect(mocks.upload).toHaveBeenCalledTimes(1)
@@ -286,27 +286,27 @@ describe('successful generation', () => {
 
     expect(attempts()).toHaveLength(1)
     expect(attempts()[0]).toMatchObject({
-      status: 'succeeded', provider: 'gemini', model: 'gemini-nb-2.1', session_id: SESSION, user_id: USER, client_request_id: REQ,
-      submitted_config: { aspectRatio: '16:9', imageSize: '1K', providerModel: 'gemini-nano-banana-2.1' },
+      status: 'succeeded', provider: 'gemini', model, session_id: SESSION, user_id: USER, client_request_id: REQ,
+      submitted_config: { aspectRatio: '16:9', imageSize: '1K', providerModel },
     })
     expect(images()).toHaveLength(1)
-    expect(images()[0]).toMatchObject({ id: attempts()[0].id, user_id: USER, model: 'gemini-nb-2.1', storage_path: 'users/user-1/images/x/original.png', mime_type: 'image/png' })
+    expect(images()[0]).toMatchObject({ id: attempts()[0].id, user_id: USER, model, storage_path: 'users/user-1/images/x/original.png', mime_type: 'image/png' })
     expect(attempts()[0].result_image_id).toBe(images()[0].id)
     expect(db.tables.image_generation_sessions[0].current_image_id).toBe(images()[0].id)
 
     expect(payload).toMatchObject({
-      provider: 'gemini', model: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', attemptId: attempts()[0].id,
+      provider: 'gemini', model, providerModel, attemptId: attempts()[0].id,
       sessionId: SESSION, replayed: false, imageUrl: 'https://signed.test/original.png', mimeType: 'image/png',
     })
   })
 
-  it('blocks Lite with the global switch ON before any claim, credential read, ledger write or provider call', async () => {
+  it('records reported Lite usage before storing its one image', async () => {
     const response = await post(body({ model: 'gemini-nb-lite' }))
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: 'GEMINI_IMAGE_MODEL_NOT_RELEASED' })
-    expect(mocks.settingsReads).not.toHaveBeenCalled()
-    expect(db.writes).toEqual([])
-    nothingHappened()
+    expect(response.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+    expect(attempts()).toHaveLength(1)
+    expect(db.tables.provider_usage_events.map((row) => row.quantity)).toEqual([5, 1290])
   })
 
   it('defaults the aspect ratio to 1:1 and never invents cost or usage fields', async () => {
@@ -358,8 +358,8 @@ describe('idempotency and one canonical Attempt per request', () => {
   it('a Lite request reusing a succeeded 2.1 request id is blocked without replaying or executing another model', async () => {
     await post(body())
     const response = await post(body({ model: 'gemini-nb-lite' }))
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: 'GEMINI_IMAGE_MODEL_NOT_RELEASED' })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(attempts()).toHaveLength(1)
     expect(images()).toHaveLength(1)

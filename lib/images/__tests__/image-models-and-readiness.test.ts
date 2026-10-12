@@ -29,10 +29,10 @@ const OFF = { available: false, reason: 'release_switch_off' } as const
 const BLOCKED = { available: false, reason: 'environment_blocked' } as const
 
 describe('model catalog', () => {
-  it('release eligibility is a closed subset of the catalog: only Nano Banana 2.1', () => {
-    expect(GEMINI_IMAGE_RELEASE_ALIASES).toEqual(['gemini-nb-2.1'])
+  it('release eligibility is a closed subset of the catalog: both approved official models', () => {
+    expect(GEMINI_IMAGE_RELEASE_ALIASES).toEqual(['gemini-nb-2.1', 'gemini-nb-lite'])
     expect(isGeminiImageReleasedModel('gemini-nb-2.1')).toBe(true)
-    for (const alias of ['gemini-nb-lite', 'gemini-nano-banana-2.1', 'GEMINI-NB-2.1', ' gemini-nb-2.1', '__proto__', null, undefined, {}]) {
+    for (const alias of ['GEMINI-NB-LITE', 'gemini-nano-banana-2.1', 'GEMINI-NB-2.1', ' gemini-nb-2.1', '__proto__', null, undefined, {}]) {
       expect(isGeminiImageReleasedModel(alias)).toBe(false)
     }
   })
@@ -112,12 +112,10 @@ const codeOf = (patch: Partial<ImageReadinessInput>) => {
 }
 
 describe('provider-specific readiness', () => {
-  it('blocks Lite independently of credential readiness when the capability is ON', () => {
-    for (const geminiConfigured of [true, false]) {
-      const result = readiness({ model: 'gemini-nb-lite', geminiConfigured })
-      expect(result).toMatchObject({ ready: false, code: 'gemini_model_not_released' })
-      expect(!result.ready && result.message).toMatch(/Lite ainda não foi liberado/)
-    }
+  it.each(['gemini-nb-2.1', 'gemini-nb-lite'] as const)('requires Gemini BYOK for %s', (model) => {
+    expect(codeOf({ model, geminiConfigured: true })).toBe('ready')
+    expect(codeOf({ model, geminiConfigured: false })).toBe('gemini_not_configured')
+    expect(codeOf({ model, canonicalWorkspace: false })).toBe('gemini_requires_session')
   })
   it('OpenAI depends only on the OpenAI key', () => {
     expect(codeOf({})).toBe('ready')
@@ -136,7 +134,7 @@ describe('provider-specific readiness', () => {
 
   it('Google Gemini needs the capability AND the key AND the canonical workspace', () => {
     expect(codeOf({ model: 'gemini-nb-2.1' })).toBe('ready')
-    expect(codeOf({ model: 'gemini-nb-lite' })).toBe('gemini_model_not_released')
+    expect(codeOf({ model: 'gemini-nb-lite' })).toBe('ready')
     expect(codeOf({ model: 'gemini-nb-2.1', geminiConfigured: false })).toBe('gemini_not_configured')
     expect(codeOf({ model: 'gemini-nb-2.1', canonicalWorkspace: false })).toBe('gemini_requires_session')
   })
@@ -176,10 +174,10 @@ describe('provider-specific readiness', () => {
 describe('selector option groups', () => {
   const find = (groups: ReturnType<typeof buildImageModelGroups>, provider: string) => groups.find((group) => group.provider === provider)
 
-  it('with the capability ON: only the canary-verified Google model is enabled; Lite has a release explanation', () => {
+  it('with the capability ON: both approved Google models are selectable', () => {
     const google = find(buildImageModelGroups({ selectedModel: 'gpt-image-2', nanobananaConfigured: true, gemini: { availability: ON, canonicalWorkspace: true } }), 'gemini')!
-    expect(google.options.map((option) => [option.value, option.disabled])).toEqual([['gemini-nb-2.1', false], ['gemini-nb-lite', true]])
-    expect(google.note).toMatch(/Lite ainda não foi liberado/)
+    expect(google.options.map((option) => [option.value, option.disabled])).toEqual([['gemini-nb-2.1', false], ['gemini-nb-lite', false]])
+    expect(google.note).toBeNull()
     expect(google.label).toBe('Google Gemini (oficial)')
   })
 

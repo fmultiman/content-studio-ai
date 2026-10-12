@@ -112,7 +112,7 @@ export function buildImageModelGroups(input: ImageModelGroupsInput): ImageModelG
     const availability = input.gemini.availability
     const usable = Boolean(availability?.available) && input.gemini.canonicalWorkspace
     const note = usable
-      ? GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE
+      ? null
       : !input.gemini.canonicalWorkspace
         ? 'Disponível no workspace de geração (use “Nova Imagem”).'
         : geminiImageAvailabilityMessage(availability)

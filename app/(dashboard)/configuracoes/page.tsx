@@ -724,7 +724,7 @@ export default function SettingsPage() {
                           <span className="font-medium">{IMAGE_MODEL_LABELS['gemini-nb-lite' as ImageModel]}</span>
                           <p className="text-sm text-muted-foreground">
                             Variante Lite da API oficial do Google (resolução 1K). Usa sua chave Gemini e pode gerar cobrança na sua conta Google.
-                            {' '}{GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE}
+                          {!isGeminiImageReleasedModel('gemini-nb-lite') && <> {GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE}</>}
                           </p>
                         </Label>
                       </div>
