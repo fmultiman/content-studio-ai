@@ -6,7 +6,7 @@ Base verified: `origin/main` = `31eedb2359ab348a9dc9fa165ee218adc17db66b` (2026-
 
 The old image recorder recorded unattributed candidate output only when the modality breakdown was absent. It dropped positive remainders when a partial breakdown existed. The recorder now subtracts **all valid reported candidate modality counts** from `candidatesTokenCount`, recording a positive remainder as `tokens` / `output_unattributed` with the existing `gemini_image:{attemptId}:output_unattributed_tokens` key.
 
-`thoughtsTokenCount` remains separate. Mixed TEXT and IMAGE counts are subtracted once. The parser counts all candidate entries (including recognized modalities other than TEXT/IMAGE and numerical counts for unrecognized modalities), without copying unrecognized strings to ledger metadata. Only known IMAGE/TEXT modalities produce attributed rows. Valid modality-only metadata remains usable when the candidate total is absent. Malformed counts are not measurements; missing totals, over-attributed totals and unsafe sums produce no invented remainder, negative row or clamped quantity. Reported modality rows remain as reported. Existing atomic upsert / unique idempotency key and Attempt replay contracts are preserved.
+`thoughtsTokenCount` remains separate. Mixed TEXT and IMAGE counts are subtracted once. The parser counts all candidate entries (including recognized modalities other than TEXT/IMAGE and numerical counts for unrecognized modalities), without copying unrecognized strings to ledger metadata. Only known IMAGE/TEXT modalities produce attributed rows. The numeric all-modality sum (including null overflow state) is preserved in ledger descriptors and the failed-ledger Attempt recovery snapshot; round-trip tests prove recovery cannot misclassify unknown-modality tokens as an unattributed remainder. Valid modality-only metadata remains usable when the candidate total is absent. Malformed counts are not measurements; missing totals, over-attributed totals and unsafe sums produce no invented remainder, negative row or clamped quantity. Safe reported modality sums remain as reported. Existing atomic upsert / unique idempotency key and Attempt replay contracts are preserved.
 
 No pricing or aggregate implementation change is needed: `output_unattributed` already returns `unavailable` / `output_modality_unattributed`, without amount, and the existing aggregate marks any unpriced row incomplete.
 
@@ -46,4 +46,22 @@ Executed [read-only dry-run SQL](sql/FUTURE_064_CANARY_accounting_dry_run.sql):
 
 Exact fixture regression covers the 315-token remainder, complete/partial IMAGE, mixed TEXT+IMAGE, other modalities, no breakdown/total, malformed/inconsistent metadata and safe-integer overflow. Route regression preserves all four canary rows on success, failed storage and unusable responses, and proves duplicate recorder / request replay writes no additional rows or provider call. Pricing tests exercise the existing real reviewed registry; reconciliation tests use isolated PGlite with the real ledger schema and verify dry-run nonmutation, one-row scope, timestamp preservation, repeat no-op, conflicts and missing metadata.
 
-Typecheck, lint, focused tests, full suite, build, independent review, PR checks and merged Production READY verification: pending at time of this draft; completion evidence will be recorded below. Zero real provider requests. No credentials, Vercel variables, Production SQL or prices modified.
+| Verification | Result |
+|---|---|
+| Typecheck (`tsc --noEmit -p tsconfig.typecheck.json`) | PASS on final code |
+| Lint (`eslint .`) | PASS: 0 errors, 62 existing warnings; follow-up files also lint clean |
+| Initial focused regressions | 6 files / 190 tests PASS |
+| Final accounting/parser/pricing/reconciliation regressions | 6 files / 130 tests PASS |
+| Workspace, partial/complete cost presentation, reconciliation | 3 files / 60 tests PASS |
+| Other-provider regression | OpenAI, NanoBanana, route convergence and legacy cost matrix PASS |
+| Full suite (`vitest run --pool=forks --maxWorkers=2`) | Completed: **312 files / 6020 tests PASS; 3 failures; 68 skipped** |
+| Full-suite failures | Two `Estilo` vs `Estilos` baseline expectations, reproduced on detached `31eedb2`; unrelated video autosave conflict test intermittent under the suite, passes isolated on the final branch and in the baseline's full file (13 tests) |
+| Local build | Default Turbopack blocked by the external node_modules junction; webpack compiled successfully, then failed on the documented pre-existing Next generated-type restriction for `ImagesPageShell` exported from `/imagens/page.tsx` (file unchanged) |
+| Independent review | Both findings resolved; no remaining actionable findings. Reviewer independently passed 2 files / 33 tests |
+| PR | [#187](https://github.com/fmultiman/content-studio-ai/pull/187), focused fix + regression/evidence only |
+
+The first full-suite threads run hit the previously observed native runner crash (exit 139); the full forks rerun completed. Load-induced credential scan failures from the first run passed in isolation and in the completed full rerun. The unrelated video/label failures and local build restriction are disclosed; they are not claimed green. The pnpm wrapper tried a dependency refresh, which was refused without a TTY, so verification invoked the already installed script executables directly; dependencies/configuration were not changed.
+
+Vercel and Vercel Preview Comments checks both passed for code head `55713d21ed0c35b460bd964c8047c367a1dff9c0`. The final documentation commit must also pass these checks before merge. Merged Production deployment and post-release evidence are recorded in the epic delivery artifact, after merge.
+
+Pre-release read-only checks: Production deployment of `31eedb2` READY; `/api/settings/providers` reports `{ available: false, reason: "release_switch_off" }`; `vercel env ls production` lists neither Gemini image release nor canary variable. No Production variable was modified. CLI linking created an ephemeral local OIDC `.env.local`; it was removed without reading its contents. No provider credentials were retrieved or modified, no prices or Production SQL were changed, and zero real provider requests were made. The reconciliation script remains unexecuted.
