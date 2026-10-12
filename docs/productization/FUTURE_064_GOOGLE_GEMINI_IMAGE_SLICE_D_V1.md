@@ -1,6 +1,6 @@
 # FUTURE-064 Slice D — Image-output pricing: cost-derivation implementation
 
-Status: **code implemented and deployable against today's Production registry. The reviewed SQL (`docs/productization/sql/FUTURE_064_SLICE_D_image_output_pricing.{up,down}.sql`) is NOT applied, no price was seeded in Production, the Gemini image switch is OFF, no Vercel setting, credential or paid call was touched.**
+Status: **code merged (PR #183, `7e36cf5`) AND the reviewed up SQL APPLIED TO PRODUCTION on 2026-10-12 06:50:09 UTC (migration `20261012065009`, `064_future_064_slice_d_image_output_pricing`) — see "Production execution evidence" at the end of this document. The Gemini image switch is OFF; no Vercel setting, credential or paid call was touched.** (The sections below describe the code change as it was delivered, before the SQL application; the "NOT applied" wording in the `.sql` file header is the historical state of the reviewed artifact, which is intentionally unmodified.)
 Canonical design: `FUTURE_064_GOOGLE_GEMINI_IMAGE_SLICE_D_DESIGN_V1.md` (merged `6a1f638`). Approved decisions: D1 tier fallback as specified below, D2 `effective_from = 2026-10-12` (Production application time is recorded separately in execution evidence and prices are re-checked against the live Google page before applying), D3 aggregate-level partial label only, `output_unattributed` stays UNPRICED.
 
 ## What changed
@@ -70,3 +70,56 @@ Owner/operator, in this order (nothing below has been done):
 3. Apply `FUTURE_064_SLICE_D_image_output_pricing.up.sql` as the table owner in one run; verify 28 rows, the widened constraint and the six rows; keep the rollback file ready.
 4. Record the application as execution evidence (docs PR).
 5. Only then plan the FUTURE-064 release gate (authorized single-image smoke, then — with explicit approval — the switch).
+
+
+---
+
+## Production execution evidence (2026-10-12)
+
+Authorized by the owner. Target: Supabase project `nuhdhnasuohizxtmyiju`. The only database change is the reviewed up SQL; no image was generated, no paid call was made, no credential or Vercel variable was changed, and the Gemini image switch was not touched.
+
+**Timestamps (UTC):** pre-state verified `2026-10-12 06:49:20`; migration executed `2026-10-12 06:50:09` (rows `created_at` `06:50:09.9076`); post-state verified `2026-10-12 06:50:16`. These are the *application* times; the price `effective_from` stays `2026-10-12T00:00:00Z` (D2) and `retrieved_at` `2026-10-12T04:05:00Z`.
+
+**1. Application preconditions.** Production app deployment = `7e36cf5` (Slice D cost-derivation code), `Production` deployment status `success` (created 2026-10-12 06:17:57Z); `origin/main` = `7e36cf5`.
+
+**2. SQL used.** Exactly `docs/productization/sql/FUTURE_064_SLICE_D_image_output_pricing.up.sql` as merged in `7e36cf5` (SHA-256 `5b8003f8081745fe2837976edec58ca52fbc52032c74ff6b10c67287243420fb`, 14,706 bytes; the rollback file `…down.sql` SHA-256 `5aa6d7a993de93445b0f033f13ca46bb9c56ce7c5b26e21eb8427d9ee745d16d` was ready and not run). Applied transactionally through the Supabase migration mechanism (`apply_migration`) as migration **`064_future_064_slice_d_image_output_pricing`**, recorded as version **`20261012065009`**. The SQL's own guard and verification blocks ran inside the same transaction and passed (a failure would have rolled everything back); the call returned `success: true`.
+
+**3. Pre-state (read-only, immediately before):**
+
+| Check | Result |
+|---|---|
+| `provider_pricing_versions` rows | 22 |
+| digest `md5(string_agg(t::text,'\|' ORDER BY id))` | `6b65ae838be0bfd1046bfcd7f064b1f1` (as expected) |
+| category constraint | `CHECK ((usage_category = ANY (ARRAY['input','cached_input','output','unit'])))` (original four categories) |
+| `image_output` rows / rows for the two V1 models | 0 / 0 |
+| RLS / policies / ACL | on / 1 / `{postgres=arwdDxtm/postgres,authenticated=r/postgres,service_role=r/postgres}` |
+| image-generation usage rows | 0 |
+| latest recorded migration | `20261011162816` (063) |
+
+**4. Google prices re-checked (drift = none).** Two independent extractions of <https://ai.google.dev/gemini-api/docs/pricing> ("Last updated 2026-10-09 UTC") on 2026-10-12 ~06:49 UTC: Standard paid tier per 1M tokens — Nano Banana 2.1 (`gemini-nano-banana-2.1`): input 1.50, text/thinking output 7.50, image output 30.00; Nano Banana 2 Lite (`gemini-3.1-flash-lite-image`): input 0.25, text/thinking output 1.50, image output 30.00; 1K image = 1,120 tokens = $0.0336 for both; no Flex, Priority, free tier or context caching shown for either model; Batch exists (2.1: 0.75 / 3.75 / 15.00; Lite: 0.125 / 0.75 / 15.00) and was not used. Identical to the SQL. (The page is read through a summarizing fetch tool; both extractions agreed.)
+
+**5. Post-state (read-only, immediately after):**
+
+| Check | Result |
+|---|---|
+| total rows | **28** |
+| rows for the two V1 models | **6** |
+| `image_output` rows | **2** (one per model) |
+| original rows preserved | **22**, digest **`6b65ae838be0bfd1046bfcd7f064b1f1` (identical to the pre-state)** |
+| category constraint | `CHECK ((usage_category = ANY (ARRAY['input','cached_input','output','image_output','unit'])))` |
+| RLS / policies / ACL / triggers | on / 1 / unchanged ACL / 1 (overlap trigger) |
+| image-generation usage rows / Gemini Attempts | 0 / 0 |
+| `list_migrations` | `20261012065009 — 064_future_064_slice_d_image_output_pricing` present |
+
+The six rows (all `gemini`, tier `standard`, `USD`, `tokens`, `unit_quantity 1,000,000`, `effective_from 2026-10-12 00:00:00+00`, `effective_to NULL`, basis `observed_at_source`, source `https://ai.google.dev/gemini-api/docs/pricing`, `retrieved_at 2026-10-12 04:05:00+00`):
+
+| Model | `input` | `output` (text & thinking) | `image_output` |
+|---|---|---|---|
+| `gemini-nano-banana-2.1` | 1.500000000000 | 7.500000000000 | 30.000000000000 |
+| `gemini-3.1-flash-lite-image` | 0.250000000000 | 1.500000000000 | 30.000000000000 |
+
+**6. Application behaviour after the migration (authenticated, read-only probes):** `GET /api/settings/usage` → 200 with the same 26 events and the same cost statuses as before (7 estimated, 8 ambiguous, 11 unavailable; no event uses the new models, so nothing re-priced); `GET /api/settings/providers` → `imageGeneration.gemini = { available: false, reason: "release_switch_off" }`; `POST /api/gemini/generate-image` → **403 `GEMINI_IMAGE_GENERATION_DISABLED`**. Zero Gemini image Attempts, images or usage rows exist. The release switch `CONTENT_STUDIO_GEMINI_IMAGE_GENERATION` was neither read nor modified.
+
+**7. Rollback readiness.** `…down.sql` (reviewed, PGlite-proven) restores the exact 22-row state only while the six rows are still byte-for-byte as seeded; it was not needed.
+
+**8. Next.** The pricing prerequisites of the FUTURE-064 release gate are now in place (code `7e36cf5` + registry `20261012065009`). Remaining before generation can be enabled: plan and run the release gate — one explicitly authorized single-image smoke (confirm `usageMetadata` reports the IMAGE modality / service tier and that the ledger rows price to USD 0.0336 for 1,120 image tokens), then, only with explicit approval, enabling the switch.
