@@ -97,13 +97,30 @@ export function VideoGenerationForm({
     [connection, selection.operation],
   )
 
-  if (connections.length === 0 || !connection) {
+  if (!connection || !selection.operation || !model || operationChoices.length === 0) {
     return (
       <fieldset disabled={disabled} className="w-full min-w-0 space-y-2">
         {header}
+        {connections.length > 0 && (
+          <div className="space-y-2">
+            <Label htmlFor="video-unavailable-connection">Conexão de geração</Label>
+            <Select value={selection.connectionRef ?? undefined} onValueChange={(connectionRef) => onSelectionChange({ connectionRef })}>
+              <SelectTrigger id="video-unavailable-connection" data-testid="video-unavailable-connection-select">
+                <SelectValue placeholder="Escolha uma conexão" />
+              </SelectTrigger>
+              <SelectContent>
+                {connections.map((entry) => (
+                  <SelectItem key={entry.ref} value={entry.ref}>
+                    {connectionDisplayName(entry)} ({transportBadge(entry.transport)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <Label htmlFor="video-working-prompt">Prompt</Label>
         <Textarea id="video-working-prompt" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="Escreva seu prompt enquanto configura uma conexão Kling." className="min-h-[140px]" />
-        <p className="text-xs text-muted-foreground" role="status">Configure uma conexão Kling em Configurações para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
+        <p className="text-xs text-muted-foreground" role="status">{connections.length === 0 ? 'Configure uma conexão Kling em Configurações' : 'Selecione uma conexão Kling com capacidades disponíveis'} para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
       </fieldset>
     )
   }

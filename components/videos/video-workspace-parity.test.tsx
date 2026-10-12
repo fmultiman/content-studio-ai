@@ -245,6 +245,25 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
   })
 
+  it('keeps an expired MCP draft editable and lets the user explicitly recover through REST without generation', async () => {
+    const rest = connections[0]
+    const expired = { ...rest, ref: 'kling:account:00000000-0000-4000-8000-000000000099', transport: 'mcp' as const, connectionMethod: 'mcp_oauth' as const,
+      label: 'Minha conta Kling', funding: 'kling_web_credits' as const, canGenerate: false, capabilitiesFreshness: 'stale' as const, operations: [] }
+    connections = [rest, expired]
+    state.selection.connectionRef = expired.ref
+    mount(); await screen.findByDisplayValue('Authored manual prompt')
+    expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('workflow-mode-automatic').hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Preserved expired-connection draft' } })
+    await waitFor(() => expect(state.prompt).toBe('Preserved expired-connection draft'), { timeout: 3000 })
+    fireEvent.pointerDown(screen.getByTestId('video-unavailable-connection-select'), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(await screen.findByRole('option', { name: 'Kling API (API)' }))
+    await screen.findByTestId('video-model-select')
+    expect((screen.getByLabelText('Motion Prompt (Dicas de animação)') as HTMLTextAreaElement).value).toBe('Preserved expired-connection draft')
+    expect(screen.getByTestId('video-connection-option-api').getAttribute('aria-checked')).toBe('true')
+    expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
+  })
+
   it.each(['description saved first', 'prompt saved first'])('new-session URL normalization preserves an explicitly started Automatic run (%s)', async (order) => {
     exists = false; state.prompt = ''
     search = `new=1&project=${PROJECT}&production=${PRODUCTION}`
