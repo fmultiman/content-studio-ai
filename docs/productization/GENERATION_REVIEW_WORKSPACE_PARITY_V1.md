@@ -28,6 +28,6 @@ A assistência I2V recebe somente texto e não inspeciona a imagem. O Video Revi
 
 ## Validação
 
-Regressões mockadas: 423 testes de contratos/autorização/persistência/Kling/custos, 41 jornadas de vídeo, 127 regressões de Imagens/Review e 64 contratos/gates/contabilização dos engines de Review: **655 testes aprovados**. Typecheck e lint verificados antes do merge; o check Vercel valida o build do commit final. A revisão independente corrigiu os cenários de cancelamento durante save, normalização da URL na criação e recuperação de submissão incerta.
+Regressões mockadas: 423 testes de contratos/autorização/persistência/Kling/custos, 42 jornadas de vídeo, 127 regressões de Imagens/Review e 64 contratos/gates/contabilização dos engines de Review: **656 testes aprovados**. O editor manual permanece disponível mesmo sem conexão Kling, com geração bloqueada. Typecheck e lint verificados antes do merge; o check Vercel valida o build do commit final. A revisão independente corrigiu os cenários de cancelamento durante save, normalização da URL na criação e recuperação de submissão incerta.
 
 PR, merge SHA, deployment Production READY e inspeção responsiva sem cobrança serão registrados no fechamento da entrega, após a verificação do deployment final.

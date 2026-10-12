@@ -236,6 +236,15 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
   })
 
+  it('without a Kling connection the manual prompt remains editable and saved, with generation blocked', async () => {
+    connections = []
+    mount(); await screen.findByDisplayValue('Authored manual prompt')
+    expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Draft before configuring Kling' } })
+    await waitFor(() => expect(state.prompt).toBe('Draft before configuring Kling'), { timeout: 3000 })
+    expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
+  })
+
   it.each(['description saved first', 'prompt saved first'])('new-session URL normalization preserves an explicitly started Automatic run (%s)', async (order) => {
     exists = false; state.prompt = ''
     search = `new=1&project=${PROJECT}&production=${PRODUCTION}`
