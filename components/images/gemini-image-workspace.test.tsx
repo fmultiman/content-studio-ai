@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Component, type ReactNode } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ImagesPageShell } from '@/app/(dashboard)/imagens/page'
 import { GenerationSessionNavigationProvider } from '@/components/generation-session/session-navigation-guard'
 import { installBrowserFaithfulTimers } from '@/lib/generation-session/__tests__/browser-timers'
@@ -347,17 +347,17 @@ describe('release switch ON (mocked): the Google path', () => {
     expect(screen.queryByTestId('error-boundary')).toBeNull()
   })
 
-  it('preserves the EXACT selected model: Nano Banana 2 Lite is sent as gemini-nb-lite, never the other alias or an official id', async () => {
+  it('preserves a saved Lite model but blocks manual generation even with the release switch ON', async () => {
     mount({ availability: ON, selectedModel: 'gemini-nb-lite' })
     await manualWithPrompt()
-    await clickCreate()
-    await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-    expect(server.geminiCalls()[0].body.model).toBe('gemini-nb-lite')
-    server.replyGemini(0, 200, geminiOk(server.nextImageId(), 'gemini-nb-lite', 'gemini-3.1-flash-lite-image'))
-    await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
-    // the Session keeps the alias (autosave never rewrites it to another model)
+    fireEvent.click(createImageButton())
+    expect(createImageButton().disabled).toBe(true)
+    expect(screen.getByTestId('create-disabled-reason').textContent).toMatch(/Lite ainda não foi liberado/)
+    expect(server.geminiCalls()).toHaveLength(0)
+    expect(server.openaiCalls()).toHaveLength(0)
+    expect(server.nanoCalls()).toHaveLength(0)
+    expect(modelTrigger().textContent).toMatch(/Nano Banana 2 Lite/)
     const saved = server.patches().map((patch) => patch.body.workingState.selectedModel)
-    expect(saved.length).toBeGreaterThan(0)
     expect(saved.every((model: string) => model === 'gemini-nb-lite')).toBe(true)
   })
 
@@ -378,14 +378,16 @@ describe('release switch ON (mocked): the Google path', () => {
     await ready()
     expect(screen.queryByTestId('google-cost-notice')).toBeNull()
     await openModelSelect()
-    const option = screen.getByRole('option', { name: 'Google Gemini — Nano Banana 2 Lite (oficial)' })
+    const lite = screen.getByRole('option', { name: 'Google Gemini — Nano Banana 2 Lite (oficial)' })
+    expect(lite.getAttribute('aria-disabled')).toBe('true')
+    const option = screen.getByRole('option', { name: 'Google Gemini — Nano Banana 2.1 (oficial)' })
     expect(option.getAttribute('aria-disabled')).not.toBe('true')
     fireEvent.pointerUp(option, { button: 0, pointerType: 'mouse' })
     fireEvent.click(option)
-    await waitFor(() => expect(modelTrigger().textContent).toMatch(/Nano Banana 2 Lite/))
+    await waitFor(() => expect(modelTrigger().textContent).toMatch(/Nano Banana 2.1/))
     expect(screen.getByTestId('google-cost-notice').textContent).not.toMatch(/gr[aá]tis|free|\$\s?0|R\$\s?0/i)
     expect(server.geminiCalls()).toHaveLength(0) // selecting is never generating
-    expect(screen.queryByTestId('google-model-note')).toBeNull()
+    expect(screen.getByTestId('google-model-note').textContent).toMatch(/Lite ainda não foi liberado/)
   })
 
   it('a disabled Google option cannot be selected when the switch is OFF', async () => {
@@ -553,13 +555,56 @@ describe('ASSISTED with a Google model: suggestions never generate media', () =>
 })
 
 describe('AUTOMATIC with a Google model: one click, one text call, one image attempt', () => {
-  it('runs description -> /api/prompt-assistance (independent text model) -> the exact prompt -> ONE Google submission using the run id', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-lite' })
+  it.each(['network', 'in_progress'] as const)('preserves the request id after an Automatic %s outcome for explicit image-only recovery', async (outcome) => {
+    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
     await selectAutomatic()
-    expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/Nano Banana 2 Lite \(oficial\)/)
+    if (outcome === 'network') {
+      const original = server.fetchMock.getMockImplementation()!
+      server.fetchMock.mockImplementation((input: unknown, init?: RequestInit) =>
+        String(input) === '/api/gemini/generate-image' && !server.geminiCalls().length
+          ? (original(input, init), Promise.reject(new TypeError('network down')))
+          : original(input, init))
+    }
+    fireEvent.click(startButton())
+    await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
+    server.replyAssistance(0, 200, assistanceOk())
+    await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
+    if (outcome === 'in_progress') server.replyGemini(0, 200, { attemptId: 'a1', status: 'submitted', replayed: true })
+    const failed = await screen.findByTestId('automatic-run-image-failed')
+    expect(server.geminiCalls()).toHaveLength(1)
+    fireEvent.click(within(failed).getByTestId('automatic-run-retry-image'))
+    await waitFor(() => expect(server.geminiCalls()).toHaveLength(2))
+    expect(server.geminiCalls()[1].body.clientRequestId).toBe(server.geminiCalls()[0].body.clientRequestId)
+    expect(server.geminiCalls()[1].body.prompt).toBe(GENERATED)
+    expect(server.assistanceCalls()).toHaveLength(1)
+    server.replyGemini(1, 200, { ...geminiOk(server.nextImageId()), status: 'succeeded', replayed: true })
+    await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
+  })
+
+  it('manual recovery of an Automatic in-progress response also retains the same id', async () => {
+    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+    await selectAutomatic()
+    fireEvent.click(startButton())
+    await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
+    server.replyAssistance(0, 200, assistanceOk())
+    await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
+    server.replyGemini(0, 200, { attemptId: 'a1', status: 'submitted', replayed: true })
+    await screen.findByTestId('automatic-run-image-failed')
+    fireEvent.click(modeButton('manual'))
+    await clickCreate()
+    await waitFor(() => expect(server.geminiCalls()).toHaveLength(2))
+    expect(server.geminiCalls()[1].body.clientRequestId).toBe(server.geminiCalls()[0].body.clientRequestId)
+    expect(server.assistanceCalls()).toHaveLength(1)
+  })
+  it('runs description -> /api/prompt-assistance (independent text model) -> the exact prompt -> ONE Google submission using the run id', async () => {
+    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+    await selectAutomatic()
+    expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/Nano Banana 2.1 \(oficial\)/)
     expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/cobrança na sua conta Google/)
     expect(server.assistanceCalls()).toHaveLength(0)
-    fireEvent.click(startButton())
+    const start = startButton()
+    fireEvent.click(start)
+    fireEvent.click(start) // synchronous double-click lock; one explicit run
 
     await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
     // The text assistance model is configured independently of the Gemini IMAGE model.
@@ -567,12 +612,24 @@ describe('AUTOMATIC with a Google model: one click, one text call, one image att
     expect(server.geminiCalls()).toHaveLength(0)
     server.replyAssistance(0, 200, assistanceOk())
     await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model: 'gemini-nb-lite', aspectRatio: '1:1', sessionId: SESSION_ID })
+    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model: 'gemini-nb-2.1', aspectRatio: '1:1', sessionId: SESSION_ID })
     expect(Object.keys(server.geminiCalls()[0].body).sort()).toEqual(['aspectRatio', 'clientRequestId', 'model', 'prompt', 'sessionId'])
-    server.replyGemini(0, 200, geminiOk(server.nextImageId(), 'gemini-nb-lite', 'gemini-3.1-flash-lite-image'))
+    server.replyGemini(0, 200, geminiOk(server.nextImageId()))
     await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
     expect(server.assistanceCalls()).toHaveLength(1)
     expect(server.geminiCalls()).toHaveLength(1)
+    expect(server.openaiCalls()).toHaveLength(0)
+    expect(server.nanoCalls()).toHaveLength(0)
+  })
+
+  it('blocks Automatic for a saved Lite model before either the text or image request', async () => {
+    mount({ availability: ON, selectedModel: 'gemini-nb-lite' })
+    await selectAutomatic()
+    expect(startButton().disabled).toBe(true)
+    expect(screen.getByTestId('automatic-run-disabled-reason').textContent).toMatch(/Lite ainda não foi liberado/)
+    fireEvent.click(startButton())
+    expect(server.assistanceCalls()).toHaveLength(0)
+    expect(server.geminiCalls()).toHaveLength(0)
     expect(server.openaiCalls()).toHaveLength(0)
     expect(server.nanoCalls()).toHaveLength(0)
   })

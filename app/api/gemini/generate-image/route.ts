@@ -27,10 +27,13 @@ import { generateGeminiImage, isGeminiImageError, type GeminiImageError } from '
 import { accountGeminiImageUsage, type GeminiImageUsageContext } from '@/lib/usage/gemini-image-usage'
 import {
   GEMINI_IMAGE_ALIASES,
+  GEMINI_IMAGE_MODEL_NOT_RELEASED,
+  GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE,
   GEMINI_IMAGE_DEFAULT_ASPECT_RATIO,
   GEMINI_IMAGE_PROVIDER,
   GEMINI_IMAGE_SIZE,
   isGeminiImageAspectRatio,
+  isGeminiImageReleasedModel,
   resolveGeminiImageModel,
   type GeminiImageModel,
 } from '@/lib/providers/gemini/image-models'
@@ -258,6 +261,11 @@ export async function POST(request: Request) {
 
     // Canary mode: the validated request must be EXACTLY the authorized one (fixed request id, gemini-nb-2.1, 1:1, not expired).
     if (canary && !geminiImageCanaryAllows(canary, { userId: user.id, clientRequestId: valid.clientRequestId, model: valid.model.alias, aspectRatio: valid.aspectRatio })) return disabled()
+
+    // Before claim, credential lookup or provider execution, even for saved or crafted Lite requests.
+    if (!isGeminiImageReleasedModel(valid.model.alias)) {
+      return NextResponse.json({ error: GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, code: GEMINI_IMAGE_MODEL_NOT_RELEASED }, { status: 403 })
+    }
 
     try {
       return NextResponse.json(await runCanonicalGemini({ ...valid, supabase, userId: user.id }))

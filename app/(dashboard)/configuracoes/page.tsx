@@ -1,6 +1,6 @@
 'use client'
 
-import { IMAGE_MODEL_LABELS, parseImageModel, type ImageModel } from '@/lib/images/image-models'
+import { IMAGE_MODEL_LABELS, parseImageModel, GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, isGeminiImageReleasedModel, type ImageModel } from '@/lib/images/image-models'
 import { geminiImageAvailabilityMessage, parseGeminiImageAvailability, type GeminiImageAvailability } from '@/lib/images/gemini-availability'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -718,12 +718,13 @@ export default function SettingsPage() {
                         <RadioGroupItem
                           value="gemini-nb-lite"
                           id="model-gemini-nb-lite"
-                          disabled={!geminiImageAvailability?.available && settings.default_image_model !== 'gemini-nb-lite'}
+                          disabled={(!geminiImageAvailability?.available || !isGeminiImageReleasedModel('gemini-nb-lite')) && settings.default_image_model !== 'gemini-nb-lite'}
                         />
                         <Label htmlFor="model-gemini-nb-lite" className="flex-1 cursor-pointer">
                           <span className="font-medium">{IMAGE_MODEL_LABELS['gemini-nb-lite' as ImageModel]}</span>
                           <p className="text-sm text-muted-foreground">
                             Variante Lite da API oficial do Google (resolução 1K). Usa sua chave Gemini e pode gerar cobrança na sua conta Google.
+                            {' '}{GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE}
                           </p>
                         </Label>
                       </div>

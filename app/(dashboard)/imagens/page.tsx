@@ -1139,8 +1139,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (result.ok) {
       setAutomaticRun({ stage: 'idle' })
     } else {
-      // A failed submission is retried only by a NEW explicit user action, which gets a NEW request id.
-      imageClientRequestIdRef.current = crypto.randomUUID()
+      // Gemini owns its request identity: an unknown outcome/in-progress replay keeps the id,
+      // while a definitive response already rotates it. Do not turn recovery into another paid execution.
+      if (!isGeminiImageModel(model)) imageClientRequestIdRef.current = crypto.randomUUID()
       setAutomaticRun({ stage: 'image_failed', message: result.message })
     }
   }
@@ -1239,7 +1240,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (automaticRunRef.current) return
     const prompt = generatedPrompt.trim()
     if (!prompt) return
-    const run: AutomaticRunHandle = { id: crypto.randomUUID(), controller: new AbortController(), cancelled: false }
+    const run: AutomaticRunHandle = {
+      id: isGeminiImageModel(selectedModel) ? imageClientRequestIdRef.current : crypto.randomUUID(),
+      controller: new AbortController(), cancelled: false,
+    }
     automaticRunRef.current = run
     try {
       await runAutomaticImageStage(run, selectedModel, prompt)

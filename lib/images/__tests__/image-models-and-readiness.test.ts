@@ -19,7 +19,7 @@ import {
 } from '@/lib/images/image-readiness'
 import { geminiImageAvailabilityMessage, parseGeminiImageAvailability } from '@/lib/images/gemini-availability'
 import { describeGeminiImageFailure, interpretGeminiReplay } from '@/lib/images/gemini-image-errors'
-import { GEMINI_IMAGE_ALIASES, resolveGeminiImageModel } from '@/lib/providers/gemini/image-models'
+import { GEMINI_IMAGE_ALIASES, GEMINI_IMAGE_RELEASE_ALIASES, isGeminiImageReleasedModel, resolveGeminiImageModel } from '@/lib/providers/gemini/image-models'
 import { describeGeminiImageAvailability, GEMINI_IMAGE_GENERATION_FLAG } from '@/lib/providers/gemini/image-feature'
 
 // FUTURE-064 Slice B — pure logic behind the /imagens and Settings integration. No network, no DOM.
@@ -29,6 +29,13 @@ const OFF = { available: false, reason: 'release_switch_off' } as const
 const BLOCKED = { available: false, reason: 'environment_blocked' } as const
 
 describe('model catalog', () => {
+  it('release eligibility is a closed subset of the catalog: only Nano Banana 2.1', () => {
+    expect(GEMINI_IMAGE_RELEASE_ALIASES).toEqual(['gemini-nb-2.1'])
+    expect(isGeminiImageReleasedModel('gemini-nb-2.1')).toBe(true)
+    for (const alias of ['gemini-nb-lite', 'gemini-nano-banana-2.1', 'GEMINI-NB-2.1', ' gemini-nb-2.1', '__proto__', null, undefined, {}]) {
+      expect(isGeminiImageReleasedModel(alias)).toBe(false)
+    }
+  })
   it('lists the OpenAI models, the two approved Google aliases and the legacy third-party models, and nothing else', () => {
     expect([...ALL_IMAGE_MODELS]).toEqual(['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'gemini-nb-2.1', 'gemini-nb-lite', 'nanobanana-v1', 'nanobanana-v2'])
   })
@@ -105,6 +112,13 @@ const codeOf = (patch: Partial<ImageReadinessInput>) => {
 }
 
 describe('provider-specific readiness', () => {
+  it('blocks Lite independently of credential readiness when the capability is ON', () => {
+    for (const geminiConfigured of [true, false]) {
+      const result = readiness({ model: 'gemini-nb-lite', geminiConfigured })
+      expect(result).toMatchObject({ ready: false, code: 'gemini_model_not_released' })
+      expect(!result.ready && result.message).toMatch(/Lite ainda não foi liberado/)
+    }
+  })
   it('OpenAI depends only on the OpenAI key', () => {
     expect(codeOf({})).toBe('ready')
     expect(codeOf({ openaiConfigured: false })).toBe('openai_not_configured')
@@ -122,7 +136,7 @@ describe('provider-specific readiness', () => {
 
   it('Google Gemini needs the capability AND the key AND the canonical workspace', () => {
     expect(codeOf({ model: 'gemini-nb-2.1' })).toBe('ready')
-    expect(codeOf({ model: 'gemini-nb-lite' })).toBe('ready')
+    expect(codeOf({ model: 'gemini-nb-lite' })).toBe('gemini_model_not_released')
     expect(codeOf({ model: 'gemini-nb-2.1', geminiConfigured: false })).toBe('gemini_not_configured')
     expect(codeOf({ model: 'gemini-nb-2.1', canonicalWorkspace: false })).toBe('gemini_requires_session')
   })
@@ -162,10 +176,10 @@ describe('provider-specific readiness', () => {
 describe('selector option groups', () => {
   const find = (groups: ReturnType<typeof buildImageModelGroups>, provider: string) => groups.find((group) => group.provider === provider)
 
-  it('with the capability ON: Google options are enabled and carry no note', () => {
+  it('with the capability ON: only the canary-verified Google model is enabled; Lite has a release explanation', () => {
     const google = find(buildImageModelGroups({ selectedModel: 'gpt-image-2', nanobananaConfigured: true, gemini: { availability: ON, canonicalWorkspace: true } }), 'gemini')!
-    expect(google.options.map((option) => [option.value, option.disabled])).toEqual([['gemini-nb-2.1', false], ['gemini-nb-lite', false]])
-    expect(google.note).toBeNull()
+    expect(google.options.map((option) => [option.value, option.disabled])).toEqual([['gemini-nb-2.1', false], ['gemini-nb-lite', true]])
+    expect(google.note).toMatch(/Lite ainda não foi liberado/)
     expect(google.label).toBe('Google Gemini (oficial)')
   })
 
