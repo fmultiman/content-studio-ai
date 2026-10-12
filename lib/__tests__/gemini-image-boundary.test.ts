@@ -21,7 +21,8 @@ const all = [...walk(join(ROOT, 'app')), ...walk(join(ROOT, 'lib')), ...walk(joi
   text: readFileSync(file, 'utf8'),
 }))
 const production = all.filter((file) => !/\.test\.tsx?$/.test(file.path) && !file.path.includes('/__tests__/'))
-const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((line) => line.replace(/(^|\s)\/\/.*$/, '')).join('\n')
+// CRLF-safe: a Windows checkout has CRLF line endings, which would stop the comment stripper at the `\r`.
+const code = (text: string) => text.replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((line) => line.replace(/(^|\s)\/\/.*$/, '')).join('\n')
 const read = (path: string) => production.find((file) => file.path === path)!
 const importers = (needle: RegExp, except: string[]) => production.filter((file) => !except.includes(file.path) && needle.test(code(file.text))).map((file) => file.path)
 
@@ -35,18 +36,26 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
     for (const path of [ROUTE, CLIENT, MODELS, FEATURE]) expect(read(path), path).toBeDefined()
   })
 
-  it('only the new route imports the image client; only the route and the client import the registry', () => {
+  it('only the route imports the image client; the registry and the switch have a closed set of importers', () => {
     expect(importers(/providers\/gemini\/image-client/, [ROUTE])).toEqual([])
-    expect(importers(/providers\/gemini\/image-models/, [ROUTE, CLIENT])).toEqual([])
-    expect(importers(/providers\/gemini\/image-feature/, [ROUTE])).toEqual([])
+    // Slice B: the browser-safe catalog/readiness modules read the alias registry; nothing else does.
+    expect(importers(/providers\/gemini\/image-models/, [ROUTE, CLIENT, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts'])).toEqual([])
+    // Slice B: the authenticated settings route derives the browser-safe availability class from the switch.
+    expect(importers(/providers\/gemini\/image-feature/, [ROUTE, 'app/api/settings/providers/route.ts'])).toEqual([])
   })
 
-  it('Slice A has no UI: nothing under components/ or a page references the route, the registry or the aliases', () => {
+  it('UI wiring (Slice B) goes only through the browser-safe lib/images modules, never the server client or the switch', () => {
     const ui = production.filter((file) => file.path.startsWith('components/') || /\/page\.tsx$/.test(file.path) || /\/layout\.tsx$/.test(file.path))
-    expect(ui.filter((file) => /api\/gemini\/generate-image|gemini-nb-|image-models|image-client|GEMINI_IMAGE/.test(code(file.text))).map((file) => file.path)).toEqual([])
-    // user-selectable defaults / selector types are untouched
-    expect(code(read('lib/types.ts').text)).not.toMatch(/gemini-nb-/)
-    expect(code(read('components/images/prompt-section.tsx').text)).not.toMatch(/gemini-nb-/)
+    expect(ui.filter((file) => /providers\/gemini\//.test(code(file.text))).map((file) => file.path)).toEqual([])
+    expect(ui.filter((file) => /CONTENT_STUDIO_GEMINI_IMAGE_GENERATION|image-feature|image-client/.test(code(file.text))).map((file) => file.path)).toEqual([])
+    // exactly one place dispatches to the route: the /imagens workspace page
+    expect(ui.filter((file) => /api\/gemini\/generate-image/.test(code(file.text))).map((file) => file.path)).toEqual(['app/(dashboard)/imagens/page.tsx'])
+  })
+
+  it('the shared selector types come from the catalog, not hand-copied unions', () => {
+    expect(code(read('lib/types.ts').text)).toMatch(/default_image_model: ImageModel/)
+    expect(code(read('lib/types.ts').text)).toMatch(/selected_model: ImageModel \| null/)
+    expect(code(read('components/images/prompt-section.tsx').text)).not.toMatch(/\|\s*'nanobanana-v1'/)
   })
 
   it('the route is guarded in the required order: auth, release switch, execution policy, validation, Attempt, credential, provider', () => {
@@ -136,7 +145,7 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
   })
 
   it('does not change credential storage, grants or schema: no scripts/ or credential file is touched by the slice', () => {
-    expect(importers(/providers\/gemini\/image/, [ROUTE, CLIENT, MODELS, FEATURE])).toEqual([])
+    expect(importers(/providers\/gemini\/image/, [ROUTE, CLIENT, MODELS, FEATURE, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts', 'app/api/settings/providers/route.ts'])).toEqual([])
     expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*image|image.*gemini/i.test(name))).toEqual([])
   })
 })

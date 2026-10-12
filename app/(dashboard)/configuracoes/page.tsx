@@ -1,5 +1,7 @@
 'use client'
 
+import { IMAGE_MODEL_LABELS, parseImageModel, type ImageModel } from '@/lib/images/image-models'
+import { geminiImageAvailabilityMessage, parseGeminiImageAvailability, type GeminiImageAvailability } from '@/lib/images/gemini-availability'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
@@ -75,6 +77,8 @@ export default function SettingsPage() {
     gemini: 'loading',
   })
   const [nanobananaBaseUrl, setNanobananaBaseUrl] = useState<string | null>(null)
+  // FUTURE-064 Slice B: server-derived capability class (never a variable name/value). null = not known = unavailable.
+  const [geminiImageAvailability, setGeminiImageAvailability] = useState<GeminiImageAvailability | null>(null)
   const [klingMcpConnection, setKlingMcpConnection] = useState<PublicProviderConnection | null | undefined>(undefined)
   const [connectionsAvailable, setConnectionsAvailable] = useState(true)
   const [connectionsLoadFailed, setConnectionsLoadFailed] = useState(false)
@@ -258,6 +262,7 @@ export default function SettingsPage() {
                 gemini: providersPayload?.providers?.gemini?.status ?? 'missing',
               })
               setNanobananaBaseUrl(providersPayload?.nanobananaBaseUrl ?? null)
+              setGeminiImageAvailability(parseGeminiImageAvailability(providersPayload?.imageGeneration?.gemini))
             }
           } catch (providerStatusError) {
             console.error('Erro ao carregar status dos providers:', providerStatusError)
@@ -654,9 +659,10 @@ export default function SettingsPage() {
                     </p>
                     <RadioGroup
                       value={settings.default_image_model || 'gpt-image-2'}
-                      onValueChange={(value: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2') =>
-                        setSettings({ ...settings, default_image_model: value })
-                      }
+                      onValueChange={(value: string) => {
+                        const model = parseImageModel(value)
+                        if (model) setSettings({ ...settings, default_image_model: model })
+                      }}
                       className="flex flex-col gap-3"
                     >
                       <div className="flex items-center space-x-3 rounded-lg border border-border/50 p-3">
@@ -696,20 +702,51 @@ export default function SettingsPage() {
                         </Label>
                       </div>
                       <div className="flex items-center space-x-3 rounded-lg border border-border/50 p-3">
+                        <RadioGroupItem
+                          value="gemini-nb-2.1"
+                          id="model-gemini-nb-21"
+                          disabled={!geminiImageAvailability?.available && settings.default_image_model !== 'gemini-nb-2.1'}
+                        />
+                        <Label htmlFor="model-gemini-nb-21" className="flex-1 cursor-pointer">
+                          <span className="font-medium">{IMAGE_MODEL_LABELS['gemini-nb-2.1' as ImageModel]}</span>
+                          <p className="text-sm text-muted-foreground">
+                            API oficial do Google. Usa sua chave Gemini (BYOK) e pode gerar cobrança na sua conta Google.
+                          </p>
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-3 rounded-lg border border-border/50 p-3">
+                        <RadioGroupItem
+                          value="gemini-nb-lite"
+                          id="model-gemini-nb-lite"
+                          disabled={!geminiImageAvailability?.available && settings.default_image_model !== 'gemini-nb-lite'}
+                        />
+                        <Label htmlFor="model-gemini-nb-lite" className="flex-1 cursor-pointer">
+                          <span className="font-medium">{IMAGE_MODEL_LABELS['gemini-nb-lite' as ImageModel]}</span>
+                          <p className="text-sm text-muted-foreground">
+                            Variante Lite da API oficial do Google (resolução 1K). Usa sua chave Gemini e pode gerar cobrança na sua conta Google.
+                          </p>
+                        </Label>
+                      </div>
+                      {!geminiImageAvailability?.available && (
+                        <p className="text-sm text-muted-foreground" data-testid="settings-google-model-note">
+                          Modelos Google Gemini (oficial) indisponíveis como padrão: {geminiImageAvailabilityMessage(geminiImageAvailability)}
+                        </p>
+                      )}
+                      <div className="flex items-center space-x-3 rounded-lg border border-border/50 p-3">
                         <RadioGroupItem value="nanobanana-v1" id="model-nb-v1" />
                         <Label htmlFor="model-nb-v1" className="flex-1 cursor-pointer">
-                          <span className="font-medium">NanoBanana V1</span>
+                          <span className="font-medium">{IMAGE_MODEL_LABELS['nanobanana-v1']}</span>
                           <p className="text-sm text-muted-foreground">
-                            Modelo estável NanoBanana
+                            Serviço de terceiros (não é a API oficial do Google). Mantido temporariamente.
                           </p>
                         </Label>
                       </div>
                       <div className="flex items-center space-x-3 rounded-lg border border-border/50 p-3">
                         <RadioGroupItem value="nanobanana-v2" id="model-nb-v2" />
                         <Label htmlFor="model-nb-v2" className="flex-1 cursor-pointer">
-                          <span className="font-medium">NanoBanana V2</span>
+                          <span className="font-medium">{IMAGE_MODEL_LABELS['nanobanana-v2']}</span>
                           <p className="text-sm text-muted-foreground">
-                            Modelo mais recente com melhorias
+                            Serviço de terceiros (não é a API oficial do Google). Mantido temporariamente.
                           </p>
                         </Label>
                       </div>
@@ -863,14 +900,14 @@ export default function SettingsPage() {
 
                   <AiProviderCredentialCard
                     providerId="nano_banana"
-                    title="Nano Banana (Gemini Flash Image)"
-                    description="Geração de imagem via NanoBanana."
+                    title="NanoBananaAPI.ai (terceiros — legado)"
+                    description="Geração de imagem via NanoBananaAPI.ai, um serviço de terceiros que não é a API oficial do Google. Mantido temporariamente; para a API oficial, use a chave do Google Gemini abaixo."
                     status={providerStatuses.nano_banana}
                     placeholder="nb_..."
                     showBaseUrl
                     baseUrl={nanobananaBaseUrl}
                     baseUrlPlaceholder="https://api.nanobananaapi.ai/api/v1/nanobanana/generate"
-                    helpText="Base URL personalizada (opcional). Para testar, vá em Imagens e use o botão “Gerar Imagem (NanoBanana)”."
+                    helpText="Base URL personalizada (opcional). Para testar, vá em Imagens e crie uma imagem com um modelo NanoBananaAPI.ai (terceiros — legado)."
                     onSave={(apiKey, baseUrl) => handleSaveProviderCredential('nano_banana', apiKey, baseUrl)}
                     onRemove={() => handleRemoveProviderCredential('nano_banana')}
                   />
@@ -912,10 +949,10 @@ export default function SettingsPage() {
                   <AiProviderCredentialCard
                     providerId="gemini"
                     title="Google Gemini API"
-                    description="Chave BYOK para futuras avaliações multimodais com a API oficial do Google Gemini."
+                    description={`Chave BYOK da API oficial do Google Gemini: avaliações multimodais (Review), assistência de prompt e geração de imagem com os modelos oficiais Nano Banana. Geração de imagem Google: ${geminiImageAvailability?.available ? 'habilitada neste ambiente' : 'ainda não habilitada neste ambiente'}.`}
                     status={providerStatuses.gemini}
                     placeholder="Chave da API Gemini..."
-                    helpText="A chave fica armazenada por usuário e nunca é devolvida ao navegador. A execução do provider será habilitada em uma missão posterior."
+                    helpText="A chave fica armazenada por usuário e nunca é devolvida ao navegador. As chamadas à API do Google usam a sua chave e podem gerar cobrança na sua conta Google."
                     onSave={(apiKey) => handleSaveProviderCredential('gemini', apiKey)}
                     onRemove={() => handleRemoveProviderCredential('gemini')}
                   />

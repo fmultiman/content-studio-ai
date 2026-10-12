@@ -6,6 +6,7 @@ import { describeProviderExecutionPolicy } from '@/lib/providers/execution-polic
 import { describeCredentialStorage } from '@/lib/credentials/credential-storage-mode'
 import { describeAdminCredential } from '@/lib/supabase/admin-credential'
 import { describePublicCredential } from '@/lib/supabase/public-credential'
+import { describeGeminiImageAvailability } from '@/lib/providers/gemini/image-feature'
 
 // AI_PROVIDER_CREDENTIALS_BYOK_V1
 // Returns configuration status only — never a secret value — for every
@@ -40,6 +41,10 @@ export async function GET() {
       nanobananaBaseUrl: settings?.nanobanana_base_url ?? null,
       // FUTURE-050: browser-safe diagnostic (class + allowed/blocked only) so a smoke can prove the guard without a paid call.
       executionPolicy: describeProviderExecutionPolicy(),
+      // FUTURE-064 Slice B: whether official Gemini image generation can run in THIS deployment (release switch + execution
+      // policy), as a class only ({ available, reason }) — never the variable name or value. Independent of the credential
+      // status above: a configured key does not mean the capability is on, and an off capability is not a missing key.
+      imageGeneration: { gemini: describeGeminiImageAvailability() },
       // FUTURE-052: which admin-credential variable/shape this runtime uses (names and shape class only, never a value),
       // so a credential replacement can be verified without reading any secret.
       adminCredential: describeAdminCredential(),

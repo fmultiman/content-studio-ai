@@ -68,6 +68,9 @@ export const PROVIDER_METADATA: Record<AiProvider, ProviderMetadata> = {
     label: 'Google Gemini API',
     connectionMethods: ['api_key'],
     transports: ['rest'],
+    // Deliberately still false (FUTURE-064 Slice B audit): nothing reads this flag at runtime and it is pinned by tests, and
+    // Gemini already serves Review and prompt assistance. Official image generation is a gated, capability-specific path
+    // whose availability is derived on the server (lib/providers/gemini/image-feature.ts), not declared here.
     executionImplemented: false,
     reviewCapabilities: ['image_review', 'video_review'],
   },

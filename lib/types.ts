@@ -3,6 +3,7 @@
 import type { ProjectIdentity } from '@/lib/schemas/project-identity'
 import type { RuntimeFontFamily } from '@/lib/creative/typography/resolve-typography'
 import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
+import type { ImageModel } from '@/lib/images/image-models'
 
 export interface Project {
   id: string
@@ -48,7 +49,7 @@ export interface UserSettings {
   kling_api_key: string | null
   gemini_api_key: string | null
   automation_enabled: boolean
-  default_image_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2'
+  default_image_model: ImageModel
   image_evaluator_enabled: boolean
   max_refinement_iterations: number
   created_at: string
@@ -358,7 +359,7 @@ export interface ImageDraft {
   auto_mode: boolean
   image_url: string | null
   current_image_id?: string | null
-  selected_model: 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini' | 'nanobanana-v1' | 'nanobanana-v2' | null
+  selected_model: ImageModel | null
   production_id: string | null
   created_at: string
   updated_at: string
