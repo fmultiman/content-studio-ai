@@ -31,6 +31,7 @@ describe('candidate remainder from reported metadata', () => {
     ['no total inferred from thoughts or totalTokenCount', { totalTokenCount: 2332, thoughtsTokenCount: 868 }, { thoughts_tokens: 868 }],
     ['reported zero total', { promptTokenCount: 0, candidatesTokenCount: 0 }, { input_tokens: 0 }],
     ['unsafe sum', { promptTokenCount: 29, candidatesTokenCount: 1200, candidatesTokensDetails: [{ modality: 'AUDIO', tokenCount: Number.MAX_SAFE_INTEGER }, { modality: 'VIDEO', tokenCount: 1 }] }, { input_tokens: 29 }],
+    ['unsafe IMAGE sum', { promptTokenCount: 29, candidatesTokenCount: 1200, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: Number.MAX_SAFE_INTEGER }, { modality: 'IMAGE', tokenCount: 1 }] }, { input_tokens: 29 }],
   ])('%s: invents no quantities', (_label, raw, expected) => {
     expect(quantities(raw)).toEqual(expected)
   })

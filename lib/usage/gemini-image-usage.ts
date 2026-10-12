@@ -101,6 +101,8 @@ export function describeGeminiImageUsage(usage: GeminiUsage | null): { completen
 function usageDescriptors(usage: GeminiUsage | null): Record<string, unknown> {
   if (!usage) return {}
   const detail: Record<string, unknown> = {}
+  // Internal numeric evidence preserves counts for unrecognized modalities (and null overflow), without copying their strings.
+  detail.candidateModalityTokens = sumCandidateModalities(usage)
   if (usage.cachedContentTokens !== null) detail.cachedContentTokenCount = usage.cachedContentTokens
   if (usage.toolUsePromptTokens !== null) detail.toolUsePromptTokenCount = usage.toolUsePromptTokens
   if (usage.totalTokens !== null) detail.totalTokenCount = usage.totalTokens
@@ -162,8 +164,8 @@ export function geminiImageUsageEvents(context: GeminiImageUsageContext, usage: 
     const image = sumModality(details, 'IMAGE')
     const text = sumModality(details, 'TEXT')
     // IMAGE output tokens are their own dimension: never the plain output_tokens unit (that is priced as text output).
-    if (image > 0) events.push(row('image_output_tokens', 'tokens', image, 'image_output'))
-    if (text > 0) events.push(row('text_output_tokens', 'output_tokens', text))
+    if (Number.isSafeInteger(image) && image > 0) events.push(row('image_output_tokens', 'tokens', image, 'image_output'))
+    if (Number.isSafeInteger(text) && text > 0) events.push(row('text_output_tokens', 'output_tokens', text))
   }
   if (usage?.candidatesTokens != null) {
     const attributed = sumCandidateModalities(usage)
@@ -262,6 +264,7 @@ function usageDescriptorsForSnapshot(usage: GeminiUsage) {
     promptTokens: usage.promptTokens,
     cachedContentTokens: usage.cachedContentTokens,
     candidatesTokens: usage.candidatesTokens,
+    candidateModalityTokens: sumCandidateModalities(usage),
     thoughtsTokens: usage.thoughtsTokens,
     toolUsePromptTokens: usage.toolUsePromptTokens,
     totalTokens: usage.totalTokens,

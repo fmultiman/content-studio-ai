@@ -48,6 +48,20 @@ describe('exact historical canary reconciliation (isolated PGlite only)', () => 
     expect(await rows()).toEqual(before)
   })
 
+  it.each([
+    { modality: 'TEXT' }, { tokenCount: 10 }, { modality: 'TEXT', tokenCount: 'bad' },
+  ])('dry run and reconciliation both refuse incomplete breakdown %j', async (incomplete) => {
+    await db.query('UPDATE provider_usage_events SET provider_metadata = $1 WHERE idempotency_key = $2', [
+      { ...metadata, usage: { ...storedUsage, candidatesTokensDetails: [...storedUsage.candidatesTokensDetails, incomplete] } },
+      `gemini_image:${ATTEMPT}:input_tokens`,
+    ])
+    const before = await rows()
+    expect((await db.query(dryRun)).rows[0]).toMatchObject({ metadata_sufficient: false, proposed_output_unattributed_tokens: null })
+    await expect(db.exec(reconcile)).rejects.toThrow(/insufficient/)
+    expect(await rows()).toEqual(before)
+    await db.query('UPDATE provider_usage_events SET provider_metadata = $1 WHERE idempotency_key = $2', [metadata, `gemini_image:${ATTEMPT}:input_tokens`])
+  })
+
   it('appends exactly one unpriced event, preserves original rows/time, and repeated execution is a no-op', async () => {
     const before = await rows()
     await db.exec(reconcile)
