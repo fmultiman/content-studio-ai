@@ -210,7 +210,8 @@ describe('selector option groups', () => {
 describe('cost communication', () => {
   it('states BYOK charges may apply without claiming free generation or a zero cost', () => {
     expect(GEMINI_IMAGE_COST_NOTICE).toMatch(/pode gerar cobrança na sua conta Google/)
-    expect(GEMINI_IMAGE_COST_NOTICE).toMatch(/custo estimado ainda não está disponível/)
+    expect(GEMINI_IMAGE_COST_NOTICE).toMatch(/componentes com preço conhecido/)
+    expect(GEMINI_IMAGE_COST_NOTICE).toMatch(/parcial ou indisponível/)
     expect(GEMINI_IMAGE_COST_NOTICE).not.toMatch(/gr[aá]tis|free|sem custo|\$\s?0|R\$\s?0|0,00/i)
   })
 })

@@ -33,6 +33,8 @@ export type GeminiUsage = {
   totalTokens: number | null
   promptTokensDetails: GeminiModalityTokens[]
   candidatesTokensDetails: GeminiModalityTokens[]
+  /** Sum of ALL valid reported candidate modality counts, including unrecognized modalities. null on overflow. */
+  candidateModalityTokens?: number | null
   serviceTier: GeminiServiceTier | null
 }
 
@@ -43,12 +45,26 @@ function count(value: unknown): number | null {
 function details(value: unknown): GeminiModalityTokens[] {
   if (!Array.isArray(value)) return []
   const out: GeminiModalityTokens[] = []
-  for (const item of value.slice(0, 16)) {
+  for (const item of value) {
     const modality = (item as { modality?: unknown } | null)?.modality
     const tokens = count((item as { tokenCount?: unknown } | null)?.tokenCount)
     if (tokens !== null && (GEMINI_USAGE_MODALITIES as readonly unknown[]).includes(modality)) out.push({ modality: modality as GeminiUsageModality, tokens })
   }
   return out
+}
+
+function candidateModalityTokens(value: unknown): number | null {
+  if (!Array.isArray(value)) return 0
+  let total = 0
+  for (const item of value) {
+    const modality = (item as { modality?: unknown } | null)?.modality
+    const tokens = count((item as { tokenCount?: unknown } | null)?.tokenCount)
+    if (typeof modality === 'string' && modality.length > 0 && tokens !== null) {
+      total += tokens
+      if (!Number.isSafeInteger(total)) return null
+    }
+  }
+  return total
 }
 
 /** Returns null when the response carried no recognizable usage at all (usage UNKNOWN, not zero). */
@@ -65,8 +81,9 @@ export function extractGeminiUsage(raw: unknown): GeminiUsage | null {
     totalTokens: count(meta.totalTokenCount),
     promptTokensDetails: details(meta.promptTokensDetails),
     candidatesTokensDetails: details(meta.candidatesTokensDetails),
+    candidateModalityTokens: candidateModalityTokens(meta.candidatesTokensDetails),
     serviceTier: (GEMINI_SERVICE_TIERS as readonly unknown[]).includes(tier) ? (tier as GeminiServiceTier) : null,
   }
   const measured = [usage.promptTokens, usage.cachedContentTokens, usage.candidatesTokens, usage.thoughtsTokens, usage.toolUsePromptTokens, usage.totalTokens]
-  return measured.some((value) => value !== null) ? usage : null
+  return measured.some((value) => value !== null) || usage.candidatesTokensDetails.length > 0 ? usage : null
 }

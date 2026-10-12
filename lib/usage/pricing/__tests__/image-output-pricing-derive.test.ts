@@ -6,6 +6,8 @@ import { costInputFromRow, deriveProviderUsageCost, type ProviderUsageCost, type
 import { summarizeEstimatedCost } from '../aggregate'
 import { toPricingVersion, type PricingVersion } from '../registry'
 import { LITE, NB21, registries } from './image-pricing-fixtures'
+import { GEMINI_IMAGE_CANARY_USAGE } from '@/lib/__tests__/helpers/gemini-image-canary'
+import { PARTIAL_ESTIMATED_COST_LABEL } from '../presentation'
 
 // FUTURE-064 Slice D — image-output cost derivation (PRODUCTION code: registry.ts, derive.ts, aggregate.ts) over the registry that the
 // reviewed SQL produces (isolated PGlite; the SQL is NOT applied anywhere) AND over today's Production registry (old constraint,
@@ -43,6 +45,18 @@ const imageRow = (model = NB21): ProviderUsageCostInput => ({
 const ONE_K = { promptTokenCount: 14, candidatesTokenCount: 1120, totalTokenCount: 1134, serviceTier: 'standard', candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1120 }] }
 
 describe('image_output pricing with the six reviewed rows present', () => {
+  it('exact canary: USD 0.0401535 is a partial subtotal; 315 unattributed tokens have no amount or rate', () => {
+    const costs = price(GEMINI_IMAGE_CANARY_USAGE, 'nb21', newVersions, '2026-10-12T07:55:50.432Z')
+    expect(costs.input_tokens).toMatchObject({ amount: '0.0000435' })
+    expect(costs.image_output_tokens).toMatchObject({ amount: '0.0336' })
+    expect(costs.thoughts_tokens).toMatchObject({ amount: '0.00651' })
+    expect(costs.output_unattributed_tokens).toEqual({ status: 'unavailable', reason: 'output_modality_unattributed' })
+    expect(summarizeEstimatedCost(Object.values(costs))).toMatchObject({
+      complete: false, pricedEvents: 3, unpricedEvents: 1, totals: [{ currency: 'USD', amount: '0.0401535', pricedEvents: 3 }],
+    })
+    expect(PARTIAL_ESTIMATED_COST_LABEL).toBe('Custo estimado parcial')
+  })
+
   it('the loader recognizes image_output: 28 versions load, two of them image_output (one per V1 model)', () => {
     expect(newVersions).toHaveLength(28)
     expect(newVersions.filter((v) => v.usageCategory === 'image_output').map((v) => v.model).sort()).toEqual([LITE, NB21])

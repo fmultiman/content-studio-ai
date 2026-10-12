@@ -260,6 +260,26 @@ describe('markGeminiImageAttemptAccounting', () => {
     from: (table: string) => ({ update: (patch: unknown) => ({ eq: () => ({ eq: () => { updates.push({ table, patch }); return Promise.resolve({ error }) } }) }) }),
   }) as any
 
+  it.each([
+    [{ modality: 'FUTURE_MODALITY', tokenCount: 60 }, 20],
+    [{ modality: 'FUTURE_MODALITY', tokenCount: Number.MAX_SAFE_INTEGER }, undefined],
+  ])('failed-ledger snapshot preserves the full modality sum and overflow state on recovery', async (extra, expectedRemainder) => {
+    const usage = usageOf({ promptTokenCount: 29, candidatesTokenCount: 1200, candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1120 }, extra] })!
+    const updates: any[] = []
+    await markGeminiImageAttemptAccounting(context(), { ledger: 'ledger_failed', rows: 3, usageUnknown: false, completeness: 'reported' }, usage, attemptDb(null, updates))
+    const snapshot = updates[0].patch.result_metadata.usage_accounting.reported_usage
+    const recovered: GeminiUsage = {
+      ...snapshot,
+      promptTokensDetails: snapshot.promptTokensDetails.map((d: { modality: 'TEXT'; tokenCount: number }) => ({ modality: d.modality, tokens: d.tokenCount })),
+      candidatesTokensDetails: snapshot.candidatesTokensDetails.map((d: { modality: 'IMAGE'; tokenCount: number }) => ({ modality: d.modality, tokens: d.tokenCount })),
+    }
+    expect(byKey(geminiImageUsageEvents(context(), recovered)).output_unattributed_tokens?.measurement?.quantity).toBe(expectedRemainder)
+    expect(geminiImageUsageEvents(context(), recovered)).toEqual(geminiImageUsageEvents(context(), usage))
+    expect(snapshot.candidateModalityTokens).toBe(usage.candidateModalityTokens)
+    expect((geminiImageUsageEvents(context(), usage)[0].providerMetadata?.usage as Record<string, unknown>).candidateModalityTokens).toBe(usage.candidateModalityTokens)
+    expect(JSON.stringify(snapshot)).not.toContain('FUTURE_MODALITY')
+  })
+
   it('stores the classification on the Attempt; the reported numbers are kept only when the ledger did not take the rows', async () => {
     const recorded: any[] = []
     await markGeminiImageAttemptAccounting(context(), { ledger: 'recorded', rows: 2, usageUnknown: false, completeness: 'reported' }, usageOf(IMAGE_ONLY), attemptDb(null, recorded))
