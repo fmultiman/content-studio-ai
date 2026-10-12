@@ -56,6 +56,8 @@ export const COST_UNAVAILABLE_REASONS = [
   'measurement_not_provider_reported',
   'provider_not_supported',
   'unit_not_priceable',
+  // FUTURE-064 Slice D: Gemini output tokens reported WITHOUT a modality breakdown. Never assumed to be image (or text) tokens.
+  'output_modality_unattributed',
   'model_unknown',
   'no_pricing_for_model',
   'no_pricing_for_category',
@@ -76,6 +78,8 @@ export const COST_ASSUMPTIONS = [
   'byok_invoice_may_differ',
   'cached_tokens_priced_separately',
   'price_observed_at_source',
+  // FUTURE-064 Slice D: the response reported no service tier and the registry prices exactly one (Standard) for this model.
+  'service_tier_sole_registry_tier',
 ] as const
 export type CostAssumption = (typeof COST_ASSUMPTIONS)[number]
 
@@ -159,6 +163,13 @@ function planGemini(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan
   } else if (input.unit === 'tokens' && input.usageCategory === 'thoughts') {
     // Google's table is "Output (including thinking tokens)": one rate. Thinking tokens are priced once, as output.
     lines = [{ category: 'output', quantity }]
+  } else if (input.unit === 'tokens' && input.usageCategory === 'image_output') {
+    // FUTURE-064 Slice D: IMAGE-modality output tokens are priced ONLY with the image_output version, never with the text/thinking
+    // output rate. With no image_output version in the registry this resolves to `no_pricing_for_category`, not to a text price.
+    lines = [{ category: 'image_output', quantity }]
+  } else if (input.unit === 'tokens' && input.usageCategory === 'output_unattributed') {
+    // Approved decision: output the provider did not attribute to a modality stays UNPRICED, even for an image-only request.
+    return { ok: false, result: unavailable('output_modality_unattributed') }
   } else {
     return { ok: false, result: unavailable('unit_not_priceable') }
   }
@@ -201,6 +212,19 @@ function planKling(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan 
   return { ok: true, lines: [{ category: 'unit', quantity }], tier: 'standard', paidTierListPrice: false }
 }
 
+// FUTURE-064 Slice D — service-tier fallback for Gemini IMAGE generation rows.
+//
+// A provider-REPORTED tier always wins (and a reported non-Standard tier never receives Standard rates). Only when the response
+// reported NO tier at all, Standard is taken when — and only while — the registry prices exactly one tier for the model and that
+// tier is Standard: the real-time generateContent path Content Studio uses never requests another tier, and Google lists no other
+// tier for these models. The moment a second tier exists for the model, this returns null and the row is ambiguous again.
+function soleStandardTier(input: ProviderUsageCostInput, versions: readonly PricingVersion[]): string | null {
+  if (input.provider !== 'gemini' || input.operation !== 'image_generation' || !input.model) return null
+  if (typeof input.serviceTier === 'string' && input.serviceTier.length > 0) return null // reported (even if unrecognized): never replaced
+  const tiers = new Set(versions.filter((v) => v.provider === input.provider && v.model === input.model).map((v) => v.serviceTier))
+  return tiers.size === 1 && tiers.has('standard') ? 'standard' : null
+}
+
 const ADAPTERS: Record<string, (input: ProviderUsageCostInput, quantity: Fixed) => BillingPlan> = {
   gemini: planGemini,
   openai: planOpenAi,
@@ -223,13 +247,19 @@ export function deriveProviderUsageCost(input: ProviderUsageCostInput, versions:
   const plan = adapter(input, quantity)
   if (!plan.ok) return plan.result
   if (!hasAnyPricingFor(versions, input.provider, input.model)) return unavailable('no_pricing_for_model')
-  if (plan.tier === null) return ambiguous('service_tier_not_proven')
+  let tier = plan.tier
+  let soleTierAssumed = false
+  if (tier === null) {
+    tier = soleStandardTier(input, versions)
+    if (tier === null) return ambiguous('service_tier_not_proven')
+    soleTierAssumed = true
+  }
 
   const components: CostComponent[] = []
   const used: PricingVersion[] = []
   let total: Fixed = BigInt(0)
   for (const line of plan.lines) {
-    const lookup = findPricingVersion(versions, { provider: input.provider, model: input.model, usageCategory: line.category, serviceTier: plan.tier }, at)
+    const lookup = findPricingVersion(versions, { provider: input.provider, model: input.model, usageCategory: line.category, serviceTier: tier }, at)
     if (lookup.status === 'overlap') return ambiguous('overlapping_pricing_versions')
     if (lookup.status === 'no_match') return unavailable('no_pricing_for_category')
     if (lookup.status === 'not_effective') return unavailable('pricing_not_effective_at_execution')
@@ -246,6 +276,7 @@ export function deriveProviderUsageCost(input: ProviderUsageCostInput, versions:
   if (plan.paidTierListPrice) assumptions.push('paid_tier_list_price')
   if (components.length > 1) assumptions.push('cached_tokens_priced_separately')
   if (used.some((v) => v.effectiveFromBasis !== 'official_effective_date')) assumptions.push('price_observed_at_source')
+  if (soleTierAssumed) assumptions.push('service_tier_sole_registry_tier')
   if (input.funding === 'user_byok') assumptions.push('byok_invoice_may_differ')
 
   return {
@@ -253,7 +284,7 @@ export function deriveProviderUsageCost(input: ProviderUsageCostInput, versions:
     amount: fixedToString(total),
     currency: used[0].currency,
     basis: 'list_price_equivalent',
-    serviceTier: plan.tier,
+    serviceTier: tier,
     pricing: {
       versionIds: used.map((v) => v.id),
       sourceUrl: reference.sourceUrl,

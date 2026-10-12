@@ -7,6 +7,8 @@ import { parseFixed, roundToUnits } from './decimal'
 import type { CostAmbiguousReason, CostAssumption, CostUnavailableReason, ProviderUsageCost } from './derive'
 
 export const ESTIMATED_COST_LABEL = 'Custo estimado'
+/** FUTURE-064 Slice D: the headline of a total that omits one or more unpriced rows. */
+export const PARTIAL_ESTIMATED_COST_LABEL = 'Custo estimado parcial'
 export const PRICING_UNAVAILABLE_LABEL = 'Preço indisponível'
 export const ACTUAL_BILLING_UNAVAILABLE_LABEL = 'Valor cobrado não disponível'
 
@@ -30,6 +32,7 @@ const UNAVAILABLE_REASON: Record<CostUnavailableReason, string> = {
   measurement_not_provider_reported: 'O consumo não foi informado pelo provedor (foi inferido), então não é convertido em valor.',
   provider_not_supported: 'Ainda não há tabela de preços oficial para este provedor.',
   unit_not_priceable: 'Esta unidade de consumo não tem conversão oficial para dinheiro.',
+  output_modality_unattributed: 'O provedor não informou a modalidade da saída (imagem ou texto), então não é convertida em valor.',
   model_unknown: 'O modelo desta execução não foi registrado.',
   no_pricing_for_model: 'Não há preço oficial cadastrado para este modelo.',
   no_pricing_for_category: 'Não há preço oficial cadastrado para este tipo de consumo.',
@@ -50,6 +53,7 @@ const ASSUMPTION: Record<CostAssumption, string> = {
   paid_tier_list_price: 'Considera a tabela do plano pago; no plano gratuito do provedor não há cobrança.',
   byok_invoice_may_differ: 'Chave própria (BYOK): a fatura real na sua conta do provedor pode ser diferente.',
   cached_tokens_priced_separately: 'Tokens em cache foram calculados com a tarifa de cache.',
+  service_tier_sole_registry_tier: 'O provedor não informou o nível de serviço; foi usado o nível padrão porque é o único com preço cadastrado para este modelo.',
   price_observed_at_source: 'O provedor não publica histórico de preços: este preço vale a partir do dia em que foi observado na página oficial; execuções anteriores não são estimadas.',
 }
 

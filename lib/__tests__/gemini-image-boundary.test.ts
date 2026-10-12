@@ -184,10 +184,12 @@ describe('Slice C — usage accounting boundary', () => {
     }
   })
 
-  it('adds no migration, pricing seed or SQL for this slice, and teaches the pricing code nothing about image output', () => {
-    expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*(usage|image)|image.*usage/i.test(name))).toEqual([])
-    for (const path of ['lib/usage/pricing/registry.ts', 'lib/usage/pricing/derive.ts']) {
-      expect(code(read(path).text)).not.toMatch(/image_output|output_unattributed|gemini-nano-banana|gemini-3\.1-flash-lite-image/)
+  it('adds no migration or pricing seed under scripts/, and the pricing CODE carries no model id, alias or price (rates live only in the registry)', () => {
+    expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*(usage|image)|image.*usage|image_output/i.test(name))).toEqual([])
+    // FUTURE-064 Slice D teaches the code the `image_output` DIMENSION, never a model or a rate.
+    for (const path of ['lib/usage/pricing/registry.ts', 'lib/usage/pricing/derive.ts', 'lib/usage/pricing/aggregate.ts']) {
+      expect(code(read(path).text), path).not.toMatch(/gemini-nano-banana|gemini-3\.1-flash-lite-image|gemini-nb-|nano.?banana/i)
+      expect(code(read(path).text), path).not.toMatch(/\b(1\.50|7\.50|30\.00|0\.25)\b|0\.0336|1120/)
     }
   })
 })
