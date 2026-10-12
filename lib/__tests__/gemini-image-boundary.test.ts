@@ -149,3 +149,45 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
     expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*image|image.*gemini/i.test(name))).toEqual([])
   })
 })
+
+describe('Slice C — usage accounting boundary', () => {
+  const USAGE = 'lib/usage/gemini-image-usage.ts'
+
+  it('only the image route imports the accounting module; the module is server-only and prices nothing', () => {
+    expect(importers(/usage\/gemini-image-usage/, [ROUTE])).toEqual([])
+    const usage = code(read(USAGE).text)
+    expect(usage).not.toMatch(/provider_pricing_versions|loadPricingVersions|deriveProviderUsageCost|pricing\//)
+    expect(usage).not.toMatch(/\$\s?\d|\bUSD\b|\bBRL\b|estimated_cost|price_amount/i)
+    expect(usage).not.toMatch(/\.rpc\(|\.sql|CREATE TABLE|ALTER TABLE|migration/i)
+    expect(usage).not.toMatch(/fetch\(|generativelanguage|x-goog-api-key|process\.env/)
+    expect(usage).not.toMatch(/console\.[a-z]+\([^)]*(prompt|secret|apiKey|response\.|error\.message)/i)
+  })
+
+  it('the route accounts BEFORE it touches storage, and only after a provider response (never before the call)', () => {
+    const route = code(read(ROUTE).text)
+    const run = route.slice(route.indexOf('async function runCanonicalGemini'), route.indexOf('export async function POST'))
+    const call = run.indexOf('await generateGeminiImage(')
+    const rejected = run.indexOf("providerResponse: 'received_rejected'")
+    const received = run.indexOf("providerResponse: 'received', responseId")
+    const upload = run.indexOf('await uploadImageToS3(')
+    expect(call).toBeGreaterThan(0)
+    expect(rejected).toBeGreaterThan(call)
+    expect(received).toBeGreaterThan(rejected)
+    expect(upload).toBeGreaterThan(received)
+    // exactly two accounting call sites: a received-but-unusable response, and a usable one
+    expect(run.match(/accountGeminiImageUsage\(/g)).toHaveLength(2)
+  })
+
+  it('image usage is recorded for the Gemini image route only: legacy NanoBanana, OpenAI image and Gemini text paths do not touch it', () => {
+    for (const path of ['app/api/nanobanana/generate/route.ts', 'app/api/nanobanana/callback/route.ts', 'app/api/openai/generate-image/route.ts', 'app/api/prompt-assistance/route.ts', 'lib/prompt-assistance/usage.ts', 'lib/usage/gemini-review-usage.ts', 'lib/reviews/service.ts', 'lib/image-generation/execution.ts']) {
+      expect(code(read(path).text), path).not.toMatch(/gemini-image-usage|GEMINI_IMAGE_USAGE|'image_generation_attempt'/)
+    }
+  })
+
+  it('adds no migration, pricing seed or SQL for this slice, and teaches the pricing code nothing about image output', () => {
+    expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*(usage|image)|image.*usage/i.test(name))).toEqual([])
+    for (const path of ['lib/usage/pricing/registry.ts', 'lib/usage/pricing/derive.ts']) {
+      expect(code(read(path).text)).not.toMatch(/image_output|output_unattributed|gemini-nano-banana|gemini-3\.1-flash-lite-image/)
+    }
+  })
+})

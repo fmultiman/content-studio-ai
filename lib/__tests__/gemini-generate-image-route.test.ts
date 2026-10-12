@@ -5,9 +5,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // from lib/image-generation/execution.ts), the real credential resolver over a fake caller client, a fake S3 and a
 // fake `fetch`. Dummy keys, 0 real provider calls, 0 real storage writes, no database.
 
-type Row = Record<string, unknown>
-type FakeDb = ReturnType<typeof createFakeDb>
-
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   settings: { current: null as Record<string, unknown> | null, error: null as { message: string } | null },
@@ -37,69 +34,7 @@ vi.mock('@/lib/storage/s3', () => ({ uploadImageToS3: mocks.upload, createPresig
 
 import { POST } from '@/app/api/gemini/generate-image/route'
 import { GEMINI_IMAGE_GENERATION_FLAG } from '@/lib/providers/gemini/image-feature'
-
-function createFakeDb(seed: Record<string, Row[]> = {}, failOn: (table: string, op: string) => { code?: string; message: string } | undefined = () => undefined) {
-  const tables: Record<string, Row[]> = {
-    image_generation_sessions: [], projects: [], productions: [], image_generation_attempts: [], images: [],
-    ...Object.fromEntries(Object.entries(seed).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))])),
-  }
-  const writes: Array<{ table: string; op: string }> = []
-  function from(table: string) {
-    const rows = tables[table] ?? (tables[table] = [])
-    const state = { op: 'select', filters: [] as Array<(row: Row) => boolean>, row: null as Row | null, patch: null as Row | null, returning: false, single: null as null | 'maybe' | 'one', order: null as null | [string, boolean], limit: null as number | null, ignoreDuplicates: false }
-    const builder: Record<string, unknown> = {}
-    const chain = (fn: () => void) => () => { fn(); return builder }
-    builder.select = chain(() => { if (state.op !== 'select') state.returning = true })
-    builder.insert = (row: Row) => { state.op = 'insert'; state.row = row; return builder }
-    builder.update = (patch: Row) => { state.op = 'update'; state.patch = patch; return builder }
-    builder.upsert = (row: Row, opts?: { ignoreDuplicates?: boolean }) => { state.op = 'upsert'; state.row = row; state.ignoreDuplicates = !!opts?.ignoreDuplicates; return builder }
-    builder.eq = (column: string, value: unknown) => { state.filters.push((row) => row[column] === value); return builder }
-    builder.in = (column: string, values: unknown[]) => { state.filters.push((row) => values.includes(row[column])); return builder }
-    builder.order = (column: string, opts: { ascending: boolean }) => { state.order = [column, opts.ascending]; return builder }
-    builder.limit = (n: number) => { state.limit = n; return builder }
-    builder.maybeSingle = () => { state.single = 'maybe'; return run() }
-    builder.single = () => { state.single = 'one'; return run() }
-    builder.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => run().then(resolve, reject)
-
-    async function run() {
-      await Promise.resolve()
-      if (state.op !== 'select') writes.push({ table, op: state.op })
-      const injected = failOn(table, state.op)
-      if (injected) return { data: null, error: injected }
-      const matches = () => rows.filter((row) => state.filters.every((filter) => filter(row)))
-      let result: Row[]
-      if (state.op === 'insert' || state.op === 'upsert') {
-        const incoming = { ...state.row! }
-        const clash = table === 'image_generation_attempts'
-          ? rows.find((row) => row.user_id === incoming.user_id && row.client_request_id === incoming.client_request_id)
-          : table === 'images' ? rows.find((row) => row.id === incoming.id) : undefined
-        if (clash) {
-          if (state.op === 'upsert' && state.ignoreDuplicates) return finish([])
-          if (state.op === 'insert') return { data: null, error: { code: '23505', message: 'duplicate key' } }
-        }
-        const stored = { id: crypto.randomUUID(), created_at: new Date().toISOString(), result_image_id: null, provider_task_id: null, failure_details: null, completed_at: null, ...incoming }
-        rows.push(stored)
-        result = [stored]
-      } else if (state.op === 'update') {
-        result = matches()
-        for (const row of result) Object.assign(row, state.patch)
-      } else {
-        result = matches()
-        if (state.order) { const [column, ascending] = state.order; result = [...result].sort((a, b) => (Number(a[column]) - Number(b[column])) * (ascending ? 1 : -1)) }
-        if (state.limit !== null) result = result.slice(0, state.limit)
-      }
-      return finish(result)
-    }
-    function finish(result: Row[]) {
-      if (state.op === 'update' && !state.returning) return { data: null, error: null }
-      if (state.single === 'maybe') return { data: result[0] ? { ...result[0] } : null, error: null }
-      if (state.single === 'one') return result[0] ? { data: { ...result[0] }, error: null } : { data: null, error: { code: 'PGRST116', message: 'no rows' } }
-      return { data: result.map((row) => ({ ...row })), error: null }
-    }
-    return builder
-  }
-  return { from, tables, writes }
-}
+import { createFakeDb, type FakeDb, type Row } from './helpers/fake-image-db'
 
 const USER = 'user-1'
 const OTHER = 'user-2'

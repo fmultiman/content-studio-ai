@@ -238,3 +238,51 @@ describe('generateGeminiImage — malformed, empty, blocked and invalid payloads
     expect(pulled).toBeLessThan(10)
   })
 })
+
+describe('FUTURE-064 Slice C — what Google sent is carried on failures that happened AFTER a response was received', () => {
+  const failure = async (promise: Promise<unknown>) => (await promise.then(() => null, (error: unknown) => error)) as GeminiImageError
+  const usageMetadata = { promptTokenCount: 14, candidatesTokenCount: 1290, serviceTier: 'standard', candidatesTokensDetails: [{ modality: 'IMAGE', tokenCount: 1290 }] }
+
+  it('a blocked prompt, a missing image and an invalid image carry the reported usage, response id and model version', async () => {
+    const envelopes: Array<[unknown, GeminiImageErrorKind]> = [
+      [{ promptFeedback: { blockReason: 'SAFETY' }, usageMetadata, responseId: 'r1', modelVersion: 'm1' }, 'content_blocked'],
+      [{ candidates: [{ content: { parts: [{ text: 'sorry' }] } }], usageMetadata, responseId: 'r1', modelVersion: 'm1' }, 'no_image'],
+      [{ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: '!!!!' } }] } }], usageMetadata, responseId: 'r1', modelVersion: 'm1' }, 'invalid_image'],
+      [{ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 5 } }] } }], usageMetadata, responseId: 'r1', modelVersion: 'm1' }, 'malformed_response'],
+    ]
+    for (const [envelope, kind] of envelopes) {
+      const error = await failure(run(ok(envelope)).promise)
+      expect(error.kind).toBe(kind)
+      expect(error.received).toMatchObject({ responseId: 'r1', modelVersion: 'm1', usage: { promptTokens: 14, candidatesTokens: 1290, serviceTier: 'standard', candidatesTokensDetails: [{ modality: 'IMAGE', tokens: 1290 }] } })
+    }
+  })
+
+  it('a received response that reports no usage carries usage: null (unknown, not zero)', async () => {
+    const error = await failure(run(ok({ promptFeedback: { blockReason: 'OTHER' } })).promise)
+    expect(error.received).toEqual({ usage: null, responseId: null, modelVersion: null })
+  })
+
+  it('a 2xx response too large to read is a received execution with unknown usage', async () => {
+    const error = await failure(run(new Response('{}', { status: 200, headers: { 'content-length': String(50 * 1024 * 1024) } })).promise)
+    expect(error.kind).toBe('image_too_large')
+    expect(error.received).toEqual({ usage: null, responseId: null, modelVersion: null })
+  })
+
+  it('NO received usage exists for HTTP error statuses, network failures, timeouts or unreadable bodies (nothing to account)', async () => {
+    for (const status of [400, 401, 403, 404, 429, 500, 503]) {
+      expect((await failure(run(new Response(JSON.stringify({ error: { message: 'x' }, usageMetadata }), { status })).promise)).received).toBeNull()
+    }
+    const network = vi.fn(async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
+    expect((await failure(generateGeminiImage(request(), { fetchImpl: network }))).received).toBeNull()
+    const aborted = vi.fn(async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }) }) as unknown as typeof fetch
+    expect((await failure(generateGeminiImage(request(), { fetchImpl: aborted }))).received).toBeNull()
+    expect((await failure(run(ok('<html>not json</html>')).promise)).received).toBeNull()
+    expect((await failure(run(ok('[]')).promise)).received).toBeNull()
+  })
+
+  it('a successful call returns the same normalized usage the failure paths carry', async () => {
+    const result = await run(ok({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }], usageMetadata, responseId: 'r9' })).promise
+    expect(result.usage).toMatchObject({ promptTokens: 14, candidatesTokens: 1290 })
+    expect(result.responseId).toBe('r9')
+  })
+})

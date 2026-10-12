@@ -261,6 +261,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1: the server-only usage recorder writes factual provider_usage_events rows
       // (no user INSERT policy) for the verified user id handed over by the authenticated Prompt Assistance route.
       path === 'lib/prompt-assistance/usage.ts' ||
+      // FUTURE_064_SLICE_C: the server-only Gemini image usage recorder writes factual provider_usage_events rows (no user INSERT
+      // policy) and the Attempt's accounting mark for the verified user id handed over by the authenticated image route.
+      path === 'lib/usage/gemini-image-usage.ts' ||
       // GEMINI_VIDEO_REVIEW_ADAPTER_V1: the server-only Video Review service is the Video counterpart of the Image
       // Review service. It writes media artifacts and immutable Review rows (RLS gives users SELECT only) after the
       // authenticated route has verified the user; every query is filtered by that user id and the browser sends
