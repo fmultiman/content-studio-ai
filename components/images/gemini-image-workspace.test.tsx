@@ -326,15 +326,15 @@ describe('release switch OFF (the Production state): Google models are visibly d
 })
 
 describe('release switch ON (mocked): the Google path', () => {
-  it('MANUAL: sends exactly { prompt, model, aspectRatio, sessionId, clientRequestId } to /api/gemini/generate-image and shows the image', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+  it.each(['gemini-nb-2.1', 'gemini-nb-lite'] as const)('MANUAL: sends exactly { prompt, model, aspectRatio, sessionId, clientRequestId } to /api/gemini/generate-image and shows the image (%s)', async (model) => {
+    mount({ availability: ON, selectedModel: model })
     await manualWithPrompt()
     expect(screen.getByTestId('google-cost-notice').textContent).toMatch(/pode gerar cobrança na sua conta Google/)
     await clickCreate()
     await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
     const [call] = server.geminiCalls()
     expect(Object.keys(call.body).sort()).toEqual(['aspectRatio', 'clientRequestId', 'model', 'prompt', 'sessionId'])
-    expect(call.body).toMatchObject({ prompt: AUTHORED, model: 'gemini-nb-2.1', aspectRatio: '1:1', sessionId: SESSION_ID })
+    expect(call.body).toMatchObject({ prompt: AUTHORED, model, aspectRatio: '1:1', sessionId: SESSION_ID })
     expect(call.body.clientRequestId).toMatch(/^[0-9a-f-]{36}$/)
     // No source image, no size/quality, no official model id, no provider field.
     expect(JSON.stringify(call.body)).not.toMatch(/inlineData|"size"|"quality"|gemini-nano-banana|providerModel|"provider"|imageUrl|sourceReferences/)
@@ -347,18 +347,16 @@ describe('release switch ON (mocked): the Google path', () => {
     expect(screen.queryByTestId('error-boundary')).toBeNull()
   })
 
-  it('preserves a saved Lite model but blocks manual generation even with the release switch ON', async () => {
+  it('preserves a saved Lite model through an explicit manual generation', async () => {
     mount({ availability: ON, selectedModel: 'gemini-nb-lite' })
     await manualWithPrompt()
-    fireEvent.click(createImageButton())
-    expect(createImageButton().disabled).toBe(true)
-    expect(screen.getByTestId('create-disabled-reason').textContent).toMatch(/Lite ainda não foi liberado/)
-    expect(server.geminiCalls()).toHaveLength(0)
-    expect(server.openaiCalls()).toHaveLength(0)
-    expect(server.nanoCalls()).toHaveLength(0)
+    await clickCreate()
+    await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
+    expect(server.geminiCalls()[0].body.model).toBe('gemini-nb-lite')
     expect(modelTrigger().textContent).toMatch(/Nano Banana 2 Lite/)
-    const saved = server.patches().map((patch) => patch.body.workingState.selectedModel)
-    expect(saved.every((model: string) => model === 'gemini-nb-lite')).toBe(true)
+    expect(server.patches().every((patch) => patch.body.workingState.selectedModel === 'gemini-nb-lite')).toBe(true)
+    server.replyGemini(0, 200, geminiOk(server.nextImageId()))
+    await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
   })
 
   it('persists only approved aliases that fit varchar(20)', async () => {
@@ -379,7 +377,7 @@ describe('release switch ON (mocked): the Google path', () => {
     expect(screen.queryByTestId('google-cost-notice')).toBeNull()
     await openModelSelect()
     const lite = screen.getByRole('option', { name: 'Google Gemini — Nano Banana 2 Lite (oficial)' })
-    expect(lite.getAttribute('aria-disabled')).toBe('true')
+    expect(lite.getAttribute('aria-disabled')).not.toBe('true')
     const option = screen.getByRole('option', { name: 'Google Gemini — Nano Banana 2.1 (oficial)' })
     expect(option.getAttribute('aria-disabled')).not.toBe('true')
     fireEvent.pointerUp(option, { button: 0, pointerType: 'mouse' })
@@ -387,7 +385,7 @@ describe('release switch ON (mocked): the Google path', () => {
     await waitFor(() => expect(modelTrigger().textContent).toMatch(/Nano Banana 2.1/))
     expect(screen.getByTestId('google-cost-notice').textContent).not.toMatch(/gr[aá]tis|free|\$\s?0|R\$\s?0/i)
     expect(server.geminiCalls()).toHaveLength(0) // selecting is never generating
-    expect(screen.getByTestId('google-model-note').textContent).toMatch(/Lite ainda não foi liberado/)
+    expect(screen.queryByTestId('google-model-note')).toBeNull()
   })
 
   it('a disabled Google option cannot be selected when the switch is OFF', async () => {
@@ -524,8 +522,8 @@ describe('release switch ON (mocked): the Google path', () => {
 })
 
 describe('ASSISTED with a Google model: suggestions never generate media', () => {
-  it('Create, Apply and Discard issue zero image requests; generation happens only on the explicit click', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+  it.each(['gemini-nb-2.1', 'gemini-nb-lite'] as const)('Create, Apply and Discard issue zero image requests; generation happens only on the explicit click (%s)', async (model) => {
+    mount({ availability: ON, selectedModel: model })
     await ready()
     fireEvent.click(screen.getByRole('button', { name: /Criar com IA/ }))
     await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
@@ -550,13 +548,13 @@ describe('ASSISTED with a Google model: suggestions never generate media', () =>
 
     await clickCreate()
     await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model: 'gemini-nb-2.1' })
+    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model })
   })
 })
 
 describe('AUTOMATIC with a Google model: one click, one text call, one image attempt', () => {
-  it.each(['network', 'in_progress'] as const)('preserves the request id after an Automatic %s outcome for explicit image-only recovery', async (outcome) => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+  it.each([['gemini-nb-2.1', 'network'], ['gemini-nb-2.1', 'in_progress'], ['gemini-nb-lite', 'network'], ['gemini-nb-lite', 'in_progress']] as const)('preserves the request id after an Automatic %s %s outcome for explicit image-only recovery', async (model, outcome) => {
+    mount({ availability: ON, selectedModel: model })
     await selectAutomatic()
     if (outcome === 'network') {
       const original = server.fetchMock.getMockImplementation()!
@@ -581,8 +579,8 @@ describe('AUTOMATIC with a Google model: one click, one text call, one image att
     await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
   })
 
-  it('manual recovery of an Automatic in-progress response also retains the same id', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+  it.each(['gemini-nb-2.1', 'gemini-nb-lite'] as const)('manual recovery of an Automatic in-progress response also retains the same id (%s)', async (model) => {
+    mount({ availability: ON, selectedModel: model })
     await selectAutomatic()
     fireEvent.click(startButton())
     await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
@@ -596,10 +594,10 @@ describe('AUTOMATIC with a Google model: one click, one text call, one image att
     expect(server.geminiCalls()[1].body.clientRequestId).toBe(server.geminiCalls()[0].body.clientRequestId)
     expect(server.assistanceCalls()).toHaveLength(1)
   })
-  it('runs description -> /api/prompt-assistance (independent text model) -> the exact prompt -> ONE Google submission using the run id', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-2.1' })
+  it.each(['gemini-nb-2.1', 'gemini-nb-lite'] as const)('runs description -> /api/prompt-assistance (independent text model) -> the exact prompt -> ONE Google submission using the run id (%s)', async (model) => {
+    mount({ availability: ON, selectedModel: model })
     await selectAutomatic()
-    expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/Nano Banana 2.1 \(oficial\)/)
+    expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/Nano Banana .*\(oficial\)/)
     expect(screen.getByTestId('automatic-run-panel').textContent).toMatch(/cobrança na sua conta Google/)
     expect(server.assistanceCalls()).toHaveLength(0)
     const start = startButton()
@@ -612,7 +610,7 @@ describe('AUTOMATIC with a Google model: one click, one text call, one image att
     expect(server.geminiCalls()).toHaveLength(0)
     server.replyAssistance(0, 200, assistanceOk())
     await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model: 'gemini-nb-2.1', aspectRatio: '1:1', sessionId: SESSION_ID })
+    expect(server.geminiCalls()[0].body).toMatchObject({ prompt: GENERATED, model, aspectRatio: '1:1', sessionId: SESSION_ID })
     expect(Object.keys(server.geminiCalls()[0].body).sort()).toEqual(['aspectRatio', 'clientRequestId', 'model', 'prompt', 'sessionId'])
     server.replyGemini(0, 200, geminiOk(server.nextImageId()))
     await waitFor(() => expect(screen.getByText('Gerar Novamente')).toBeTruthy())
@@ -622,11 +620,11 @@ describe('AUTOMATIC with a Google model: one click, one text call, one image att
     expect(server.nanoCalls()).toHaveLength(0)
   })
 
-  it('blocks Automatic for a saved Lite model before either the text or image request', async () => {
-    mount({ availability: ON, selectedModel: 'gemini-nb-lite' })
+  it('blocks Automatic for Lite without Gemini BYOK before text or image execution', async () => {
+    mount({ availability: ON, selectedModel: 'gemini-nb-lite', providers: { openai: { status: 'configured' }, gemini: { status: 'not_configured' } } })
     await selectAutomatic()
     expect(startButton().disabled).toBe(true)
-    expect(screen.getByTestId('automatic-run-disabled-reason').textContent).toMatch(/Lite ainda não foi liberado/)
+    expect(screen.getByTestId('automatic-run-disabled-reason').textContent).toMatch(/chave do Google Gemini/)
     fireEvent.click(startButton())
     expect(server.assistanceCalls()).toHaveLength(0)
     expect(server.geminiCalls()).toHaveLength(0)

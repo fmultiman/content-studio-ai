@@ -28,7 +28,7 @@ export type GeminiImageFailure = {
 }
 
 const MESSAGES: Record<string, { kind: GeminiImageFailureKind; message: string }> = {
-  GEMINI_IMAGE_MODEL_NOT_RELEASED: { kind: 'invalid_model', message: 'Nano Banana 2 Lite ainda não foi liberado. Selecione outro modelo; nenhuma cobrança foi iniciada.' },
+  GEMINI_IMAGE_MODEL_NOT_RELEASED: { kind: 'invalid_model', message: 'O modelo de imagem selecionado ainda não foi liberado. Selecione outro modelo; nenhuma cobrança foi iniciada.' },
   GEMINI_IMAGE_GENERATION_DISABLED: { kind: 'capability_disabled', message: 'A geração de imagem com o Google Gemini ainda não foi habilitada neste ambiente. Nenhuma cobrança foi iniciada.' },
   PROVIDER_EXECUTION_DISABLED_IN_ENVIRONMENT: { kind: 'environment_blocked', message: 'A geração com provedores externos está desativada neste ambiente (Preview/local). Nenhuma cobrança foi iniciada.' },
   PROVIDER_NOT_CONFIGURED: { kind: 'credential_missing', message: 'Configure a chave do Google Gemini em Configurações → API.' },

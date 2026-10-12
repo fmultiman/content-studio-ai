@@ -54,13 +54,13 @@ const radio = (id: string) => document.getElementById(id) as HTMLButtonElement
 const text = () => document.body.textContent ?? ''
 
 describe('Settings → Automação → Modelo Padrão de Imagem', () => {
-  it('keeps a saved Lite default readable and unchanged with capability ON, with its release warning', async () => {
+  it('keeps a saved Lite default readable and unchanged with capability ON, without a stale release warning', async () => {
     stored.current = { ...baseSettings, default_image_model: 'gemini-nb-lite' }
     providersPayload = { providers: { gemini: { status: 'configured' } }, imageGeneration: { gemini: { available: true, reason: 'available' } } }
     await openTab('automation')
     await screen.findByText('Modelo Padrão de Imagem')
     expect(radio('model-gemini-nb-lite').getAttribute('aria-checked')).toBe('true')
-    expect(text()).toMatch(/Lite ainda não foi liberado/)
+    expect(text()).not.toMatch(/ainda não foi liberado/)
     const save = screen.getAllByRole('button', { name: /Salvar Preferências/ })
     fireEvent.click(save[save.length - 1])
     await waitFor(() => expect(upserts).toHaveLength(1))
@@ -90,19 +90,19 @@ describe('Settings → Automação → Modelo Padrão de Imagem', () => {
     expect(radio('model-nb-v2').disabled).toBe(false)
   })
 
-  it('when the capability is available the Google defaults can be chosen, and the choice saves as the short alias', async () => {
+  it.each([['gemini-nb-2.1', 'model-gemini-nb-21'], ['gemini-nb-lite', 'model-gemini-nb-lite']])('saves the approved Google default %s', async (model, radioId) => {
     providersPayload = { providers: { gemini: { status: 'configured' } }, imageGeneration: { gemini: { available: true, reason: 'available' } } }
     await openTab('automation')
     await screen.findByText('Modelo Padrão de Imagem')
     await waitFor(() => expect(radio('model-gemini-nb-21').disabled).toBe(false))
-    expect(radio('model-gemini-nb-lite').disabled).toBe(true)
-    expect(text()).toMatch(/Lite ainda não foi liberado/)
+    expect(radio('model-gemini-nb-lite').disabled).toBe(false)
+    expect(text()).not.toMatch(/ainda não foi liberado/)
     expect(screen.queryByTestId('settings-google-model-note')).toBeNull()
-    fireEvent.click(radio('model-gemini-nb-21'))
+    fireEvent.click(radio(radioId))
     const save = screen.getAllByRole('button', { name: /Salvar Preferências/ })
     fireEvent.click(save[save.length - 1])
     await waitFor(() => expect(upserts).toHaveLength(1))
-    expect(upserts[0].default_image_model).toBe('gemini-nb-2.1')
+    expect(upserts[0].default_image_model).toBe(model)
     expect(String(upserts[0].default_image_model).length).toBeLessThanOrEqual(20)
   })
 
