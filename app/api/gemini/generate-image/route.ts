@@ -34,7 +34,12 @@ import {
   resolveGeminiImageModel,
   type GeminiImageModel,
 } from '@/lib/providers/gemini/image-models'
-import { GEMINI_IMAGE_GENERATION_DISABLED_CODE, isGeminiImageGenerationEnabled } from '@/lib/providers/gemini/image-feature'
+import {
+  GEMINI_IMAGE_GENERATION_DISABLED_CODE,
+  geminiImageCanaryAllows,
+  isGeminiImageGenerationEnabled,
+  parseGeminiImageCanary,
+} from '@/lib/providers/gemini/image-feature'
 
 const MAX_BODY_CHARS = 64 * 1024
 const MAX_PROMPT_CHARS = 20_000
@@ -233,9 +238,12 @@ export async function POST(request: Request) {
     if (authError || !user) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
 
     // Release switch: disabled by default. Checked before any durable state and before any credential is read.
-    if (!isGeminiImageGenerationEnabled()) {
-      return NextResponse.json({ error: 'A geração de imagens com o Google Gemini ainda não está habilitada.', code: GEMINI_IMAGE_GENERATION_DISABLED_CODE }, { status: 403 })
-    }
+    // Release-gate canary: only while the GLOBAL switch is off, and only for the one verified owner id in a valid, unexpired grant.
+    // Everyone else (and every invalid/expired/absent grant) gets exactly the disabled answer below, before any state or credential.
+    const globalEnabled = isGeminiImageGenerationEnabled()
+    const canary = globalEnabled ? null : parseGeminiImageCanary()
+    const disabled = () => NextResponse.json({ error: 'A geração de imagens com o Google Gemini ainda não está habilitada.', code: GEMINI_IMAGE_GENERATION_DISABLED_CODE }, { status: 403 })
+    if (!globalEnabled && !(canary && canary.userId === user.id)) return disabled()
     // FUTURE-050: before the Attempt is frozen/claimed and before any credential is read.
     const blocked = providerExecutionBlockedResponse({ provider: GEMINI_IMAGE_PROVIDER, operation: 'image_generation' })
     if (blocked) return blocked
@@ -247,6 +255,9 @@ export async function POST(request: Request) {
       if (error instanceof RequestRejected) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
       throw error
     }
+
+    // Canary mode: the validated request must be EXACTLY the authorized one (fixed request id, gemini-nb-2.1, 1:1, not expired).
+    if (canary && !geminiImageCanaryAllows(canary, { userId: user.id, clientRequestId: valid.clientRequestId, model: valid.model.alias, aspectRatio: valid.aspectRatio })) return disabled()
 
     try {
       return NextResponse.json(await runCanonicalGemini({ ...valid, supabase, userId: user.id }))
