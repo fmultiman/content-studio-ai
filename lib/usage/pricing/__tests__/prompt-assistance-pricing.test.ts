@@ -45,11 +45,11 @@ const AFTER = '2026-10-10T13:00:00Z'
 
 function costOf(
   usage: NonNullable<PromptAssistanceUsageContext['usage']>,
-  options: { provider?: string; model?: string; at?: string; only?: 'input_tokens' | 'output_tokens' | 'tokens' } = {},
+  options: { provider?: string; model?: string; mediaType?: 'image' | 'video'; at?: string; only?: 'input_tokens' | 'output_tokens' | 'tokens' } = {},
 ): ProviderUsageCost[] {
   const provider = options.provider ?? 'openai'
   const model = options.model ?? 'gpt-4o-mini'
-  return promptAssistanceUsageEvents({ userId: USER, projectId: null, productionId: null, provider, model, operation: 'create', funding: 'user_byok', usage })
+  return promptAssistanceUsageEvents({ userId: USER, projectId: null, productionId: null, provider, model, mediaType: options.mediaType, operation: 'create', funding: 'user_byok', usage })
     .filter((event) => !options.only || event.measurement?.unit === options.only)
     .map((event) => ({ ...toUsageEventRow(event), occurred_at: options.at ?? AFTER }))
     .map((row) => deriveProviderUsageCost(costInputFromRow(row), versions))
@@ -94,6 +94,10 @@ describe('migration 062 — data only, governed, idempotent', () => {
 
 describe('OpenAI Prompt Assistance cost — only what is proven', () => {
   const usage = { inputTokens: 265, outputTokens: 74, totalTokens: 339, providerRequestId: 'c1', serviceTier: 'default' }
+
+  it('video prompt assistance has the same text-token pricing as image prompt assistance', () => {
+    expect(costOf(usage, { mediaType: 'video' })).toEqual(costOf(usage))
+  })
 
   it('prices input and output at the Standard list price when the response itself reported the default tier', () => {
     const [input, output] = costOf(usage)
@@ -149,6 +153,10 @@ describe('OpenAI Prompt Assistance cost — only what is proven', () => {
 describe('Gemini Prompt Assistance cost — tier only when the provider reported it', () => {
   const lite = 'gemini-3.5-flash-lite'
   const usage = { inputTokens: 273, outputTokens: 79, totalTokens: 432, thoughtsTokens: 80, providerRequestId: 'g1', serviceTier: 'standard' }
+
+  it('video keeps input, output and thinking pricing identical to image text assistance', () => {
+    expect(costOf(usage, { provider: 'gemini', model: lite, mediaType: 'video' })).toEqual(costOf(usage, { provider: 'gemini', model: lite }))
+  })
 
   it('prices input, output and thinking (as output, once) at the reported Standard tier and never prices the total', () => {
     const [input, output, thoughts] = costOf(usage, { provider: 'gemini', model: lite })

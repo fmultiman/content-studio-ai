@@ -33,11 +33,19 @@ export const I2vWorkingSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('library'), id: z.string() }),
 ])
 
+export const VideoPromptAssistanceWorkingStateSchema = z.object({
+  description: z.string().max(12_000),
+  provider: z.enum(['openai', 'gemini']),
+  model: z.string().max(120),
+  mode: z.enum(['manual', 'assisted', 'automatic']),
+}).strict()
+
 export const VideoGenerationWorkingStateV1Schema = z.object({
   schemaVersion: z.literal(1),
   prompt: z.string(),
   source: I2vWorkingSourceSchema.nullable(),
   selection: VideoFormSelectionSchema,
+  assistance: VideoPromptAssistanceWorkingStateSchema.optional(),
 })
 
 export type VideoGenerationWorkingStateV1 = z.infer<typeof VideoGenerationWorkingStateV1Schema>

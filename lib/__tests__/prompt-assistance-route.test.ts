@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createReviewTestDb } from '@/lib/reviews/__tests__/review-test-db'
 import * as server from '@/lib/supabase/server'
 import * as serviceRole from '@/lib/supabase/service-role'
+import { PromptAssistanceRequestSchema } from '@/lib/prompt-assistance/contract'
 
 const executePromptProvider = vi.fn()
 const resolveProviderExecution = vi.fn()
@@ -22,7 +23,7 @@ const USER = 'user-1'
 function chain(result: { data: unknown; error: unknown }) {
   const builder: any = {
     select: () => builder,
-    eq: () => builder,
+    eq: vi.fn(() => builder),
     maybeSingle: () => Promise.resolve(result),
   }
   return builder
@@ -65,6 +66,160 @@ describe('POST /api/prompt-assistance', () => {
       usage: { inputTokens: 12, outputTokens: 9, totalTokens: 21, providerRequestId: 'req-1' },
     })
     providerExecutionBlockedResponse.mockReturnValue(null)
+  })
+
+  it.each(['text_to_video', 'image_to_video'])('assists %s with text only and records video usage', async (videoMode) => {
+    const db = createReviewTestDb()
+    const supabase = buildSupabase({
+      project: { id: PROJECT, context: 'Documental e luminosa.', identity: null },
+      production: { id: PRODUCTION, project_id: PROJECT, title: 'Rios', intention: 'Mostrar o fluxo da água.', type: 'video' },
+    })
+    vi.mocked(server.createClient).mockResolvedValue(supabase as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({ mediaType: 'video', videoMode, productionId: PRODUCTION, workflow: 'automatic' })))
+    expect(response.status).toBe(200)
+    expect(Object.keys(await response.json()).sort()).toEqual(['model', 'operation', 'provider', 'suggestedPrompt', 'usage'])
+    expect(executePromptProvider).toHaveBeenCalledTimes(1)
+    expect(supabase.from.mock.calls).toEqual([['projects'], ['productions']])
+    expect(supabase.from.mock.results[0].value.eq.mock.calls).toEqual([['id', PROJECT], ['user_id', USER]])
+    expect(supabase.from.mock.results[1].value.eq.mock.calls).toEqual([['id', PRODUCTION], ['project_id', PROJECT], ['user_id', USER]])
+    const input = executePromptProvider.mock.calls[0][0]
+    expect(Object.keys(input).sort()).toEqual(['apiKey', 'model', 'provider', 'systemInstruction', 'userInstruction'])
+    expect(input.userInstruction).toContain('Documental e luminosa.')
+    expect(input.userInstruction).toContain('Mostrar o fluxo da água.')
+    expect(input.systemInstruction).toContain('geração de vídeos')
+    expect(input.systemInstruction).toContain('câmera')
+    expect(input.systemInstruction).toContain('temporal')
+    if (videoMode === 'text_to_video') {
+      expect(input.systemInstruction).toContain('cena')
+      expect(input.systemInstruction).toContain('ação dos sujeitos')
+    } else {
+      expect(input.systemInstruction).toContain('preservando a composição, identidade, estilo e iluminação')
+      expect(input.systemInstruction).toContain('Nenhuma imagem foi enviada')
+      expect(input.systemInstruction).toContain('sem afirmar que viu ou analisou a imagem')
+    }
+    expect(db.tables.provider_usage_events).toHaveLength(2)
+    for (const row of db.tables.provider_usage_events) {
+      expect(row.provider_metadata).toMatchObject({ media_type: 'video', workflow: 'automatic', funding: 'user_byok' })
+      expect(row.resource_type).toBe('prompt_assistance')
+    }
+    expect(JSON.stringify(db.tables.provider_usage_events)).not.toMatch(/uma capa editorial|server-secret|Documental e luminosa/)
+  })
+
+  it('improves the current video prompt through Gemini and keeps the original description as context', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase() as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({
+      projectId: null, mediaType: 'video', videoMode: 'image_to_video', operation: 'improve', workflow: 'assisted',
+      currentText: '  Track left while the water ripples.  ', provider: 'gemini', model: 'gemini-3.5-flash',
+    })))
+    expect(response.status).toBe(200)
+    expect(executePromptProvider).toHaveBeenCalledTimes(1)
+    expect(executePromptProvider).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'gemini', model: 'gemini-3.5-flash',
+      userInstruction: expect.stringContaining('PROMPT ATUAL A SER MELHORADO:\nTrack left while the water ripples.'),
+      systemInstruction: expect.stringContaining('melhore o prompt existente preservando a intenção'),
+    }))
+    expect(executePromptProvider.mock.calls[0][0].userInstruction).toContain('uma capa editorial sobre rios')
+    expect(db.tables.provider_usage_events.every((row: any) => row.provider_metadata.media_type === 'video')).toBe(true)
+  })
+
+  it.each([
+    { videoMode: undefined }, { videoMode: null }, { videoMode: 'video_to_video' },
+    { videoMode: 'text_to_video', operation: 'improve' },
+    { videoMode: 'text_to_video', operation: 'improve', currentText: '   ' },
+    { videoMode: 'text_to_video', operation: 'improve', currentText: 'a prompt', workflow: 'automatic' },
+    { videoMode: 'text_to_video', productionId: PRODUCTION, projectId: null },
+  ])('rejects invalid video contracts before context or credentials are read: %j', async (overrides) => {
+    const supabase = buildSupabase()
+    vi.mocked(server.createClient).mockResolvedValue(supabase as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({ mediaType: 'video', ...overrides })))
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('INVALID_REQUEST')
+    expect(supabase.from).not.toHaveBeenCalled()
+    expect(resolveProviderExecution).not.toHaveBeenCalled()
+    expect(executePromptProvider).not.toHaveBeenCalled()
+  })
+
+  it.each(['sourceReference', 'source', 'sourceImage', 'image', 'imageUrl', 'sourceImageUrl', 'source_image_url', 'source_image_id', 'source_library_file_id', 'storageKey', 'apiKey', 'duration', 'resolution', 'audio'])('rejects the unaccepted video field %s', async (field) => {
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase() as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({ mediaType: 'video', videoMode: 'image_to_video', [field]: 'unaccepted' })))
+    expect(response.status).toBe(400)
+    expect(resolveProviderExecution).not.toHaveBeenCalled()
+    expect(executePromptProvider).not.toHaveBeenCalled()
+  })
+
+  it('keeps image requests compatible and rejects non-image mode and media payloads', () => {
+    expect(PromptAssistanceRequestSchema.parse(base())).toEqual(base())
+    expect(PromptAssistanceRequestSchema.safeParse(base({ videoMode: undefined, sourceReference: undefined })).success).toBe(true)
+    for (const overrides of [{ videoMode: 'text_to_video' }, { sourceReference: {} }, { imageUrl: 'https://example.com/image.png' }, { mediaType: 'audio' }]) {
+      expect(PromptAssistanceRequestSchema.safeParse(base(overrides)).success).toBe(false)
+    }
+  })
+
+  it.each(['text_to_video', 'image_to_video'])('keeps authentication, ownership, environment, model and credential gates for %s', async (videoMode) => {
+    const input = base({ mediaType: 'video', videoMode })
+    const anonymous = buildSupabase()
+    anonymous.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null } as any)
+    vi.mocked(server.createClient).mockResolvedValue(anonymous as any)
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    expect((await POST(request(input))).status).toBe(401)
+    expect(providerExecutionBlockedResponse).not.toHaveBeenCalled()
+
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase() as any)
+    expect((await POST(request(input))).status).toBe(403)
+    expect(resolveProviderExecution).not.toHaveBeenCalled()
+
+    const blocked = new Response(JSON.stringify({ code: 'PROMPT_ASSISTANCE_BLOCKED' }), { status: 403 })
+    providerExecutionBlockedResponse.mockReturnValueOnce(blocked)
+    expect(await POST(request(input))).toBe(blocked)
+    expect(providerExecutionBlockedResponse).toHaveBeenLastCalledWith({ provider: 'openai', operation: 'text_generation' })
+
+    expect((await POST(request({ ...input, model: 'unlisted' }))).status).toBe(422)
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase({ project: { id: PROJECT, context: null, identity: null } }) as any)
+    resolveProviderExecution.mockResolvedValueOnce({ status: 'missing', code: 'MISSING_CREDENTIAL' })
+    const missing = await POST(request(input))
+    expect(missing.status).toBe(422)
+    expect((await missing.json()).code).toBe('PROVIDER_NOT_CONFIGURED')
+    expect(executePromptProvider).not.toHaveBeenCalled()
+    expect(serviceRole.createServiceRoleSupabase).not.toHaveBeenCalled()
+  })
+
+  it('records video error usage without retrying the provider or fabricating unreported usage', async () => {
+    const db = createReviewTestDb()
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase() as any)
+    vi.mocked(serviceRole.createServiceRoleSupabase).mockReturnValue(db as any)
+    const { PromptAssistanceError } = await import('@/lib/prompt-assistance/contract')
+    executePromptProvider.mockRejectedValueOnce(new PromptAssistanceError('PROVIDER_INVALID_RESPONSE', 'invalid', 502, {
+      inputTokens: 20, outputTokens: 10, totalTokens: 4030, thoughtsTokens: 4000, providerRequestId: 'video-error',
+    }))
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const input = base({ projectId: null, mediaType: 'video', videoMode: 'text_to_video', provider: 'gemini', model: 'gemini-3.5-flash' })
+    expect((await POST(request(input))).status).toBe(502)
+    expect(executePromptProvider).toHaveBeenCalledTimes(1)
+    expect(db.tables.provider_usage_events.map((row: any) => [row.unit, Number(row.quantity)])).toEqual([['input_tokens', 20], ['output_tokens', 10], ['tokens', 4000]])
+    expect(db.tables.provider_usage_events.every((row: any) => row.provider_metadata.media_type === 'video')).toBe(true)
+    executePromptProvider.mockRejectedValueOnce(new PromptAssistanceError('PROVIDER_RATE_LIMITED', 'limited', 429))
+    expect((await POST(request(input))).status).toBe(429)
+    expect(executePromptProvider).toHaveBeenCalledTimes(2)
+    expect(db.tables.provider_usage_events).toHaveLength(3)
+  })
+
+  it('returns a controlled credential-store failure for video without provider execution or ledger writes', async () => {
+    vi.mocked(server.createClient).mockResolvedValue(buildSupabase() as any)
+    const { ProviderCredentialUnavailableError } = await import('@/lib/credentials/credential-errors')
+    resolveProviderExecution.mockRejectedValueOnce(new ProviderCredentialUnavailableError('decryption_failed', 'openai'))
+    const { POST } = await import('@/app/api/prompt-assistance/route')
+    const response = await POST(request(base({ projectId: null, mediaType: 'video', videoMode: 'text_to_video' })))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: 'As credenciais do provedor estão temporariamente indisponíveis. Tente novamente.', code: 'PROVIDER_CREDENTIAL_UNAVAILABLE', provider: 'openai' })
+    expect(executePromptProvider).not.toHaveBeenCalled()
+    expect(serviceRole.createServiceRoleSupabase).not.toHaveBeenCalled()
   })
 
   it('authenticates, resolves Project/Production server-side and compiles Identity without returning raw JSON', async () => {

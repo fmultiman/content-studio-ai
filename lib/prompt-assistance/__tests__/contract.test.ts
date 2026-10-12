@@ -30,3 +30,23 @@ describe('PromptAssistanceRequestSchema workflow label', () => {
     expect(PromptAssistanceRequestSchema.safeParse({ ...base, workflow: 'automatic', authorized: true }).success).toBe(false)
   })
 })
+
+describe('PromptAssistanceRequestSchema video', () => {
+  const video = { ...base, mediaType: 'video', videoMode: 'text_to_video' }
+
+  it.each(['text_to_video', 'image_to_video'])('accepts only the selected %s mode with the existing text operations', (videoMode) => {
+    expect(PromptAssistanceRequestSchema.parse({ ...video, videoMode })).toEqual({ ...video, videoMode })
+    expect(PromptAssistanceRequestSchema.safeParse({ ...video, videoMode, operation: 'improve', currentText: 'edited prompt' }).success).toBe(true)
+  })
+
+  it('applies the same closed workflow, provider and text bounds to video', () => {
+    expect(PromptAssistanceRequestSchema.safeParse({ ...video, originalText: 'x'.repeat(12_000), model: 'm'.repeat(120) }).success).toBe(true)
+    for (const overrides of [
+      { originalText: ' ' }, { originalText: 'x'.repeat(12_001) }, { currentText: 'x'.repeat(12_001) },
+      { model: '' }, { model: 'm'.repeat(121) }, { provider: 'kling' }, { workflow: 'manual' },
+      { videoMode: undefined }, { videoMode: 'image' }, { mediaType: 'audio' },
+    ]) {
+      expect(PromptAssistanceRequestSchema.safeParse({ ...video, ...overrides }).success).toBe(false)
+    }
+  })
+})

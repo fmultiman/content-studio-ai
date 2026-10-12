@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import * as server from '@/lib/supabase/server'
 
@@ -34,6 +34,49 @@ describe('/api/settings/providers', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => vi.restoreAllMocks())
+
+  it.each([
+    { label: 'true', row: { automation_enabled: true }, enabled: true },
+    { label: 'false', row: { automation_enabled: false }, enabled: false },
+    { label: 'null', row: { automation_enabled: null }, enabled: false },
+    { label: 'missing preference', row: {}, enabled: false },
+    { label: 'missing settings row', row: null, enabled: false },
+    { label: 'truthy string', row: { automation_enabled: 'true' }, enabled: false },
+    { label: 'truthy number', row: { automation_enabled: 1 }, enabled: false },
+  ])('GET returns automationEnabled for $label from the authenticated user’s non-secret settings', async ({ row, enabled }) => {
+    const supabase = buildAuthedSupabase('user-automation', { userSettingsRow: row })
+    vi.mocked(server.createClient).mockResolvedValue(supabase as any)
+    const credentials = await import('@/lib/credentials/provider-credentials')
+    // The status boundary has its own real-store tests; this regression isolates the session settings read.
+    const statuses = {
+      openai: 'configured', nano_banana: 'missing', kling: 'configured', replicate: 'missing', gemini: 'configured',
+    } as const
+    const statusSpy = vi.spyOn(credentials, 'getProviderConfigurationStatuses').mockResolvedValue(statuses)
+
+    const { GET } = await import('@/app/api/settings/providers/route')
+    const response = await GET()
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.automationEnabled).toBe(enabled)
+    expect(statusSpy).toHaveBeenCalledExactlyOnceWith(supabase, 'user-automation')
+    expect(supabase.auth.getUser).toHaveBeenCalledTimes(1)
+    expect(supabase.from).toHaveBeenCalledExactlyOnceWith('user_settings')
+    const query = supabase.from.mock.results[0].value
+    expect(query.select).toHaveBeenCalledExactlyOnceWith('nanobanana_base_url, automation_enabled')
+    const filteredQuery = query.select.mock.results[0].value
+    expect(filteredQuery.eq).toHaveBeenCalledExactlyOnceWith('user_id', 'user-automation')
+    expect(filteredQuery.eq.mock.results[0].value.maybeSingle).toHaveBeenCalledTimes(1)
+    expect(query.upsert).not.toHaveBeenCalled()
+    expect(query.update).not.toHaveBeenCalled()
+    expect(Object.fromEntries(Object.entries(payload.providers).map(([provider, entry]) => [provider, (entry as { status: string }).status]))).toEqual(statuses)
+    for (const entry of Object.values(payload.providers)) {
+      expect(Object.keys(entry as object).sort()).toEqual(['connectionMethod', 'status'])
+    }
+    expect(JSON.stringify(payload)).not.toMatch(/"[a-z_]*api_key":|"apiKey":|"automation_enabled":/)
+  })
+
   it('GET returns status only — never the raw secret value', async () => {
     const supabase = buildAuthedSupabase('user-1', {
       userSettingsRow: { openai_api_key: 'sk-should-never-leak', nanobanana_api_key: null, kling_api_key: 'kling-should-never-leak', replicate_api_key: null, gemini_api_key: 'gemini-should-never-leak', nanobanana_base_url: 'https://example.test' },
@@ -51,6 +94,7 @@ describe('/api/settings/providers', () => {
     expect(payload.providers.replicate.status).toBe('missing')
     expect(payload.providers.gemini.status).toBe('configured')
     expect(payload.providers.kling.connectionMethod).toBe('api_key')
+    expect(payload.automationEnabled).toBe(false)
 
     const raw = JSON.stringify(payload)
     expect(raw).not.toContain('sk-should-never-leak')
@@ -59,12 +103,14 @@ describe('/api/settings/providers', () => {
   })
 
   it('GET requires authentication', async () => {
-    const supabase = { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('no session') }) } }
+    const supabase = { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('no session') }) }, from: vi.fn() }
     vi.mocked(server.createClient).mockResolvedValue(supabase as any)
 
     const { GET } = await import('@/app/api/settings/providers/route')
     const response = await GET()
     expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Nao autorizado' })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 })
 

@@ -27,7 +27,7 @@ export async function GET() {
 
     const { data: settings } = await supabase
       .from('user_settings')
-      .select('nanobanana_base_url')
+      .select('nanobanana_base_url, automation_enabled')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -38,6 +38,7 @@ export async function GET() {
           { status: statuses[provider], connectionMethod: primaryConnectionMethod(provider) },
         ]),
       ),
+      automationEnabled: settings?.automation_enabled === true,
       nanobananaBaseUrl: settings?.nanobanana_base_url ?? null,
       // FUTURE-050: browser-safe diagnostic (class + allowed/blocked only) so a smoke can prove the guard without a paid call.
       executionPolicy: describeProviderExecutionPolicy(),

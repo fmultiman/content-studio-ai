@@ -31,6 +31,8 @@ export type PromptAssistanceUsageContext = {
   funding: string
   /** Optional validated analytics label. Never read for billing, authorization or ownership. */
   workflow?: PromptAssistanceWorkflow
+  /** Target media of the prompt; omitted by legacy image-only callers. */
+  mediaType?: 'image' | 'video'
   usage: PromptAssistanceUsage | null
 }
 
@@ -63,7 +65,7 @@ export function promptAssistanceUsageEvents(context: PromptAssistanceUsageContex
     providerTaskId: usage?.providerRequestId ?? null,
   }
   const metadata = {
-    media_type: 'image',
+    media_type: context.mediaType ?? 'image',
     operation: context.operation,
     api: context.provider === 'gemini' ? 'gemini_generate_content' : 'openai_chat_completions',
     funding: context.funding,

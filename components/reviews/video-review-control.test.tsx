@@ -216,6 +216,97 @@ describe('result presentation', () => {
   })
 })
 
+describe('explicit refined prompt action', () => {
+  it.each(['latest', 'older'] as const)('uses the %s Review only on a click, keeps history immutable and sends no requests', async (selection) => {
+    const base = item()
+    const latest = item({ result: { ...base.result!, refinedPrompt: '  Latest prompt\nwith motion  ' } }, 2)
+    const older = item({ result: { ...base.result!, refinedPrompt: '\n  Older prompt\nwith pacing \t' } })
+    server.items = [latest, older]
+    const originalHistory = JSON.stringify(server.items)
+    const onUseRefinedPrompt = vi.fn()
+    render(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} />)
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    await screen.findByTestId(`review-item-${latest.id}`)
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    if (selection === 'older') {
+      fireEvent.click(within(screen.getByTestId(`video-review-older-${older.id}`)).getByText(/Revisão 1 ·/))
+    }
+    const selected = selection === 'latest' ? latest : older
+    const result = screen.getByTestId(`review-item-${selected.id}`)
+    expect(within(result).getByTestId('review-visual-only').textContent).toContain('o áudio do vídeo não foi avaliado')
+    const requestsBeforeApply = fetchMock.mock.calls.length
+    fireEvent.click(within(result).getByRole('button', { name: 'Usar prompt refinado' }))
+    expect(onUseRefinedPrompt).toHaveBeenCalledExactlyOnceWith(selected.result!.refinedPrompt!.trim())
+    expect(screen.queryByTestId('video-review-panel')).toBeNull()
+    expect(JSON.stringify(server.items)).toBe(originalHistory)
+    expect(fetchMock).toHaveBeenCalledTimes(requestsBeforeApply)
+    expect(writes()).toHaveLength(0)
+    // Reopening still displays the original stored suggestions.
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    await screen.findByTestId(`review-item-${latest.id}`)
+    expect(screen.getByTestId(`review-item-${selected.id}`).textContent).toContain(selected.result!.refinedPrompt!)
+    expect(onUseRefinedPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([null, '', ' \n\t '])('offers no action for an absent or empty prompt (%j)', async (refinedPrompt) => {
+    const base = item()
+    server.items = [item({ result: { ...base.result!, refinedPrompt } })]
+    const onUseRefinedPrompt = vi.fn()
+    render(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} />)
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    await screen.findByTestId('review-summary')
+    expect(screen.queryByRole('button', { name: 'Usar prompt refinado' })).toBeNull()
+    expect(screen.queryByTestId('review-refined-prompt')).toBeNull()
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    expect(writes()).toHaveLength(0)
+  })
+
+  it.each(['failed', 'pending', 'running'] as const)('offers no action for a %s Review, even with a stored prompt', async (status) => {
+    server.items = [item({ status, createdAt: new Date().toISOString() })]
+    const onUseRefinedPrompt = vi.fn()
+    render(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} />)
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    await screen.findByTestId(`review-item-${server.items[0].id}`)
+    expect(screen.queryByRole('button', { name: 'Usar prompt refinado' })).toBeNull()
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('keeps the action disabled while the workspace is busy and enables it when idle', async () => {
+    server.items = [item()]
+    const onUseRefinedPrompt = vi.fn()
+    const { rerender } = render(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} refinedPromptDisabled />)
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    const action = await screen.findByRole('button', { name: 'Usar prompt refinado' })
+    const requests = fetchMock.mock.calls.length
+    expect((action as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(action)
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    expect(screen.getByTestId('video-review-panel')).toBeTruthy()
+    expect(fetchMock).toHaveBeenCalledTimes(requests)
+    rerender(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} refinedPromptDisabled={false} />)
+    expect((action as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(action)
+    expect(onUseRefinedPrompt).toHaveBeenCalledExactlyOnceWith(server.items[0].result!.refinedPrompt!.trim())
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('disables applying completed history while another Review is in flight', async () => {
+    server.items = [inFlight('running'), item()]
+    const onUseRefinedPrompt = vi.fn()
+    render(<VideoReviewControl source={SOURCE} onUseRefinedPrompt={onUseRefinedPrompt} />)
+    fireEvent.click(screen.getByTestId('video-review-open'))
+    await screen.findByTestId('video-review-history')
+    fireEvent.click(within(screen.getByTestId(`video-review-older-${server.items[1].id}`)).getByText(/Revisão 1 ·/))
+    const action = screen.getByRole('button', { name: 'Usar prompt refinado' })
+    expect((action as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(action)
+    expect(onUseRefinedPrompt).not.toHaveBeenCalled()
+    expect(writes()).toHaveLength(0)
+  })
+})
+
 describe('Review states', () => {
   it('a Review recovered as stale (execution_stale) reads as an interruption and allows a new Review', async () => {
     server.items = [item({ status: 'failed', result: null, failure: { code: 'execution_stale', message: 'The previous Review execution was interrupted and did not complete.' }, id: '40000000-0000-4000-8000-000000000004' })]

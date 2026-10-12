@@ -3,14 +3,15 @@
 // VIDEO_REVIEW_UI_AND_HISTORY_V1
 //
 // One Video Review, readable without raw JSON. Purely presentational: it renders what the history read returned
-// and performs no request and no mutation. Review is ADVISORY: nothing here approves, blocks, applies or edits.
+// and performs no request and no mutation. Review is ADVISORY: applying a suggestion requires an explicit callback.
 //
 //  - criteria with applicable=false or insufficient_evidence are shown as such (never as a failure);
-//  - the refined prompt is a SUGGESTION and is only displayed;
+//  - the refined prompt is a SUGGESTION; an optional action only hands it to the workspace on a user click;
 //  - the analysis is visual-only and the UI never implies audio was evaluated.
 
 import { Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   ASSESSMENT_LABEL,
   ASSESSMENT_TONE,
@@ -76,12 +77,16 @@ export function VideoReviewResult({
   position,
   total,
   nowMs,
+  onUseRefinedPrompt,
+  refinedPromptDisabled = false,
 }: {
   item: VideoReviewHistoryItem
   /** 1-based position counting from the OLDEST Review. */
   position: number
   total: number
   nowMs: number
+  onUseRefinedPrompt?: (prompt: string) => void
+  refinedPromptDisabled?: boolean
 }) {
   const heading = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -129,6 +134,7 @@ export function VideoReviewResult({
   }
 
   const { result } = item
+  const refinedPrompt = result.refinedPrompt?.trim() ?? ''
   return (
     <article className="space-y-4 rounded-lg border border-border-subtle p-4" data-testid={`review-item-${item.id}`} data-status="completed">
       {heading}
@@ -157,11 +163,24 @@ export function VideoReviewResult({
       <BulletList title="Problemas encontrados" items={result.issues} testId="review-issues" />
       <BulletList title="Recomendações" items={result.recommendations} testId="review-recommendations" />
 
-      {result.refinedPrompt && (
+      {refinedPrompt && (
         <div className="space-y-1 rounded-md border border-dashed border-border-default p-3" data-testid="review-refined-prompt">
           <p className="text-xs font-medium text-text-secondary">Sugestão de prompt</p>
           <p className="whitespace-pre-wrap break-words text-sm">{result.refinedPrompt}</p>
           <p className="text-xs text-text-secondary">É apenas uma sugestão: nada é alterado nem gerado automaticamente.</p>
+          {item.status === 'completed' && onUseRefinedPrompt && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={refinedPromptDisabled}
+              onClick={() => {
+                if (!refinedPromptDisabled) onUseRefinedPrompt(refinedPrompt)
+              }}
+            >
+              Usar prompt refinado
+            </Button>
+          )}
         </div>
       )}
     </article>

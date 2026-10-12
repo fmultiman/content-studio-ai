@@ -107,7 +107,7 @@ export function VideoGenerationForm({
     (selection.resolution !== null && selection.resolution !== '720p')
 
   return (
-    <div className={cn("w-full min-w-0", disabled && "opacity-60 pointer-events-none")}>
+    <fieldset disabled={disabled} className={cn("w-full min-w-0", disabled && "opacity-60 pointer-events-none")}>
       {header}
 
       {operationChoices.length > 0 && selection.operation && model && (
@@ -189,8 +189,9 @@ export function VideoGenerationForm({
             <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={sourceSelection} onChange={onSourceSelectionChange} />
 
             <div className="space-y-2">
-              <Label>Motion Prompt (Dicas de animação)</Label>
+              <Label htmlFor="video-motion-prompt">Motion Prompt (Dicas de animação)</Label>
               <Textarea
+                id="video-motion-prompt"
                 placeholder="Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)"
                 value={prompt}
                 onChange={(e) => onPromptChange(e.target.value)}
@@ -201,8 +202,9 @@ export function VideoGenerationForm({
 
           <TabsContent value="text_to_video" className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label>Prompt</Label>
+              <Label htmlFor="video-working-prompt">Prompt</Label>
               <Textarea
+                id="video-working-prompt"
                 placeholder="Descreva a cena do vídeo detalhadamente..."
                 value={prompt}
                 onChange={(e) => onPromptChange(e.target.value)}
@@ -377,6 +379,6 @@ export function VideoGenerationForm({
           )}
         </Tabs>
       )}
-    </div>
+    </fieldset>
   )
 }
