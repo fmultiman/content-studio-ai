@@ -1,6 +1,6 @@
 # FUTURE-064 Slice D — Image-output pricing registry: audit, reviewed SQL and local proof (DESIGN)
 
-Status: **design + proof only. Nothing was applied to Production, no code path changed, the Gemini image switch is OFF, no Vercel setting was touched, no paid call was made.**
+Status: **design + proof only at the time of writing. Later: the cost-derivation code merged (`7e36cf5`) and the reviewed up SQL was applied to Production on 2026-10-12 06:50:09 UTC (migration `20261012065009`); execution evidence is in `FUTURE_064_GOOGLE_GEMINI_IMAGE_SLICE_D_V1.md`. The Gemini image switch is OFF.**
 Baseline: `origin/main` `3a702a1` (Slices A–C merged). Reads: Slice A/B/C docs, `scripts/061`/`062`, `lib/usage/pricing/*`, the Usage UI, the live registry (read-only).
 
 ## 1. Actual pricing schema findings (live, read-only, 2026-10-12)
