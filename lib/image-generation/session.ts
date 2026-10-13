@@ -21,6 +21,8 @@ export const ImageGenerationWorkingStateV1Schema = z.object({
   generatedPromptPt: z.string().nullable().default(null),
   promptDetails: z.unknown().nullable().default(null),
   autoMode: z.boolean(),
+  // Selected creation mode (selection only, never execution). Absent in sessions saved before the field existed.
+  workflowMode: z.enum(['manual', 'assisted', 'automatic']).nullable().optional(),
   selectedModel: z.string().nullable().default(null),
   imageStatus: z.string().nullable().default(null),
   currentAttempt: z.number().int().nonnegative().nullable().default(null),

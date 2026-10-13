@@ -5,7 +5,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PromptLanguagePanel, type PromptLanguageView } from '@/components/prompts/prompt-language-panel'
+import type { WorkflowMode } from './image-workflow-controls'
 import { ImageIcon, Loader2, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
 import { isGeminiImageModel, type ImageModel } from '@/lib/images/image-models'
@@ -22,7 +23,7 @@ interface PromptSectionProps {
   onApplySuggestion?: () => void
   onDiscardSuggestion?: () => void
   generatedPromptPt?: string
-  onTranslatePrompt?: () => Promise<void>
+  onTranslatePrompt?: () => void | Promise<void>
   isTranslatingPrompt?: boolean
   canTranslatePrompt?: boolean
   translationError?: string | null
@@ -48,6 +49,8 @@ interface PromptSectionProps {
   workflowBusy?: boolean
   selectedModel?: ImageModel
   onModelChange?: (model: ImageModel) => void
+  /** Effective workflow. Automatic owns generation (no competing button) and shows the produced prompt read-only. */
+  mode?: WorkflowMode
 }
 
 export function PromptSection({
@@ -72,12 +75,14 @@ export function PromptSection({
   workflowBusy = false,
   selectedModel = 'gpt-image-2',
   onModelChange,
+  mode = 'assisted',
 }: PromptSectionProps) {
+  const automaticMode = mode === 'automatic'
   const [copied, setCopied] = useState(false)
   const [confirmingApply, setConfirmingApply] = useState(false)
   // Applying a CREATE suggestion replaces an authored prompt: ask first (Improve is the user's own refinement).
   const applyReplacesAuthoredPrompt = suggestedOperation === 'create' && generatedPrompt.trim().length > 0 && generatedPrompt.trim() !== suggestedPrompt.trim()
-  const [activePromptLanguage, setActivePromptLanguage] = useState<'en' | 'pt'>('en')
+  const [activePromptLanguage, setActivePromptLanguage] = useState<PromptLanguageView>('prompt')
   const modelGroups = buildImageModelGroups({
     selectedModel: unrecognizedModel ? null : selectedModel,
     nanobananaConfigured: hasNanoBananaKey,
@@ -88,19 +93,10 @@ export function PromptSection({
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(
-      activePromptLanguage === 'pt' ? generatedPromptPt || generatedPrompt || suggestedPrompt : generatedPrompt || suggestedPrompt,
+      activePromptLanguage === 'pt' ? generatedPromptPt : generatedPrompt || suggestedPrompt,
     )
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleLanguageChange = async (value: string) => {
-    const language = value === 'pt' ? 'pt' : 'en'
-    setActivePromptLanguage(language)
-
-    if (language === 'pt' && canTranslatePrompt && !generatedPromptPt && onTranslatePrompt) {
-      await onTranslatePrompt()
-    }
   }
 
   return (
@@ -113,7 +109,7 @@ export function PromptSection({
           <div>
             <h2 className="text-lg font-semibold text-foreground">Prompt</h2>
             <p className="text-sm text-muted-foreground">
-              Escreva o prompt ou edite o gerado e crie a imagem quando quiser
+              Escreva ou edite o prompt de geração; a imagem só é criada quando você pedir
             </p>
           </div>
         </div>
@@ -121,7 +117,7 @@ export function PromptSection({
           variant="outline"
           size="sm"
           onClick={handleCopy}
-          disabled={!generatedPrompt && !suggestedPrompt}
+          disabled={activePromptLanguage === 'pt' ? !generatedPromptPt : !generatedPrompt && !suggestedPrompt}
           className="gap-2"
         >
           {copied ? (
@@ -159,7 +155,7 @@ export function PromptSection({
                   disabled={workflowBusy}
                   data-testid="prompt-assistance-apply"
                 >
-                  Aplicar
+                  Aplicar sugestão
                 </Button>
               )}
             </div>
@@ -191,70 +187,36 @@ export function PromptSection({
           </div>
         )}
 
-        {/* Editable Prompt */}
-        <Tabs value={activePromptLanguage} onValueChange={handleLanguageChange}>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <Label htmlFor="generated-prompt">
-              {activePromptLanguage === 'pt' ? 'Versao em Portugues' : 'Prompt em Ingles'}
-            </Label>
-            <TabsList className="grid w-[210px] grid-cols-2">
-              <TabsTrigger value="en">Ingles</TabsTrigger>
-              <TabsTrigger value="pt">Portugues</TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="en" className="mt-0 space-y-2">
-            <Textarea
-              id="generated-prompt"
-              value={generatedPrompt}
-              onChange={(e) => setGeneratedPrompt(e.target.value)}
-              disabled={workflowBusy}
-              placeholder="Escreva aqui o prompt da imagem (em inglês, para melhor compatibilidade) ou use a assistência de IA acima."
-              rows={6}
-              className="resize-none bg-background/50 font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Prompts em ingles têm melhor compatibilidade com modelos de IA.
-            </p>
-          </TabsContent>
-
-          <TabsContent value="pt" className="mt-0 space-y-2">
-            <div className="relative">
-              <Textarea
-                value={generatedPromptPt}
-                readOnly
-                placeholder={
-                  canTranslatePrompt
-                    ? 'A versao em portugues sera gerada quando voce abrir esta aba.'
-                    : 'Tradução indisponível sem provedor configurado.'
-                }
-                rows={6}
-                className="resize-none bg-background/50 text-sm"
-              />
-              {isTranslatingPrompt && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-md bg-background/70">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
-            </div>
-            {(!canTranslatePrompt || translationError) && !generatedPromptPt && (
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-                <p>{translationError || 'Tradução indisponível sem provedor configurado.'}</p>
-                {!canTranslatePrompt && (
-                  <a
-                    href="/configuracoes"
-                    className="mt-2 inline-flex font-medium underline underline-offset-4"
-                  >
-                    Configurar provedor
-                  </a>
-                )}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Esta versao e apenas para leitura. A imagem continua usando o prompt em ingles.
-            </p>
-          </TabsContent>
-        </Tabs>
+        {/* Single generation prompt + optional read-only Portuguese view */}
+        <PromptLanguagePanel
+          idPrefix="image-prompt"
+          view={activePromptLanguage}
+          onViewChange={setActivePromptLanguage}
+          translation={generatedPromptPt}
+          translating={isTranslatingPrompt}
+          error={translationError}
+          canTranslate={canTranslatePrompt}
+          hasPrompt={Boolean(generatedPrompt.trim())}
+          onTranslate={() => void onTranslatePrompt?.()}
+          disabled={workflowBusy}
+        >
+          <Label htmlFor="generated-prompt">Prompt de geração <span className="font-normal text-muted-foreground">— o texto enviado ao provedor</span></Label>
+          <Textarea
+            id="generated-prompt"
+            value={generatedPrompt}
+            onChange={(e) => setGeneratedPrompt(e.target.value)}
+            disabled={workflowBusy}
+            readOnly={automaticMode}
+            placeholder={automaticMode ? 'O prompt gerado aparecerá aqui depois de “Gerar automaticamente”.' : 'Escreva o prompt da imagem no seu idioma, ou aplique uma sugestão da IA.'}
+            rows={6}
+            className="resize-none bg-background/50 font-mono text-sm"
+          />
+          <p className="text-xs text-muted-foreground" data-testid="image-prompt-hint">
+            {automaticMode
+              ? 'No modo Automático o prompt é gerado pela IA e fica somente leitura. Use Manual ou Assistido para editá-lo.'
+              : 'Este é o único texto usado para gerar a imagem. Prompts em inglês costumam ter melhor compatibilidade, mas nada é traduzido ou reescrito sem a sua ação.'}
+          </p>
+        </PromptLanguagePanel>
 
         {/* Image model selector + explicit generation: visible in Manual, Assisted and Automatic flows */}
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -285,25 +247,27 @@ export function PromptSection({
             </div>
           )}
           
-          {/* Single Create Image Button */}
-          <Button
-            onClick={() => onCreateImage(selectedModel)}
-            disabled={!generatedPrompt.trim() || isCreatingImage || workflowBusy || Boolean(createDisabledReason)}
-            size="lg"
-            className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600"
-          >
-            {isCreatingImage ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Criando...
-              </>
-            ) : (
-              <>
-                <ImageIcon className="mr-2 h-5 w-5" />
-                Criar Imagem
-              </>
-            )}
-          </Button>
+          {/* Single Create Image Button — Automatic owns generation through "Gerar automaticamente" */}
+          {!automaticMode && (
+            <Button
+              onClick={() => onCreateImage(selectedModel)}
+              disabled={!generatedPrompt.trim() || isCreatingImage || workflowBusy || Boolean(createDisabledReason)}
+              size="lg"
+              className="bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600"
+            >
+              {isCreatingImage ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="mr-2 h-5 w-5" />
+                  Criar Imagem
+                </>
+              )}
+            </Button>
+          )}
         </div>
         {(googleNote || createDisabledReason || showGoogleCostNotice) && (
           <div className="space-y-1 text-right text-xs text-muted-foreground" data-testid="image-model-notices">

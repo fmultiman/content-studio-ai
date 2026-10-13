@@ -40,6 +40,7 @@ import { connectionNamesById } from '@/lib/video-generation/connection-presentat
 import { attemptToWorkingState, type VideoGenerationWorkingStateV1 } from '@/lib/video-generation/working-state'
 import type { SessionResponse } from '@/lib/video-generation/session'
 import { useGenerationSessionAutosave } from '@/hooks/use-generation-session-autosave'
+import { usePromptTranslation } from '@/hooks/use-prompt-translation'
 import { SessionSaveStatus } from '@/components/generation-session/session-save-status'
 import { useGenerationSessionNavigation } from '@/components/generation-session/session-navigation-guard'
 import type { GenerationSessionAutosaveAdapter } from '@/lib/generation-session/autosave'
@@ -77,6 +78,9 @@ function WorkspacePageContent() {
 
   // LOCAL STATE
   const [prompt, setPrompt] = useState('')
+  // Optional read-only Portuguese view of the generation prompt: bound to the exact prompt, explicit action only.
+  const [promptPt, setPromptPt] = useState('')
+  const promptTranslation = usePromptTranslation({ prompt, translation: promptPt, setTranslation: setPromptPt })
   const [selection, setSelection] = useState<VideoFormSelection>(EMPTY_SELECTION)
   const [sourceSelection, setSourceSelection] = useState<I2vSourceSelection | null>(null)
 
@@ -692,6 +696,11 @@ function WorkspacePageContent() {
     : selection.operation === 'image_to_video' && !sourceSelection?.source ? 'Selecione uma imagem de origem.'
     : assistanceReason
 
+  const generationSummary = activeModel && selection.operation ? `${activeModel.label} · ${selection.operation === 'image_to_video' ? 'Imagem para Vídeo' : 'Texto para Vídeo'}` : null
+  // Automatic that cannot run (preference off, no usable connection...) is shown as Assisted, so a competing generate
+  // button never disappears behind a disabled Automatic. The saved selection is untouched.
+  const effectiveMode: WorkflowMode = workflowMode === 'automatic' && automaticReason ? 'assisted' : workflowMode
+
   const requestAssistance = async (operation: 'create' | 'improve', workflow: 'assisted' | 'automatic', snapshot: VideoGenerationWorkingStateV1, signal: AbortSignal) => {
     if (!assistant || assistanceReason) throw new Error(assistanceReason || 'Modelo de assistência indisponível.')
     const response = await fetch('/api/prompt-assistance', {
@@ -896,7 +905,7 @@ function WorkspacePageContent() {
               )}
 
               <VideoPromptWorkflow
-                mode={workflowMode} onModeChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setPersistAssistance(true); setWorkflowMode(value) }}
+                mode={effectiveMode} onModeChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setPersistAssistance(true); setWorkflowMode(value) }}
                 description={description} onDescriptionChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setPersistAssistance(true); setDescription(value) }}
                 assistant={assistant} onAssistantChange={(value: PromptAssistanceModel) => { invalidateAssistance(); setPersistAssistance(true); setAssistantSelection({ provider: value.provider, model: value.id }) }}
                 configured={configuredProviders} providerStatusLoaded={providerStatusLoaded} reason={assistanceReason}
@@ -906,6 +915,8 @@ function WorkspacePageContent() {
                 automaticReason={automaticReason} automaticStage={automaticStage} automaticMessage={automaticMessage}
                 confirmingAutomatic={confirmingAutomatic} onStartAutomatic={() => { if (prompt.trim()) setConfirmingAutomatic(true); else void runAutomatic() }}
                 onConfirmAutomatic={() => void runAutomatic()} onCancelAutomaticConfirm={() => setConfirmingAutomatic(false)} onCancelAutomatic={cancelAutomatic}
+                generationSummary={generationSummary} promptEmpty={!prompt.trim()}
+                onUseDescription={() => editPrompt(description.trim())}
               />
               {assistanceError && <p role="alert" className="text-sm text-destructive" data-testid="video-assistance-error">{assistanceError}</p>}
 
@@ -920,8 +931,18 @@ function WorkspacePageContent() {
                 sourceSelection={sourceSelection}
                 onSourceSelectionChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setSourceSelection(value) }}
                 disabled={busy || saveState === 'conflict' || !!unconfirmedSubmission}
+                promptReadOnly={effectiveMode === 'automatic'}
+                promptLanguage={{
+                  translation: promptTranslation.translation,
+                  translating: promptTranslation.translating,
+                  error: promptTranslation.error,
+                  canTranslate: providerStatusLoaded && paidExecutionAllowed && configuredProviders.has('openai'),
+                  unavailableReason: !providerStatusLoaded ? 'Não foi possível confirmar os provedores.' : !paidExecutionAllowed ? 'A tradução paga está bloqueada neste ambiente.' : undefined,
+                  onTranslate: () => { void promptTranslation.translate() },
+                }}
               />
 
+              {effectiveMode !== 'automatic' && (
               <div className="flex justify-end pt-4">
                 <Button
                   onClick={() => { if (!automaticRun.current && !assistanceAbort.current) void submitVideo(currentWorkingState) }}
@@ -937,6 +958,7 @@ function WorkspacePageContent() {
                   Gerar vídeo
                 </Button>
               </div>
+              )}
             </div>
 
             <div className="min-w-0 border rounded-lg bg-card min-h-[500px]" data-testid="attempts-timeline-panel">
