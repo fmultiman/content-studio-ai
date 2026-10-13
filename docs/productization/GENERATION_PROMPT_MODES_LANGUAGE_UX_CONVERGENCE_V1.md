@@ -47,9 +47,13 @@ Regras (Imagens e Vídeos, mesmo componente `PromptLanguagePanel` + hook `usePro
 | Rótulos e hierarquia (“Prompt de geração”, “Sua descrição”, “Aplicar sugestão”) | IMPLEMENTED | IMPLEMENTED |
 | Diferenças do meio (modelo/formato de imagem × conexão/operação/duração Kling, imagem de origem I2V) | preservadas | preservadas |
 
-## Validação
+## Validação e entrega
 
-Ver o relatório de fechamento da missão (PR, SHA, testes e Production). Cobertura nova: `components/prompts/use-prompt-translation.test.tsx` (invariantes do hook), `components/images/prompt-modes-language-ux.test.tsx` e o último `describe` de `components/videos/video-workspace-parity.test.tsx` (comportamento real dos dois workspaces com rede mockada), além de ajustes mínimos de testes que codificavam o layout anterior.
+- **PR #193** mesclado em `main` como `82043ff`; deployment **Production READY** nesse SHA (`content.multihuman.com.br`).
+- Typecheck limpo; lint 0 erros (58 warnings, o mesmo total de antes). Suíte completa: 6196 testes; as únicas falhas foram 2 testes do Inspector do editor criativo (rótulo “Estilos” × “Estilo”, falham igual em `ac8ace8`, fora do escopo) e 2 testes de `video-workspace-parity` que estouraram o timeout de 5 s sob carga e passam isolados (32/32; a base `e989d59` leva o mesmo tempo por teste). O `next build` local não pôde rodar (o `node_modules` desta worktree é um link fora da raiz); o build Vercel do PR e da `main` passaram.
+- Cobertura nova: `components/prompts/use-prompt-translation.test.tsx` (hook), `components/images/prompt-modes-language-ux.test.tsx`, último `describe` de `components/videos/video-workspace-parity.test.tsx`, asserções de Automático em `automatic-image-workflow.test.tsx` e o esquema `workflowMode` em `foundation.test.ts`. Testes que codificavam o layout anterior (campo “Prompt”, descrição visível em Manual, botão concorrente no Automático) foram ajustados.
+- Revisão independente a frio: 2 achados (requisição pendente sem tradução não era invalidada; carregar sessão com texto de tradução igual era tratado como edição) corrigidos com época explícita de hidratação; reconferência sem achados.
+- **Inspeção autenticada em Production, sem chamada paga** (sessões de teste, sem clicar em Traduzir, Criar com IA, Gerar automaticamente ou Gerar): Vídeos — Manual mostra só “Prompt de geração” (sem descrição, sem assistência, um botão Gerar); Assistido mostra motivo do botão desabilitado e dicas; aba “Português (leitura)” abre sem nenhuma requisição de tradução (só o autosave) e exibe aviso BYOK e o botão. Imagens — Manual com campo único; Automático sem “Criar Imagem”, prompt somente leitura, modelos de assistência e de imagem visíveis e resumo “Prompt: OpenAI · GPT-4o mini → Imagem: GPT Image 2”; aba Português sem chamada de tradução (botão desabilitado por não haver prompt); o modo Manual escolhido sobreviveu ao reload. Sem rolagem horizontal a 1366 px e 390 px.
 
 ## Limitações materiais
 
