@@ -12,7 +12,7 @@ import {
   VeoError,
   type VeoFrame,
 } from '@/lib/providers/gemini/veo-client'
-import { isVeoVideoGenerationEnabled } from '@/lib/providers/gemini/veo-feature'
+import { isVeoVideoGenerationEnabled, veoCanaryUserIds } from '@/lib/providers/gemini/veo-feature'
 import { allowedDurations, defaultDuration, findModel, lastFrameConflicts, type VideoModelCapability } from '@/lib/video-generation/capabilities'
 import { derivedVideoUsage } from '@/lib/video-generation/completion'
 import { describeGeminiConnection, GEMINI_CONNECTION_REF, parseConnectionRef } from '@/lib/video-generation/connections'
@@ -94,7 +94,8 @@ describe('first/last-frame capability derivation', () => {
 
   it('Google Veo 3.1 Standard, Fast and Lite accept first + last frame in image_to_video only', () => {
     for (const id of ['veo-3.1-generate-preview', 'veo-3.1-fast-generate-preview', 'veo-3.1-lite-generate-preview']) {
-      expect(imageModel(veo, id).lastFrame).toEqual({ audioAllowed: true, multiShotAllowed: true })
+      // Conservative: the current docs state no first+last-frame duration rule, earlier ones required 8 s -> 8 s until a canary proves otherwise.
+      expect(imageModel(veo, id).lastFrame).toEqual({ audioAllowed: true, multiShotAllowed: true, requiresDuration: 8 })
       expect(textModel(veo, id).lastFrame).toBeUndefined()
     }
   })
@@ -149,11 +150,18 @@ describe('validateVideoRequest — last frame', () => {
   })
 
   it('Google Veo: A+B accepted on every 3.1 model; durations tie to resolution; aspect ratio is explicit', () => {
+    // First+last frame is restricted to 8 s on Veo (conservative; see veo-capabilities.ts): the default is already 8.
     const request = ok(veo, { operation: 'image_to_video', model: 'veo-3.1-fast-generate-preview', lastFrame: true }).request
     expect(request).toMatchObject({ operation: 'image_to_video', duration: 8, resolution: '720p', aspectRatio: '16:9', audio: null, multiShot: null, lastFrame: true })
     expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-generate-preview', resolution: '1080p', duration: 4 })).toBe('DURATION_RESOLUTION_CONFLICT')
     expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-generate-preview', resolution: '4k', duration: 6 })).toBe('DURATION_RESOLUTION_CONFLICT')
     expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-generate-preview', resolution: '4k', duration: 8, lastFrame: true })).toBe('OK')
+    // A+B at 4 or 6 s is refused (never silently changed to 8); the same durations stay valid for ONE image and for text.
+    for (const duration of [4, 6]) {
+      expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-fast-generate-preview', duration, lastFrame: true })).toBe('LAST_FRAME_DURATION_CONFLICT')
+      expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-fast-generate-preview', duration })).toBe('OK')
+      expect(code(veo, { operation: 'text_to_video', model: 'veo-3.1-fast-generate-preview', duration })).toBe('OK')
+    }
     expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-lite-generate-preview', resolution: '4k' })).toBe('UNSUPPORTED_RESOLUTION')
     expect(code(veo, { operation: 'image_to_video', model: 'veo-3.1-generate-preview', aspect_ratio: '1:1' })).toBe('UNSUPPORTED_ASPECT_RATIO')
     // Veo has no audio / multi-shot / ASMR controls: sending one is rejected, not ignored.
@@ -170,9 +178,12 @@ describe('validateVideoRequest — last frame', () => {
 
   it('lastFrameConflicts is the single rule shared by the form and the server', () => {
     const v26 = imageModel(rest, 'kling-v2-6')
-    expect(lastFrameConflicts(v26, { resolution: '720p', audio: 'on', multiShot: null })).toEqual(['RESOLUTION', 'AUDIO'])
-    expect(lastFrameConflicts(v26, { resolution: '1080p', audio: 'off', multiShot: null })).toEqual([])
-    expect(lastFrameConflicts(textModel(rest, 'kling-v3'), { resolution: '720p', audio: 'off', multiShot: false })).toEqual(['UNSUPPORTED_MODEL'])
+    expect(lastFrameConflicts(v26, { resolution: '720p', audio: 'on', multiShot: null, duration: 5 })).toEqual(['RESOLUTION', 'AUDIO'])
+    expect(lastFrameConflicts(v26, { resolution: '1080p', audio: 'off', multiShot: null, duration: 5 })).toEqual([])
+    expect(lastFrameConflicts(textModel(rest, 'kling-v3'), { resolution: '720p', audio: 'off', multiShot: false, duration: 5 })).toEqual(['UNSUPPORTED_MODEL'])
+    const veoFast = imageModel(veo, 'veo-3.1-fast-generate-preview')
+    expect(lastFrameConflicts(veoFast, { resolution: '720p', audio: null, multiShot: null, duration: 6 })).toEqual(['DURATION'])
+    expect(lastFrameConflicts(veoFast, { resolution: '720p', audio: null, multiShot: null, duration: 8 })).toEqual([])
   })
 })
 
@@ -342,6 +353,34 @@ describe('Google Veo client — first/last frame', () => {
     expect(isSafeVeoResultUri('https://user:pw@generativelanguage.googleapis.com/x')).toBe(false)
   })
 
+  it('wire contract (Google docs, last updated 2026-10-08): instances[0] {prompt,image,lastFrame}, sibling parameters, JSON-number durationSeconds', () => {
+    const body = buildVeoSubmitBody({ ...params, duration: 8, firstFrame: first, lastFrame: last }) as any
+    expect(Object.keys(body).sort()).toEqual(['instances', 'parameters'])
+    expect(Object.keys(body.instances[0]).sort()).toEqual(['image', 'lastFrame', 'prompt'])
+    // image / lastFrame are { inlineData: { mimeType, data } } - camelCase mimeType, base64 data; never bytesBase64Encoded.
+    for (const frame of [body.instances[0].image, body.instances[0].lastFrame]) {
+      expect(Object.keys(frame)).toEqual(['inlineData'])
+      expect(Object.keys(frame.inlineData).sort()).toEqual(['data', 'mimeType'])
+    }
+    expect(JSON.stringify(body)).not.toMatch(/bytesBase64Encoded|mime_type/)
+    // The docs show durationSeconds only as quoted table values and never in a REST body; the field is an integer and is sent as a
+    // JSON number (confirm in the paid canary).
+    expect(typeof body.parameters.durationSeconds).toBe('number')
+    expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8, numberOfVideos: 1 })
+  })
+
+  it('accepts the documented operation name with or without the models/{model}/ prefix, and still refuses any other path', async () => {
+    const accept = async (name: string) => getVeoOperation('k', name, { fetchImpl: (async () => json({ done: false })) as any })
+    expect(await accept('models/veo-3.1-fast-generate-preview/operations/abc123')).toEqual({ state: 'processing' })
+    expect(await accept('operations/abc123')).toEqual({ state: 'processing' })
+    for (const bad of ['models/x/../../secrets', 'files/abc123', 'operations/../models', 'operations/a/b', '/operations/abc', 'operations/', 'models/x/operations/a b']) {
+      await expect(getVeoOperation('k', bad, { fetchImpl: (async () => json({})) as any })).rejects.toMatchObject({ kind: 'invalid_input' })
+    }
+    // A submit answered with the unprefixed form is recorded (never lost as "unreadable").
+    const result = await submitVeoVideo(params, { fetchImpl: (async () => json({ name: 'operations/abc123' })) as any })
+    expect(result).toEqual({ operationName: 'operations/abc123' })
+  })
+
   it('reads an operation with the key header only; a transport failure is transient, a 404 is a definitive failure', async () => {
     const name = 'models/veo-3.1-fast-generate-preview/operations/abc123'
     const fetchImpl = vi.fn(async () => json({ done: false }))
@@ -467,6 +506,10 @@ describe('form reconciliation with Google Veo and a last frame', () => {
     expect(lastFrameBlockers(v26, selection)).toEqual(['RESOLUTION', 'AUDIO'])
     expect(lastFrameBlockers(null, selection)).toEqual(['UNSUPPORTED_MODEL'])
     expect(lastFrameBlockers(v26, { ...selection, resolution: '1080p', audio: 'off' })).toEqual([])
+    const veoFast = imageModel(veo, 'veo-3.1-fast-generate-preview')
+    const veoSelection: VideoFormSelection = { ...selection, connectionRef: GEMINI_CONNECTION_REF, modelId: 'veo-3.1-fast-generate-preview', duration: 4, resolution: '720p', audio: null, multiShot: null }
+    expect(lastFrameBlockers(veoFast, veoSelection)).toEqual(['DURATION'])
+    expect(lastFrameBlockers(veoFast, { ...veoSelection, duration: 8 })).toEqual([])
   })
 })
 
@@ -483,6 +526,23 @@ describe('Veo release switch and usage', () => {
     expect(isVeoVideoGenerationEnabled({ CONTENT_STUDIO_VEO_VIDEO_GENERATION: 'enabled' })).toBe(true)
     expect(describeGeminiConnection('configured', true)).toMatchObject({ canGenerate: true })
     expect(describeGeminiConnection('missing', true)).toMatchObject({ canGenerate: false, blockedReason: 'not_configured', operations: [] })
+  })
+
+  it('the switch is GLOBAL on its own; the canary allowlist limits it to the listed users and fails closed', () => {
+    const on = { CONTENT_STUDIO_VEO_VIDEO_GENERATION: 'enabled' }
+    // Global: any user (and even an unidentified caller) once the switch is on.
+    expect(isVeoVideoGenerationEnabled(on, 'user-x')).toBe(true)
+    expect(isVeoVideoGenerationEnabled(on)).toBe(true)
+    // Canary: only the listed ids, case/space-insensitive; everyone else and unidentified callers are refused.
+    const canary = { ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: ' User-A , user-b ' }
+    expect(veoCanaryUserIds(canary)).toEqual(['user-a', 'user-b'])
+    expect(isVeoVideoGenerationEnabled(canary, 'USER-A')).toBe(true)
+    expect(isVeoVideoGenerationEnabled(canary, 'user-c')).toBe(false)
+    expect(isVeoVideoGenerationEnabled(canary)).toBe(false)
+    expect(isVeoVideoGenerationEnabled(canary, null)).toBe(false)
+    // The allowlist never enables anything by itself, and an empty value means "no allowlist".
+    expect(isVeoVideoGenerationEnabled({ CONTENT_STUDIO_VEO_CANARY_USER_IDS: 'user-a' }, 'user-a')).toBe(false)
+    expect(isVeoVideoGenerationEnabled({ ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: '   ' }, 'user-x')).toBe(true)
   })
 
   it('usage for a delivered Veo video is DERIVED seconds (never provider_reported); Kling stays unknown', () => {

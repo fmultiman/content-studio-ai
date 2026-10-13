@@ -30,7 +30,7 @@ Pontos que a documentação **não** fecha e só o canário pago confirma (ver s
 | | Kling 2.6 (`kling-v2-6`) | sim | **1080p obrigatório**; áudio **desligado** |
 | **Kling conta (MCP)** | só modelos cujo `who_am_i` da *própria conexão* declara `tail_image`: hoje `kling-video-v2_5`, `kling-video-v2_6`, `kling-video-v3_0` | sim | v2_6: 1080p + sem áudio (lido do texto do argumento); v3_0: multi-shot desligado |
 | | `kling-video-v3_0_turbo`, `kling-video-o1`, `kling-video-v3_0_omni` | **não** | recusado com motivo; nunca enviado sem B |
-| **Google Veo** | Veo 3.1, Veo 3.1 Fast, Veo 3.1 Lite | sim | sem restrição extra além das gerais (1080p/4k = 8 s) |
+| **Google Veo** | Veo 3.1, Veo 3.1 Fast, Veo 3.1 Lite | sim | **8 s** (conservador, UI e servidor — ver "Verificação pré-canário"); além das gerais (1080p/4k = 8 s) |
 
 A habilitação **não** usa lista global nem o nome comercial: vem do contrato efetivo (código para REST/Veo; `tail_image` da
 conexão para MCP). Um snapshot MCP salvo *antes* desta entrega não tem a capacidade e só passa a oferecê-la depois de
@@ -52,7 +52,7 @@ conexão para MCP). Um snapshot MCP salvo *antes* desta entrega não tem a capac
 
 * **Todas as conexões**: `lastFrame` só em `image_to_video`; nunca em texto → vídeo. B ≠ A (mesma imagem é recusada).
 * **Kling 2.6 + B**: resolução 1080p, áudio `off`. **Kling 3.0 / MCP v3_0 + B**: multi-shot `off`.
-* **Veo**: `durationSeconds ∈ {4, 6, 8}`; `1080p`/`4k` ⇒ 8 s (a UI e o servidor concordam; ao escolher 1080p/4k a duração vai para 8 s e a nota explica); `4k` não existe no Lite; `aspectRatio ∈ {16:9, 9:16}` também com imagem; um vídeo por pedido.
+* **Veo**: `durationSeconds ∈ {4, 6, 8}`; **com imagem final B, apenas 8 s** (`LAST_FRAME_DURATION_CONFLICT`; 4/6 s seguem válidos para uma imagem e para texto); `1080p`/`4k` ⇒ 8 s (a UI e o servidor concordam; ao escolher 1080p/4k a duração vai para 8 s e a nota explica); `4k` não existe no Lite; `aspectRatio ∈ {16:9, 9:16}` também com imagem; um vídeo por pedido.
 * Não oferecidos mesmo existindo no provedor: extensão, imagens de referência, seed, prompt negativo, `personGeneration` (valor padrão do provedor), 4K no Lite, vários vídeos por pedido.
 
 ## 5. Fluxo de UI (Imagem para Vídeo)
@@ -119,6 +119,34 @@ Kling continua com uso desconhecido (nenhum transporte informa). Custos conhecid
   3. **Kling REST 3.0 A + B** (`last_frame`) e **Kling 2.6 A + B** (`image_tail`, 1080p, sem áudio).
   4. **Kling MCP A + B** (`tail_image` via `file_upload`), de preferência `kling-video-v2_6` ou `v3_0`.
   5. Só então ligar `CONTENT_STUDIO_VEO_VIDEO_GENERATION` em Production e, se desejado, aplicar a migração de preços.
+
+## 10b. Verificação pré-canário do adapter REST Veo (2026-10-13, documentação Google atualizada em 2026-10-08)
+
+| Item | Documentação oficial | Adapter | Resultado |
+|---|---|---|---|
+| Endpoint | `POST …/v1beta/{model=models/*}:predictLongRunning`; `instances[]`/`parameters` são `google.protobuf.Value` (referência da API) | idem | igual |
+| Corpo | `instances[0]` = `{ prompt, image, lastFrame }` e `parameters` irmão (exemplo REST de first/last frame) | idem | igual |
+| `image` / `lastFrame` | `{ "inlineData": { "mimeType": "image/png", "data": <base64> } }`; nenhum exemplo REST usa `bytesBase64Encoded` ou `mime_type` | idem (teste fixa as chaves) | igual |
+| `aspectRatio` / `resolution` | strings (`"9:16"`, `"4k"` em `parameters`) | strings | igual |
+| `durationSeconds` | **nunca aparece em um corpo REST**; a tabela lista `"4"`, `"6"`, `"8"` sem declarar tipo | número JSON | **única incerteza do contrato** — confirmar no canário (campo inteiro; um `Value` numérico é o formato padrão) |
+| `numberOfVideos` | aparece no exemplo REST oficial de extensão (3.1) | `1` | igual (1 vídeo por pedido) |
+| A+B exige 8 s? | **não declarado** (a tabela só exige 8 s para extensão, imagens de referência, 1080p e 4k); revisões anteriores exigiam 8 s na interpolação | **restrito a 8 s** | dúvida ⇒ restrição conservadora (UI + servidor), reversível após o canário |
+| `personGeneration` | `allow_all` (texto) / `allow_adult` (imagem/interpolação) | **não enviado** (padrão do provedor) | confirmar no canário A+B |
+| Operação | `jq -r .name` do POST; `GET ${BASE_URL}/${operation_name}` com `x-goog-api-key`; `done == true` | `GET …/v1beta/{name}`; `name` aceito com ou sem o prefixo `models/{model}/` (nunca outro caminho) | igual (+ tolerância) |
+| URI do vídeo | `.response.generateVideoResponse.generatedSamples[0].video.uri` | idem (+ forma `generatedVideos` do SDK) | igual |
+| Download | `curl -L -H "x-goog-api-key: …" "${video_uri}"` | GET fixado ao IP vetado, redirects manuais; o header só vai ao host de origem; host fixo `generativelanguage.googleapis.com` | igual (mais restrito) |
+| Bloqueio de segurança | "bloqueado ⇒ não cobrado"; campos de filtro não documentados | sem vídeo ⇒ `failed`, `raiMediaFilteredCount>0` ⇒ `PROVIDER_CONTENT_FILTERED`; nenhum evento de uso | consistente |
+| Retenção | 2 dias | o poller copia para S3 em minutos; falha por até 23 h | consistente |
+
+### Canário controlado (o interruptor é GLOBAL)
+
+`CONTENT_STUDIO_VEO_VIDEO_GENERATION=enabled` vale para **toda a implantação**: sozinho, habilita o Veo para **qualquer usuário que tenha uma chave Gemini**. Para um canário que só alcance o proprietário:
+
+1. Defina **primeiro** `CONTENT_STUDIO_VEO_CANARY_USER_IDS=<uuid do proprietário>` (lista separada por vírgulas; o uuid é `auth.users.id`). Com a lista definida, o Veo fica habilitado **somente** para esses ids e um chamador não identificado é recusado (fail closed). A lista sozinha não habilita nada.
+2. Só então defina `CONTENT_STUDIO_VEO_VIDEO_GENERATION=enabled` e faça o redeploy de Production (variáveis são lidas no runtime da implantação).
+3. Confirme em `/api/video-generations/connections` que `google:gemini` tem `canGenerate: true` para o proprietário (e `feature_disabled` para qualquer outra conta).
+4. Execute o canário; depois **desfaça** (remova o interruptor) ou mantenha a lista até a liberação geral. Para liberar a todos, remova `CONTENT_STUDIO_VEO_CANARY_USER_IDS` e mantenha o interruptor.
+5. Preview, local e ambientes desconhecidos continuam bloqueados pelo guard FUTURE-050, com ou sem as variáveis.
 
 ## 11. Testes e limitações
 

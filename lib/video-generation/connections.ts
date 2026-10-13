@@ -80,6 +80,8 @@ export function describeGeminiConnection(
   state: 'configured' | 'missing',
   enabled: boolean = isVeoVideoGenerationEnabled(),
 ): VideoGenerationConnectionDescriptor {
+  // Callers that know the user pass `isVeoVideoGenerationEnabled(process.env, userId)`: the release switch can be limited to a
+  // canary allowlist, so "enabled" is a per-user answer.
   const configured = state === 'configured'
   // A saved key is not enough: Veo also needs its release switch. Until then the controls are visible and explained,
   // but the connection cannot generate (no silent paid path exists behind a merged feature).
@@ -198,7 +200,7 @@ export async function listVideoGenerationConnections(
 
   return [
     describeRestConnection(restState),
-    describeGeminiConnection(geminiState),
+    describeGeminiConnection(geminiState, isVeoVideoGenerationEnabled(process.env, userId)),
     ...rows.filter((row) => row.provider === 'kling' && row.connection_method === 'mcp_oauth').map((row) => describeMcpConnection(row, now)),
   ]
 }
@@ -260,7 +262,7 @@ export async function resolveGenerationConnection(
     if (state === 'unavailable') {
       return { ok: false, status: 503, code: 'CONNECTIONS_UNAVAILABLE', message: 'Não foi possível verificar suas conexões agora.' }
     }
-    const descriptor = describeGeminiConnection(state)
+    const descriptor = describeGeminiConnection(state, isVeoVideoGenerationEnabled(process.env, userId))
     if (!descriptor.canGenerate) {
       if (descriptor.blockedReason === 'feature_disabled') return { ok: false, ...blockedResponse('feature_disabled') }
       return { ok: false, status: 422, code: 'PROVIDER_NOT_CONFIGURED', message: 'Gemini não configurado. Adicione sua chave de API em Configurações para usar o Google Veo.' }

@@ -326,6 +326,38 @@ describe('Google Veo — text_to_video and first/last-frame image_to_video', () 
     expect(readS3Object).not.toHaveBeenCalled()
   })
 
+  it('CONTROLLED CANARY: with an allowlist the switch only opens Veo for the listed user - anyone else is refused before any record or call', async () => {
+    enable()
+    const db = makeDb({ geminiKey: GEMINI_KEY })
+    signIn(db)
+    installVeo()
+    vi.stubEnv('CONTENT_STUDIO_VEO_CANARY_USER_IDS', '99999999-9999-4999-8999-999999999999')
+    const refused = await post({ ...base, mode: 'text_to_video', ...veoBody() })
+    expect(refused.status).toBe(403)
+    expect((await refused.json()).code).toBe('FEATURE_DISABLED')
+    expect(veoCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+
+    vi.stubEnv('CONTENT_STUDIO_VEO_CANARY_USER_IDS', 'user-a')
+    const allowed = await post({ ...base, mode: 'text_to_video', ...veoBody() })
+    expect(allowed.status).toBe(200)
+    expect(veoCalls).toHaveLength(1)
+  })
+
+  it('A+B at 4 s is refused for Veo before any record or call (8 s only, conservatively)', async () => {
+    enable()
+    const db = makeDb({ geminiKey: GEMINI_KEY })
+    signIn(db)
+    installVeo()
+    const response = await post(i2v(veoBody({ lastFrameImageId: IMG_B, duration: 4 })))
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('LAST_FRAME_DURATION_CONFLICT')
+    expect(veoCalls).toEqual([])
+    expect(db.tables.video_generations).toHaveLength(0)
+    // One image keeps 4 s.
+    expect((await post(i2v(veoBody({ duration: 4 })))).status).toBe(200)
+  })
+
   it('without the user’s own Gemini key it is a typed 422 (a Kling key never substitutes)', async () => {
     enable()
     const db = makeDb({ klingKey: 'user-rest-key' })
