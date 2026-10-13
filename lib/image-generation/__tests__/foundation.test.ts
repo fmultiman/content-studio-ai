@@ -83,3 +83,14 @@ expect(migration).toContain('guard_image_generation_attempt_immutability')
     expect(backfill).toContain('IMAGE_ATTEMPT_BACKFILL_RECONCILIATION_FAILED')
   })
 })
+
+describe('working state: selected creation mode (prompt modes convergence V1)', () => {
+  const base = { schemaVersion: 1, generatedPrompt: 'p', autoMode: false }
+  it('accepts a saved mode, keeps older sessions without the field valid and rejects unknown modes', () => {
+    for (const workflowMode of ['manual', 'assisted', 'automatic', null]) {
+      expect(ImageGenerationWorkingStateV1Schema.safeParse({ ...base, workflowMode }).success).toBe(true)
+    }
+    expect(ImageGenerationWorkingStateV1Schema.safeParse(base).success).toBe(true)
+    expect(ImageGenerationWorkingStateV1Schema.safeParse({ ...base, workflowMode: 'hybrid' }).success).toBe(false)
+  })
+})

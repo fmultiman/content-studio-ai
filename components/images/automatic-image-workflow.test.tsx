@@ -379,6 +379,19 @@ describe('AUTOMATIC — one explicit start, one text call, one image submission'
     expect(server.imageCalls()[1].body.prompt).toBe('A second exact prompt.')
   })
 
+  it('Automatic shows both models and owns generation: no competing create button, prompt read-only (convergence V1)', async () => {
+    mount()
+    await ready()
+    fireEvent.click(modeButton('automatic'))
+    await screen.findByTestId('automatic-run-panel')
+    expect(screen.queryByRole('button', { name: /Criar Imagem|Criando/ })).toBeNull()
+    expect(promptEditor().readOnly).toBe(true)
+    expect(screen.getByLabelText('Modelo de assistência')).toBeTruthy()
+    expect(screen.getByLabelText('Modelo de imagem')).toBeTruthy()
+    expect(screen.getByTestId('automatic-run-summary').textContent).toMatch(/Prompt: .* → Imagem: /)
+    expect(server.imageCalls()).toHaveLength(0)
+  })
+
   it('locks the description, the prompt, the models and the mode while the run is in flight', async () => {
     mount()
     const field = await ready()
@@ -389,7 +402,8 @@ describe('AUTOMATIC — one explicit start, one text call, one image submission'
     expect(field.readOnly).toBe(true)
     expect(promptEditor().disabled).toBe(true)
     expect(modeButton('manual').disabled).toBe(true)
-    expect(createImageButton().disabled).toBe(true)
+    // Convergence V1: Automatic owns generation — there is no competing "Criar Imagem" button at all.
+    expect(screen.queryByRole('button', { name: /Criar Imagem|Criando/ })).toBeNull()
     fireEvent.change(field, { target: { value: 'edited mid flight' } })
     fireEvent.click(modeButton('manual'))
     server.replyAssistance(0, 200, assistanceOk())

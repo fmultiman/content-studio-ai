@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Image as ImageIcon, FileText } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { PromptLanguagePanel, type PromptLanguageView } from '@/components/prompts/prompt-language-panel'
 import { cn } from '@/lib/utils'
 import {
   audioAllowedAt,
@@ -67,6 +68,18 @@ export interface VideoGenerationFormProps {
   disabled?: boolean
   
   header?: ReactNode
+
+  /** Automatic owns generation: the prompt it produced is shown read-only. */
+  promptReadOnly?: boolean
+  /** Optional read-only Portuguese view of the generation prompt (explicit action only). */
+  promptLanguage?: {
+    translation: string
+    translating: boolean
+    error: string | null
+    canTranslate: boolean
+    unavailableReason?: string
+    onTranslate: () => void
+  }
 }
 
 export function VideoGenerationForm({
@@ -80,8 +93,51 @@ export function VideoGenerationForm({
   sourceSelection,
   onSourceSelectionChange,
   disabled,
-  header
+  header,
+  promptReadOnly = false,
+  promptLanguage,
 }: VideoGenerationFormProps) {
+  const [promptView, setPromptView] = useState<PromptLanguageView>('prompt')
+
+  // One generation-prompt field for every operation. The Portuguese tab is a read-only view, never a second prompt.
+  const renderPromptField = (id: string, label: string, placeholder: string, minHeight: string, extraHint?: string) => {
+    const field = (
+      <>
+        <Label htmlFor={id}>{label}</Label>
+        <Textarea
+          id={id}
+          placeholder={placeholder}
+          value={prompt}
+          readOnly={promptReadOnly}
+          onChange={(event) => onPromptChange(event.target.value)}
+          className={minHeight}
+        />
+        <p className="text-xs text-muted-foreground" data-testid="video-prompt-hint">
+          {promptReadOnly
+            ? 'No modo Automático o prompt é criado pela IA e fica somente leitura. Use Manual ou Assistido para editá-lo.'
+            : `${extraHint ? `${extraHint} ` : ''}Este é o único texto enviado ao provedor. Nada é traduzido ou reescrito sem a sua ação.`}
+        </p>
+      </>
+    )
+    if (!promptLanguage) return field
+    return (
+      <PromptLanguagePanel
+        idPrefix="video-prompt"
+        view={promptView}
+        onViewChange={setPromptView}
+        translation={promptLanguage.translation}
+        translating={promptLanguage.translating}
+        error={promptLanguage.error}
+        canTranslate={promptLanguage.canTranslate}
+        unavailableReason={promptLanguage.unavailableReason}
+        hasPrompt={Boolean(prompt.trim())}
+        onTranslate={promptLanguage.onTranslate}
+        disabled={disabled}
+      >
+        {field}
+      </PromptLanguagePanel>
+    )
+  }
 
   const connection = useMemo(() => selectedConnection(connections, selection), [connections, selection])
   const model = useMemo(() => selectedModel(connections, selection), [connections, selection])
@@ -118,8 +174,7 @@ export function VideoGenerationForm({
             </Select>
           </div>
         )}
-        <Label htmlFor="video-working-prompt">Prompt</Label>
-        <Textarea id="video-working-prompt" value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="Escreva seu prompt enquanto configura uma conexão Kling." className="min-h-[140px]" />
+        {renderPromptField('video-working-prompt', 'Prompt de geração', 'Escreva seu prompt enquanto configura uma conexão Kling.', 'min-h-[140px]')}
         <p className="text-xs text-muted-foreground" role="status">{connections.length === 0 ? 'Configure uma conexão Kling em Configurações' : 'Selecione uma conexão Kling com capacidades disponíveis'} para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
       </fieldset>
     )
@@ -213,27 +268,13 @@ export function VideoGenerationForm({
             <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={sourceSelection} onChange={onSourceSelectionChange} />
 
             <div className="space-y-2">
-              <Label htmlFor="video-motion-prompt">Motion Prompt (Dicas de animação)</Label>
-              <Textarea
-                id="video-motion-prompt"
-                placeholder="Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)"
-                value={prompt}
-                onChange={(e) => onPromptChange(e.target.value)}
-                className="min-h-[100px]"
-              />
+              {renderPromptField('video-motion-prompt', 'Prompt de geração (como animar a imagem)', 'Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)', 'min-h-[100px]')}
             </div>
           </TabsContent>
 
           <TabsContent value="text_to_video" className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label htmlFor="video-working-prompt">Prompt</Label>
-              <Textarea
-                id="video-working-prompt"
-                placeholder="Descreva a cena do vídeo detalhadamente..."
-                value={prompt}
-                onChange={(e) => onPromptChange(e.target.value)}
-                className="min-h-[140px]"
-              />
+              {renderPromptField('video-working-prompt', 'Prompt de geração', 'Descreva a cena do vídeo detalhadamente...', 'min-h-[140px]')}
             </div>
           </TabsContent>
 

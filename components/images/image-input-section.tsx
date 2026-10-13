@@ -40,6 +40,8 @@ interface ImageInputSectionProps {
   canonical?: boolean
   onNewImage?: () => void
   generatedPrompt?: string
+  /** Manual keeps a briefing hidden; this copies it to the generation prompt on an explicit click. */
+  onUseDescriptionAsPrompt?: () => void
 }
 
 export function ImageInputSection({
@@ -64,6 +66,7 @@ export function ImageInputSection({
   canonical = false,
   onNewImage,
   generatedPrompt = '',
+  onUseDescriptionAsPrompt,
 }: ImageInputSectionProps) {
   const canSaveDraft = userInput.trim() || generatedPrompt.trim()
   return (
@@ -76,7 +79,7 @@ export function ImageInputSection({
           <div>
             <h2 className="text-lg font-semibold text-foreground">Nova Imagem</h2>
             <p className="text-sm text-muted-foreground">
-              Escolha o modo: escreva o prompt, peça ajuda à IA ou deixe o fluxo automático gerar prompt e imagem
+              Manual: você escreve o prompt. Assistido: a IA sugere e você aplica. Automático: a IA cria o prompt e a imagem é gerada
             </p>
           </div>
         </div>
@@ -115,19 +118,35 @@ export function ImageInputSection({
           </div>
         )}
 
-        {/* User Input */}
-        <div className="space-y-2">
-          <Label htmlFor="user-input">Sua descrição</Label>
-          <Textarea
-            id="user-input"
-            placeholder="Ex: Um gato astronauta flutuando em uma estação espacial futurista, estilo cyberpunk..."
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            readOnly={workflowBusy}
-            rows={4}
-            className="resize-none bg-background/50"
-          />
-        </div>
+        {/* Briefing: used by the assistance (Assisted/Automatic). Manual has a single field — the generation prompt below. */}
+        {mode === 'manual' ? (
+          userInput.trim() && !generatedPrompt.trim() && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 bg-background/30 p-3 text-sm" data-testid="image-briefing-preserved">
+              <p className="min-w-0 flex-1 text-muted-foreground">Sua descrição foi mantida e volta a aparecer nos modos Assistido e Automático. No modo Manual você escreve só o prompt de geração.</p>
+              {onUseDescriptionAsPrompt && (
+                <Button type="button" variant="outline" size="sm" onClick={onUseDescriptionAsPrompt} disabled={workflowBusy} data-testid="image-use-description-as-prompt">Usar a descrição como prompt</Button>
+              )}
+            </div>
+          )
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="user-input">Sua descrição</Label>
+            <Textarea
+              id="user-input"
+              placeholder="Ex: Um gato astronauta flutuando em uma estação espacial futurista, estilo cyberpunk..."
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              readOnly={workflowBusy}
+              rows={4}
+              className="resize-none bg-background/50"
+            />
+            <p className="text-xs text-muted-foreground" data-testid="image-briefing-hint">
+              {mode === 'automatic'
+                ? 'A descrição é a entrada: a IA cria o prompt e a imagem é gerada em seguida.'
+                : 'Descreva a ideia em qualquer idioma. “Criar com IA” propõe um prompt em inglês; nada é aplicado ou gerado sem a sua ação.'}
+            </p>
+          </div>
+        )}
 
         {modeControl}
 
@@ -202,6 +221,11 @@ export function ImageInputSection({
             </div>
           )}
         </div>
+        {mode === 'assisted' && (!userInput.trim() || !canImprove) && (
+          <p className="text-xs text-muted-foreground" role="status" data-testid="image-assistance-disabled-reason">
+            {!userInput.trim() ? 'Criar com IA: escreva a descrição.' : ''}{!userInput.trim() && !canImprove ? ' ' : ''}{!canImprove ? 'Melhorar com IA: escreva ou aplique um prompt de geração para melhorar.' : ''}
+          </p>
+        )}
 
         {mode === 'automatic' && automaticPanel}
       </div>

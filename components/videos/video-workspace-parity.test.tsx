@@ -40,9 +40,11 @@ let connections: VideoGenerationConnectionDescriptor[]
 let attempts: any[]
 let assistance: (body: any) => Promise<Response>
 let submit: (body: any) => Promise<Response>
+let translate: (body: any) => Promise<Response>
 let save: ((body: any) => Promise<Response>) | null
 let exists: boolean
 const textCalls = () => calls.filter((call) => call.url === '/api/prompt-assistance')
+const translateCalls = () => calls.filter((call) => call.url === '/api/prompts/translate')
 const videoCalls = () => calls.filter((call) => call.url === '/api/video-generations' && call.method === 'POST')
 const session = () => ({ id: SESSION, projectId: PROJECT, productionId: PRODUCTION, updatedAt: `version-${version}`, workingState: state })
 const review = () => ({ id: 'review-one', status: 'completed', createdAt: '2026-10-10T12:00:00Z', completedAt: '2026-10-10T12:01:00Z',
@@ -60,6 +62,7 @@ beforeEach(() => {
   state = initialState(); calls = []; version = 0; automation = true; configured = true; allowed = true; exists = true; search = ''
   router.replace.mockReset()
   connections = [describeRestConnection('configured')]; attempts = []; save = null
+  translate = async (body) => json({ translatedPrompt: `PT: ${body.prompt}`, model: 'gpt-4o-mini' })
   assistance = async (body) => json({ suggestedPrompt: 'Suggested temporal scene prompt', provider: body.provider, model: body.model, operation: body.operation, usage: null })
   submit = async (body) => { attempts = [...attempts, { id: crypto.randomUUID(), prompt: body.prompt, status: 'submitted', client_request_id: body.clientRequestId, mode: body.mode, model: body.model }]; return json({ generation: attempts.at(-1) }, 201) }
   Element.prototype.hasPointerCapture ??= () => false
@@ -82,6 +85,7 @@ beforeEach(() => {
     if (url.startsWith('/api/video-generations?')) return json({ generations: attempts })
     if (url.startsWith('/api/reviews/video?')) return json({ items: [review()] })
     if (url === '/api/prompt-assistance') return assistance(body)
+    if (url === '/api/prompts/translate') return translate(body)
     if (url === '/api/video-generations' && method === 'POST') return submit(body)
     if (method === 'GET') return json({ items: [], files: [], images: [] })
     throw new Error(`Unexpected non-mocked request: ${method} ${url}`)
@@ -107,7 +111,7 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     await chooseAssisted()
     fireEvent.click(screen.getByTestId('video-assistance-create'))
     await screen.findByTestId('video-prompt-suggestion')
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
     expect(textCalls()[0].body).toMatchObject({ mediaType: 'video', videoMode: 'text_to_video', operation: 'create', workflow: 'assisted', provider: 'openai', model: 'gpt-4o-mini' })
     expect(textCalls()[0].body).not.toHaveProperty('currentText')
     fireEvent.click(screen.getByTestId('video-assistance-discard'))
@@ -116,9 +120,9 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     await screen.findByTestId('video-prompt-suggestion')
     expect(textCalls()[1].body.currentText).toBe('Authored manual prompt')
     fireEvent.click(screen.getByTestId('video-assistance-apply'))
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
     fireEvent.click(screen.getByTestId('video-assistance-apply'))
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
     expect(videoCalls()).toHaveLength(0)
     expect(screen.getByTestId('video-assistance-cost-notice').textContent).toMatch(/BYOK.*Kling.*parciais/)
     await waitFor(() => expect(state.assistance?.mode).toBe('assisted'))
@@ -158,11 +162,11 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     const pending = deferred<Response>(); assistance = () => pending.promise
     await chooseAssisted(); fireEvent.click(screen.getByTestId('video-assistance-create'))
     await waitFor(() => expect(textCalls()).toHaveLength(1))
-    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'User revision while waiting' } })
+    fireEvent.change(screen.getByLabelText('Prompt de geração'), { target: { value: 'User revision while waiting' } })
     pending.resolve(json({ suggestedPrompt: 'Late response', provider: 'openai', model: 'gpt-4o-mini', operation: 'create' }))
     await waitFor(() => expect(screen.queryByText('Gerando sugestão…')).toBeNull())
     expect(screen.queryByTestId('video-prompt-suggestion')).toBeNull()
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('User revision while waiting')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('User revision while waiting')
     expect(videoCalls()).toHaveLength(0)
   })
 
@@ -170,7 +174,7 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     assistance = async () => kind === 'provider failure' ? json({ error: 'Rate limited' }, 429) : json({ suggestedPrompt: ' ', provider: 'openai', model: 'gpt-4o-mini', operation: 'create' })
     await chooseAssisted(); fireEvent.click(screen.getByTestId('video-assistance-create'))
     await screen.findByTestId('video-assistance-error')
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
     expect(textCalls()).toHaveLength(1); expect(videoCalls()).toHaveLength(0)
   })
 
@@ -192,8 +196,10 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
   it('requires Automatic opt-in and never resumes a saved Automatic draft by itself', async () => {
     automation = false
     state.assistance = { description: 'Scene', provider: 'openai', model: 'gpt-4o-mini', mode: 'automatic' }
-    mount(); await screen.findByTestId('video-automatic-panel')
-    expect(screen.getByTestId('video-automatic-start').hasAttribute('disabled')).toBe(true)
+    mount(); await screen.findByTestId('workflow-mode-hint')
+    // Convergence V1: an unusable Automatic is shown as Assisted (the saved selection is kept), never as a dead panel.
+    expect(screen.queryByTestId('video-automatic-panel')).toBeNull()
+    expect(screen.getByTestId('video-assistance-create')).toBeTruthy()
     expect(screen.getByTestId('workflow-mode-hint').textContent).toMatch(/Configurações/)
     expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
   })
@@ -224,7 +230,7 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     fireEvent.click(screen.getByTestId('video-automatic-cancel'))
     pending.resolve(json({ suggestedPrompt: 'Late auto prompt', provider: 'openai', model: 'gpt-4o-mini', operation: 'create' }))
     await screen.findByText(/Cancelado antes do envio/)
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Authored manual prompt')
     expect(videoCalls()).toHaveLength(0); expect(textCalls()).toHaveLength(1)
   })
 
@@ -233,14 +239,14 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     await chooseAutomatic(); beginAutomatic()
     await screen.findByText(/O envio não foi confirmado ou foi rejeitado/)
     expect(textCalls()).toHaveLength(1); expect(videoCalls()).toHaveLength(0)
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
   })
 
   it('without a Kling connection the manual prompt remains editable and saved, with generation blocked', async () => {
     connections = []
     mount(); await screen.findByDisplayValue('Authored manual prompt')
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
-    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Draft before configuring Kling' } })
+    fireEvent.change(screen.getByLabelText('Prompt de geração'), { target: { value: 'Draft before configuring Kling' } })
     await waitFor(() => expect(state.prompt).toBe('Draft before configuring Kling'), { timeout: 3000 })
     expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
   })
@@ -254,12 +260,12 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     mount(); await screen.findByDisplayValue('Authored manual prompt')
     expect(screen.getByTestId('generate-video').hasAttribute('disabled')).toBe(true)
     expect(screen.getByTestId('workflow-mode-automatic').hasAttribute('disabled')).toBe(true)
-    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Preserved expired-connection draft' } })
+    fireEvent.change(screen.getByLabelText('Prompt de geração'), { target: { value: 'Preserved expired-connection draft' } })
     await waitFor(() => expect(state.prompt).toBe('Preserved expired-connection draft'), { timeout: 3000 })
     fireEvent.pointerDown(screen.getByTestId('video-unavailable-connection-select'), { button: 0, ctrlKey: false, pointerType: 'mouse' })
     fireEvent.click(await screen.findByRole('option', { name: 'Kling API (API)' }))
     await screen.findByTestId('video-model-select')
-    expect((screen.getByLabelText('Motion Prompt (Dicas de animação)') as HTMLTextAreaElement).value).toBe('Preserved expired-connection draft')
+    expect((screen.getByLabelText('Prompt de geração (como animar a imagem)') as HTMLTextAreaElement).value).toBe('Preserved expired-connection draft')
     expect(screen.getByTestId('video-connection-option-api').getAttribute('aria-checked')).toBe('true')
     expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
   })
@@ -358,9 +364,9 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     await screen.findByText('Visual review')
     expect(screen.getByText(/áudio.*não/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Usar prompt refinado' }))
-    expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe('Refined motion and camera prompt')
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Refined motion and camera prompt')
     expect(videoCalls()).toHaveLength(0); expect(textCalls()).toHaveLength(0)
-    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Refined motion and camera prompt, user edit' } })
+    fireEvent.change(screen.getByLabelText('Prompt de geração'), { target: { value: 'Refined motion and camera prompt, user edit' } })
     fireEvent.click(screen.getByTestId('generate-video'))
     await waitFor(() => expect(videoCalls()).toHaveLength(1))
     expect(videoCalls()[0].body.prompt).toContain('user edit')
@@ -378,5 +384,90 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     await waitFor(() => expect(videoCalls()).toHaveLength(1))
     expect(videoCalls()[0].body.connectionRef).toBe(ref)
     expect(screen.getByTestId('video-connection-detail').textContent).toMatch(/créditos/)
+  })
+})
+
+// GENERATION_PROMPT_MODES_LANGUAGE_UX_CONVERGENCE_V1
+describe('Prompt modes + language convergence — Video', () => {
+  it('Manual shows one prompt field; the briefing is preserved and can be reused only by an explicit click', async () => {
+    state.prompt = ''
+    state.assistance = { description: 'Scene brief written earlier', provider: 'openai', model: 'gpt-4o-mini', mode: 'manual' }
+    mount(); await screen.findByTestId('video-briefing-preserved')
+    expect(screen.queryByLabelText('Sua descrição')).toBeNull()
+    expect(screen.getAllByLabelText('Prompt de geração')).toHaveLength(1)
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('')
+    fireEvent.click(screen.getByTestId('video-use-description-as-prompt'))
+    await waitFor(() => expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Scene brief written earlier'))
+    expect(screen.queryByTestId('video-briefing-preserved')).toBeNull()
+    expect(textCalls()).toHaveLength(0); expect(translateCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
+  })
+
+  it('Assisted explains why Improve is unavailable without a generation prompt', async () => {
+    state.prompt = ''
+    mount(); await screen.findByTestId('workflow-mode-assisted')
+    fireEvent.click(screen.getByTestId('workflow-mode-assisted'))
+    const reason = await screen.findByTestId('video-assistance-input-reason')
+    expect(reason.textContent).toMatch(/Melhorar com IA: escreva ou aplique um prompt/)
+    expect((screen.getByTestId('video-assistance-improve') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Portuguese tab never translates by itself; one explicit click translates once as a read-only view', async () => {
+    await ready()
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-pt'), { button: 0 })
+    fireEvent.click(screen.getByTestId('video-prompt-tab-pt'))
+    await screen.findByTestId('video-prompt-translation-empty')
+    expect(screen.getByTestId('video-prompt-translation-cost').textContent).toMatch(/BYOK/)
+    expect(translateCalls()).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('video-prompt-translate'))
+    const output = await screen.findByTestId('video-prompt-translation-output') as HTMLTextAreaElement
+    expect(output.value).toBe('PT: Authored manual prompt')
+    expect(output.readOnly).toBe(true)
+    expect(translateCalls()).toHaveLength(1)
+    // Switching views is free: no new request, and the generation prompt is unchanged.
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-prompt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-prompt'))
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-pt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-pt'))
+    expect((await screen.findByTestId('video-prompt-translation-output') as HTMLTextAreaElement).value).toBe('PT: Authored manual prompt')
+    expect(translateCalls()).toHaveLength(1)
+    expect(state.prompt).toBe('Authored manual prompt')
+    // The video is generated from the original prompt, never from the translation.
+    fireEvent.click(screen.getByTestId('generate-video'))
+    await waitFor(() => expect(videoCalls()).toHaveLength(1))
+    expect(videoCalls()[0].body.prompt).toBe('Authored manual prompt')
+  })
+
+  it('editing the prompt discards the translation and a late response for an older prompt is dropped', async () => {
+    const late = deferred<Response>()
+    translate = () => late.promise
+    await ready()
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-pt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-pt'))
+    fireEvent.click(await screen.findByTestId('video-prompt-translate'))
+    await waitFor(() => expect(translateCalls()).toHaveLength(1))
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-prompt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-prompt'))
+    fireEvent.change(screen.getByLabelText('Prompt de geração'), { target: { value: 'A different authored prompt' } })
+    late.resolve(json({ translatedPrompt: 'PT: old prompt', model: 'gpt-4o-mini' }))
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-pt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-pt'))
+    await screen.findByTestId('video-prompt-translation-empty')
+    expect(screen.queryByTestId('video-prompt-translation-output')).toBeNull()
+    expect(translateCalls()).toHaveLength(1)
+  })
+
+  it('translation is unavailable (and explained) without an OpenAI key', async () => {
+    configured = false
+    mount(); await screen.findByDisplayValue(state.prompt)
+    await waitFor(() => expect(calls.some((call) => call.url === '/api/settings/providers')).toBe(true))
+    fireEvent.mouseDown(screen.getByTestId('video-prompt-tab-pt'), { button: 0 }); fireEvent.click(screen.getByTestId('video-prompt-tab-pt'))
+    expect((await screen.findByTestId('video-prompt-translation-unavailable')).textContent).toMatch(/Tradução indisponível/)
+    expect((screen.getByTestId('video-prompt-translate') as HTMLButtonElement).disabled).toBe(true)
+    expect(translateCalls()).toHaveLength(0)
+  })
+
+  it('Automatic shows both models, owns generation (no competing button) and keeps the prompt read-only', async () => {
+    await chooseAutomatic()
+    expect(screen.queryByTestId('generate-video')).toBeNull()
+    const summary = screen.getByTestId('video-automatic-summary').textContent ?? ''
+    expect(summary).toMatch(/GPT-4o mini/); expect(summary).toMatch(/Kling/)
+    expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).readOnly).toBe(true)
+    expect(screen.getByTestId('video-prompt-hint').textContent).toMatch(/somente leitura/)
+    expect(textCalls()).toHaveLength(0); expect(videoCalls()).toHaveLength(0)
   })
 })

@@ -22,7 +22,7 @@ describe('PromptSection AI assistance suggestion', () => {
     render(<PromptSection {...base} />)
     expect(screen.getByTestId('prompt-assistance-suggestion')).toBeTruthy()
     expect(screen.getByDisplayValue('A refined editorial river cover.')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Aplicar sugestão' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy()
     // Generation is a separate explicit action: with no prompt in the editor the button is disabled.
     expect((screen.getByRole('button', { name: /Criar Imagem/ }) as HTMLButtonElement).disabled).toBe(true)

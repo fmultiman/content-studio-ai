@@ -11,6 +11,7 @@ import {
 } from '@/components/layout/dashboard-page'
 import { PageHeader } from '@/components/layout/page-header'
 import { ImageInputSection } from '@/components/images/image-input-section'
+import { usePromptTranslation } from '@/hooks/use-prompt-translation'
 import { PromptSection, type ImageModel } from '@/components/images/prompt-section'
 import {
   DEFAULT_IMAGE_MODEL,
@@ -169,8 +170,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [isDataReady, setIsDataReady] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
-  const [isTranslatingPrompt, setIsTranslatingPrompt] = useState(false)
-  const [promptTranslationError, setPromptTranslationError] = useState<string | null>(null)
+  // Optional read-only Portuguese view of the generation prompt: bound to the exact prompt, explicit action only.
+  const promptTranslation = usePromptTranslation({ prompt: generatedPrompt, translation: generatedPromptPt, setTranslation: setGeneratedPromptPt })
   const [hubProjectFilter, setHubProjectFilter] = useState('all')
   const [hubProductionFilter, setHubProductionFilter] = useState('all')
   const [hubStatusFilter, setHubStatusFilter] = useState('all')
@@ -275,6 +276,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       generatedPromptPt: generatedPromptPt || null,
       promptDetails,
       autoMode,
+      workflowMode: autoMode ? 'automatic' : manualMode ? 'manual' : 'assisted',
       selectedModel: persistedModelValue,
       imageStatus,
       currentAttempt,
@@ -283,7 +285,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       generationConfig: imageGenerationConfigRef.current,
       legacyImageUrl: persistableImageUrl(imageUrl),
     },
-  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl])
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl])
 
   const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
   imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
@@ -298,6 +300,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         generatedPromptPt: value.workingState.generatedPromptPt,
         promptDetails: value.workingState.promptDetails,
         autoMode: value.workingState.autoMode,
+        // Sessions saved before the field existed read as the mode their autoMode implies, so opening one never triggers a save.
+        workflowMode: value.workingState.workflowMode ?? (value.workingState.autoMode ? 'automatic' : 'assisted'),
         selectedModel: value.workingState.selectedModel,
         sourceReferences: value.workingState.sourceReferences,
         generationConfig: value.workingState.generationConfig,
@@ -547,6 +551,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setGeneratedPromptPt(state.generatedPromptPt || '')
     setPromptDetails(state.promptDetails || null)
     setAutoMode(Boolean(state.autoMode))
+    setManualMode(state.workflowMode === 'manual')
     applyStoredImageModel(state.selectedModel)
     setCurrentAttempt(state.currentAttempt || 1)
     setImageStatus(state.imageStatus || 'draft')
@@ -1024,7 +1029,6 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const updateGeneratedPrompt = (prompt: string) => {
     setGeneratedPrompt(prompt)
     setGeneratedPromptPt('')
-    setPromptTranslationError(null)
   }
 
   const handlePromptAssistance = async (operation: 'create' | 'improve') => {
@@ -1252,46 +1256,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
   }
 
-  const handleTranslatePrompt = async () => {
-    if (!generatedPrompt.trim() || isTranslatingPrompt) return
-
-    if (!openaiConfigured) {
-      setPromptTranslationError('Tradução indisponível sem provedor configurado.')
-      return
-    }
-
-    setIsTranslatingPrompt(true)
-    setPromptTranslationError(null)
-
-    try {
-      const response = await fetch('/api/prompts/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: generatedPrompt }),
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (data.code === 'PROMPT_PROVIDER_NOT_CONFIGURED') {
-          setPromptTranslationError('Tradução indisponível sem provedor configurado.')
-          return
-        }
-
-        throw new Error(data.error || 'Erro ao traduzir prompt')
-      }
-
-      setGeneratedPromptPt(data.translatedPrompt)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel traduzir o prompt.'
-      setPromptTranslationError(message)
-      toast({
-        title: 'Erro na traducao',
-        description: message,
-        variant: 'destructive',
-      })
-    } finally {
-      setIsTranslatingPrompt(false)
-    }
+  // Explicit user action only (the Portuguese tab never calls the provider by itself).
+  const handleTranslatePrompt = () => {
+    if (!openaiConfigured) return
+    void promptTranslation.translate()
   }
 
   // Interprets a saved selector (session state or draft). Absent keeps the current selection. An id this build does not
@@ -2631,6 +2599,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 canonical={canonicalWorkspace}
                 onNewImage={handleNewImage}
                 generatedPrompt={generatedPrompt}
+                onUseDescriptionAsPrompt={() => updateGeneratedPrompt(userInput.trim())}
               />
 
               {/* Prompt Section */}
@@ -2642,11 +2611,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   suggestedOperation={suggestedOperation}
                   onApplySuggestion={applyPromptAssistanceSuggestion}
                   onDiscardSuggestion={discardPromptAssistanceSuggestion}
-                  generatedPromptPt={generatedPromptPt}
+                  generatedPromptPt={promptTranslation.translation}
                   onTranslatePrompt={handleTranslatePrompt}
-                  isTranslatingPrompt={isTranslatingPrompt}
+                  isTranslatingPrompt={promptTranslation.translating}
                   canTranslatePrompt={openaiConfigured}
-                  translationError={promptTranslationError}
+                  translationError={promptTranslation.error}
+                  mode={mode}
                   promptDetails={promptDetails}
                   onCreateImage={handleCreateImageWithModel}
                   isCreatingImage={isCreatingImage || isGeneratingNanoBanana}

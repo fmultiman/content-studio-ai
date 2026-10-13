@@ -142,7 +142,11 @@ const status = () => document.querySelector('[data-testid^="save-status-"]')?.ge
 const editor = () => document.getElementById('generated-prompt') as HTMLTextAreaElement
 const description = () => screen.findByDisplayValue(DESCRIPTION) as Promise<HTMLTextAreaElement>
 // Stable handle for the description field once its value has been edited.
-const descField = () => screen.getByRole('textbox', { name: 'Sua descrição' }) as HTMLTextAreaElement
+// Manual hides the briefing (single prompt field), so a test that edits it first returns to the Assisted view.
+const descField = () => {
+  if (!screen.queryByRole('textbox', { name: 'Sua descrição' })) fireEvent.click(screen.getByTestId('workflow-mode-assisted'))
+  return screen.getByRole('textbox', { name: 'Sua descrição' }) as HTMLTextAreaElement
+}
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const createImage = () => screen.getByRole('button', { name: /Criar Imagem|Criando/ }) as HTMLButtonElement
 
