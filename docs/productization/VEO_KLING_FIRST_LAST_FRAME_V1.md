@@ -148,6 +148,11 @@ Kling continua com uso desconhecido (nenhum transporte informa). Custos conhecid
 4. Execute o canário; depois **desfaça** (remova o interruptor) ou mantenha a lista até a liberação geral. Para liberar a todos, remova `CONTENT_STUDIO_VEO_CANARY_USER_IDS` e mantenha o interruptor.
 5. Preview, local e ambientes desconhecidos continuam bloqueados pelo guard FUTURE-050, com ou sem as variáveis.
 
+**Disponibilidade geral (go-live).** Decisão do proprietário: o Veo é um provedor normal. Com `CONTENT_STUDIO_VEO_VIDEO_GENERATION=enabled` e **sem** `CONTENT_STUDIO_VEO_CANARY_USER_IDS`, qualquer usuário autenticado com a **sua** conexão Gemini BYOK válida pode gerar (isolamento entre contas, autenticação e o guard FUTURE-050 continuam). A allowlist é opcional: só restringe quando definida explicitamente.
+
+**Diagnóstico.** `GET /api/video-generations/connections` informa o motivo por conta, sem expor variáveis: `feature_disabled` (interruptor ausente/valor incorreto), `canary_restricted` (interruptor ligado, mas uma allowlist explícita não inclui a conta) ou `not_configured` (sem chave Gemini). O valor do interruptor é comparado após remover espaços e um par de aspas (`enabled`, ` enabled
+`, `"enabled"` valem); `true`, `1`, `ENABLED` continuam recusados.
+
 ## 11. Testes e limitações
 
 * Novos: `video-first-last-frame-contract.test.ts` (38: capacidades, validação, payloads Kling REST/MCP, cliente Veo, download com header por origem, fingerprint, working state, interruptor, uso derivado), `video-first-last-frame-routes.test.ts` (24: rotas Kling REST/MCP/Veo, idempotência, isolamento, resultado incerto, poller, sync, uso), `video-first-last-frame-workspace.test.tsx` (12: workspace real). Atualizados: listagem de conexões (agora inclui Google Veo), `lastFrame:false` no pedido normalizado, `.or()` no `fake-db`, fixture `who_am_i` com os textos reais do Kling 2.6.

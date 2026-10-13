@@ -149,6 +149,8 @@ export type VideoConnectionBlockedReason =
   | 'no_supported_models'
   /** The provider path is built but its release switch is off (Google Veo before the owner-authorized paid canary). */
   | 'feature_disabled'
+  /** Veo is released, but an explicit canary allowlist (CONTENT_STUDIO_VEO_CANARY_USER_IDS) does not include this user. */
+  | 'canary_restricted'
 
 /** Video providers a generation can be routed to. `gemini` = Google Veo through the user's own Gemini API key. */
 export type VideoProviderId = 'kling' | 'gemini'

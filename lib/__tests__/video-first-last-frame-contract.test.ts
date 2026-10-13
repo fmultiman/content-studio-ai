@@ -12,7 +12,7 @@ import {
   VeoError,
   type VeoFrame,
 } from '@/lib/providers/gemini/veo-client'
-import { isVeoVideoGenerationEnabled, veoCanaryUserIds } from '@/lib/providers/gemini/veo-feature'
+import { describeVeoAvailability, isVeoVideoGenerationEnabled, veoCanaryUserIds } from '@/lib/providers/gemini/veo-feature'
 import { allowedDurations, defaultDuration, findModel, lastFrameConflicts, type VideoModelCapability } from '@/lib/video-generation/capabilities'
 import { derivedVideoUsage } from '@/lib/video-generation/completion'
 import { describeGeminiConnection, GEMINI_CONNECTION_REF, parseConnectionRef } from '@/lib/video-generation/connections'
@@ -543,6 +543,32 @@ describe('Veo release switch and usage', () => {
     // The allowlist never enables anything by itself, and an empty value means "no allowlist".
     expect(isVeoVideoGenerationEnabled({ CONTENT_STUDIO_VEO_CANARY_USER_IDS: 'user-a' }, 'user-a')).toBe(false)
     expect(isVeoVideoGenerationEnabled({ ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: '   ' }, 'user-x')).toBe(true)
+  })
+
+  it('GO-LIVE: with no allowlist every authenticated user with a valid Gemini BYOK connection can use Veo; an allowlist, when configured, still restricts', () => {
+    const on = { CONTENT_STUDIO_VEO_VIDEO_GENERATION: 'enabled' }
+    for (const user of ['owner-id', 'another-user', '00000000-0000-4000-8000-000000000042']) expect(describeVeoAvailability(on, user)).toBe('available')
+    expect(describeVeoAvailability({ ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: '' }, 'another-user')).toBe('available')
+    expect(describeVeoAvailability({ ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: 'owner-id' }, 'another-user')).toBe('canary_restricted')
+    expect(describeVeoAvailability({ ...on, CONTENT_STUDIO_VEO_CANARY_USER_IDS: 'owner-id' }, 'owner-id')).toBe('available')
+    expect(describeVeoAvailability({}, 'owner-id')).toBe('switch_off')
+  })
+
+  it('the switch tolerates the whitespace / quotes a dashboard stores, but never a boolean-ish value', () => {
+    for (const value of ['enabled', ' enabled ', 'enabled\n', '"enabled"', "'enabled'", ' "enabled" \r\n']) {
+      expect(describeVeoAvailability({ CONTENT_STUDIO_VEO_VIDEO_GENERATION: value }, 'u')).toBe('available')
+    }
+    for (const value of ['1', 'true', 'TRUE', 'ENABLED', 'Enabled', 'yes', 'on', 'enabled!', '"enabled', 'disabled', '']) {
+      expect(describeVeoAvailability({ CONTENT_STUDIO_VEO_VIDEO_GENERATION: value }, 'u')).toBe('switch_off')
+    }
+  })
+
+  it('the connection reports the right reason for each availability, and an allowlisted user can generate', () => {
+    expect(describeGeminiConnection('configured', 'switch_off')).toMatchObject({ canGenerate: false, blockedReason: 'feature_disabled' })
+    expect(describeGeminiConnection('configured', 'canary_restricted')).toMatchObject({ canGenerate: false, blockedReason: 'canary_restricted' })
+    expect(describeGeminiConnection('configured', 'available')).toMatchObject({ canGenerate: true })
+    // Without a valid Gemini BYOK connection nothing else can make Veo usable.
+    expect(describeGeminiConnection('missing', 'available')).toMatchObject({ canGenerate: false, blockedReason: 'not_configured' })
   })
 
   it('usage for a delivered Veo video is DERIVED seconds (never provider_reported); Kling stays unknown', () => {

@@ -123,6 +123,10 @@ const BLOCKED_COPY: Record<VideoConnectionBlockedReason, BlockedCopy> = {
     description: 'A última verificação desta conta é antiga. Atualize a conexão antes de gerar.',
     action: 'refresh',
   },
+  canary_restricted: {
+    title: 'Liberado só para contas de teste',
+    description: 'Este provedor está liberado apenas para contas de teste neste ambiente. Use outro modelo por enquanto.',
+  },
   feature_disabled: {
     title: 'Ainda não liberado',
     description: 'Este provedor ainda não foi liberado neste ambiente. Use outro modelo por enquanto.',

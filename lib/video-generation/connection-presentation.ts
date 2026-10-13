@@ -35,6 +35,9 @@ export function connectionBadge(connection: Pick<VideoGenerationConnectionDescri
  */
 export function veoBlockedNote(connection: Pick<VideoGenerationConnectionDescriptor, 'provider' | 'canGenerate' | 'blockedReason'>): string | null {
   if (connection.provider !== 'gemini' || connection.canGenerate) return null
+  if (connection.blockedReason === 'canary_restricted') {
+    return 'O Google Veo está liberado apenas para contas de teste neste ambiente: você pode configurar o vídeo, mas a geração fica desativada para esta conta.'
+  }
   if (connection.blockedReason === 'feature_disabled') {
     return 'O Google Veo ainda não foi liberado neste ambiente: você pode configurar o vídeo, mas a geração fica desativada até a liberação.'
   }
