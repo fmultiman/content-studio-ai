@@ -46,6 +46,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       asmr: false,
       audioPrompt: false,
       musicPrompt: false,
+      // First + last frame: contents[] carries a `last_frame` item next to `first_frame` (Kling 3.0 image-to-video).
+      // Two frames define ONE continuous shot, so multi-shot stays off (conservative; confirm in the paid canary).
+      lastFrame: { audioAllowed: true, multiShotAllowed: false },
     },
   },
   [REST_KLING_V2_6_ID]: {
@@ -75,6 +78,9 @@ export const KLING_REST_MODEL_CAPABILITIES: Record<string, VideoModelOperationsC
       asmr: false,
       audioPrompt: false,
       musicPrompt: false,
+      // Kling 2.6 `image_tail`: Kling's own contract for this model (reported by its MCP server) says a tail image requires
+      // 1080p (mode=pro) and is not supported together with audio.
+      lastFrame: { requiresResolution: '1080p', audioAllowed: false, multiShotAllowed: false },
     },
   },
 }

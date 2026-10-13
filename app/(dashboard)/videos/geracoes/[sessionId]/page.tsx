@@ -14,9 +14,12 @@ import {
   type VideoGenerationConnectionDescriptor,
   type VideoConnectionsResponse,
 } from '@/lib/video-generation/capabilities'
-import { i2vSourceFields, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import { i2vSourceFields, type I2vSource, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import { lastFrameFields } from '@/lib/video-generation/frames'
+import { LAST_FRAME_CONFLICT_MESSAGE } from '@/lib/video-generation/capabilities'
 import {
   EMPTY_SELECTION,
+  lastFrameBlockers,
   reconcileSelection,
   selectedConnection,
   selectedModel,
@@ -83,6 +86,19 @@ function WorkspacePageContent() {
   const promptTranslation = usePromptTranslation({ prompt, translation: promptPt, setTranslation: setPromptPt })
   const [selection, setSelection] = useState<VideoFormSelection>(EMPTY_SELECTION)
   const [sourceSelection, setSourceSelection] = useState<I2vSourceSelection | null>(null)
+  // VEO_KLING_FIRST_LAST_FRAME_V1: the optional LAST frame (image B). Kept in the draft even when the selected model cannot
+  // honour it - the form explains why and the submit is blocked; it is never dropped or sent behind the user's back.
+  const [lastFrameSelection, setLastFrameSelection] = useState<I2vSourceSelection | null>(null)
+  const frameSelectionFor = (source: I2vSource, label: string): I2vSourceSelection => ({
+    source,
+    summary: {
+      category: source.type === 'library' ? 'library' : 'ai',
+      label,
+      thumbnailUrl: null,
+      productionName: null,
+      folder: null,
+    },
+  })
 
   const [description, setDescription] = useState('')
   const [assistantSelection, setAssistantSelection] = useState({ provider: DEFAULT_PROMPT_ASSISTANCE_MODEL.provider, model: DEFAULT_PROMPT_ASSISTANCE_MODEL.id })
@@ -128,9 +144,11 @@ function WorkspacePageContent() {
     schemaVersion: 1,
     prompt,
     source: sourceSelection?.source ?? null,
+    // Omitted when empty, so a Session without a last frame keeps its exact JSON shape (and fingerprint).
+    ...(lastFrameSelection ? { lastFrame: lastFrameSelection.source } : {}),
     selection,
     ...(persistAssistance ? { assistance: { description, ...assistantSelection, mode: workflowMode } } : {}),
-  }), [prompt, selection, sourceSelection, persistAssistance, description, assistantSelection, workflowMode])
+  }), [prompt, selection, sourceSelection, lastFrameSelection, persistAssistance, description, assistantSelection, workflowMode])
 
   const sessionContextRef = useRef<{
     sessionData: SessionResponse | null
@@ -220,7 +238,7 @@ function WorkspacePageContent() {
     sessionKey: `video:${sessionId}`,
     initial: { snapshot: currentWorkingState, token: null },
     adapter: videoAutosaveAdapterRef.current,
-    canPersist: (snapshot, token) => Boolean(token) || snapshot.prompt.trim().length > 0 || snapshot.source !== null || !!snapshot.assistance?.description.trim(),
+    canPersist: (snapshot, token) => Boolean(token) || snapshot.prompt.trim().length > 0 || snapshot.source !== null || !!snapshot.lastFrame || !!snapshot.assistance?.description.trim(),
     debounceMs: 800,
   })
   const saveState = autosave.state
@@ -368,6 +386,7 @@ function WorkspacePageContent() {
             } else {
               setSourceSelection(null)
             }
+            setLastFrameSelection(session.workingState.lastFrame ? frameSelectionFor(session.workingState.lastFrame, 'Imagem final selecionada') : null)
 
             const reconciled = reconcileSelection(loadedConnections, session.workingState.selection)
             setSelection(reconciled)
@@ -383,6 +402,7 @@ function WorkspacePageContent() {
               schemaVersion: 1,
               prompt: session.workingState.prompt,
               source: session.workingState.source ?? null,
+              ...(session.workingState.lastFrame ? { lastFrame: session.workingState.lastFrame } : {}),
               selection: reconciled,
               ...(session.workingState.assistance ? { assistance: session.workingState.assistance } : {}),
             } satisfies VideoGenerationWorkingStateV1, session.updatedAt)
@@ -427,6 +447,7 @@ function WorkspacePageContent() {
                 } else {
                   setSourceSelection(null)
                 }
+                setLastFrameSelection(seeded.lastFrame ? frameSelectionFor(seeded.lastFrame, 'Imagem final reutilizada') : null)
 
                 const reconciled = reconcileSelection(loadedConnections, seeded.selection)
                 setSelection(reconciled)
@@ -573,6 +594,7 @@ function WorkspacePageContent() {
           }
         : null,
     )
+    setLastFrameSelection(workingState.lastFrame ? frameSelectionFor(workingState.lastFrame, 'Imagem final selecionada') : null)
     setSelection(reconcileSelection(connections, workingState.selection))
   }
 
@@ -604,6 +626,19 @@ function WorkspacePageContent() {
   const activeConnection = selectedConnection(connections, selection)
   const activeModel = selectedModel(connections, selection)
 
+  // Why the current selection cannot be sent with the last frame (null = fine / no last frame). The submit is blocked
+  // until the user adjusts it explicitly: nothing is dropped, ignored or changed behind their back.
+  const lastFrameIssueFor = (state: VideoGenerationWorkingStateV1): string | null => {
+    if (state.selection.operation !== 'image_to_video' || !state.lastFrame) return null
+    if (state.source && state.source.type === state.lastFrame.type && state.source.id === state.lastFrame.id) {
+      return 'A imagem final precisa ser diferente da imagem inicial.'
+    }
+    const model = selectedModel(connections, state.selection)
+    const blockers = lastFrameBlockers(model, state.selection)
+    return blockers.length === 0 || !model ? null : blockers.map((conflict) => LAST_FRAME_CONFLICT_MESSAGE[conflict](model)).join(' ')
+  }
+  const lastFrameIssue = lastFrameIssueFor(currentWorkingState)
+
   const automaticBusy = automaticStage === 'prompt' || automaticStage === 'saving' || automaticStage === 'video'
   const busy = isGenerating || automaticBusy
   const canSubmit =
@@ -615,13 +650,15 @@ function WorkspacePageContent() {
     !!activeConnection?.canGenerate &&
     !!selection.operation &&
     !!selection.modelId &&
-    (selection.operation !== 'image_to_video' || !!sourceSelection?.source)
+    (selection.operation !== 'image_to_video' || !!sourceSelection?.source) &&
+    lastFrameIssue === null
 
   const submitVideo = async (submittedState: VideoGenerationWorkingStateV1, beforeSend?: () => boolean): Promise<boolean> => {
     if (submitLock.current || unconfirmedSubmission || saveState === 'conflict' || !submittedState.prompt.trim()
       || !selectedConnection(connections, submittedState.selection)?.canGenerate
       || !submittedState.selection.operation || !submittedState.selection.modelId
-      || (submittedState.selection.operation === 'image_to_video' && !submittedState.source)) return false
+      || (submittedState.selection.operation === 'image_to_video' && !submittedState.source)
+      || lastFrameIssueFor(submittedState) !== null) return false
     // Synchronous lock precedes the first await; the snapshot and key cannot change mid-submit.
     submitLock.current = true
     setIsGenerating(true)
@@ -647,6 +684,7 @@ function WorkspacePageContent() {
           body: JSON.stringify({ projectId: effectiveProjectId, productionId: effectiveProductionId, sessionId,
             clientRequestId: requestId, prompt: submittedState.prompt,
             ...i2vSourceFields(submittedState.selection.operation, submittedState.source),
+            ...lastFrameFields(submittedState.selection.operation, submittedState.lastFrame ?? null),
             ...toSubmitControls(submittedState.selection),
           }),
         })
@@ -694,6 +732,7 @@ function WorkspacePageContent() {
     : unconfirmedSubmission ? 'Confira o envio anterior no histórico antes de iniciar outro vídeo.'
     : !activeConnection?.canGenerate || !selection.operation || !selection.modelId ? 'Selecione uma conexão Kling disponível e um modelo compatível.'
     : selection.operation === 'image_to_video' && !sourceSelection?.source ? 'Selecione uma imagem de origem.'
+    : lastFrameIssue ? lastFrameIssue
     : assistanceReason
 
   const generationSummary = activeModel && selection.operation ? `${activeModel.label} · ${selection.operation === 'image_to_video' ? 'Imagem para Vídeo' : 'Texto para Vídeo'}` : null
@@ -930,6 +969,8 @@ function WorkspacePageContent() {
                 onPromptChange={editPrompt}
                 sourceSelection={sourceSelection}
                 onSourceSelectionChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setSourceSelection(value) }}
+                lastFrameSelection={lastFrameSelection}
+                onLastFrameSelectionChange={(value) => { if (submitLock.current || automaticRun.current) return; invalidateAssistance(); setLastFrameSelection(value) }}
                 disabled={busy || saveState === 'conflict' || !!unconfirmedSubmission}
                 promptReadOnly={effectiveMode === 'automatic'}
                 promptLanguage={{

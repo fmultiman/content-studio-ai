@@ -47,6 +47,9 @@ export const SessionWorkingStateSchema = VideoGenerationWorkingStateV1Schema.sup
   if (state.source && !isUuid(state.source.id)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['source', 'id'], message: 'source id must be a UUID' })
   }
+  if (state.lastFrame && !isUuid(state.lastFrame.id)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lastFrame', 'id'], message: 'last frame id must be a UUID' })
+  }
   if (byteLength(JSON.stringify(splitWorkingState(state).working_config)) > SESSION_LIMITS.configMaxBytes) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selection'], message: `working config exceeds ${SESSION_LIMITS.configMaxBytes} bytes` })
   }

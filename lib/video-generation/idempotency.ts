@@ -26,7 +26,7 @@ const nullable = (value: unknown) => (value === undefined ? null : value)
  * Built from an explicit list in a fixed order, so key order and extra unknown fields never matter.
  */
 export function generateRequestFingerprint(body: Record<string, any>): string {
-  const canonical = [
+  const canonical: unknown[] = [
     body.projectId,
     body.productionId,
     body.sessionId,
@@ -46,6 +46,12 @@ export function generateRequestFingerprint(body: Record<string, any>): string {
     body.music_prompt,
     body.outputCount ?? body.imageCount,
   ].map(nullable)
+  // VEO_KLING_FIRST_LAST_FRAME_V1: the LAST frame is part of what was asked for, so a key can never be replayed for a
+  // different end frame. Appended ONLY when present: the fingerprint of every request without one is byte-identical to
+  // what it always was, so an attempt created before this change still replays under its own key.
+  if (body.lastFrameImageId || body.lastFrameLibraryFileId) {
+    canonical.push(body.lastFrameImageId ?? null, body.lastFrameLibraryFileId ?? null)
+  }
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
 }
 

@@ -7,7 +7,10 @@ import { providerCredentialUnavailableResponse } from '@/lib/credentials/provide
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { forceRefreshAccessToken, getValidAccessToken } from '@/lib/provider-connections/token-store'
 import { ProviderAuthorizationRequiredError, ProviderConnectionError } from '@/lib/provider-connections/types'
-import { REST_CONNECTION_REF, resolveGenerationConnection } from '@/lib/video-generation/connections'
+import { REST_CONNECTION_REF, parseConnectionRef, resolveGenerationConnection } from '@/lib/video-generation/connections'
+import { frameConfig, type FrameIdentity } from '@/lib/video-generation/frames'
+import { isProviderExecutionDisabledError } from '@/lib/providers/execution-policy'
+import { VEO_MAX_FRAME_BYTES, isVeoError, type VeoError } from '@/lib/providers/gemini/veo-client'
 import { classifyExistingSubmission, generateRequestFingerprint, isClientRequestId, toClientGeneration } from '@/lib/video-generation/idempotency'
 import { isUuid } from '@/lib/video-generation/session'
 import { initialNextPollAt } from '@/lib/video-generation/polling'
@@ -15,8 +18,10 @@ import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
 import { I2V_MEDIA_FAILURE_MESSAGE, loadTrustedI2vSourceImage, resolveI2vSource } from '@/lib/video-generation/i2v-source-media'
 import type { KlingMcpUploadImage } from '@/lib/provider-connections/kling-mcp-upload'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
+import { veoVideoOperations } from '@/lib/video-generation/veo-capabilities'
 import { validateControlVocabulary, validateVideoRequest } from '@/lib/video-generation/request'
 import {
+  GeminiVeoTransport,
   KlingMcpSubmitError,
   KlingMcpTransport,
   KlingRestTransport,
@@ -68,6 +73,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { projectId, productionId, mode, prompt, sourceImageId, sourceLibraryFileId } = body
+    // VEO_KLING_FIRST_LAST_FRAME_V1: the optional LAST frame. Same identity rule as the first frame (exactly one of an
+    // image id / a Library file id), and it is only meaningful together with a first frame in image_to_video.
+    const { lastFrameImageId, lastFrameLibraryFileId } = body
+    const hasLastFrame = Boolean(lastFrameImageId || lastFrameLibraryFileId)
 
     if (!projectId || !productionId || !mode || !prompt) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -130,9 +139,12 @@ export async function POST(req: NextRequest) {
       audio_prompt: body.audio_prompt ?? undefined,
       music_prompt: body.music_prompt ?? undefined,
       outputCount: body.outputCount ?? body.imageCount ?? undefined,
+      lastFrame: hasLastFrame && mode === 'image_to_video' ? true : undefined,
     }
     // Vocabulary/shape errors are rejected before any database access.
-    const vocabularyFailure = validateControlVocabulary(mode, rawControls)
+    const vocabularyFailure = validateControlVocabulary(mode, rawControls, {
+      imageToVideoAspectRatio: parseConnectionRef(body.connectionRef ?? REST_CONNECTION_REF)?.kind === 'gemini_api',
+    })
     if (vocabularyFailure && !vocabularyFailure.ok) {
       return jsonError(400, vocabularyFailure.code, vocabularyFailure.message)
     }
@@ -144,9 +156,24 @@ export async function POST(req: NextRequest) {
       if (sourceImageId && sourceLibraryFileId) {
         return NextResponse.json({ error: 'Provide exactly one source: sourceImageId OR sourceLibraryFileId.' }, { status: 400 })
       }
+      if (hasLastFrame) {
+        if (lastFrameImageId && lastFrameLibraryFileId) {
+          return jsonError(400, 'INVALID_LAST_FRAME', 'Provide exactly one last frame: lastFrameImageId OR lastFrameLibraryFileId.')
+        }
+        for (const id of [lastFrameImageId, lastFrameLibraryFileId]) {
+          if (id !== undefined && id !== null && !isUuid(id)) return jsonError(400, 'INVALID_LAST_FRAME', 'The last frame id must be a UUID.')
+        }
+        // Start and end must be two different images: an identical pair carries no transition and would only cost money.
+        if ((lastFrameImageId && lastFrameImageId === sourceImageId) || (lastFrameLibraryFileId && lastFrameLibraryFileId === sourceLibraryFileId)) {
+          return jsonError(400, 'LAST_FRAME_SAME_AS_FIRST', 'A imagem final precisa ser diferente da imagem inicial.')
+        }
+      }
     } else if (mode === 'text_to_video') {
       if (sourceImageId || sourceLibraryFileId) {
         return NextResponse.json({ error: 'sourceImageId and sourceLibraryFileId must be absent for text_to_video.' }, { status: 400 })
+      }
+      if (hasLastFrame) {
+        return jsonError(400, 'UNSUPPORTED_LAST_FRAME', 'lastFrameImageId and lastFrameLibraryFileId must be absent for text_to_video.')
       }
     }
 
@@ -156,12 +183,15 @@ export async function POST(req: NextRequest) {
     // the request. An absent reference means the existing Kling API (REST) default.
     // A missing credential/connection = zero created records, zero provider
     // calls, and it never becomes a platform credential.
-    const resolved = await resolveGenerationConnection(supabase, user.id, body.connectionRef ?? REST_CONNECTION_REF)
+    const connectionRef = body.connectionRef ?? REST_CONNECTION_REF
+    const routedProvider = parseConnectionRef(connectionRef)?.kind === 'gemini_api' ? ('gemini' as const) : ('kling' as const)
+    const resolved = await resolveGenerationConnection(supabase, user.id, connectionRef)
     if (!resolved.ok) {
-      return jsonError(resolved.status, resolved.code, resolved.message, { provider: 'kling' })
+      return jsonError(resolved.status, resolved.code, resolved.message, { provider: routedProvider })
     }
 
-    const operations = resolved.kind === 'rest' ? restVideoOperations() : resolved.operations
+    const operations =
+      resolved.kind === 'rest' ? restVideoOperations() : resolved.kind === 'gemini_api' ? veoVideoOperations() : resolved.operations
 
     const validation = validateVideoRequest(operations, rawControls)
     if (!validation.ok) {
@@ -214,7 +244,13 @@ export async function POST(req: NextRequest) {
     // Secrets are resolved only after every check passed.
     let transport: KlingVideoTransport
     let connectionId: string | null = null
-    if (resolved.kind === 'rest') {
+    if (resolved.kind === 'gemini_api') {
+      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'gemini' })
+      if (execution.status !== 'ready') {
+        return jsonError(422, execution.code, 'Gemini não configurado. Adicione sua chave de API em Configurações para usar o Google Veo.', { provider: 'gemini' })
+      }
+      transport = new GeminiVeoTransport(execution.secret)
+    } else if (resolved.kind === 'rest') {
       const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'kling' })
       if (execution.status !== 'ready') {
         return jsonError(422, execution.code, 'Kling não configurado. Adicione sua chave de API em Configurações.', { provider: 'kling' })
@@ -231,36 +267,81 @@ export async function POST(req: NextRequest) {
     }
 
     let resolvedSourceUrl = ''
+    let resolvedLastFrameUrl = ''
     let mcpSourceImage: KlingMcpUploadImage | undefined
+    let lastFrameImage: KlingMcpUploadImage | undefined
+    // Kling REST receives presigned URLs; Kling MCP uploads bytes to the provider; Google Veo receives bytes inline.
+    const deliverBytes = transport.transport === 'mcp' || resolved.kind === 'gemini_api'
+    const frameTooLargeForVeo = (bytes: Uint8Array) => resolved.kind === 'gemini_api' && bytes.byteLength > VEO_MAX_FRAME_BYTES
 
     if (mode === 'image_to_video') {
-      // One trust chain for both transports (owner, Project, kind, deleted state, proven storage key).
+      // One trust chain for every transport (owner, Project, kind, deleted state, proven storage key).
       const source = await resolveI2vSource(supabase, {
         userId: user.id,
         projectId,
         sourceImageId,
         sourceLibraryFileId,
-        deliver: transport.transport === 'mcp' ? 'bytes' : 'url',
+        deliver: deliverBytes ? 'bytes' : 'url',
       })
       if (!source.ok) return NextResponse.json(source.body, { status: source.status })
       resolvedSourceUrl = source.restSourceUrl
 
-      if (transport.transport === 'mcp') {
+      if (deliverBytes) {
         // VIDEO_MCP_I2V_SOURCE_TRANSPORT_V1: Kling can never fetch our private storage (a presigned URL is unreachable,
-        // a data URL is not an absolute URL). The MCP transport uploads the BYTES through file_upload, so they are
-        // loaded and validated HERE, before any record exists and before any provider call. REST is untouched.
+        // a data URL is not an absolute URL). The MCP transport uploads the BYTES through file_upload (Veo takes them
+        // inline), so they are loaded and validated HERE, before any record exists and before any provider call.
         const loaded = await loadTrustedI2vSourceImage(source.locator)
         if (!loaded.ok) {
-          console.error('I2V MCP source rejected before any provider call:', { code: loaded.code, sourceKind: source.locator.kind, sourceId: source.locator.id.slice(0, 8) })
+          console.error('I2V source rejected before any provider call:', { code: loaded.code, sourceKind: source.locator.kind, sourceId: source.locator.id.slice(0, 8) })
           return jsonError(422, loaded.code, I2V_MEDIA_FAILURE_MESSAGE[loaded.code])
+        }
+        if (frameTooLargeForVeo(loaded.image.bytes)) {
+          return jsonError(422, 'SOURCE_IMAGE_TOO_LARGE', 'A imagem inicial é grande demais para o Google Veo (máximo de 7 MB por imagem).')
         }
         mcpSourceImage = { bytes: loaded.image.bytes, mimeType: loaded.image.mimeType, filename: loaded.image.filename }
       }
+
+      if (videoRequest.lastFrame) {
+        // VEO_KLING_FIRST_LAST_FRAME_V1: the LAST frame goes through the SAME trust chain as the first (owner, Project,
+        // kind, deleted state, proven storage key) - an id belonging to another user or Project is simply "not found".
+        const last = await resolveI2vSource(supabase, {
+          userId: user.id,
+          projectId,
+          sourceImageId: lastFrameImageId,
+          sourceLibraryFileId: lastFrameLibraryFileId,
+          deliver: deliverBytes ? 'bytes' : 'url',
+        })
+        if (!last.ok) return NextResponse.json({ ...last.body, frame: 'last' }, { status: last.status })
+        resolvedLastFrameUrl = last.restSourceUrl
+
+        if (deliverBytes) {
+          const loadedLast = await loadTrustedI2vSourceImage(last.locator)
+          if (!loadedLast.ok) {
+            console.error('I2V last frame rejected before any provider call:', { code: loadedLast.code, sourceKind: last.locator.kind, sourceId: last.locator.id.slice(0, 8) })
+            return jsonError(422, loadedLast.code, `Imagem final: ${I2V_MEDIA_FAILURE_MESSAGE[loadedLast.code]}`, { frame: 'last' })
+          }
+          if (frameTooLargeForVeo(loadedLast.image.bytes)) {
+            return jsonError(422, 'SOURCE_IMAGE_TOO_LARGE', 'A imagem final é grande demais para o Google Veo (máximo de 7 MB por imagem).', { frame: 'last' })
+          }
+          lastFrameImage = { bytes: loadedLast.image.bytes, mimeType: loadedLast.image.mimeType, filename: loadedLast.image.filename }
+        }
+      }
     }
 
-    if (mode === 'image_to_video' && transport.transport === 'rest' && !resolvedSourceUrl) {
+    if (mode === 'image_to_video' && !deliverBytes && !resolvedSourceUrl) {
       return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem de origem não está disponível para envio. Escolha outra imagem.')
     }
+    if (mode === 'image_to_video' && videoRequest.lastFrame && !deliverBytes && !resolvedLastFrameUrl) {
+      return jsonError(422, 'SOURCE_MEDIA_UNAVAILABLE', 'A imagem final não está disponível para envio. Escolha outra imagem.', { frame: 'last' })
+    }
+
+    // Durable identities of the two frames, recorded in the attempt's immutable request_config. Ids only: never a URL.
+    const firstFrameIdentity: FrameIdentity | null = mode === 'image_to_video'
+      ? (sourceLibraryFileId ? { type: 'library', id: sourceLibraryFileId } : { type: 'generated', id: sourceImageId })
+      : null
+    const lastFrameIdentity: FrameIdentity | null = mode === 'image_to_video' && videoRequest.lastFrame
+      ? (lastFrameLibraryFileId ? { type: 'library', id: lastFrameLibraryFileId } : { type: 'generated', id: lastFrameImageId })
+      : null
 
     // Insert queued state. `request_config` is the exact, explicit set of values
     // that is sent to the provider (reproducible/debuggable) — never a secret.
@@ -279,7 +360,7 @@ export async function POST(req: NextRequest) {
         source_image_id: sourceImageId || null,
         source_library_file_id: sourceLibraryFileId || null,
         status: 'queued',
-        provider: 'kling',
+        provider: routedProvider,
         model: videoRequest.model,
         transport: transport.transport,
         connection_id: connectionId,
@@ -293,6 +374,8 @@ export async function POST(req: NextRequest) {
           audio_prompt: videoRequest.audioPrompt ? videoRequest.audioPrompt : undefined,
           music_prompt: videoRequest.musicPrompt ? videoRequest.musicPrompt : undefined,
           output_count: 1,
+          // Only attempts WITH a last frame record the frame pair, so a single-image I2V row stays exactly what it always was.
+          ...(lastFrameIdentity ? frameConfig(firstFrameIdentity, lastFrameIdentity) : {}),
         },
       })
       .select()
@@ -322,13 +405,25 @@ export async function POST(req: NextRequest) {
         prompt,
         request: videoRequest,
         model: modelCapability,
-        sourceImageUrl: mode === 'image_to_video' && transport.transport === 'rest' ? resolvedSourceUrl : undefined,
+        sourceImageUrl: mode === 'image_to_video' && !deliverBytes ? resolvedSourceUrl : undefined,
+        lastFrameImageUrl: mode === 'image_to_video' && !deliverBytes && videoRequest.lastFrame ? resolvedLastFrameUrl : undefined,
         sourceImage: mcpSourceImage,
-        callbackUrl: transport.transport === 'rest' ? callbackUrl : undefined,
+        lastFrameImage,
+        // Kling REST completes through its callback; MCP and Google Veo are polled.
+        callbackUrl: transport.transport === 'rest' && resolved.kind === 'rest' ? callbackUrl : undefined,
       })
     } catch (providerError: any) {
       // Only the error CLASS is logged: provider text/URLs are never written to logs.
-      console.error('Kling provider failure:', providerError instanceof Error ? providerError.name : 'unknown')
+      console.error(resolved.kind === 'gemini_api' ? 'Veo provider failure:' : 'Kling provider failure:', providerError instanceof Error ? providerError.name : 'unknown')
+
+      if (resolved.kind === 'gemini_api') {
+        const known = describeVeoSubmitFailure(providerError)
+        await serverDb
+          .from('video_generations')
+          .update({ status: 'failed', error_details: known.errorDetails })
+          .eq('id', generation.id)
+        return jsonError(known.httpStatus, known.code, known.message, { outcomeUnknown: known.outcomeUnknown })
+      }
 
       if (transport.transport === 'mcp') {
         const known = describeMcpSubmitFailure(providerError)
@@ -374,7 +469,7 @@ export async function POST(req: NextRequest) {
       status: 'submitted',
       task_id: submitRes.taskId,
       provider_metadata: submitRes.providerMetadata,
-      ...(transport.transport === 'mcp' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
+      ...(transport.transport === 'mcp' || resolved.kind === 'gemini_api' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
     }
     let recorded = await serverDb.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
     if (recorded.error || !recorded.data) {
@@ -395,7 +490,9 @@ export async function POST(req: NextRequest) {
       return jsonError(
         502,
         'SUBMISSION_UNRECORDED',
-        'A Kling aceitou a geração, mas não conseguimos registrá-la. NÃO tente de novo: verifique a sua conta Kling antes de gerar outro vídeo.',
+        resolved.kind === 'gemini_api'
+          ? 'O Google aceitou a geração, mas não conseguimos registrá-la. NÃO tente de novo: verifique a sua conta Google antes de gerar outro vídeo.'
+          : 'A Kling aceitou a geração, mas não conseguimos registrá-la. NÃO tente de novo: verifique a sua conta Kling antes de gerar outro vídeo.',
         { outcomeUnknown: true },
       )
     }
@@ -407,8 +504,43 @@ export async function POST(req: NextRequest) {
     // Everything that reaches here happened BEFORE a provider call (the submit and the recording of its
     // result have their own handling above): a definitive failure, with a code and a generic message.
     console.error('Create video generation route error:', error instanceof Error ? error.name : 'unknown')
-    return jsonError(500, 'INTERNAL_ERROR', 'Erro interno ao criar a geração. Nada foi enviado à Kling.')
+    return jsonError(500, 'INTERNAL_ERROR', 'Erro interno ao criar a geração. Nada foi enviado ao provedor.')
   }
+}
+
+/**
+ * Maps a Google Veo submission failure to a safe response + the persisted error record. A transport failure, a 5xx or an
+ * unreadable 2xx may have created (and billed) the job: that is an UNKNOWN outcome, never retried automatically.
+ */
+function describeVeoSubmitFailure(error: unknown) {
+  if (isProviderExecutionDisabledError(error)) {
+    return {
+      code: 'PROVIDER_EXECUTION_DISABLED_IN_ENVIRONMENT',
+      httpStatus: 403,
+      message: error.message,
+      outcomeUnknown: false,
+      errorDetails: { code: 'PROVIDER_EXECUTION_DISABLED_IN_ENVIRONMENT', message: error.message, outcome_unknown: false },
+    }
+  }
+  if (isVeoError(error)) {
+    const veo: VeoError = error
+    const unknown = veo.outcomeUnknown
+    const httpStatus = unknown ? 502 : veo.kind === 'quota' ? 429 : veo.kind === 'provider_unavailable' ? 502 : 422
+    const code = unknown
+      ? 'SUBMIT_OUTCOME_UNKNOWN'
+      : veo.kind === 'quota'
+        ? 'PROVIDER_QUOTA_EXCEEDED'
+        : veo.kind === 'invalid_credential'
+          ? 'PROVIDER_CREDENTIAL_REJECTED'
+          : 'PROVIDER_REJECTED'
+    const message = unknown
+      ? 'Não foi possível confirmar o envio ao Google Veo. Verifique a sua conta Google antes de tentar novamente.'
+      : veo.message
+    return { code, httpStatus, message, outcomeUnknown: unknown, errorDetails: { code, message, outcome_unknown: unknown } }
+  }
+  // Anything unclassified after the request was built may have reached Google.
+  const message = 'Não foi possível confirmar o envio ao Google Veo. Verifique a sua conta Google antes de tentar novamente.'
+  return { code: 'SUBMIT_OUTCOME_UNKNOWN', httpStatus: 502, message, outcomeUnknown: true, errorDetails: { code: 'SUBMIT_OUTCOME_UNKNOWN', message, outcome_unknown: true } }
 }
 
 /** Maps an MCP submission failure to a safe response + the persisted error record. */

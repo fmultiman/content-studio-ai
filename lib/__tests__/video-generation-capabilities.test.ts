@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { normalizeKlingMcpVideoCapabilities } from '@/lib/provider-connections/kling-mcp-video-capabilities'
 import type { ProviderConnectionRow } from '@/lib/provider-connections/types'
 import { createFakeDb } from './helpers/fake-db'
@@ -12,7 +12,7 @@ import {
   resolveGenerationConnection,
   serverOperationsFor,
 } from '@/lib/video-generation/connections'
-import { accountConnectionRef, parseConnectionRef, REST_CONNECTION_REF } from '@/lib/video-generation/connection-ref'
+import { accountConnectionRef, GEMINI_CONNECTION_REF, parseConnectionRef, REST_CONNECTION_REF } from '@/lib/video-generation/connection-ref'
 import { defaultAspectRatio, defaultDuration, defaultResolution, findModel, findOperation, type VideoModelCapability } from '@/lib/video-generation/capabilities'
 import { restVideoOperations } from '@/lib/video-generation/rest-capabilities'
 
@@ -349,16 +349,28 @@ describe('listing and resolving connections (server authority)', () => {
   const dbWith = (seed: { settings?: any; rows?: ProviderConnectionRow[] }) =>
     createFakeDb({ seed: { user_settings: seed.settings ? [seed.settings] : [], provider_connections: seed.rows ?? [] } }) as any
 
-  it('lists Kling API first, then only the user’s own account connections', async () => {
+  it('lists Kling API first, then Google Veo, then only the user’s own account connections', async () => {
     const db = dbWith({ settings: { user_id: 'user-a', kling_api_key: 'k' }, rows: [withGeneration(), withGeneration({ id: OTHER_ID, user_id: 'user-b' })] })
     const connections = await listVideoGenerationConnections(db, 'user-a', NOW)
-    expect(connections.map((entry) => entry.ref)).toEqual([REST_CONNECTION_REF, accountConnectionRef(CONNECTION_ID)])
+    expect(connections.map((entry) => entry.ref)).toEqual([REST_CONNECTION_REF, GEMINI_CONNECTION_REF, accountConnectionRef(CONNECTION_ID)])
   })
 
-  it('lists only Kling API (unconfigured) when the user has nothing else — never hypothetical providers', async () => {
+  it('lists only the two API connections (both unconfigured) when the user has nothing else — never hypothetical providers', async () => {
     const connections = await listVideoGenerationConnections(dbWith({}), 'user-a', NOW)
-    expect(connections).toHaveLength(1)
+    expect(connections.map((entry) => entry.ref)).toEqual([REST_CONNECTION_REF, GEMINI_CONNECTION_REF])
     expect(connections[0]).toMatchObject({ ref: REST_CONNECTION_REF, status: 'not_configured' })
+    expect(connections[1]).toMatchObject({ ref: GEMINI_CONNECTION_REF, provider: 'gemini', status: 'not_configured', canGenerate: false, operations: [] })
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('Google Veo is a connection only when the user has their own Gemini key (BYOK); never a platform key', async () => {
+    // Released (the switch is on): without it the connection is listed but cannot generate (see video-first-last-frame-contract.test.ts).
+    vi.stubEnv('CONTENT_STUDIO_VEO_VIDEO_GENERATION', 'enabled')
+    const withKey = await listVideoGenerationConnections(dbWith({ settings: { user_id: 'user-a', gemini_api_key: 'g' } }), 'user-a', NOW)
+    const veo = withKey.find((entry) => entry.ref === GEMINI_CONNECTION_REF)!
+    expect(veo).toMatchObject({ provider: 'gemini', transport: 'rest', funding: 'google_gemini_api', canGenerate: true, capabilitiesFreshness: 'static' })
+    expect(veo.operations.map((operation) => operation.operation).sort()).toEqual(['image_to_video', 'text_to_video'])
   })
 
   it('a store failure is an error, never "not configured" / "no models"', async () => {

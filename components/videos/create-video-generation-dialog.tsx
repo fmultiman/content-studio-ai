@@ -123,6 +123,10 @@ const BLOCKED_COPY: Record<VideoConnectionBlockedReason, BlockedCopy> = {
     description: 'A última verificação desta conta é antiga. Atualize a conexão antes de gerar.',
     action: 'refresh',
   },
+  feature_disabled: {
+    title: 'Ainda não liberado',
+    description: 'Este provedor ainda não foi liberado neste ambiente. Use outro modelo por enquanto.',
+  },
   no_supported_models: {
     title: 'Nenhum modelo compatível',
     description: 'A verificação mais recente não encontrou modelos de vídeo compatíveis com o Content Studio nesta conta.',

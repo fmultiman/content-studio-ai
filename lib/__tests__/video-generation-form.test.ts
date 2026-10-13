@@ -55,7 +55,7 @@ describe('validateVideoRequest (server validation against the RESOLVED connectio
 
   it('fills every omitted supported control with an EXPLICIT deterministic default (never a provider default)', () => {
     const { request } = ok(restVideoOperations(), { operation: 'text_to_video' })
-    expect(request).toEqual({ operation: 'text_to_video', model: 'kling-v3', duration: 5, resolution: '720p', aspectRatio: '16:9', audio: 'off', multiShot: false, asmr: null, audioPrompt: null, musicPrompt: null })
+    expect(request).toEqual({ operation: 'text_to_video', model: 'kling-v3', duration: 5, resolution: '720p', aspectRatio: '16:9', audio: 'off', multiShot: false, asmr: null, audioPrompt: null, musicPrompt: null, lastFrame: false })
 
     // MCP's provider defaults are 1080p / audio on / multi-shot on: Content Studio's are not.
     const mcp = ok(mcpOperations, { operation: 'text_to_video' }).request
@@ -125,6 +125,9 @@ describe('validateVideoRequest (server validation against the RESOLVED connectio
   it('validateControlVocabulary rejects shape errors before any connection lookup', () => {
     expect(validateControlVocabulary('text_to_video', { aspect_ratio: '4:3' })).toMatchObject({ ok: false, code: 'UNSUPPORTED_ASPECT_RATIO' })
     expect(validateControlVocabulary('image_to_video', { aspect_ratio: '16:9' })).toMatchObject({ ok: false, code: 'UNSUPPORTED_ASPECT_RATIO' })
+    // Google Veo (the caller opts in from the connection pointer) takes an explicit aspect ratio for image input too.
+    expect(validateControlVocabulary('image_to_video', { aspect_ratio: '16:9' }, { imageToVideoAspectRatio: true })).toBeNull()
+    expect(validateControlVocabulary('image_to_video', { aspect_ratio: '4:3' }, { imageToVideoAspectRatio: true })).toMatchObject({ ok: false, code: 'UNSUPPORTED_ASPECT_RATIO' })
     expect(validateControlVocabulary('text_to_video', { duration: 0 })).toMatchObject({ ok: false, code: 'UNSUPPORTED_DURATION' })
     expect(validateControlVocabulary('text_to_video', { resolution: '8k' })).toMatchObject({ ok: false, code: 'UNSUPPORTED_RESOLUTION' })
     expect(validateControlVocabulary('text_to_video', { outputCount: 3 })).toMatchObject({ ok: false, code: 'UNSUPPORTED_OUTPUT_COUNT' })

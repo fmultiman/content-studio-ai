@@ -521,7 +521,7 @@ describe('pollDueMcpGenerations — the scheduled poller (no user session)', () 
   })
 
   it('a store failure while listing due rows is surfaced (the route reports it), not swallowed', async () => {
-    const failing: any = { from: () => { const chain: any = { update: () => chain, select: () => chain, eq: () => chain, in: () => chain, is: () => chain, lt: () => chain, lte: () => chain, order: () => chain, limit: () => chain, then: (r: any) => r({ data: null, error: { message: 'down' } }) }; return chain } }
+    const failing: any = { from: () => { const chain: any = { update: () => chain, select: () => chain, eq: () => chain, or: () => chain, in: () => chain, is: () => chain, lt: () => chain, lte: () => chain, order: () => chain, limit: () => chain, then: (r: any) => r({ data: null, error: { message: 'down' } }) }; return chain } }
     await expect(pollDueMcpGenerations(failing, { now: () => NOW })).rejects.toMatchObject({ name: 'CompletionStoreError' })
   })
 })

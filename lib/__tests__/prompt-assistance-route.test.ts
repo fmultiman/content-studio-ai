@@ -98,6 +98,9 @@ describe('POST /api/prompt-assistance', () => {
       expect(input.systemInstruction).toContain('preservando a composição, identidade, estilo e iluminação')
       expect(input.systemInstruction).toContain('Nenhuma imagem foi enviada')
       expect(input.systemInstruction).toContain('sem afirmar que viu ou analisou a imagem')
+      // VEO_KLING_FIRST_LAST_FRAME_V1: with two frames the text assistant still never claims to have seen either of them.
+      expect(input.systemInstruction).toContain('imagem inicial e uma imagem final')
+      expect(input.systemInstruction).toContain('nunca afirme tê-las visto')
     }
     expect(db.tables.provider_usage_events).toHaveLength(2)
     for (const row of db.tables.provider_usage_events) {

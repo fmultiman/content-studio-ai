@@ -3,12 +3,17 @@ export interface KlingContentItemFirstFrame {
   url: string
 }
 
+export interface KlingContentItemLastFrame {
+  type: 'last_frame'
+  url: string
+}
+
 export interface KlingContentItemPrompt {
   type: 'prompt'
   text: string
 }
 
-export type KlingContentItem = KlingContentItemFirstFrame | KlingContentItemPrompt
+export type KlingContentItem = KlingContentItemFirstFrame | KlingContentItemLastFrame | KlingContentItemPrompt
 
 export interface KlingSettings {
   resolution?: '720p' | '1080p' | '4K'
@@ -90,14 +95,20 @@ export class KlingAdapter {
     throw new Error(`Kling API HTTP error: ${res.statusText || res.status}${errorDetail}`)
   }
 
-  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}, restModelId: string = 'kling-v3'): Promise<KlingSubmitResponse> {
+  /**
+   * `lastFrameUrl` (VEO_KLING_FIRST_LAST_FRAME_V1): the optional LAST frame. Kling 3.0 takes it as a `last_frame` content
+   * item next to `first_frame`; Kling 2.6 (legacy endpoint) takes it as `image_tail`. A last frame never travels without
+   * its first frame: both URLs are required together.
+   */
+  async submitImageToVideo(prompt: string, imageUrl: string, externalTaskId: string, callbackUrl?: string, settings: KlingSettings = {}, restModelId: string = 'kling-v3', lastFrameUrl?: string): Promise<KlingSubmitResponse> {
         const isLegacy26 = restModelId === 'kling-v2-6'
     
     let path = '/image-to-video/kling-3.0'
     let body: any = {
       contents: [
         { type: 'prompt', text: prompt },
-        { type: 'first_frame', url: imageUrl }
+        { type: 'first_frame', url: imageUrl },
+        ...(lastFrameUrl ? [{ type: 'last_frame', url: lastFrameUrl }] : [])
       ],
       settings: {
         resolution: settings.resolution || '720p',
@@ -118,6 +129,7 @@ export class KlingAdapter {
         model_name: 'kling-v2-6',
         prompt,
         image: imageUrl,
+        ...(lastFrameUrl ? { image_tail: lastFrameUrl } : {}),
         duration: String(settings.duration || 5),
         mode: settings.resolution === '1080p' ? 'pro' : 'std',
         sound: settings.audio || 'off',

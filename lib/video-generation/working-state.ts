@@ -8,9 +8,10 @@ import {
   type VideoOperation,
   type VideoResolution
 } from './capabilities'
-import { REST_CONNECTION_REF, accountConnectionRef, parseConnectionRef } from './connection-ref'
+import { GEMINI_CONNECTION_REF, REST_CONNECTION_REF, accountConnectionRef, parseConnectionRef } from './connection-ref'
 import type { VideoFormSelection } from './form-selection'
 import type { I2vSource } from './i2v-source'
+import { readFrameIdentities } from './frames'
 
 export const VideoFormSelectionSchema = z.object({
   connectionRef: z.string().nullable().refine((val) => val === null || parseConnectionRef(val) !== null, {
@@ -44,6 +45,12 @@ export const VideoGenerationWorkingStateV1Schema = z.object({
   schemaVersion: z.literal(1),
   prompt: z.string(),
   source: I2vWorkingSourceSchema.nullable(),
+  /**
+   * VEO_KLING_FIRST_LAST_FRAME_V1: the optional LAST frame (image B), a second durable identity next to `source` (image A).
+   * Optional and omitted when empty, so every Session saved before this field keeps its exact JSON shape. It is kept in
+   * the draft even when the selected model cannot honour it (the UI explains why; the server never sends it silently).
+   */
+  lastFrame: I2vWorkingSourceSchema.nullable().optional(),
   selection: VideoFormSelectionSchema,
   assistance: VideoPromptAssistanceWorkingStateSchema.optional(),
 })
@@ -55,6 +62,7 @@ export interface HistoricalVideoGenerationSnapshot {
   prompt: string
   mode: string
   model: string
+  provider?: string | null
   transport?: string | null
   connection_id?: string | null
   source_image_id?: string | null
@@ -84,7 +92,9 @@ export function attemptToWorkingState(attempt: HistoricalVideoGenerationSnapshot
 
   const transport = attempt.transport ?? 'rest'
   let connectionRef: string | null = null
-  if (transport === 'rest') {
+  if (attempt.provider === 'gemini') {
+    connectionRef = GEMINI_CONNECTION_REF
+  } else if (transport === 'rest') {
     connectionRef = REST_CONNECTION_REF
   } else if (transport === 'mcp' && attempt.connection_id) {
     connectionRef = accountConnectionRef(attempt.connection_id)
@@ -110,6 +120,7 @@ export function attemptToWorkingState(attempt: HistoricalVideoGenerationSnapshot
     schemaVersion: 1,
     prompt: attempt.prompt || '',
     source,
+    ...(isI2v && readFrameIdentities(config).lastFrame ? { lastFrame: readFrameIdentities(config).lastFrame } : {}),
     selection,
   }
 }
