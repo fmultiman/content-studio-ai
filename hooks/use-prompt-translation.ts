@@ -23,7 +23,8 @@ export function usePromptTranslation({
   setTranslation: (value: string) => void
   epoch?: number
 }) {
-  const [source, setSource] = useState<string | null>(null)
+  // A translation present at mount (e.g. a saved one) belongs to the prompt it was mounted with.
+  const [source, setSource] = useState<string | null>(() => (translation ? prompt : null))
   const [seenEpoch, setSeenEpoch] = useState(epoch)
   const [translating, setTranslating] = useState(false)
   const [error, setError] = useState<string | null>(null)
