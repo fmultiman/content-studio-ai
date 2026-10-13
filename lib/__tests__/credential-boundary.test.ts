@@ -135,8 +135,15 @@ describe('no provider secret reaches client code', () => {
       // GEMINI_REVIEW_PROVIDER_FOUNDATION_V1: the OpenAI Review execution provider is a server-only module.
       // FUTURE_053_PROMPT_ASSISTANCE_IMAGE_V1: the Prompt Assistance OpenAI adapter is server-only and receives the
       // credential from the authenticated route (resolveProviderExecution).
-      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts' || path === 'lib/reviews/providers/openai.ts' || path === 'lib/prompt-assistance/providers.ts').toBe(true)
+      expect(path.startsWith('app/api/') || path === 'lib/ai-simulator.ts' || path === 'lib/reviews/providers/openai.ts' || path === 'lib/prompt-assistance/providers.ts' || path === 'lib/providers/openai/image-edit-client.ts').toBe(true)
     }
+  })
+
+  it('image editing transport and accounting are imported only by the authenticated server route', () => {
+    const imports = /from\s+['"]@\/lib\/(providers\/openai\/image-edit-client|usage\/openai-image-usage)['"]/
+    const callers = sourceFiles.filter((file) => imports.test(codeOnly(file.text)))
+    expect(callers.map((file) => file.path)).toEqual(['app/api/openai/generate-image/route.ts'])
+    expect(callers.every((file) => !isClientFile(file.text))).toBe(true)
   })
 })
 
@@ -264,6 +271,8 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       // FUTURE_064_SLICE_C: the server-only Gemini image usage recorder writes factual provider_usage_events rows (no user INSERT
       // policy) and the Attempt's accounting mark for the verified user id handed over by the authenticated image route.
       path === 'lib/usage/gemini-image-usage.ts' ||
+      // GPT Image 2 edit accounting receives the verified owner/Attempt from the authenticated image route.
+      path === 'lib/usage/openai-image-usage.ts' ||
       // GEMINI_VIDEO_REVIEW_ADAPTER_V1: the server-only Video Review service is the Video counterpart of the Image
       // Review service. It writes media artifacts and immutable Review rows (RLS gives users SELECT only) after the
       // authenticated route has verified the user; every query is filtered by that user id and the browser sends

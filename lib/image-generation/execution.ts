@@ -7,6 +7,7 @@ import { generateImageAttemptFingerprint } from './idempotency'
 import { ATTEMPT_COLUMNS, type ImageGenerationAttemptRow } from './attempt'
 import { isUuid, parseWorkingState, ImageReferenceSchema, type ImageReference, type ImageGenerationSessionRow } from './session'
 import { resolveGeminiImageModel } from '@/lib/providers/gemini/image-models'
+import { resolveOpenAIImageEditModel } from '@/lib/providers/openai/image-models'
 
 export class ImageSubmissionError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message) }
@@ -39,7 +40,8 @@ export async function freezeAndClaimImageAttempt(input: {
   if (!state.success) throw new ImageSubmissionError(409, 'INVALID_WORKING_STATE', 'Estado da geração inválido.')
   const references = input.sourceReferences ?? state.data.sourceReferences
   if (!references.every((reference) => ImageReferenceSchema.safeParse(reference).success)) throw new ImageSubmissionError(400, 'INVALID_SOURCE_REFERENCE', 'Referência inválida.')
-  const referenceModel = input.provider === 'gemini' ? resolveGeminiImageModel(input.model) : null
+  const referenceModel = input.provider === 'gemini' ? resolveGeminiImageModel(input.model)
+    : input.provider === 'openai' ? resolveOpenAIImageEditModel(input.model) : null
   // Never silently drop a reference for adapters without image inputs.
   if (references.length && !referenceModel) throw new ImageSubmissionError(400, 'SOURCE_NOT_SUPPORTED', 'Este modelo ainda não envia referências de imagem.')
   if (referenceModel && references.length > referenceModel.referenceCapabilities.maxReferences) throw new ImageSubmissionError(400, 'SOURCE_REFERENCE_LIMIT', 'Use uma referência por geração.')

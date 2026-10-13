@@ -18,6 +18,10 @@ export type { ImageModel }
 
 interface PromptSectionProps {
   sourceReferences?: ImageReference[]
+  imageSize?: string
+  imageQuality?: string
+  onImageSizeChange?: (value: string) => void
+  onImageQualityChange?: (value: string) => void
   generatedPrompt: string
   setGeneratedPrompt: (value: string) => void
   suggestedPrompt?: string
@@ -58,6 +62,10 @@ interface PromptSectionProps {
 export function PromptSection({
   generatedPrompt,
   sourceReferences = [],
+  imageSize = '1024x1024',
+  imageQuality = 'medium',
+  onImageSizeChange,
+  onImageQualityChange,
   setGeneratedPrompt,
   suggestedPrompt = '',
   suggestedOperation = null,
@@ -223,6 +231,32 @@ export function PromptSection({
 
         {/* Image model selector + explicit generation: visible in Manual, Assisted and Automatic flows */}
         <div className="flex flex-wrap items-center justify-end gap-3">
+          {selectedModel === 'gpt-image-2' && sourceReferences.length > 0 && (
+            <div className="flex min-w-0 max-w-full flex-wrap gap-3" data-testid="openai-reference-output-controls">
+              <div className="min-w-0 max-w-full space-y-1">
+                <Label htmlFor="image-output-size">Tamanho da imagem</Label>
+                <Select value={imageSize} onValueChange={onImageSizeChange} disabled={workflowBusy || isCreatingImage}>
+                  <SelectTrigger id="image-output-size" aria-label="Tamanho da imagem" className="w-[230px] max-w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1024x1024">1024 × 1024 — Quadrado</SelectItem>
+                    <SelectItem value="1536x1024">1536 × 1024 — Paisagem</SelectItem>
+                    <SelectItem value="1024x1536">1024 × 1536 — Retrato</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-0 max-w-full space-y-1">
+                <Label htmlFor="image-output-quality">Qualidade da imagem</Label>
+                <Select value={imageQuality} onValueChange={onImageQualityChange} disabled={workflowBusy || isCreatingImage}>
+                  <SelectTrigger id="image-output-quality" aria-label="Qualidade da imagem" className="w-[150px] max-w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Baixa</SelectItem>
+                    <SelectItem value="medium">Média</SelectItem>
+                    <SelectItem value="high">Alta</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
           {onModelChange && (
             <div className="flex items-center gap-2">
               <Label className="text-sm text-muted-foreground">Modelo:</Label>

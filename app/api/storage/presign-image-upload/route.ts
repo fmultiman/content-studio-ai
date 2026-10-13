@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedImageUpload } from '@/lib/storage/s3'
 import { isUuid } from '@/lib/library/production-scope'
-import { IMAGE_REFERENCE_MAX_BYTES, parseImageSourceProfile, sourceMimeTypes } from '@/lib/media-source/profile'
+import { parseImageSourceProfile, sourceFormatErrorCopy, sourceMaxBytes, sourceMimeTypes, sourceSizeErrorCopy } from '@/lib/media-source/profile'
 
 export async function POST(request: Request) {
   try {
@@ -24,12 +24,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Tipo de arquivo obrigatório' }, { status: 400 })
     }
 
-    if (profile === 'image-reference') {
+    const maxBytes = sourceMaxBytes(profile)
+    if (maxBytes !== null) {
       if (folder !== 'library' || !sourceMimeTypes(profile).includes(mimeType)) {
-        return NextResponse.json({ error: 'Use uma imagem PNG, JPEG ou WebP.', code: 'REFERENCE_FORMAT_UNSUPPORTED' }, { status: 400 })
+        return NextResponse.json({ error: sourceFormatErrorCopy(profile), code: 'REFERENCE_FORMAT_UNSUPPORTED' }, { status: 400 })
       }
-      if (!Number.isSafeInteger(fileSize) || fileSize <= 0 || fileSize > IMAGE_REFERENCE_MAX_BYTES) {
-        return NextResponse.json({ error: 'A imagem de referência deve ter até 10 MiB.', code: 'REFERENCE_TOO_LARGE' }, { status: 400 })
+      if (!Number.isSafeInteger(fileSize) || fileSize <= 0 || fileSize > maxBytes) {
+        return NextResponse.json({ error: sourceSizeErrorCopy(profile), code: 'REFERENCE_TOO_LARGE' }, { status: 400 })
       }
       if (!isUuid(projectId)) return NextResponse.json({ error: 'Selecione um Projeto.', code: 'PROJECT_REQUIRED' }, { status: 400 })
       const { data: project, error: projectError } = await supabase.from('projects').select('id').eq('id', projectId).eq('user_id', user.id).maybeSingle()

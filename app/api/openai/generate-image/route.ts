@@ -5,7 +5,13 @@ import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { PROVIDER_CREDENTIAL_UNAVAILABLE, isProviderCredentialUnavailableError } from '@/lib/credentials/api-credential-store'
 import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
-import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, ImageSubmissionError } from '@/lib/image-generation/execution'
+import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, recordImageReferenceProvenance, ImageSubmissionError } from '@/lib/image-generation/execution'
+import type { ImageGenerationAttemptRow } from '@/lib/image-generation/attempt'
+import { ImageReferenceSchema, type ImageReference } from '@/lib/image-generation/session'
+import { loadImageReferences, ImageReferenceError } from '@/lib/image-generation/reference-media'
+import { resolveOpenAIImageEditModel } from '@/lib/providers/openai/image-models'
+import { editOpenAIImage, OpenAIImageEditError, isOpenAIImageEditSize, isOpenAIImageEditQuality } from '@/lib/providers/openai/image-edit-client'
+import { accountOpenAIImageEditUsage } from '@/lib/usage/openai-image-usage'
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
@@ -16,6 +22,68 @@ const ALLOWED_IMAGE_MODELS = new Set([
   'gpt-image-1-mini',
 ])
 
+const RAW_REFERENCE_FIELD = /image|img|photo|picture|reference|source|mask|inline|file|attach|upload|media|^url$|^dataUrl$/i
+function validateEditControls(size: unknown, quality: unknown) {
+  if (!isOpenAIImageEditSize(size)) throw new ImageSubmissionError(400, 'INVALID_IMAGE_SIZE', 'Tamanho de edição inválido.')
+  if (!isOpenAIImageEditQuality(quality)) throw new ImageSubmissionError(400, 'INVALID_IMAGE_QUALITY', 'Qualidade de edição inválida.')
+}
+
+// Isolated edit lifecycle. The generation branches below keep their original request/output handling.
+async function runCanonicalOpenAIEdit(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>; userId: string; sessionId: string
+  prompt: string; model: string; size: string; quality: string
+}, attempt: ImageGenerationAttemptRow, sourceReferences: ImageReference[]) {
+  let providerAttempted = false
+  try {
+    const model = resolveOpenAIImageEditModel(input.model)
+    if (!model) throw new ImageSubmissionError(400, 'SOURCE_NOT_SUPPORTED', 'Este modelo não aceita referências de imagem.')
+    validateEditControls(input.size, input.quality)
+    const references = await loadImageReferences({ db: input.supabase, userId: input.userId,
+      projectId: attempt.project_id, references: sourceReferences, capabilities: model.referenceCapabilities })
+    await recordImageReferenceProvenance(attempt, references.map((reference) => reference.provenance))
+    const execution = await resolveProviderExecution(input.supabase, { userId: input.userId, provider: 'openai' })
+    if (execution.status !== 'ready') throw new ImageSubmissionError(400, 'PROVIDER_NOT_CONFIGURED', 'API Key da OpenAI não configurada')
+    const usageContext = (providerResponse: 'received' | 'received_rejected', responseId: string | null, rejectedAs?: string) => ({
+      userId: input.userId, attemptId: attempt.id, projectId: attempt.project_id, productionId: attempt.production_id,
+      model: input.model, size: input.size, quality: input.quality, funding: execution.executionMode,
+      credentialSource: execution.credentialSource, inputReferences: references.map((reference) => reference.provenance),
+      providerResponse, responseId, ...(rejectedAs ? { rejectedAs } : {}),
+    })
+    let generated: Awaited<ReturnType<typeof editOpenAIImage>>
+    try {
+      providerAttempted = true
+      generated = await editOpenAIImage({ apiKey: execution.secret, prompt: input.prompt.trim(),
+        size: input.size, quality: input.quality, referenceImage: references[0] })
+    } catch (error) {
+      if (error instanceof OpenAIImageEditError && error.received) {
+        await accountOpenAIImageEditUsage(usageContext('received_rejected', error.received.responseId, error.code), error.received.rawUsage)
+      }
+      throw error
+    }
+    // Usage belongs to the paid execution even when output storage/linking subsequently fails.
+    await accountOpenAIImageEditUsage(usageContext('received', generated.responseId), generated.rawUsage)
+    let stored: Awaited<ReturnType<typeof uploadImageToS3>>
+    try {
+      stored = await uploadImageToS3({ userId: input.userId, folder: 'images', buffer: generated.bytes, mimeType: generated.mimeType })
+    } catch { throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.') }
+    if (!stored?.storagePath) throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.')
+    const imageUrl = (await createPresignedReadUrl(stored.storagePath).catch(() => null)) || stored.imageUrl
+    const image = await linkImageOutput(attempt, { imageUrl, publicUrl: stored.imageUrl, thumbnailUrl: stored.thumbnailUrl,
+      storageProvider: stored.storageProvider, storagePath: stored.storagePath, thumbnailPath: stored.thumbnailPath,
+      fileSize: stored.fileSize, mimeType: stored.mimeType })
+    return { imageUrl, publicUrl: stored.imageUrl, thumbnailUrl: stored.thumbnailUrl, storageProvider: stored.storageProvider,
+      storagePath: stored.storagePath, thumbnailPath: stored.thumbnailPath, fileSize: stored.fileSize, mimeType: stored.mimeType,
+      provider: 'openai', model: input.model, attemptId: attempt.id, sessionId: input.sessionId, image, replayed: false }
+  } catch (error) {
+    const mapped = error instanceof OpenAIImageEditError || error instanceof ImageSubmissionError ? error
+      : error instanceof ImageReferenceError ? new ImageSubmissionError(error.status, error.code, 'A referência não está disponível para edição.')
+        : isProviderCredentialUnavailableError(error) ? new ImageSubmissionError(503, PROVIDER_CREDENTIAL_UNAVAILABLE, 'Não foi possível carregar a API Key da OpenAI.')
+          : new ImageSubmissionError(500, 'GENERATION_FAILED', 'Não foi possível concluir a edição.')
+    await failImageAttempt(attempt, mapped.message, error instanceof OpenAIImageEditError ? error.outcomeUnknown : providerAttempted).catch(() => undefined)
+    throw mapped instanceof ImageSubmissionError ? mapped : new ImageSubmissionError(mapped.status, mapped.code, mapped.message)
+  }
+}
+
 async function runCanonicalOpenAI(input: {
   supabase: Awaited<ReturnType<typeof createClient>>
   userId: string
@@ -25,6 +93,7 @@ async function runCanonicalOpenAI(input: {
   model: string
   size: string
   quality: string
+  sourceReferences?: ImageReference[]
 }) {
   let frozen
   try {
@@ -36,8 +105,11 @@ async function runCanonicalOpenAI(input: {
       provider: 'openai',
       model: input.model,
       config: { size: input.size, quality: input.quality },
+      ...(input.sourceReferences !== undefined ? { sourceReferences: input.sourceReferences } : {}),
     })
     if (!frozen.claimed) return imageAttemptReplay(frozen.attempt)
+    const references = (frozen.attempt.source_snapshot?.references ?? []) as ImageReference[]
+    if (references.length) return await runCanonicalOpenAIEdit(input, frozen.attempt, references)
 
     const execution = await resolveProviderExecution(input.supabase, { userId: input.userId, provider: 'openai' })
     if (execution.status !== 'ready') {
@@ -127,6 +199,7 @@ export async function POST(request: Request) {
     const blocked = providerExecutionBlockedResponse({ provider: 'openai', operation: 'image_generation' })
     if (blocked) return blocked
 
+    const requestBody = await request.json()
     const {
       prompt,
       model = process.env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL,
@@ -134,7 +207,22 @@ export async function POST(request: Request) {
       quality = 'medium',
       sessionId,
       clientRequestId,
-    } = await request.json()
+      sourceReferences: rawReferences,
+    } = requestBody
+
+    // Raw media, URLs and masks are never accepted as references; only canonical durable IDs.
+    const rawSource = Object.keys(requestBody).find((key) => key !== 'sourceReferences' && RAW_REFERENCE_FIELD.test(key) && !/size/i.test(key) && !['model', 'size', 'quality', 'sessionId', 'clientRequestId', 'prompt'].includes(key))
+    if (rawSource) return NextResponse.json({ error: 'Use uma imagem ou arquivo salvo como referência.', code: 'SOURCE_NOT_SUPPORTED' }, { status: 400 })
+    let sourceReferences: ImageReference[] | undefined
+    if (rawReferences !== undefined) {
+      if (!Array.isArray(rawReferences)) return NextResponse.json({ error: 'Referência inválida.', code: 'INVALID_SOURCE_REFERENCE' }, { status: 400 })
+      if (rawReferences.length > 1) return NextResponse.json({ error: 'Use uma referência por geração.', code: 'SOURCE_REFERENCE_LIMIT' }, { status: 400 })
+      const parsed = rawReferences.map((reference) => ImageReferenceSchema.safeParse(reference))
+      if (parsed.some((reference) => !reference.success)) return NextResponse.json({ error: 'Use o identificador de uma imagem ou arquivo da Biblioteca.', code: 'INVALID_SOURCE_REFERENCE' }, { status: 400 })
+      sourceReferences = parsed.map((reference) => reference.data!)
+      if (sourceReferences.length && !resolveOpenAIImageEditModel(model)) return NextResponse.json({ error: 'Este modelo não aceita referências de imagem.', code: 'SOURCE_NOT_SUPPORTED' }, { status: 400 })
+      if (typeof sessionId !== 'string' || typeof clientRequestId !== 'string') return NextResponse.json({ error: 'sessionId e clientRequestId são obrigatórios', code: 'SESSION_REQUEST_ID_REQUIRED' }, { status: 400 })
+    }
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'Prompt obrigatorio' }, { status: 400 })
@@ -152,7 +240,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'sessionId e clientRequestId são obrigatórios', code: 'SESSION_REQUEST_ID_REQUIRED' }, { status: 400 })
       }
       try {
-        return NextResponse.json(await runCanonicalOpenAI({ supabase, userId: user.id, sessionId, clientRequestId, prompt, model, size, quality }))
+        return NextResponse.json(await runCanonicalOpenAI({ supabase, userId: user.id, sessionId, clientRequestId, prompt, model, size, quality,
+          ...(sourceReferences !== undefined ? { sourceReferences } : {}) }))
       } catch (error) {
         if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
         throw error

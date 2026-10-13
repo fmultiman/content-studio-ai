@@ -141,7 +141,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [imageSourceReferences, setImageSourceReferences] = useState<ImageGenerationWorkingStateV1['sourceReferences']>([])
   const [imageReferenceSelection, setImageReferenceSelection] = useState<I2vSourceSelection | null>(null)
   const [referenceUploadBusy, setReferenceUploadBusy] = useState(false)
-  const imageGenerationConfigRef = useRef<ImageGenerationWorkingStateV1['generationConfig']>({
+  const [imageGenerationConfig, setImageGenerationConfig] = useState<ImageGenerationWorkingStateV1['generationConfig']>({
     size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {},
   })
   
@@ -293,10 +293,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       currentAttempt,
       currentImageId: currentImage?.id || null,
       sourceReferences: imageSourceReferences,
-      generationConfig: imageGenerationConfigRef.current,
+      generationConfig: imageGenerationConfig,
       legacyImageUrl: persistableImageUrl(imageUrl),
     },
-  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl, imageSourceReferences])
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl, imageSourceReferences, imageGenerationConfig])
 
   const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
   imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
@@ -569,7 +569,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setImageStatus(state.imageStatus || 'draft')
     setImageSourceReferences(state.sourceReferences || [])
     setImageReferenceSelection(null)
-    imageGenerationConfigRef.current = state.generationConfig || imageGenerationConfigRef.current
+    setImageGenerationConfig((previous) => state.generationConfig || previous)
     setCurrentImage(current)
     setImageUrl(await getDisplayUrlForImage(current) || state.legacyImageUrl || null)
     setCurrentEvaluation(session.legacyCurrentEvaluation || null)
@@ -1159,9 +1159,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (result.ok) {
       setAutomaticRun({ stage: 'idle' })
     } else {
-      // Gemini owns its request identity: an unknown outcome/in-progress replay keeps the id,
+      // Gemini and GPT Image 2 own their request identities: an unknown outcome/in-progress replay keeps the id,
       // while a definitive response already rotates it. Do not turn recovery into another paid execution.
-      if (!isGeminiImageModel(model)) imageClientRequestIdRef.current = crypto.randomUUID()
+      if (!isGeminiImageModel(model) && model !== 'gpt-image-2') imageClientRequestIdRef.current = crypto.randomUUID()
       setAutomaticRun({ stage: 'image_failed', message: result.message })
     }
   }
@@ -1261,7 +1261,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     const prompt = generatedPrompt.trim()
     if (!prompt) return
     const run: AutomaticRunHandle = {
-      id: isGeminiImageModel(selectedModel) ? imageClientRequestIdRef.current : crypto.randomUUID(),
+      id: isGeminiImageModel(selectedModel) || selectedModel === 'gpt-image-2' ? imageClientRequestIdRef.current : crypto.randomUUID(),
       controller: new AbortController(), cancelled: false,
     }
     automaticRunRef.current = run
@@ -1509,19 +1509,29 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       body: JSON.stringify({
         prompt,
         model,
-        size: '1024x1024',
-        quality: 'medium',
+        size: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.size || '1024x1024' : '1024x1024',
+        quality: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.quality || 'medium' : 'medium',
         ...(canonicalSessionId && clientRequestId ? { sessionId: canonicalSessionId, clientRequestId } : {}),
+        ...(imageSourceReferences.length ? { sourceReferences: imageSourceReferences } : {}),
       }),
     })
 
     const data = await response.json()
 
     if (!response.ok) {
+      if (canonicalSessionId) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error(data.error || 'Erro na API da OpenAI')
     }
 
+    if (data.replayed) {
+      const replay = interpretGeminiReplay(data)
+      if (replay.kind !== 'image') {
+        if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
+        throw new Error(replay.message)
+      }
+    }
     if (!data.imageUrl) {
+      if (canonicalSessionId) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error('A OpenAI nao retornou uma imagem')
     }
 
@@ -1923,6 +1933,14 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         await flushImageSubmission(prompt, model)
         setGeneratedPrompt(prompt)
         setSelectedModel(model)
+        const requestIdentity = JSON.stringify({ prompt, model,
+          size: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.size || '1024x1024' : '1024x1024',
+          quality: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.quality || 'medium' : 'medium',
+          sourceReferences: imageSourceReferences })
+        if (imageRequestIdentityRef.current !== null && imageRequestIdentityRef.current !== requestIdentity) {
+          imageClientRequestIdRef.current = crypto.randomUUID()
+        }
+        imageRequestIdentityRef.current = requestIdentity
         const generatedImage = await generateOpenAIImage(prompt, model, imageClientRequestIdRef.current)
         if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
         setCurrentImage(generatedImage.image)
@@ -2633,6 +2651,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
 
               {canonicalWorkspace && (
                 <ImageReferencePicker
+                  model={persistedModelValue}
                   projectId={selectedProject}
                   productionId={productionId}
                   references={imageSourceReferences}
@@ -2671,6 +2690,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   unrecognizedModel={unrecognizedModel}
                   createDisabledReason={createDisabledReason}
                   sourceReferences={imageSourceReferences}
+                  imageSize={imageGenerationConfig.size || '1024x1024'}
+                  imageQuality={imageGenerationConfig.quality || 'medium'}
+                  onImageSizeChange={(size) => setImageGenerationConfig((previous) => ({ ...previous, size }))}
+                  onImageQualityChange={(quality) => setImageGenerationConfig((previous) => ({ ...previous, quality }))}
                   workflowBusy={workflowBusy || referenceUploadBusy}
                   selectedModel={selectedModel}
                   onModelChange={handleModelChange}

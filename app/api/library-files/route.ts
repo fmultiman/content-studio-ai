@@ -5,7 +5,7 @@ import { checkLibraryStoragePath, isTrustedLibraryStoragePath } from '@/lib/stor
 import { deleteLibraryObject, presignLibraryRead } from '@/lib/storage/library-storage'
 import { resolveOwnedProductionContext } from '@/lib/library/production-scope'
 import type { LibraryFileKind } from '@/lib/types'
-import { IMAGE_REFERENCE_MAX_BYTES, parseImageSourceProfile, sourceMimeTypes } from '@/lib/media-source/profile'
+import { parseImageSourceProfile, sourceFormatErrorCopy, sourceMaxBytes, sourceMimeTypes, sourceSizeErrorCopy } from '@/lib/media-source/profile'
 
 // LIBRARY_FILE_REGISTRATION_TRUST_HARDENING_V1
 //
@@ -253,6 +253,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as LibraryFileBody
     const profile = parseImageSourceProfile(body.profile)
     if (!profile) return NextResponse.json({ error: 'Perfil de imagem inválido.', code: 'INVALID_SOURCE_PROFILE' }, { status: 400 })
+    const maxBytes = sourceMaxBytes(profile)
     if (typeof body.name !== 'string' || !body.name.trim() || typeof body.storagePath !== 'string') {
       return NextResponse.json({ error: 'Dados do arquivo obrigatórios' }, { status: 400 })
     }
@@ -264,7 +265,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Caminho de armazenamento inválido.', code: 'INVALID_STORAGE_PATH' }, { status: 400 })
     }
 
-    if ((body.projectId || profile === 'image-reference') && !(await userOwnsProject(supabase, user.id, body.projectId))) {
+    if ((body.projectId || maxBytes !== null) && !(await userOwnsProject(supabase, user.id, body.projectId))) {
       return NextResponse.json({ error: 'Projeto não encontrado.', code: 'PROJECT_NOT_FOUND' }, { status: 404 })
     }
 
@@ -287,16 +288,16 @@ export async function POST(request: Request) {
     if (!stored) return NextResponse.json({ error: 'Storage não configurado.', code: 'STORAGE_UNAVAILABLE' }, { status: 503 })
     if (stored.size <= 0) return NextResponse.json({ error: 'O arquivo enviado está vazio.', code: 'UPLOAD_NOT_FOUND' }, { status: 400 })
 
-    if (profile === 'image-reference') {
+    if (maxBytes !== null) {
       // Enforce the cap on the actual object, even when the upload's claimed size was smaller.
-      if (stored.size > IMAGE_REFERENCE_MAX_BYTES) {
-        return NextResponse.json({ error: 'A imagem de referência deve ter até 10 MiB.', code: 'REFERENCE_TOO_LARGE' }, { status: 400 })
+      if (stored.size > maxBytes) {
+        return NextResponse.json({ error: sourceSizeErrorCopy(profile), code: 'REFERENCE_TOO_LARGE' }, { status: 400 })
       }
       if (!stored.contentType || !sourceMimeTypes(profile).includes(stored.contentType)) {
-        return NextResponse.json({ error: 'Use uma imagem PNG, JPEG ou WebP.', code: 'REFERENCE_FORMAT_UNSUPPORTED' }, { status: 400 })
+        return NextResponse.json({ error: sourceFormatErrorCopy(profile), code: 'REFERENCE_FORMAT_UNSUPPORTED' }, { status: 400 })
       }
     }
-    const mimeType = profile === 'image-reference' ? stored.contentType! : (typeof body.mimeType === 'string' && body.mimeType.trim()) || stored.contentType || null
+    const mimeType = maxBytes !== null ? stored.contentType! : (typeof body.mimeType === 'string' && body.mimeType.trim()) || stored.contentType || null
 
     const { data, error } = await supabase
       .from('library_files')

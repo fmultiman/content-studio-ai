@@ -183,6 +183,9 @@ function planGemini(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan
 const OPENAI_TIER_BY_REPORTED: Record<string, string> = { default: 'standard' }
 
 function planOpenAi(input: ProviderUsageCostInput, quantity: Fixed): BillingPlan {
+  // Images edits mix text/image input rates and image output rates. The existing Chat price categories
+  // cannot represent that split, so never apply text rates to these quantities, even if a text rate is present.
+  if (input.operation === 'image_generation') return { ok: false, result: unavailable('unit_not_priceable') }
   const reported = typeof input.serviceTier === 'string' ? input.serviceTier : null
   const tier = reported === null ? null : (OPENAI_TIER_BY_REPORTED[reported] ?? reported)
   let lines: BillableLine[]
