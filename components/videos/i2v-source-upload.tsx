@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 import { type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
-import { IMAGE_REFERENCE_MAX_BYTES, sourceMimeFromFile, sourceMimeTypes, type ImageSourceProfile } from '@/lib/media-source/profile'
+import { sourceAcceptedFormatsCopy, sourceFormatErrorCopy, sourceMaxBytes, sourceMimeFromFile, sourceMimeTypes, sourceSizeErrorCopy, type ImageSourceProfile } from '@/lib/media-source/profile'
 
 // VIDEO_I2V_SOURCE_BROWSER_V1 — "Enviar": a local image becomes a normal LibraryFile and is selected as
 // source_library_file_id. It reuses the canonical Library upload (presign -> PUT -> POST /api/library-files), so
@@ -26,7 +26,7 @@ function localPreviewUrl(file: File): string | null {
   }
 }
 
-export const UNSUPPORTED_UPLOAD_COPY = 'Formato não compatível com Image → Vídeo. Use uma imagem PNG ou JPEG.'
+export const UNSUPPORTED_UPLOAD_COPY = sourceFormatErrorCopy('video-i2v')
 
 export function I2vSourceUpload({
   projectId,
@@ -65,11 +65,12 @@ export function I2vSourceUpload({
   const upload = async (file: File) => {
     const mimeType = sourceMimeFromFile(file, profile)
     if (!mimeType) {
-      setError(profile === 'image-reference' ? 'Use uma imagem PNG, JPEG ou WebP.' : UNSUPPORTED_UPLOAD_COPY)
+      setError(sourceFormatErrorCopy(profile))
       return
     }
-    if (profile === 'image-reference' && (file.size <= 0 || file.size > IMAGE_REFERENCE_MAX_BYTES)) {
-      setError('A imagem de referência deve ter até 10 MiB e não pode estar vazia.')
+    const maxBytes = sourceMaxBytes(profile)
+    if (maxBytes !== null && (file.size <= 0 || file.size > maxBytes)) {
+      setError(`${sourceSizeErrorCopy(profile).slice(0, -1)} e não pode estar vazia.`)
       return
     }
     if (!destinationFolder) {
@@ -83,7 +84,7 @@ export function I2vSourceUpload({
       const presign = await fetch('/api/storage/presign-image-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder: 'library', prefix: destinationFolder, mimeType, filename: file.name, ...(profile === 'image-reference' ? { profile, projectId, fileSize: file.size } : {}) }),
+        body: JSON.stringify({ folder: 'library', prefix: destinationFolder, mimeType, filename: file.name, ...(profile !== 'video-i2v' ? { profile, projectId, fileSize: file.size } : {}) }),
       })
       const presigned = await presign.json().catch(() => ({}))
       if (!presign.ok || !presigned.uploadUrl) throw new Error('prepare')
@@ -98,7 +99,7 @@ export function I2vSourceUpload({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId,
-          ...(profile === 'image-reference' ? { profile } : {}),
+          ...(profile !== 'video-i2v' ? { profile } : {}),
           // Production context is stored as production_id (independent of the folder); the server verifies it.
           ...(productionId ? { productionId } : {}),
           folder: destinationFolder,
@@ -139,7 +140,7 @@ export function I2vSourceUpload({
           Destino: Arquivos / {destinationLabel}
           {productionName ? ` · Production: ${productionName}` : ''}
         </p>
-        <p>{profile === 'image-reference' ? 'Formatos aceitos: PNG, JPEG e WebP, até 10 MiB.' : 'Formatos aceitos para Image → Vídeo: PNG e JPEG.'}</p>
+        <p>{sourceAcceptedFormatsCopy(profile)}</p>
       </div>
 
       <label

@@ -117,6 +117,16 @@ function persistableImageUrl(url: string | null | undefined) {
 /** Outcome of ONE image submission. The automatic run needs to know whether it succeeded; the handlers still toast. */
 type ImageSubmitResult = { ok: true } | { ok: false; message: string }
 
+// An HTTP error can arrive after a paid submission. Older servers omit the flag, so
+// only explicit certainty or a non-timeout 4xx authorizes a fresh request identity.
+function isDefinitiveImageFailure(status: number, body: { outcome_unknown?: unknown; code?: unknown }) {
+  if (body.outcome_unknown === true) return false
+  if (body.outcome_unknown === false) return true
+  return status >= 400 && status < 500 && status !== 408 && body.code !== 'PROVIDER_TIMEOUT'
+}
+
+const UNKNOWN_IMAGE_OUTCOME_MESSAGE = 'O resultado desta tentativa é incerto e a cobrança pode ter ocorrido. Verifique o histórico; tentar só a imagem mantém o mesmo pedido, sem iniciar outra geração.'
+
 // FUTURE-064 Slice B: the model catalog (labels, provider of each model, strict parsing) lives in lib/images/image-models.ts.
 // Dispatch is by explicit provider (OpenAI / Google Gemini / third-party NanoBananaAPI.ai); there is no "everything else".
 
@@ -141,7 +151,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [imageSourceReferences, setImageSourceReferences] = useState<ImageGenerationWorkingStateV1['sourceReferences']>([])
   const [imageReferenceSelection, setImageReferenceSelection] = useState<I2vSourceSelection | null>(null)
   const [referenceUploadBusy, setReferenceUploadBusy] = useState(false)
-  const imageGenerationConfigRef = useRef<ImageGenerationWorkingStateV1['generationConfig']>({
+  const [imageGenerationConfig, setImageGenerationConfig] = useState<ImageGenerationWorkingStateV1['generationConfig']>({
     size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {},
   })
   
@@ -293,10 +303,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       currentAttempt,
       currentImageId: currentImage?.id || null,
       sourceReferences: imageSourceReferences,
-      generationConfig: imageGenerationConfigRef.current,
+      generationConfig: imageGenerationConfig,
       legacyImageUrl: persistableImageUrl(imageUrl),
     },
-  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl, imageSourceReferences])
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl, imageSourceReferences, imageGenerationConfig])
 
   const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
   imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
@@ -569,7 +579,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setImageStatus(state.imageStatus || 'draft')
     setImageSourceReferences(state.sourceReferences || [])
     setImageReferenceSelection(null)
-    imageGenerationConfigRef.current = state.generationConfig || imageGenerationConfigRef.current
+    setImageGenerationConfig((previous) => state.generationConfig || previous)
     setCurrentImage(current)
     setImageUrl(await getDisplayUrlForImage(current) || state.legacyImageUrl || null)
     setCurrentEvaluation(session.legacyCurrentEvaluation || null)
@@ -1159,9 +1169,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     if (result.ok) {
       setAutomaticRun({ stage: 'idle' })
     } else {
-      // Gemini owns its request identity: an unknown outcome/in-progress replay keeps the id,
+      // Gemini and GPT Image 2 own their request identities: an unknown outcome/in-progress replay keeps the id,
       // while a definitive response already rotates it. Do not turn recovery into another paid execution.
-      if (!isGeminiImageModel(model)) imageClientRequestIdRef.current = crypto.randomUUID()
+      if (!isGeminiImageModel(model) && model !== 'gpt-image-2') imageClientRequestIdRef.current = crypto.randomUUID()
       setAutomaticRun({ stage: 'image_failed', message: result.message })
     }
   }
@@ -1261,7 +1271,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     const prompt = generatedPrompt.trim()
     if (!prompt) return
     const run: AutomaticRunHandle = {
-      id: isGeminiImageModel(selectedModel) ? imageClientRequestIdRef.current : crypto.randomUUID(),
+      id: isGeminiImageModel(selectedModel) || selectedModel === 'gpt-image-2' ? imageClientRequestIdRef.current : crypto.randomUUID(),
       controller: new AbortController(), cancelled: false,
     }
     automaticRunRef.current = run
@@ -1509,19 +1519,30 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       body: JSON.stringify({
         prompt,
         model,
-        size: '1024x1024',
-        quality: 'medium',
+        size: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.size || '1024x1024' : '1024x1024',
+        quality: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.quality || 'medium' : 'medium',
         ...(canonicalSessionId && clientRequestId ? { sessionId: canonicalSessionId, clientRequestId } : {}),
+        ...(imageSourceReferences.length ? { sourceReferences: imageSourceReferences } : {}),
       }),
     })
 
     const data = await response.json()
 
     if (!response.ok) {
+      if (canonicalSessionId && isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error(data.error || 'Erro na API da OpenAI')
     }
 
+    if (data.replayed) {
+      const replay = interpretGeminiReplay(data)
+      if (replay.kind !== 'image') {
+        if (replay.kind === 'failed' && !isDefinitiveImageFailure(response.status, data)) throw new Error(UNKNOWN_IMAGE_OUTCOME_MESSAGE)
+        if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
+        throw new Error(replay.message)
+      }
+    }
     if (!data.imageUrl) {
+      if (canonicalSessionId && isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error('A OpenAI nao retornou uma imagem')
     }
 
@@ -1696,8 +1717,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        // The server answered definitively (the Attempt is closed or never existed): the next click is a NEW request.
-        imageClientRequestIdRef.current = crypto.randomUUID()
+        // Keep the identity when a provider or storage failure may follow a paid submission.
+        if (isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
         const failure = describeGeminiImageFailure(response.status, data)
         // The server proved the capability is off for this deployment: stop offering Google models (no substitution).
         if (failure.capabilityOff) {
@@ -1710,13 +1731,17 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       if (data.replayed) {
         const replay = interpretGeminiReplay(data)
         if (replay.kind !== 'image') {
+          if (replay.kind === 'failed' && !isDefinitiveImageFailure(response.status, data)) {
+            setImageStatus('draft')
+            return fail(UNKNOWN_IMAGE_OUTCOME_MESSAGE, 'Resultado incerto')
+          }
           if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
           setImageStatus('draft')
           return fail(replay.message, replay.kind === 'failed' ? 'Tentativa anterior falhou' : 'Geração em andamento')
         }
       }
       if (!data.image || typeof data.imageUrl !== 'string' || !data.imageUrl) {
-        imageClientRequestIdRef.current = crypto.randomUUID()
+        if (isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
         setImageStatus('draft')
         return fail('O Google Gemini não retornou uma imagem.')
       }
@@ -1923,6 +1948,14 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         await flushImageSubmission(prompt, model)
         setGeneratedPrompt(prompt)
         setSelectedModel(model)
+        const requestIdentity = JSON.stringify({ prompt, model,
+          size: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.size || '1024x1024' : '1024x1024',
+          quality: model === 'gpt-image-2' && imageSourceReferences.length ? imageGenerationConfig.quality || 'medium' : 'medium',
+          sourceReferences: imageSourceReferences })
+        if (imageRequestIdentityRef.current !== null && imageRequestIdentityRef.current !== requestIdentity) {
+          imageClientRequestIdRef.current = crypto.randomUUID()
+        }
+        imageRequestIdentityRef.current = requestIdentity
         const generatedImage = await generateOpenAIImage(prompt, model, imageClientRequestIdRef.current)
         if (!generatedImage.image) throw new Error('Canonical attempt did not return an image.')
         setCurrentImage(generatedImage.image)
@@ -1988,9 +2021,11 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   // Regenerate: a new image from the EXACT, complete current prompt. The prompt is never rewritten or truncated here.
   const handleRegenerate = async () => {
     const prompt = generatedPrompt.trim()
-    if (!prompt) return
+    if (!prompt || imageSubmitLockRef.current) return
     setIsRegenerating(true)
     try {
+      // This action explicitly asks for a NEW generation, even after an uncertain attempt.
+      imageClientRequestIdRef.current = crypto.randomUUID()
       await handleCreateImageWithModel(selectedModel, prompt)
     } finally {
       setIsRegenerating(false)
@@ -2633,6 +2668,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
 
               {canonicalWorkspace && (
                 <ImageReferencePicker
+                  model={persistedModelValue}
                   projectId={selectedProject}
                   productionId={productionId}
                   references={imageSourceReferences}
@@ -2671,6 +2707,10 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   unrecognizedModel={unrecognizedModel}
                   createDisabledReason={createDisabledReason}
                   sourceReferences={imageSourceReferences}
+                  imageSize={imageGenerationConfig.size || '1024x1024'}
+                  imageQuality={imageGenerationConfig.quality || 'medium'}
+                  onImageSizeChange={(size) => setImageGenerationConfig((previous) => ({ ...previous, size }))}
+                  onImageQualityChange={(quality) => setImageGenerationConfig((previous) => ({ ...previous, quality }))}
                   workflowBusy={workflowBusy || referenceUploadBusy}
                   selectedModel={selectedModel}
                   onModelChange={handleModelChange}

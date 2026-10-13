@@ -7,9 +7,10 @@ import { generateImageAttemptFingerprint } from './idempotency'
 import { ATTEMPT_COLUMNS, type ImageGenerationAttemptRow } from './attempt'
 import { isUuid, parseWorkingState, ImageReferenceSchema, type ImageReference, type ImageGenerationSessionRow } from './session'
 import { resolveGeminiImageModel } from '@/lib/providers/gemini/image-models'
+import { resolveOpenAIImageEditModel } from '@/lib/providers/openai/image-models'
 
 export class ImageSubmissionError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) { super(message) }
+  constructor(readonly status: number, readonly code: string, message: string, readonly outcomeUnknown = false) { super(message) }
 }
 
 export async function freezeAndClaimImageAttempt(input: {
@@ -23,23 +24,26 @@ export async function freezeAndClaimImageAttempt(input: {
   const db = createServiceRoleSupabase()
   const { data: session, error: sessionError } = await db.from('image_generation_sessions').select('*')
     .eq('id', input.sessionId).eq('user_id', input.userId).maybeSingle()
-  if (sessionError) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar a geração.')
+  if (sessionError) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar a geração.', true)
   if (!session) throw new ImageSubmissionError(404, 'SESSION_NOT_FOUND', 'Geração não encontrada.')
   // Scope must still exist and belong to the owner at submission time.
   if (session.project_id) {
     const project = await db.from('projects').select('id').eq('id', session.project_id).eq('user_id', input.userId).maybeSingle()
-    if (project.error || !project.data) throw new ImageSubmissionError(403, 'PROJECT_NOT_FOUND', 'Project indisponível.')
+    if (project.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar o projeto.', true)
+    if (!project.data) throw new ImageSubmissionError(403, 'PROJECT_NOT_FOUND', 'Project indisponível.')
   }
   if (session.production_id) {
     const production = await db.from('productions').select('id').eq('id', session.production_id)
       .eq('project_id', session.project_id).eq('user_id', input.userId).maybeSingle()
-    if (production.error || !production.data) throw new ImageSubmissionError(403, 'PRODUCTION_NOT_FOUND', 'Production indisponível.')
+    if (production.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível validar a produção.', true)
+    if (!production.data) throw new ImageSubmissionError(403, 'PRODUCTION_NOT_FOUND', 'Production indisponível.')
   }
   const state = parseWorkingState(session.working_state)
   if (!state.success) throw new ImageSubmissionError(409, 'INVALID_WORKING_STATE', 'Estado da geração inválido.')
   const references = input.sourceReferences ?? state.data.sourceReferences
   if (!references.every((reference) => ImageReferenceSchema.safeParse(reference).success)) throw new ImageSubmissionError(400, 'INVALID_SOURCE_REFERENCE', 'Referência inválida.')
-  const referenceModel = input.provider === 'gemini' ? resolveGeminiImageModel(input.model) : null
+  const referenceModel = input.provider === 'gemini' ? resolveGeminiImageModel(input.model)
+    : input.provider === 'openai' ? resolveOpenAIImageEditModel(input.model) : null
   // Never silently drop a reference for adapters without image inputs.
   if (references.length && !referenceModel) throw new ImageSubmissionError(400, 'SOURCE_NOT_SUPPORTED', 'Este modelo ainda não envia referências de imagem.')
   if (referenceModel && references.length > referenceModel.referenceCapabilities.maxReferences) throw new ImageSubmissionError(400, 'SOURCE_REFERENCE_LIMIT', 'Use uma referência por geração.')
@@ -52,7 +56,7 @@ export async function freezeAndClaimImageAttempt(input: {
   const find = () => db.from('image_generation_attempts').select(ATTEMPT_COLUMNS)
     .eq('user_id', input.userId).eq('client_request_id', input.clientRequestId).maybeSingle()
   let existing = await find()
-  if (existing.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível verificar o pedido.')
+  if (existing.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível verificar o pedido.', true)
   if (!existing.data) {
     // An explicit request must agree with the persisted state before a new execution.
     // Replays below use their immutable snapshot even after the Session changes.
@@ -60,7 +64,7 @@ export async function freezeAndClaimImageAttempt(input: {
     for (let n = 0; n < 3; n++) {
       const latest = await db.from('image_generation_attempts').select('sequence').eq('session_id', input.sessionId)
         .order('sequence', { ascending: false }).limit(1).maybeSingle()
-      if (latest.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível criar a tentativa.')
+      if (latest.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível criar a tentativa.', true)
       const inserted = await db.from('image_generation_attempts').insert({
         session_id: input.sessionId, user_id: input.userId, project_id: session.project_id,
         production_id: session.production_id, sequence: (latest.data?.sequence ?? 0) + 1,
@@ -70,13 +74,13 @@ export async function freezeAndClaimImageAttempt(input: {
         status: 'queued', submitted_at: new Date().toISOString(),
       }).select(ATTEMPT_COLUMNS).single()
       if (!inserted.error) { existing = inserted; break }
-      if (inserted.error.code !== '23505') throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível congelar a tentativa.')
+      if (inserted.error.code !== '23505') throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível congelar a tentativa.', true)
       existing = await find()
-      if (existing.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível verificar a tentativa.')
+      if (existing.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível verificar a tentativa.', true)
       if (existing.data) break
     }
   }
-  if (!existing.data) throw new ImageSubmissionError(409, 'ATTEMPT_CREATE_RACE', 'Outra tentativa foi criada. Tente novamente.')
+  if (!existing.data) throw new ImageSubmissionError(409, 'ATTEMPT_CREATE_RACE', 'Outra tentativa foi criada. Tente novamente.', true)
   const attempt = existing.data as unknown as ImageGenerationAttemptRow
   // A replay is compared against the stored snapshot, including the original
   // description; subsequent Session edits do not invalidate a network retry.
@@ -87,7 +91,8 @@ export async function freezeAndClaimImageAttempt(input: {
   if (attempt.request_fingerprint !== replayFingerprint) throw new ImageSubmissionError(409, 'IDEMPOTENCY_CONFLICT', 'Este pedido já foi usado com outros parâmetros.')
   const claim = await db.from('image_generation_attempts').update({ status: 'submitted' })
     .eq('id', attempt.id).eq('user_id', input.userId).eq('status', 'queued').select(ATTEMPT_COLUMNS).maybeSingle()
-  if (claim.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível iniciar a tentativa.')
+  // A store outage cannot prove that this identity has never reached a provider.
+  if (claim.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível iniciar a tentativa.', true)
   return { attempt: (claim.data ?? attempt) as ImageGenerationAttemptRow, claimed: !!claim.data, session: session as ImageGenerationSessionRow }
 }
 
@@ -161,9 +166,12 @@ export async function imageAttemptReplay(attempt: ImageGenerationAttemptRow) {
   if (row.result_image_id) {
     const image = await db.from('images').select('*').eq('id', row.result_image_id).eq('user_id', row.user_id).single()
     return { attemptId: row.id, status: row.status, image: image.data,
-      imageUrl: image.data?.storage_path ? await createPresignedReadUrl(image.data.storage_path) : image.data?.image_url, replayed: true }
+      imageUrl: image.data?.storage_path ? await createPresignedReadUrl(image.data.storage_path) : image.data?.image_url,
+      outcome_unknown: row.status === 'failed' ? row.failure_details?.outcome_unknown !== false : false, replayed: true }
   }
-  return { attemptId: row.id, status: row.status, taskId: row.provider_task_id, error: row.failure_details?.message, replayed: true }
+  return { attemptId: row.id, status: row.status, taskId: row.provider_task_id, error: row.failure_details?.message,
+    // Older failed rows without a proven outcome stay conservative during recovery.
+    outcome_unknown: row.status === 'failed' ? row.failure_details?.outcome_unknown !== false : false, replayed: true }
 }
 
 export async function syncNanoImageAttempt(attempt: ImageGenerationAttemptRow) {

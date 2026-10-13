@@ -241,12 +241,13 @@ describe('credential resolution (existing Gemini BYOK resolver)', () => {
     mocks.settings.current = { gemini_api_key: null, openai_api_key: OPENAI_KEY, nanobanana_api_key: NANO_KEY }
     const response = await post(body())
     expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED' })
+    expect(await response.json()).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED', outcome_unknown: false })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(attempts()).toHaveLength(1)
     expect(attempts()[0]).toMatchObject({ status: 'failed', provider: 'gemini' })
     expect((attempts()[0].failure_details as Row).outcome_unknown).toBe(false)
     expect(images()).toHaveLength(0)
+    expect(await (await post(body())).json()).toMatchObject({ replayed: true, status: 'failed', outcome_unknown: false })
   })
 
   it('does not substitute another provider key when the Gemini key is empty', async () => {
@@ -261,6 +262,7 @@ describe('credential resolution (existing Gemini BYOK resolver)', () => {
     const response = await post(body())
     const payload = await response.json()
     expect(response.status).toBe(503)
+    expect(payload).toMatchObject({ outcome_unknown: false })
     expect(JSON.stringify(payload)).toMatch(/PROVIDER_CREDENTIAL_UNAVAILABLE/)
     expect(JSON.stringify(payload)).not.toMatch(/NOT_CONFIGURED|não configurad/i)
     expect(fetchSpy).not.toHaveBeenCalled()

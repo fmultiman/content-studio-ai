@@ -22,7 +22,7 @@ export function normalizeSourceSearch(raw: string): string {
 
 export function aiImagesUrl(input: { projectId: string; cursor?: string | null; profile?: ImageSourceProfile }): string {
   const query = new URLSearchParams({ projectId: input.projectId })
-  if (input.profile === 'image-reference') query.set('profile', input.profile)
+  if (input.profile && input.profile !== 'video-i2v') query.set('profile', input.profile)
   if (input.cursor) query.set('cursor', input.cursor)
   return `/api/images/browse?${query.toString()}`
 }
@@ -49,7 +49,7 @@ export function libraryBrowseUrl(input: LibraryBrowseInput): string {
     projectId: input.projectId,
     scope: input.category === 'gallery' ? 'gallery' : 'arquivos',
     kind: 'image',
-    format: input.profile === 'image-reference' ? 'image-reference' : 'i2v-image',
+    format: input.profile && input.profile !== 'video-i2v' ? 'image-reference' : 'i2v-image',
     production: input.production,
   })
   const search = normalizeSourceSearch(input.search)

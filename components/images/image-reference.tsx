@@ -6,7 +6,7 @@ import { ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { I2vSourceBrowser } from '@/components/videos/i2v-source-browser'
 import { I2V_CATEGORY_SUMMARY_LABEL, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
-import type { ImageReference } from '@/lib/images/image-reference'
+import { getImageReferenceCapabilities, type ImageReference } from '@/lib/images/image-reference'
 
 export { imageReferenceModelReason } from '@/lib/images/image-reference'
 export type { ImageReference }
@@ -56,7 +56,8 @@ export function ImageReferencePreview({ reference, projectId, selection }: {
   )
 }
 
-export function ImageReferencePicker({ projectId, productionId, references, selection, onChange, disabled, unavailableReason, mode, onUploadBusyChange }: {
+export function ImageReferencePicker({ model, projectId, productionId, references, selection, onChange, disabled, unavailableReason, mode, onUploadBusyChange }: {
+  model: string
   projectId: string | null
   productionId: string | null
   references: ImageReference[]
@@ -71,6 +72,8 @@ export function ImageReferencePicker({ projectId, productionId, references, sele
   const [uploadBusy, setUploadBusy] = useState(false)
   const locked = disabled || uploadBusy
   const reference = references[0]
+  const capabilities = getImageReferenceCapabilities(model)
+  const formats = capabilities?.mimeTypes.map((mime) => mime === 'image/jpeg' ? 'JPEG' : mime === 'image/webp' ? 'WebP' : 'PNG').join(', ')
   return (
     <section className="min-w-0 max-w-full space-y-3 rounded-xl border border-border/50 bg-card/30 p-6" aria-label="Imagem de referência" data-testid="image-reference-picker">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -81,11 +84,12 @@ export function ImageReferencePicker({ projectId, productionId, references, sele
         </div>
       </div>
       {reference && <ImageReferencePreview reference={reference} projectId={projectId} selection={selection} />}
-      <p className="text-xs text-muted-foreground">Uma imagem por geração. PNG, JPEG ou WebP; até 10 MB e 8192 px por lado.</p>
+      {capabilities && <p className="text-xs text-muted-foreground" data-testid="image-reference-limits">{capabilities.maxReferences === 1 ? 'Uma imagem por geração.' : `Até ${capabilities.maxReferences} imagens por geração.`} {formats}; até {capabilities.maxBytes / (1024 * 1024)} MB e {capabilities.maxDimension} px por lado.{capabilities.maxPixels ? ` Limite de ${capabilities.maxPixels.toLocaleString('pt-BR')} pixels por imagem.` : ''}</p>}
+      {reference && model === 'gpt-image-2' && <p className="text-xs text-muted-foreground" data-testid="openai-reference-cost-notice">A cobrança inclui os tokens da imagem de referência, além da geração da imagem. O GPT Image 2 aplica alta fidelidade automaticamente.</p>}
       {!projectId && <p className="text-xs text-muted-foreground">Selecione um projeto para escolher a referência.</p>}
       {unavailableReason && <p className="text-xs text-muted-foreground" role="status">{unavailableReason}</p>}
       {reference && mode !== 'manual' && <p className="text-xs text-muted-foreground" data-testid="image-reference-text-ai-note">A IA de texto não vê a imagem de referência; ela só é enviada ao modelo de imagem</p>}
-      {open && projectId && !disabled && !unavailableReason && <I2vSourceBrowser profile="image-reference" projectId={projectId} productionId={productionId} selectedId={reference?.id || null}
+      {open && projectId && capabilities && !disabled && !unavailableReason && <I2vSourceBrowser key={capabilities.uploadProfile} profile={capabilities.uploadProfile} projectId={projectId} productionId={productionId} selectedId={reference?.id || null}
         onSelect={(next) => { onChange(next); setOpen(false) }} onClose={() => setOpen(false)} locked={locked}
         onUploadBusyChange={(busy) => { setUploadBusy(busy); onUploadBusyChange(busy) }} />}
     </section>

@@ -109,7 +109,7 @@ export function installI2vFetch(state: I2vFixtureState) {
     if (url.startsWith('/api/images/browse?')) {
       if (state.aiFail) return json({ error: 'x' }, 500)
       const params = new URL(url, 'http://x').searchParams
-      const eligible = params.get('profile') === 'image-reference' ? [...ELIGIBLE, 'image/webp'] : ELIGIBLE
+      const eligible = ['image-reference', 'openai-image-reference'].includes(params.get('profile') ?? '') ? [...ELIGIBLE, 'image/webp'] : ELIGIBLE
       const rows = state.ai.filter((row) => row.project_id === params.get('projectId') && eligible.includes(row.mime_type))
       const { slice, nextCursor } = pageOf(rows, params.get('cursor'), state.pageSize)
       return json({ images: slice, nextCursor, limit: state.pageSize })

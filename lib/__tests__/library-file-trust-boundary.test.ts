@@ -19,7 +19,7 @@ import { buildStoragePublicUrl, createPresignedReadUrl, deleteS3Object, headS3Ob
 import { DELETE, GET, PATCH, POST } from '@/app/api/library-files/route'
 import { GET as DOWNLOAD } from '@/app/api/library-files/[id]/download/route'
 import { resolveMediaSource } from '@/app/api/channel-piece-media/_helpers'
-import { IMAGE_REFERENCE_MAX_BYTES } from '@/lib/media-source/profile'
+import { IMAGE_REFERENCE_MAX_BYTES, OPENAI_IMAGE_REFERENCE_MAX_BYTES } from '@/lib/media-source/profile'
 
 const USER = '11111111-1111-4111-8111-111111111111'
 const VICTIM = '22222222-2222-4222-8222-222222222222'
@@ -102,6 +102,34 @@ const registration = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('POST /api/library-files — registration trusts nothing the browser says', () => {
+  it.each([-1, 0])('registers OpenAI WebP references at 20 MiB %+d bytes using actual S3 metadata', async (offset) => {
+    const size = OPENAI_IMAGE_REFERENCE_MAX_BYTES + offset
+    vi.mocked(headS3Object).mockResolvedValue({ size, contentType: 'image/webp' })
+    const response = await POST(json(registration({ profile: 'openai-image-reference', fileSize: 1, mimeType: 'image/png' })))
+    expect(response.status).toBe(200)
+    expect(files().at(-1)).toMatchObject({ mime_type: 'image/webp', file_size: size, storage_provider: 's3', project_id: PROJECT })
+  })
+
+  it('refuses actual OpenAI objects over 20 MiB despite a smaller browser size', async () => {
+    vi.mocked(headS3Object).mockResolvedValue({ size: OPENAI_IMAGE_REFERENCE_MAX_BYTES + 1, contentType: 'image/webp' })
+    const response = await POST(json(registration({ profile: 'openai-image-reference', fileSize: 1 })))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'REFERENCE_TOO_LARGE', error: expect.stringContaining('20 MiB') })
+    expect(files()).toHaveLength(1)
+  })
+
+  it('retains OpenAI Project/key/MIME restrictions and rejects unknown profiles', async () => {
+    expect((await POST(json(registration({ profile: 'openai-image-reference', projectId: FOREIGN_PROJECT })))).status).toBe(404)
+    expect((await POST(json(registration({ profile: 'openai-image-reference', projectId: null })))).status).toBe(404)
+    expect((await POST(json(registration({ profile: 'openai-image-reference', storagePath: foreign() })))).status).toBe(400)
+    expect((await POST(json(registration({ profile: 'openai' })))).status).toBe(400)
+    expect(headS3Object).not.toHaveBeenCalled()
+    vi.mocked(headS3Object).mockResolvedValue({ size: 100, contentType: 'image/gif' })
+    const response = await POST(json(registration({ profile: 'openai-image-reference', mimeType: 'image/png' })))
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('REFERENCE_FORMAT_UNSUPPORTED')
+    expect(files()).toHaveLength(1)
+  })
   it('registers a WebP reference at exactly 10 MiB using S3 MIME/size rather than browser metadata', async () => {
     vi.mocked(headS3Object).mockResolvedValue({ size: IMAGE_REFERENCE_MAX_BYTES, contentType: 'image/webp' })
     const response = await POST(json(registration({ profile: 'image-reference', mimeType: 'image/png', fileSize: 1 })))
