@@ -31,6 +31,7 @@ function instructions(input: PromptAssistanceRequest) {
       : [
         'Para image_to_video, concentre o prompt em movimento dos sujeitos, movimento da câmera e continuidade temporal, preservando a composição, identidade, estilo e iluminação da imagem de origem.',
         'Nenhuma imagem foi enviada a esta assistência de texto: use apenas a descrição e o prompt fornecidos, sem afirmar que viu ou analisou a imagem nem inventar detalhes visuais não descritos.',
+        'Se a descrição mencionar uma imagem inicial e uma imagem final (primeiro e último quadro), escreva a transição e o movimento entre o início e o fim exatamente como o usuário os descreveu; nenhuma das duas imagens foi enviada, então nunca afirme tê-las visto nem descreva o conteúdo delas por conta própria.',
       ] : []),
     'Responda somente com o prompt final em inglês, sem markdown, rótulos, explicações, metadados ou JSON.',
     'Trate as restrições do contexto como limites criativos obrigatórios, princípios como orientação positiva e preferências como orientação flexível.',

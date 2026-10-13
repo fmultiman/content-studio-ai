@@ -13,6 +13,7 @@
 
 import { KlingAdapter, type KlingSettings } from '@/lib/providers/kling/adapter'
 import { assertProviderExecutionAllowed } from '@/lib/providers/execution-policy'
+import { getVeoOperation, isSafeVeoResultUri, submitVeoVideo, VeoError } from '@/lib/providers/gemini/veo-client'
 import type { UsageMeasurement } from '@/lib/usage/provider-usage'
 import {
   buildKlingMcpVideoCall,
@@ -31,13 +32,18 @@ export interface VideoSubmitInput {
   prompt: string
   request: NormalizedVideoRequest
   model: VideoModelCapability
-  /** REST only: externally fetchable, time-limited URL (image_to_video only). */
+  /** Kling REST only: externally fetchable, time-limited URL (image_to_video only). */
   sourceImageUrl?: string
+  /** Kling REST only (VEO_KLING_FIRST_LAST_FRAME_V1): the same kind of URL for the LAST frame. */
+  lastFrameImageUrl?: string
   /**
-   * MCP only (image_to_video): the trusted, already-validated BYTES of the source image. Kling can never fetch our private
-   * storage, so the MCP transport uploads these through `file_upload` and sends the provider's own file URL instead.
+   * MCP and Veo (image_to_video): the trusted, already-validated BYTES of the source image. Kling can never fetch our private
+   * storage, so the MCP transport uploads these through `file_upload` and sends the provider's own file URL instead; Veo
+   * receives them inline.
    */
   sourceImage?: KlingMcpUploadImage
+  /** MCP and Veo (VEO_KLING_FIRST_LAST_FRAME_V1): the trusted bytes of the LAST frame, handled exactly like `sourceImage`. */
+  lastFrameImage?: KlingMcpUploadImage
   /** REST only. */
   callbackUrl?: string
 }
@@ -61,6 +67,11 @@ export type VideoTaskStatus =
       resultUrl: string | null
       rawState: string | null
       /**
+       * Headers the result download needs (Veo: the user's key). Sent ONLY to the result URL's own host, never to a
+       * redirect target, never persisted, never logged.
+       */
+      downloadHeaders?: Record<string, string>
+      /**
        * Provider-native usage for THIS task — set ONLY when the provider's own response states it.
        * Neither current Kling transport does (REST task items and MCP query_tasks carry no cost),
        * so today the usage ledger records these executions with unknown usage.
@@ -74,6 +85,9 @@ export interface KlingVideoTransport {
   submit(input: VideoSubmitInput): Promise<VideoSubmitResult>
   getStatus(taskId: string): Promise<VideoTaskStatus>
 }
+
+/** Provider-neutral name for the same boundary (Kling REST, Kling MCP and Google Veo all implement it). */
+export type VideoProviderTransport = KlingVideoTransport
 
 // ---------------------------------------------------------------------------
 // REST — wraps the proven adapter without changing its behavior
@@ -101,9 +115,20 @@ export class KlingRestTransport implements KlingVideoTransport {
       aspect_ratio: request.operation === 'text_to_video' ? (request.aspectRatio ?? undefined) : undefined,
     }
 
+    if (request.lastFrame && !input.lastFrameImageUrl) {
+      throw new Error('A last frame was requested without its image URL.')
+    }
     const submitted =
       request.operation === 'image_to_video'
-        ? await this.adapter.submitImageToVideo(input.prompt, input.sourceImageUrl ?? '', input.generationId, input.callbackUrl, settings, request.model)
+        ? await this.adapter.submitImageToVideo(
+            input.prompt,
+            input.sourceImageUrl ?? '',
+            input.generationId,
+            input.callbackUrl,
+            settings,
+            request.model,
+            request.lastFrame ? input.lastFrameImageUrl : undefined,
+          )
         : await this.adapter.submitTextToVideo(input.prompt, input.generationId, input.callbackUrl, settings, request.model)
 
     return { taskId: submitted.task_id, providerMetadata: { task_id: submitted.task_id } }
@@ -159,16 +184,25 @@ export class KlingMcpTransport implements KlingVideoTransport {
     // image_to_video never receives a Content Studio URL (presigned S3 / browser) or a data URL, and text_to_video
     // never touches this path.
     let sourceImageUrl: string | undefined
+    let lastFrameImageUrl: string | undefined
     if (input.request.operation === 'image_to_video') {
       if (!input.sourceImage) throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'image_to_video requires the trusted source image.')
       const sourceImage = input.sourceImage
       sourceImageUrl = (await this.withToken((token) => uploadKlingMcpSourceImage(token, sourceImage, this.clientDeps))).url
+      // VEO_KLING_FIRST_LAST_FRAME_V1: BOTH frames are uploaded before the paid tool exists. A failure on the second
+      // upload still happens before any generation was submitted, so nothing is billed.
+      if (input.request.lastFrame) {
+        if (!input.lastFrameImage) throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'A last frame was requested without the trusted image.')
+        const lastFrameImage = input.lastFrameImage
+        lastFrameImageUrl = (await this.withToken((token) => uploadKlingMcpSourceImage(token, lastFrameImage, this.clientDeps))).url
+      }
     }
     const call = buildKlingMcpVideoCall({
       request: input.request,
       model: input.model,
       prompt: input.prompt,
       sourceImageUrl,
+      lastFrameImageUrl,
     })
     const { generationId } = await this.withToken((token) => submitKlingMcpVideo(token, call, this.clientDeps))
     return {
@@ -189,6 +223,62 @@ export class KlingMcpTransport implements KlingVideoTransport {
       }
     }
     return { state: 'processing', rawState: reading.rawState, unconfirmedResultUrl: reading.unconfirmedResultUrl }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Google Veo - Gemini API, the user's own key (BYOK), asynchronous operation
+// ---------------------------------------------------------------------------
+
+/** Typed so the route can classify a Veo submit failure without importing the client module. */
+export { VeoError }
+
+export class GeminiVeoTransport implements KlingVideoTransport {
+  readonly transport = 'rest' as const
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly deps: { fetchImpl?: typeof fetch } = {},
+  ) {}
+
+  async submit(input: VideoSubmitInput): Promise<VideoSubmitResult> {
+    // FUTURE-050 outbound-boundary backstop (the route also guards earlier, before any durable state).
+    assertProviderExecutionAllowed({ provider: 'gemini', operation: 'video_generation' })
+    const { request } = input
+    if (request.aspectRatio === null) throw new VeoError('invalid_input', 'Veo requires an explicit aspect ratio.')
+    if (request.operation === 'image_to_video' && !input.sourceImage) {
+      throw new VeoError('invalid_input', 'image_to_video requires the trusted source image.')
+    }
+    if (request.lastFrame && !input.lastFrameImage) {
+      throw new VeoError('invalid_input', 'A last frame was requested without the trusted image.')
+    }
+    const submitted = await submitVeoVideo(
+      {
+        apiKey: this.apiKey,
+        model: request.model,
+        prompt: input.prompt,
+        duration: request.duration,
+        resolution: request.resolution,
+        aspectRatio: request.aspectRatio,
+        ...(request.operation === 'image_to_video' && input.sourceImage ? { firstFrame: input.sourceImage } : {}),
+        ...(request.operation === 'image_to_video' && request.lastFrame && input.lastFrameImage ? { lastFrame: input.lastFrameImage } : {}),
+      },
+      { fetchImpl: this.deps.fetchImpl },
+    )
+    return { taskId: submitted.operationName, providerMetadata: { operation: submitted.operationName, model: request.model } }
+  }
+
+  async getStatus(taskId: string): Promise<VideoTaskStatus> {
+    const reading = await getVeoOperation(this.apiKey, taskId, { fetchImpl: this.deps.fetchImpl })
+    if (reading.state === 'succeeded') {
+      // Defense in depth: the URI was already validated, and the key is only ever sent to Google's own host.
+      if (!isSafeVeoResultUri(reading.videoUri)) {
+        return { state: 'failed', message: 'O resultado do Google Veo não pôde ser copiado com segurança.', code: 'PROVIDER_FAILED', rawState: 'done' }
+      }
+      return { state: 'succeeded', resultUrl: reading.videoUri, rawState: 'done', downloadHeaders: { 'x-goog-api-key': this.apiKey } }
+    }
+    if (reading.state === 'failed') return { state: 'failed', message: reading.message, code: reading.code, rawState: 'done' }
+    return { state: 'processing', rawState: 'running' }
   }
 }
 

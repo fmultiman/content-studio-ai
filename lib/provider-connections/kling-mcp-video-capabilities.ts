@@ -11,8 +11,10 @@
 // required argument/input from the controls it actually offers:
 //   - required arguments are a subset of {prompt}
 //   - text_to_video requires no inputs; image_to_video requires exactly one,
-//     `first_image` (one source image). Multi-reference "omni"/o1 image models,
-//     tail images, subjects/elements etc. are intentionally not exposed.
+//     `first_image` (one source image). Multi-reference "omni"/o1 image models
+//     (numbered image_1..image_7 references) and subjects/elements are intentionally not exposed.
+//   - VEO_KLING_FIRST_LAST_FRAME_V1: an OPTIONAL `tail_image` input on such a model means it also accepts a LAST frame
+//     (`lastFrame` capability). The 1080p / no-audio constraints are read from the provider's own argument text.
 // Anything else the provider offers (extra arguments, more operations, other
 // tools) is ignored until it is productized deliberately.
 //
@@ -26,6 +28,7 @@ import {
   VIDEO_OPERATIONS,
   VIDEO_RESOLUTIONS,
   type VideoAspectRatio,
+  type VideoLastFrameCapability,
   type VideoModelCapability,
   type VideoOperation,
   type VideoOperationCapability,
@@ -69,7 +72,10 @@ interface RawArgument {
   name?: unknown
   required?: unknown
   allowedValues?: unknown
+  description?: unknown
 }
+
+const descriptionOf = (arg: RawArgument | undefined): string => (typeof arg?.description === 'string' ? arg.description : '')
 
 function toArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
@@ -136,6 +142,24 @@ function normalizeModel(operation: VideoOperation, raw: unknown): VideoModelCapa
   const audio = isBooleanControl(findArgument(args, 'enable_audio'))
   const audioRequiresResolution = audio ? AUDIO_REQUIRES_RESOLUTION[`${operation}:${id}`] : undefined
 
+  // VEO_KLING_FIRST_LAST_FRAME_V1: an OPTIONAL `tail_image` input means the model accepts a last frame. This is read from
+  // the effective model/connection contract, never from the model's commercial name. Models that take their images as
+  // numbered references (image_1..image_7, "omni") or declare no tail input are NOT first/last-frame models here.
+  const hasTailImage = operation === 'image_to_video' && inputs.some((input) => input && input.name === 'tail_image' && input.required !== true)
+  let lastFrame: VideoLastFrameCapability | undefined
+  if (hasTailImage) {
+    const resolutionNote = descriptionOf(findArgument(args, 'resolution'))
+    const audioNote = descriptionOf(findArgument(args, 'enable_audio'))
+    lastFrame = {
+      // "Tail image requires 1080p." (Kling 2.6)
+      ...(/tail image requires 1080p/i.test(resolutionNote) && resolutions.includes('1080p') ? { requiresResolution: '1080p' as const } : {}),
+      // "not supported with a tail image" (Kling 2.6)
+      audioAllowed: !/not supported with a tail image/i.test(audioNote),
+      // Two frames define one continuous shot; multi-shot stays off wherever the model has that control (conservative).
+      multiShotAllowed: findArgument(args, 'prefer_multi_shots') === undefined,
+    }
+  }
+
   return {
     id,
     label: klingModelLabel(id),
@@ -150,6 +174,7 @@ function normalizeModel(operation: VideoOperation, raw: unknown): VideoModelCapa
     ...(audioRequiresResolution && resolutions.includes(audioRequiresResolution) ? { audioRequiresResolution } : {}),
     // Server-side mapping hint: send imageCount=1 only when the model declares it.
     outputCountArg: findArgument(args, 'imageCount') !== undefined,
+    ...(lastFrame ? { lastFrame } : {}),
   }
 }
 

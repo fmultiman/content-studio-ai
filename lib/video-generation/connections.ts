@@ -23,6 +23,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getProviderConfigurationState } from '@/lib/credentials/provider-credentials'
+import { isVeoVideoGenerationEnabled } from '@/lib/providers/gemini/veo-feature'
 import { getOwnedConnection, listConnectionsForUser } from '@/lib/provider-connections/connections'
 import { KLING_MCP_GENERATION_CREATE_SCOPE } from '@/lib/provider-connections/kling-mcp'
 import { KLING_MCP_VIDEO_SNAPSHOT_VERSION } from '@/lib/provider-connections/kling-mcp-video-capabilities'
@@ -34,13 +35,14 @@ import type {
   VideoModelCapability,
   VideoOperationCapability,
 } from './capabilities'
-import { accountConnectionRef, parseConnectionRef, REST_CONNECTION_REF } from './connection-ref'
+import { accountConnectionRef, GEMINI_CONNECTION_REF, parseConnectionRef, REST_CONNECTION_REF } from './connection-ref'
 import { restVideoOperations } from './rest-capabilities'
+import { veoVideoOperations } from './veo-capabilities'
 
 export const CAPABILITY_FRESH_MS = 24 * 60 * 60 * 1000
 export const CAPABILITY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-export { REST_CONNECTION_REF, accountConnectionRef, parseConnectionRef, type ParsedConnectionRef } from './connection-ref'
+export { GEMINI_CONNECTION_REF, REST_CONNECTION_REF, accountConnectionRef, parseConnectionRef, type ParsedConnectionRef } from './connection-ref'
 
 /** Browser-safe copy of a model: drops server-side mapping hints. */
 function toClientModel(model: VideoModelCapability): VideoModelCapability {
@@ -70,6 +72,34 @@ export function describeRestConnection(state: 'configured' | 'missing'): VideoGe
     capabilitiesFreshness: 'static',
     capabilitiesCheckedAt: null,
     operations: configured ? toClientOperations(restVideoOperations()) : [],
+  }
+}
+
+/** Google Veo through the user's own Gemini API key (BYOK). Capabilities are code-backed (veo-capabilities.ts). */
+export function describeGeminiConnection(
+  state: 'configured' | 'missing',
+  enabled: boolean = isVeoVideoGenerationEnabled(),
+): VideoGenerationConnectionDescriptor {
+  const configured = state === 'configured'
+  // A saved key is not enough: Veo also needs its release switch. Until then the controls are visible and explained,
+  // but the connection cannot generate (no silent paid path exists behind a merged feature).
+  const blockedReason: VideoConnectionBlockedReason | undefined = !configured ? 'not_configured' : !enabled ? 'feature_disabled' : undefined
+  return {
+    ref: GEMINI_CONNECTION_REF,
+    provider: 'gemini',
+    connectionMethod: 'api_key',
+    transport: 'rest',
+    label: 'Google Veo',
+    detail: 'API · usa a sua chave Gemini (faturamento Google)',
+    funding: 'google_gemini_api',
+    status: configured ? 'connected' : 'not_configured',
+    canGenerate: blockedReason === undefined,
+    ...(blockedReason ? { blockedReason } : {}),
+    needsGenerationAuthorization: false,
+    accountLabel: null,
+    capabilitiesFreshness: 'static',
+    capabilitiesCheckedAt: null,
+    operations: configured ? toClientOperations(veoVideoOperations()) : [],
   }
 }
 
@@ -159,20 +189,23 @@ export async function listVideoGenerationConnections(
   userId: string,
   now: Date = new Date(),
 ): Promise<VideoGenerationConnectionDescriptor[]> {
-  const [restState, rows] = await Promise.all([
+  const [restState, geminiState, rows] = await Promise.all([
     getProviderConfigurationState(supabase, { userId, provider: 'kling' }),
+    getProviderConfigurationState(supabase, { userId, provider: 'gemini' }),
     listConnectionsForUser(supabase, userId).catch(() => null),
   ])
-  if (restState === 'unavailable' || rows === null) throw new ConnectionsUnavailableError()
+  if (restState === 'unavailable' || geminiState === 'unavailable' || rows === null) throw new ConnectionsUnavailableError()
 
   return [
     describeRestConnection(restState),
+    describeGeminiConnection(geminiState),
     ...rows.filter((row) => row.provider === 'kling' && row.connection_method === 'mcp_oauth').map((row) => describeMcpConnection(row, now)),
   ]
 }
 
 export type ResolvedGenerationConnection =
   | { ok: true; kind: 'rest'; descriptor: VideoGenerationConnectionDescriptor }
+  | { ok: true; kind: 'gemini_api'; descriptor: VideoGenerationConnectionDescriptor }
   | {
       ok: true
       kind: 'provider_connection'
@@ -200,6 +233,7 @@ const BLOCKED_HTTP: Record<VideoConnectionBlockedReason, { status: number; messa
   capabilities_missing: { status: 409, message: 'As capacidades desta conta ainda não foram carregadas. Atualize a conexão.' },
   capabilities_expired: { status: 409, message: 'As capacidades desta conta estão desatualizadas. Atualize a conexão.' },
   no_supported_models: { status: 409, message: 'Esta conta não oferece modelos de vídeo compatíveis com o Content Studio.' },
+  feature_disabled: { status: 403, message: 'O Google Veo ainda não foi liberado neste ambiente. Use outro modelo por enquanto.' },
 }
 
 export function blockedResponse(reason: VideoConnectionBlockedReason): { status: number; code: string; message: string } {
@@ -220,6 +254,19 @@ export async function resolveGenerationConnection(
 ): Promise<ResolvedGenerationConnection> {
   const parsed = parseConnectionRef(ref)
   if (!parsed) return { ok: false, status: 404, code: 'CONNECTION_NOT_FOUND', message: 'Conexão não encontrada.' }
+
+  if (parsed.kind === 'gemini_api') {
+    const state = await getProviderConfigurationState(supabase, { userId, provider: 'gemini' })
+    if (state === 'unavailable') {
+      return { ok: false, status: 503, code: 'CONNECTIONS_UNAVAILABLE', message: 'Não foi possível verificar suas conexões agora.' }
+    }
+    const descriptor = describeGeminiConnection(state)
+    if (!descriptor.canGenerate) {
+      if (descriptor.blockedReason === 'feature_disabled') return { ok: false, ...blockedResponse('feature_disabled') }
+      return { ok: false, status: 422, code: 'PROVIDER_NOT_CONFIGURED', message: 'Gemini não configurado. Adicione sua chave de API em Configurações para usar o Google Veo.' }
+    }
+    return { ok: true, kind: 'gemini_api', descriptor }
+  }
 
   if (parsed.kind === 'rest') {
     const state = await getProviderConfigurationState(supabase, { userId, provider: 'kling' })

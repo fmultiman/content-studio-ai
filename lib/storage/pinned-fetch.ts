@@ -18,6 +18,8 @@ export interface PinnedFetchInit {
   /** The vetted IP address to connect to. */
   address: string
   signal?: AbortSignal
+  /** Extra request headers (only ever set by the caller for the original, vetted host). */
+  headers?: Record<string, string>
   /** Transport seam (tests use plain http against a local server; production is https). */
   request?: typeof https.request | typeof http.request
 }
@@ -35,7 +37,7 @@ export function pinnedFetch(url: string, init: PinnedFetchInit): Promise<Respons
       {
         method: 'GET',
         signal: init.signal,
-        headers: { 'user-agent': 'content-studio', accept: 'video/*,application/octet-stream;q=0.8' },
+        headers: { 'user-agent': 'content-studio', accept: 'video/*,application/octet-stream;q=0.8', ...(init.headers ?? {}) },
         // Node may ask for one address or for all of them (happy eyeballs).
         lookup: (_hostname: string, options: { all?: boolean }, callback: (...args: any[]) => void) => {
           if (options?.all) callback(null, [{ address: init.address, family }])

@@ -36,6 +36,17 @@ import type { UsageMeasurement } from '@/lib/usage/provider-usage'
 
 export const NON_TERMINAL_STATUSES = ['queued', 'submitted', 'processing'] as const
 
+/**
+ * Google Veo bills per generated second but its responses carry no usage figures. The quantity is therefore DERIVED, and
+ * labelled as such: the duration this attempt requested and (since the video was delivered) generated. It is never
+ * 'provider_reported'. Kling transports keep recording unknown usage unless the provider states one.
+ */
+export function derivedVideoUsage(generation: Record<string, any>): UsageMeasurement | null {
+  if (generation.provider !== 'gemini') return null
+  const duration = generation.request_config?.duration
+  return typeof duration === 'number' && Number.isFinite(duration) && duration > 0 ? { quantity: duration, unit: 'seconds', source: 'derived' } : null
+}
+
 export type CompletionOutcome =
   | 'completed'
   | 'failed_recorded'
@@ -104,7 +115,7 @@ async function casTerminal(
 
 export async function completeVideoGeneration(
   db: SupabaseClient,
-  params: Identity & { resultUrl: string; providerState?: string | null; usage?: UsageMeasurement | null },
+  params: Identity & { resultUrl: string; providerState?: string | null; usage?: UsageMeasurement | null; downloadHeaders?: Record<string, string> },
   deps: CompletionDependencies = {},
 ): Promise<CompletionResult> {
   const loaded = await loadIdentified(db, params)
@@ -113,7 +124,7 @@ export async function completeVideoGeneration(
     // (idempotent): it repairs the case where the process died between the terminal write and the ledger write.
     if (loaded.outcome === 'already_terminal' && loaded.row?.status === 'succeeded') {
       const completedAt = new Date(loaded.row.result_metadata?.completed_at ?? '')
-      await recordVideoGenerationUsage(db, loaded.row, params.usage, Number.isNaN(completedAt.getTime()) ? undefined : completedAt)
+      await recordVideoGenerationUsage(db, loaded.row, params.usage ?? derivedVideoUsage(loaded.row), Number.isNaN(completedAt.getTime()) ? undefined : completedAt)
     }
     return { outcome: loaded.outcome, generation: loaded.row }
   }
@@ -133,6 +144,7 @@ export async function completeVideoGeneration(
   // caller (poller / callback retry) tries again while the URL is still valid.
   const { storagePath, publicUrl, mime, size } = await download(params.resultUrl, prefix, {
     objectName: `${generation.id}.mp4`,
+    ...(params.downloadHeaders ? { headers: params.downloadHeaders } : {}),
   })
 
   const now = (deps.now ?? (() => new Date()))()
@@ -154,7 +166,7 @@ export async function completeVideoGeneration(
   // Lost the race: another caller already finalized it (and records the usage event). Nothing else to do.
   if (!won) return { outcome: 'already_terminal', generation }
 
-  await recordVideoGenerationUsage(db, won, params.usage, now)
+  await recordVideoGenerationUsage(db, won, params.usage ?? derivedVideoUsage(won), now)
   return { outcome: 'completed', generation: won }
 }
 
@@ -165,7 +177,7 @@ export async function failVideoGenerationWithoutTask(db: SupabaseClient, generat
     .update({
       status: 'failed',
       next_poll_at: null,
-      error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio à Kling não foi confirmado e não há como recuperar este vídeo.' },
+      error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio ao provedor não foi confirmado e não há como recuperar este vídeo.' },
     })
     .eq('id', generationId)
     .is('task_id', null)

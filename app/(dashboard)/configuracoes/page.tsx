@@ -950,7 +950,7 @@ export default function SettingsPage() {
                   <AiProviderCredentialCard
                     providerId="gemini"
                     title="Google Gemini API"
-                    description={`Chave BYOK da API oficial do Google Gemini: avaliações multimodais (Review), assistência de prompt e geração de imagem com os modelos oficiais Nano Banana. Geração de imagem Google: ${geminiImageAvailability?.available ? 'habilitada neste ambiente' : 'ainda não habilitada neste ambiente'}.`}
+                    description={`Chave BYOK da API oficial do Google Gemini: avaliações multimodais (Review), assistência de prompt e geração de imagem com os modelos oficiais Nano Banana, e vídeo com o Google Veo (liberado separadamente; pode gerar cobrança na sua conta Google). Geração de imagem Google: ${geminiImageAvailability?.available ? 'habilitada neste ambiente' : 'ainda não habilitada neste ambiente'}.`}
                     status={providerStatuses.gemini}
                     placeholder="Chave da API Gemini..."
                     helpText="A chave fica armazenada por usuário e nunca é devolvida ao navegador. As chamadas à API do Google usam a sua chave e podem gerar cobrança na sua conta Google."

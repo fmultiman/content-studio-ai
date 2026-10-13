@@ -9,8 +9,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { PromptLanguagePanel, type PromptLanguageView } from '@/components/prompts/prompt-language-panel'
 import { cn } from '@/lib/utils'
 import {
+  allowedDurations,
   audioAllowedAt,
   findOperation,
+  LAST_FRAME_CONFLICT_MESSAGE,
   VIDEO_OPERATIONS,
   type VideoAspectRatio,
   type VideoAudio,
@@ -20,8 +22,9 @@ import {
 } from '@/lib/video-generation/capabilities'
 import { I2vSourcePicker } from '@/components/videos/i2v-source-picker'
 import { type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
-import { connectionDisplayName, spendingSourceCopy, transportBadge } from '@/lib/video-generation/connection-presentation'
+import { connectionBadge, connectionDisplayName, spendingSourceCopy, transportBadge, veoBlockedNote } from '@/lib/video-generation/connection-presentation'
 import {
+  lastFrameBlockers,
   selectedConnection,
   selectedModel,
   visibleControls,
@@ -64,6 +67,13 @@ export interface VideoGenerationFormProps {
   
   sourceSelection: I2vSourceSelection | null
   onSourceSelectionChange: (val: I2vSourceSelection | null) => void
+
+  /**
+   * VEO_KLING_FIRST_LAST_FRAME_V1: the optional LAST frame (image B). The slot is rendered only when a change handler is
+   * provided, so a host that does not support it keeps the single-image form exactly as it was.
+   */
+  lastFrameSelection?: I2vSourceSelection | null
+  onLastFrameSelectionChange?: (val: I2vSourceSelection | null) => void
   
   disabled?: boolean
   
@@ -92,6 +102,8 @@ export function VideoGenerationForm({
   onPromptChange,
   sourceSelection,
   onSourceSelectionChange,
+  lastFrameSelection = null,
+  onLastFrameSelectionChange,
   disabled,
   header,
   promptReadOnly = false,
@@ -217,7 +229,7 @@ export function VideoGenerationForm({
                   data-testid="video-connection-toggle"
                 >
                   {connections.map((entry) => {
-                    const badge = transportBadge(entry.transport)
+                    const badge = connectionBadge(entry)
                     const isSelected = entry.ref === connection.ref
                     return (
                       <button
@@ -259,16 +271,61 @@ export function VideoGenerationForm({
             <p className="text-xs text-muted-foreground" data-testid="video-connection-detail" data-transport={transportBadge(connection.transport)}>
               {spendingSourceCopy(connection.funding)}
             </p>
+            {veoBlockedNote(connection) && (
+              <p className="text-xs text-destructive" role="status" data-testid="video-connection-blocked">{veoBlockedNote(connection)}</p>
+            )}
             <p className="text-[11px] text-muted-foreground" data-testid="video-model-summary">
-              {model.durations.map((d) => `${d}s`).join('/')} — {model.resolutions.join('/')}{model.audio ? ' — áudio' : ''}{model.multiShot ? ' — multi-shot' : ''}
+              {model.durations.map((d) => `${d}s`).join('/')} — {model.resolutions.join('/')}{model.audio ? ' — áudio' : ''}{model.nativeAudio ? ' — áudio nativo' : ''}{model.multiShot ? ' — multi-shot' : ''}{selection.operation === 'image_to_video' && model.lastFrame ? ' — primeiro e último quadro' : ''}
             </p>
           </div>
 
           <TabsContent value="image_to_video" className="space-y-4 pt-4">
-            <I2vSourcePicker key={projectId} projectId={projectId} productionId={productionId} value={sourceSelection} onChange={onSourceSelectionChange} />
+            <I2vSourcePicker
+              key={projectId}
+              projectId={projectId}
+              productionId={productionId}
+              value={sourceSelection}
+              onChange={onSourceSelectionChange}
+              {...(onLastFrameSelectionChange
+                ? { label: 'Imagem inicial (A)', chooseLabel: 'Escolher a imagem inicial', noun: 'Imagem inicial', hint: 'Obrigatória. É o primeiro quadro do vídeo: escolha uma imagem gerada por IA, da Galeria, dos Arquivos ou envie uma do seu computador.' }
+                : {})}
+            />
+
+            {onLastFrameSelectionChange && model.lastFrame && (
+              <p className="text-[11px] text-muted-foreground" data-testid="video-last-frame-explainer">
+                Primeiro e último quadro definem o início e o fim do vídeo. Não são imagens de referência de identidade, aparência ou estilo.
+              </p>
+            )}
+
+            {onLastFrameSelectionChange && (
+              <I2vSourcePicker
+                key={`${projectId}-last-frame`}
+                idPrefix="i2v-last-frame"
+                projectId={projectId}
+                productionId={productionId}
+                value={lastFrameSelection}
+                onChange={onLastFrameSelectionChange}
+                label="Imagem final (B) — opcional"
+                chooseLabel="Adicionar imagem final"
+                noun="Imagem final"
+                disabled={!model.lastFrame && !lastFrameSelection}
+                hint={
+                  model.lastFrame
+                    ? 'Opcional. O vídeo parte da imagem inicial e termina nesta imagem. Isto define início e fim — não é uma imagem de referência de estilo ou identidade.'
+                    : `${model.label} não aceita imagem final neste modo. Escolha outro modelo para usar primeiro e último quadro.`
+                }
+                note={
+                  lastFrameSelection
+                    ? lastFrameBlockers(model, selection).map((conflict) => LAST_FRAME_CONFLICT_MESSAGE[conflict](model)).join(' ') || null
+                    : null
+                }
+              />
+            )}
 
             <div className="space-y-2">
-              {renderPromptField('video-motion-prompt', 'Prompt de geração (como animar a imagem)', 'Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)', 'min-h-[100px]')}
+              {lastFrameSelection
+                ? renderPromptField('video-motion-prompt', 'Prompt de movimento e transição', 'Descreva o movimento e como a cena passa da imagem inicial para a imagem final.', 'min-h-[100px]', 'Descreva a transição entre o início e o fim.')
+                : renderPromptField('video-motion-prompt', 'Prompt de geração (como animar a imagem)', 'Como esta imagem deve ser animada? (Ex: A câmera se aproxima suavemente, o cabelo flutua com o vento)', 'min-h-[100px]')}
             </div>
           </TabsContent>
 
@@ -290,7 +347,7 @@ export function VideoGenerationForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {model.durations.map((value) => (
+                  {allowedDurations(model, selection.resolution).map((value) => (
                     <SelectItem key={value} value={String(value)}>
                       {value} segundos
                     </SelectItem>
@@ -337,6 +394,19 @@ export function VideoGenerationForm({
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {model.nativeAudio && (
+              <div className="space-y-1.5" data-testid="video-native-audio-note">
+                <Label className="text-muted-foreground">Áudio</Label>
+                <p className="pt-1 text-xs text-muted-foreground">{model.label} sempre gera o áudio junto com o vídeo; não há opção para desligá-lo.</p>
+              </div>
+            )}
+
+            {model.durationsByResolution?.[selection.resolution ?? '720p'] && (
+              <p className="text-[10px] text-muted-foreground sm:col-span-2" data-testid="video-duration-resolution-note">
+                Em {RESOLUTION_LABEL[selection.resolution ?? '720p']} este modelo gera apenas vídeos de {allowedDurations(model, selection.resolution).join(' / ')} segundos.
+              </p>
             )}
 
             {controls.audio && selection.audio !== null && (
@@ -388,7 +458,9 @@ export function VideoGenerationForm({
 
             {heavier && (
               <p className="text-[10px] text-muted-foreground sm:col-span-2">
-                Maior duração ou resolução pode aumentar o consumo de {consumptionNoun}.
+                {connection.funding === 'google_gemini_api'
+                  ? 'O Google cobra por segundo de vídeo gerado: maior duração ou resolução aumenta o custo na sua conta.'
+                  : `Maior duração ou resolução pode aumentar o consumo de ${consumptionNoun}.`}
               </p>
             )}
           </div>

@@ -178,7 +178,7 @@ describe('GET /api/video-generations/connections (capability API)', () => {
     expect((await get()).status).toBe(401)
   })
 
-  it('returns Kling API first, then the user’s own account connections, with normalized capabilities only', async () => {
+  it('returns Kling API first, then Google Veo, then the user’s own account connections, with normalized capabilities only', async () => {
     const db = makeDb({ klingKey: 'REST-KEY', connections: [connectionRow(), connectionRow({ id: FOREIGN_ID, user_id: 'user-b' })] })
     signIn(db)
     const mcp = installFakeMcp()
@@ -188,9 +188,11 @@ describe('GET /api/video-generations/connections (capability API)', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(body.connections.map((entry: any) => entry.ref)).toEqual(['kling:api', accountConnectionRef(CONNECTION_ID)])
+    expect(body.connections.map((entry: any) => entry.ref)).toEqual(['kling:api', 'google:gemini', accountConnectionRef(CONNECTION_ID)])
     expect(body.connections[0]).toMatchObject({ label: 'Kling API', canGenerate: true, funding: 'kling_api_package' })
-    expect(body.connections[1]).toMatchObject({ label: 'Minha conta Kling', accountLabel: 'Pro', canGenerate: true, funding: 'kling_web_credits' })
+    // No Gemini key was saved by this user: Google Veo is listed (so the form can say how to configure it) but cannot generate.
+    expect(body.connections[1]).toMatchObject({ provider: 'gemini', label: 'Google Veo', canGenerate: false, blockedReason: 'not_configured', operations: [] })
+    expect(body.connections[2]).toMatchObject({ label: 'Minha conta Kling', accountLabel: 'Pro', canGenerate: true, funding: 'kling_web_credits' })
 
     // Safe by construction: no secrets, no raw schema, no mapping hints, no foreign connection, no account id.
     const text = JSON.stringify(body)
@@ -205,8 +207,9 @@ describe('GET /api/video-generations/connections (capability API)', () => {
   it('a read-only account is listed with its models but cannot generate, and says why', async () => {
     signIn(makeDb({ klingKey: 'k', connections: [connectionRow({ scopes: ['generation.read', 'account.credit.read'] })] }))
     const body = await (await get()).json()
-    expect(body.connections[1]).toMatchObject({ canGenerate: false, blockedReason: 'generation_authorization_required', needsGenerationAuthorization: true })
-    expect(body.connections[1].operations.length).toBeGreaterThan(0)
+    const account = body.connections.find((entry: any) => entry.ref === accountConnectionRef(CONNECTION_ID))
+    expect(account).toMatchObject({ canGenerate: false, blockedReason: 'generation_authorization_required', needsGenerationAuthorization: true })
+    expect(account.operations.length).toBeGreaterThan(0)
   })
 
   it('a store failure is a 503 with a specific code — never an empty list that reads as "no connections"', async () => {

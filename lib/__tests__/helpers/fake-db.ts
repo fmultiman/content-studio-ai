@@ -65,6 +65,8 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       if (op === 'in') return (value as any[]).includes(row[column])
       if (op === 'is') return (row[column] ?? null) === value
       if (op === 'notnull') return row[column] !== null && row[column] !== undefined
+      // PostgREST `.or('col.eq.value,col2.eq.value2')` (equality terms only): the row matches when ANY term does.
+      if (op === 'or') return (value as Array<[string, string]>).some(([orColumn, orValue]) => String(row[orColumn]) === orValue)
       if (op === 'contains') {
         // jsonb @> for an array of objects: every wanted element is matched by some stored element.
         const stored = row[column]
@@ -190,6 +192,15 @@ export function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       },
       in(column: string, value: any[]) {
         filters.push([column, 'in', value])
+        return builder
+      },
+      or(expression: string) {
+        const terms = expression.split(',').map((term) => {
+          const match = /^([A-Za-z0-9_]+)\.eq\.(.*)$/.exec(term.trim())
+          if (!match) throw new Error(`fake-db or(): only equality terms are supported, got "${term}"`)
+          return [match[1], match[2]] as [string, string]
+        })
+        filters.push(['', 'or', terms])
         return builder
       },
       is(column: string, value: any) {

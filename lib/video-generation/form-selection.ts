@@ -15,6 +15,7 @@
 
 import {
   VIDEO_OPERATIONS,
+  allowedDurations,
   audioAllowedAt,
   areLogicallyEquivalentModels,
   defaultAspectRatio,
@@ -23,6 +24,8 @@ import {
   defaultResolution,
   findModel,
   findOperation,
+  lastFrameConflicts,
+  type LastFrameConflict,
   type VideoAspectRatio,
   type VideoAudio,
   type VideoGenerationConnectionDescriptor,
@@ -106,6 +109,16 @@ export function selectedModel(
   return findModel(connection.operations, selection.operation, selection.modelId) ?? null
 }
 
+/**
+ * VEO_KLING_FIRST_LAST_FRAME_V1 - the form-level answer to "can this selection be sent with a last frame?".
+ * Empty = yes. Anything else is shown to the user next to the last-frame slot and blocks the submit: the frame is never
+ * dropped silently and the model/resolution/audio is never changed behind the user's back.
+ */
+export function lastFrameBlockers(model: VideoModelCapability | null, selection: VideoFormSelection): LastFrameConflict[] {
+  if (!model) return ['UNSUPPORTED_MODEL']
+  return lastFrameConflicts(model, { resolution: selection.resolution, audio: selection.audio, multiShot: selection.multiShot })
+}
+
 export function reconcileSelection(
   connections: VideoGenerationConnectionDescriptor[],
   previous: VideoFormSelection = EMPTY_SELECTION,
@@ -126,13 +139,16 @@ export function reconcileSelection(
     models.find((entry) => previous.modelId && areLogicallyEquivalentModels(entry.id, previous.modelId)) ??
     defaultModel(models)!
 
-  const duration =
-    previous.duration !== null && model.durations.includes(previous.duration) ? previous.duration : defaultDuration(model)
-
   const resolution =
     previous.resolution !== null && model.resolutions.includes(previous.resolution)
       ? previous.resolution
       : defaultResolution(model)
+
+  // Duration is judged AFTER the resolution: some providers tie them together (Veo 1080p/4k -> 8 s only).
+  const duration =
+    previous.duration !== null && allowedDurations(model, resolution).includes(previous.duration)
+      ? previous.duration
+      : defaultDuration(model, resolution)
 
   const aspectRatio =
     model.aspectRatios.length === 0

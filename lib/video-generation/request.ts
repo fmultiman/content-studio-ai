@@ -13,6 +13,9 @@
 //   - output count is pinned to 1 (one action -> one VideoGeneration -> one video).
 
 import {
+  LAST_FRAME_CONFLICT_MESSAGE,
+  allowedDurations,
+  lastFrameConflicts,
   MAX_DURATION_SECONDS,
   MIN_DURATION_SECONDS,
   VIDEO_ASPECT_RATIOS,
@@ -46,6 +49,8 @@ export interface RawVideoControls {
   audio_prompt?: unknown
   music_prompt?: unknown
   outputCount?: unknown
+  /** VEO_KLING_FIRST_LAST_FRAME_V1: true when the request carries a LAST frame (the route resolves the identity). */
+  lastFrame?: unknown
 }
 
 /** The fully explicit request handed to a transport. Every visible control has a value. */
@@ -60,6 +65,8 @@ export interface NormalizedVideoRequest {
   asmr: boolean | null
   audioPrompt: string | null
   musicPrompt: string | null
+  /** image_to_video with a first AND a last frame. false = first frame only (or text_to_video). */
+  lastFrame: boolean
 }
 
 export type VideoRequestFailureCode =
@@ -75,6 +82,11 @@ export type VideoRequestFailureCode =
   | 'UNSUPPORTED_MUSIC_PROMPT'
   | 'AUDIO_RESOLUTION_CONFLICT'
   | 'UNSUPPORTED_OUTPUT_COUNT'
+  | 'UNSUPPORTED_LAST_FRAME'
+  | 'LAST_FRAME_RESOLUTION_CONFLICT'
+  | 'LAST_FRAME_AUDIO_CONFLICT'
+  | 'LAST_FRAME_MULTI_SHOT_CONFLICT'
+  | 'DURATION_RESOLUTION_CONFLICT'
 
 export type VideoRequestValidation =
   | { ok: true; request: NormalizedVideoRequest; model: VideoModelCapability }
@@ -107,14 +119,6 @@ export function validateVideoRequest(
   }
   if (!model) return fail('UNSUPPORTED_MODEL', 'Unsupported model for this connection and mode.')
 
-  let duration: number
-  if (raw.duration === undefined) {
-    duration = defaultDuration(model)
-  } else {
-    duration = Number(raw.duration)
-    if (!model.durations.includes(duration)) return fail('UNSUPPORTED_DURATION', 'Unsupported duration value.')
-  }
-
   let resolution: VideoResolution
   if (raw.resolution === undefined) {
     resolution = defaultResolution(model)
@@ -126,6 +130,17 @@ export function validateVideoRequest(
     resolution = raw.resolution as VideoResolution
   } else {
     return fail('UNSUPPORTED_RESOLUTION', 'Unsupported resolution value.')
+  }
+
+  let duration: number
+  if (raw.duration === undefined) {
+    duration = defaultDuration(model, resolution)
+  } else {
+    duration = Number(raw.duration)
+    if (!model.durations.includes(duration)) return fail('UNSUPPORTED_DURATION', 'Unsupported duration value.')
+    if (!allowedDurations(model, resolution).includes(duration)) {
+      return fail('DURATION_RESOLUTION_CONFLICT', `${model.label} só permite ${allowedDurations(model, resolution).join(' / ')} s em ${resolution}.`)
+    }
   }
 
   let aspectRatio: VideoAspectRatio | null
@@ -204,10 +219,23 @@ export function validateVideoRequest(
     musicPrompt = raw.music_prompt
   }
 
+  // First + last frame: never sent when the model/context cannot honour it, never sent with the frame dropped.
+  let lastFrame = false
+  if (raw.lastFrame !== undefined && raw.lastFrame !== false) {
+    if (raw.lastFrame !== true) return fail('UNSUPPORTED_LAST_FRAME', 'lastFrame must be a boolean.')
+    if (operation !== 'image_to_video') return fail('UNSUPPORTED_LAST_FRAME', 'A last frame is only valid for image_to_video.')
+    const conflicts = lastFrameConflicts(model, { resolution, audio, multiShot })
+    if (conflicts.includes('UNSUPPORTED_MODEL')) return fail('UNSUPPORTED_LAST_FRAME', LAST_FRAME_CONFLICT_MESSAGE.UNSUPPORTED_MODEL(model))
+    if (conflicts.includes('RESOLUTION')) return fail('LAST_FRAME_RESOLUTION_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.RESOLUTION(model))
+    if (conflicts.includes('AUDIO')) return fail('LAST_FRAME_AUDIO_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.AUDIO(model))
+    if (conflicts.includes('MULTI_SHOT')) return fail('LAST_FRAME_MULTI_SHOT_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.MULTI_SHOT(model))
+    lastFrame = true
+  }
+
   return {
     ok: true,
     model,
-    request: { operation, model: model.id, duration, resolution, aspectRatio, audio, multiShot, asmr, audioPrompt, musicPrompt },
+    request: { operation, model: model.id, duration, resolution, aspectRatio, audio, multiShot, asmr, audioPrompt, musicPrompt, lastFrame },
   }
 }
 
@@ -217,7 +245,11 @@ export function validateVideoRequest(
  * Capability-level rules (which model allows what) run later against the
  * server-resolved connection in validateVideoRequest().
  */
-export function validateControlVocabulary(operation: unknown, raw: RawVideoControls): VideoRequestValidation | null {
+export function validateControlVocabulary(
+  operation: unknown,
+  raw: RawVideoControls,
+  options: { imageToVideoAspectRatio?: boolean } = {},
+): VideoRequestValidation | null {
   if (raw.duration !== undefined) {
     const duration = Number(raw.duration)
     if (!Number.isInteger(duration) || duration < MIN_DURATION_SECONDS || duration > MAX_DURATION_SECONDS) {
@@ -243,9 +275,14 @@ export function validateControlVocabulary(operation: unknown, raw: RawVideoContr
     return fail('UNSUPPORTED_MUSIC_PROMPT', 'music_prompt must be a string.')
   }
   if (operation === 'image_to_video') {
-    // Image-to-video takes its framing from the source image: no aspect ratio, for any connection.
+    // Kling takes its framing from the source image: no aspect ratio, for any Kling connection. Google Veo takes an
+    // explicit 16:9 / 9:16 for image input too, so the caller (which knows the connection pointer WITHOUT a database
+    // read) opts in; validateVideoRequest() still enforces the per-model rule against the resolved capabilities.
     if (raw.aspect_ratio !== undefined && raw.aspect_ratio !== null && raw.aspect_ratio !== '') {
-      return fail('UNSUPPORTED_ASPECT_RATIO', 'aspect_ratio is not supported for image_to_video.')
+      if (!options.imageToVideoAspectRatio) return fail('UNSUPPORTED_ASPECT_RATIO', 'aspect_ratio is not supported for image_to_video.')
+      if (!(VIDEO_ASPECT_RATIOS as readonly string[]).includes(raw.aspect_ratio as string)) {
+        return fail('UNSUPPORTED_ASPECT_RATIO', 'Unsupported aspect_ratio for image_to_video.')
+      }
     }
   } else if (raw.aspect_ratio !== undefined && raw.aspect_ratio !== null && raw.aspect_ratio !== '') {
     if (!(VIDEO_ASPECT_RATIOS as readonly string[]).includes(raw.aspect_ratio as string)) {

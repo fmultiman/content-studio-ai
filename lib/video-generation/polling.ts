@@ -2,6 +2,10 @@
 //
 // Transport-aware status sync + the MCP poller.
 //
+// VEO_KLING_FIRST_LAST_FRAME_V1: Google Veo is polled by the SAME poller. A Veo generation is a Gemini API long-running
+// operation: there is no callback, so its operation name is the task id and its rows (provider = 'gemini') are due-polled
+// exactly like MCP rows, with the OWNER's Gemini key resolved server-side for status reads (they never spend).
+//
 // WHY POLLING: Kling MCP has no callback and no way to pass our own
 // correlation id (discovery §2.6). An MCP generation returns a generation_id
 // and can only be learned about by asking `query_tasks`. The product therefore
@@ -40,6 +44,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getOwnedConnection } from '@/lib/provider-connections/connections'
+import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import {
   forceRefreshAccessToken,
   getValidAccessToken,
@@ -56,7 +61,7 @@ import {
   type CompletionDependencies,
 } from './completion'
 import { QUEUED_ORPHAN_AGE_MS } from './poll-constants'
-import { KlingMcpTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
+import { GeminiVeoTransport, KlingMcpTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
 
 /** Per-job cadence tiers: [inclusive upper bound of `poll_attempts`, delay to the next check]. */
 export const POLL_SCHEDULE = [
@@ -169,7 +174,9 @@ export async function syncGenerationWithProvider(
     const result = await failVideoGeneration(db, {
       ...identity,
       code: 'PROVIDER_POLL_TIMEOUT',
-      message: 'A geração não foi concluída a tempo. Verifique a sua conta Kling antes de tentar novamente.',
+      message: generation.provider === 'gemini'
+        ? 'A geração não foi concluída a tempo. Verifique a sua conta Google antes de tentar novamente.'
+        : 'A geração não foi concluída a tempo. Verifique a sua conta Kling antes de tentar novamente.',
     })
     return { outcome: result.outcome === 'failed_recorded' ? 'timed_out' : mapOutcome(result.outcome), generation: result.generation }
   }
@@ -215,7 +222,7 @@ export async function syncGenerationWithProvider(
     try {
       const result = await completeVideoGeneration(
         db,
-        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState, usage: status.usage },
+        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState, usage: status.usage, downloadHeaders: status.downloadHeaders },
         { download: options.download, now: options.now },
       )
       return { outcome: mapOutcome(result.outcome), generation: result.generation }
@@ -296,6 +303,32 @@ export async function createMcpTransportForGeneration(
   )
 }
 
+/**
+ * VEO_KLING_FIRST_LAST_FRAME_V1 — the Google Veo transport for a stored generation (server-side, no user session).
+ * The Gemini key is resolved for the generation's OWN user (never for the caller), with `status_read`: reading an
+ * already-submitted operation spends nothing. Returns null when that user no longer has a Gemini key; a credential-store
+ * outage throws (the caller treats it as transient and retries later).
+ */
+export async function createVeoTransportForGeneration(
+  db: SupabaseClient,
+  generation: Record<string, any>,
+): Promise<KlingVideoTransport | null> {
+  const execution = await resolveProviderExecution(db, { userId: generation.user_id, provider: 'gemini', purpose: 'status_read' })
+  if (execution.status !== 'ready') return null
+  return new GeminiVeoTransport(execution.secret)
+}
+
+/** The transport that can read this stored generation. MCP and Google Veo rows are polled; REST Kling rows use the callback. */
+async function transportForPolledGeneration(
+  db: SupabaseClient,
+  generation: Record<string, any>,
+  deps: McpPollDependencies,
+): Promise<KlingVideoTransport | null> {
+  return generation.provider === 'gemini'
+    ? createVeoTransportForGeneration(db, generation)
+    : createMcpTransportForGeneration(db, generation, deps)
+}
+
 export interface PollSummary {
   due: number
   claimed: number
@@ -353,9 +386,9 @@ export async function pollDueMcpGenerations(
     .from('video_generations')
     .update({
       status: 'failed',
-      error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio à Kling foi interrompido antes de ser confirmado.' },
+      error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio ao provedor foi interrompido antes de ser confirmado.' },
     })
-    .eq('transport', 'mcp')
+    .or('transport.eq.mcp,provider.eq.gemini')
     .eq('status', 'queued')
     .is('task_id', null)
     .lt('created_at', orphanCutoff)
@@ -365,7 +398,7 @@ export async function pollDueMcpGenerations(
   const { data: dueRows, error } = await db
     .from('video_generations')
     .select('*')
-    .eq('transport', 'mcp')
+    .or('transport.eq.mcp,provider.eq.gemini')
     .in('status', ['submitted', 'processing'])
     .lte('next_poll_at', now.toISOString())
     .order('next_poll_at', { ascending: true })
@@ -383,7 +416,7 @@ export async function pollDueMcpGenerations(
     summary.claimed += 1
 
     try {
-      const factory = deps.transportFactory ?? ((client, generation) => createMcpTransportForGeneration(client, generation, deps))
+      const factory = deps.transportFactory ?? ((client, generation) => transportForPolledGeneration(client, generation, deps))
       const transport = await factory(db, claimed)
 
       if (!claimed.task_id) {
@@ -394,12 +427,15 @@ export async function pollDueMcpGenerations(
       }
       if (!transport) {
         // The grant this paid job depends on no longer exists: it cannot be retrieved here.
+        const veo = claimed.provider === 'gemini'
         await failVideoGeneration(db, {
           generationId: claimed.id,
           taskId: claimed.task_id,
-          transport: 'mcp',
+          transport: veo ? 'rest' : 'mcp',
           code: 'CONNECTION_UNAVAILABLE',
-          message: 'A conexão com a conta Kling não está mais disponível. Verifique o resultado diretamente na sua conta Kling.',
+          message: veo
+            ? 'A chave Gemini não está mais disponível. O vídeo fica no Google por 2 dias: verifique-o diretamente na sua conta Google.'
+            : 'A conexão com a conta Kling não está mais disponível. Verifique o resultado diretamente na sua conta Kling.',
         }).catch(() => undefined)
         count('connection_unavailable')
         return

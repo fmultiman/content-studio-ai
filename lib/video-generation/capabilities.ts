@@ -13,8 +13,9 @@
 //
 // Deliberately NOT a universal framework: it models exactly two operations
 // (text_to_video, image_to_video) and the controls the product exposes today:
-// duration, resolution, aspect ratio, audio, multi-shot and the MCP advanced
-// controls (ASMR, audio prompt, music prompt). Both real connections express
+// duration, resolution, aspect ratio, audio, multi-shot, the MCP advanced
+// controls (ASMR, audio prompt, music prompt) and, for image_to_video, an optional
+// LAST frame (VEO_KLING_FIRST_LAST_FRAME_V1) - a per-model capability, never a global list. Both real connections express
 // the discrete ones as a DISCRETE set of allowed values, so that is the only
 // representation modelled (no range type until a real connection needs one).
 
@@ -73,6 +74,38 @@ export interface VideoModelCapability {
    * argument, which is always pinned to 1. Stripped from browser descriptors.
    */
   outputCountArg?: boolean
+  /**
+   * image_to_video only: the model accepts a first frame AND a last frame. Derived from the effective model/connection
+   * contract (REST code, MCP `tail_image` input, Veo `lastFrame`) — never from a commercial name.
+   */
+  lastFrame?: VideoLastFrameCapability
+  /**
+   * Some providers only allow certain durations at certain resolutions (Veo 3.1: 1080p and 4k require 8 s).
+   * When a resolution is listed here only these durations are valid at it; others keep the model's `durations`.
+   */
+  durationsByResolution?: Partial<Record<VideoResolution, number[]>>
+  /**
+   * The provider always generates audio with the video and exposes no switch (Veo). `audio` stays false (no control,
+   * nothing sent); this flag only lets the UI say so truthfully.
+   */
+  nativeAudio?: boolean
+}
+
+/**
+ * VEO_KLING_FIRST_LAST_FRAME_V1 — what one model needs when an image_to_video request also carries a LAST frame
+ * (first-frame + last-frame). Absent on a model = the model does NOT accept a last frame, so a request that carries
+ * one is rejected (never sent with the last frame silently dropped).
+ *
+ * This is a different capability from "reference images" (identity / appearance / style guidance), which this
+ * product does not offer: a first/last frame DEFINES the start and the end of the clip.
+ */
+export interface VideoLastFrameCapability {
+  /** The provider only accepts a last frame at this resolution (Kling 2.6: tail image requires 1080p). */
+  requiresResolution?: VideoResolution
+  /** false = audio must be 'off' when a last frame is sent (Kling 2.6: audio is not supported with a tail image). */
+  audioAllowed: boolean
+  /** false = multi-shot must be off when a last frame is sent (two frames define ONE continuous shot). */
+  multiShotAllowed: boolean
 }
 
 export interface VideoOperationCapability {
@@ -108,11 +141,16 @@ export type VideoConnectionBlockedReason =
   | 'capabilities_missing'
   | 'capabilities_expired'
   | 'no_supported_models'
+  /** The provider path is built but its release switch is off (Google Veo before the owner-authorized paid canary). */
+  | 'feature_disabled'
+
+/** Video providers a generation can be routed to. `gemini` = Google Veo through the user's own Gemini API key. */
+export type VideoProviderId = 'kling' | 'gemini'
 
 export interface VideoGenerationConnectionDescriptor {
   /** Opaque, server-resolvable reference (see connection-ref.ts). Never trusted without resolution. */
   ref: string
-  provider: 'kling'
+  provider: VideoProviderId
   connectionMethod: VideoConnectionMethod
   transport: VideoTransport
   /** Product-facing name, e.g. "Kling API" / "Minha conta Kling". */
@@ -120,7 +158,7 @@ export interface VideoGenerationConnectionDescriptor {
   /** Secondary technical detail, e.g. "REST · usa o pacote da API Kling". */
   detail: string
   /** Whose balance a generation consumes. Unrelated to Content Studio Credits, which do not exist. */
-  funding: 'kling_api_package' | 'kling_web_credits'
+  funding: 'kling_api_package' | 'kling_web_credits' | 'google_gemini_api'
   status: 'connected' | 'not_configured' | 'authorization_required' | 'error'
   canGenerate: boolean
   blockedReason?: VideoConnectionBlockedReason
@@ -140,7 +178,7 @@ export interface VideoConnectionsResponse {
 }
 
 /** Continuity with the REST integration's historical Kling 3.0 default; deliberately not a "best model" ranking. */
-export const PREFERRED_DEFAULT_MODEL_IDS = ['kling-v3', 'kling-video-v3_0'] as const
+export const PREFERRED_DEFAULT_MODEL_IDS = ['kling-v3', 'kling-video-v3_0', 'veo-3.1-fast-generate-preview'] as const
 
 /** Canonical logical model groups (REST id <-> MCP id) to preserve selection across transport switches */
 export const LOGICAL_MODEL_MAPPING: Record<string, string[]> = {
@@ -172,8 +210,43 @@ export const DEFAULT_ASMR = false
 export const DEFAULT_AUDIO_PROMPT = ''
 export const DEFAULT_MUSIC_PROMPT = ''
 
-export function defaultDuration(model: VideoModelCapability): number {
-  return model.durations.includes(DEFAULT_DURATION_SECONDS) ? DEFAULT_DURATION_SECONDS : model.durations[0]
+/** Durations valid for this model AT this resolution (some providers tie them together; see durationsByResolution). */
+export function allowedDurations(model: VideoModelCapability, resolution?: VideoResolution | null): number[] {
+  const restricted = resolution ? model.durationsByResolution?.[resolution] : undefined
+  return restricted ? model.durations.filter((value) => restricted.includes(value)) : model.durations
+}
+
+export function defaultDuration(model: VideoModelCapability, resolution?: VideoResolution | null): number {
+  const allowed = allowedDurations(model, resolution)
+  if (allowed.includes(DEFAULT_DURATION_SECONDS)) return DEFAULT_DURATION_SECONDS
+  // Prefer the longest clip when the provider offers no 5 s option (Veo: 4/6/8 -> 8): it is valid at every resolution.
+  return allowed.length > 0 ? allowed[allowed.length - 1] : model.durations[0]
+}
+
+/**
+ * Why a first+last-frame request is not valid for this model and context. Empty = valid. Shared by the UI (which
+ * explains the reason) and the server validator (which rejects), so both always agree.
+ */
+export type LastFrameConflict = 'UNSUPPORTED_MODEL' | 'RESOLUTION' | 'AUDIO' | 'MULTI_SHOT'
+
+export function lastFrameConflicts(
+  model: VideoModelCapability,
+  context: { resolution: VideoResolution | null; audio: VideoAudio | null; multiShot: boolean | null },
+): LastFrameConflict[] {
+  const capability = model.lastFrame
+  if (!capability) return ['UNSUPPORTED_MODEL']
+  const conflicts: LastFrameConflict[] = []
+  if (capability.requiresResolution && context.resolution !== capability.requiresResolution) conflicts.push('RESOLUTION')
+  if (!capability.audioAllowed && context.audio === 'on') conflicts.push('AUDIO')
+  if (!capability.multiShotAllowed && context.multiShot === true) conflicts.push('MULTI_SHOT')
+  return conflicts
+}
+
+export const LAST_FRAME_CONFLICT_MESSAGE: Record<LastFrameConflict, (model: VideoModelCapability) => string> = {
+  UNSUPPORTED_MODEL: (model) => `${model.label} não aceita imagem final neste modo. Remova a imagem final ou escolha outro modelo.`,
+  RESOLUTION: (model) => `${model.label} só aceita imagem final em ${model.lastFrame?.requiresResolution ?? 'outra resolução'}. Ajuste a resolução ou remova a imagem final.`,
+  AUDIO: (model) => `${model.label} não permite áudio automático com imagem final. Desligue o áudio ou remova a imagem final.`,
+  MULTI_SHOT: (model) => `${model.label} não permite multi-shot com imagem final. Desligue o multi-shot ou remova a imagem final.`,
 }
 
 export function defaultResolution(model: VideoModelCapability): VideoResolution {

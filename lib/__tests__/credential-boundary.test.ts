@@ -368,6 +368,8 @@ describe('video generation connection routing boundary — VIDEO_GENERATION_CONN
       'connection-presentation',
       'i2v-source',
       'i2v-source-browse',
+      // VEO_KLING_FIRST_LAST_FRAME_V1: pure frame-identity helpers (ids only); the loop below proves it imports no server module.
+      'frames',
       'working-state',
       'session',
     ])

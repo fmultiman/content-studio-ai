@@ -51,6 +51,8 @@ export function buildKlingMcpVideoCall(params: {
   model: VideoModelCapability
   prompt: string
   sourceImageUrl?: string
+  /** VEO_KLING_FIRST_LAST_FRAME_V1: the provider's own file URL for the LAST frame (`tail_image`). */
+  lastFrameImageUrl?: string
 }): KlingMcpVideoCall {
   const { request, model, prompt } = params
 
@@ -73,11 +75,22 @@ export function buildKlingMcpVideoCall(params: {
 
   if (request.operation === 'image_to_video') {
     if (!params.sourceImageUrl) throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'image_to_video requires a source image URL.')
+    // A last frame is sent ONLY when the validated request says so AND the model declares `tail_image`
+    // (model.lastFrame is derived from that input). Never one without the other.
+    if (request.lastFrame && !model.lastFrame) {
+      throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'This model does not accept a last frame.')
+    }
+    if (request.lastFrame && !params.lastFrameImageUrl) {
+      throw new ProviderConnectionError('PROVIDER_TOOL_ERROR', 'A last frame was requested without its provider file URL.')
+    }
     return {
       tool: 'image_to_video',
       model: request.model,
       arguments: args,
-      inputs: [{ name: 'first_image', inputType: 'URL', url: params.sourceImageUrl }],
+      inputs: [
+        { name: 'first_image', inputType: 'URL', url: params.sourceImageUrl },
+        ...(request.lastFrame && params.lastFrameImageUrl ? [{ name: 'tail_image', inputType: 'URL' as const, url: params.lastFrameImageUrl }] : []),
+      ],
     }
   }
 

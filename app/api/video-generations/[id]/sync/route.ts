@@ -6,7 +6,7 @@ import { createPresignedReadUrl } from '@/lib/storage/s3'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { createMcpTransportForGeneration, syncGenerationWithProvider } from '@/lib/video-generation/polling'
 import { isTenantVideoStoragePath } from '@/lib/video-generation/storage-path'
-import { KlingRestTransport, type KlingVideoTransport } from '@/lib/video-generation/transport'
+import { GeminiVeoTransport, KlingRestTransport, type KlingVideoTransport } from '@/lib/video-generation/transport'
 
 // VIDEO_GENERATION_CONNECTION_CAPABILITY_ROUTING_V1
 //
@@ -49,12 +49,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
 
     const isMcp = generation.transport === 'mcp'
+    const isVeo = generation.provider === 'gemini'
     let transport: KlingVideoTransport | null
     // Lifecycle writes (status, storage_path, result metadata, poll state) are server-owned: the user
     // session can only READ this table. Ownership was verified above (`user_id = user.id`).
     const writeDb = createServiceRoleSupabase()
 
-    if (isMcp) {
+    if (isVeo) {
+      // VEO_KLING_FIRST_LAST_FRAME_V1: Google Veo is polled with the owner's own Gemini key (status_read: spends nothing).
+      const execution = await resolveProviderExecution(supabase, { userId: user.id, provider: 'gemini', purpose: 'status_read' })
+      if (execution.status !== 'ready') {
+        return NextResponse.json(
+          { error: execution.code, code: execution.code, provider: 'gemini', message: 'Gemini não configurado. Adicione sua chave de API em Configurações.' },
+          { status: 422 },
+        )
+      }
+      transport = new GeminiVeoTransport(execution.secret)
+    } else if (isMcp) {
       // Token material lives behind the service role; ownership of the
       // connection is re-verified against the generation's own user id.
       transport = await createMcpTransportForGeneration(writeDb, generation)
@@ -93,7 +104,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     if (result.outcome === 'transient_error') {
       return NextResponse.json(
-        { error: 'Não foi possível consultar a Kling agora. Tente novamente em instantes.', code: 'PROVIDER_UNAVAILABLE', provider: 'kling' },
+        {
+          error: isVeo ? 'Não foi possível consultar o Google Veo agora. Tente novamente em instantes.' : 'Não foi possível consultar a Kling agora. Tente novamente em instantes.',
+          code: 'PROVIDER_UNAVAILABLE',
+          provider: isVeo ? 'gemini' : 'kling',
+        },
         { status: 502 },
       )
     }

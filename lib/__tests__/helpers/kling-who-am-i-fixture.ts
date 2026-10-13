@@ -40,7 +40,15 @@ export const WHO_AM_I_TEXT_TO_VIDEO = [
 
 export const WHO_AM_I_IMAGE_TO_VIDEO = [
   m('kling-video-v2_5', [prompt, arg('duration', ['5', '10'], '5'), imageCount, arg('resolution', ['720p', '1080p'], '1080p'), audio, arg('enable_asmr', bool, 'false')], firstImage),
-  m('kling-video-v2_6', [prompt, arg('duration', ['5', '10'], '5'), imageCount, arg('resolution', ['720p', '1080p'], '1080p'), audio], firstImage),
+  // Kling 2.6 image_to_video states its tail-image contract IN the argument descriptions (observed, mcpVersion 1.3.3):
+  // "Tail image requires 1080p." and "Only at resolution=1080p; not supported with a tail image."
+  m('kling-video-v2_6', [
+    prompt,
+    arg('duration', ['5', '10'], '5'),
+    imageCount,
+    { ...arg('resolution', ['720p', '1080p'], '1080p'), description: 'Quality tier. 720p=std, 1080p=pro. Tail image requires 1080p.' },
+    { ...audio, description: 'Produce a work that includes audio. Only at resolution=1080p; not supported with a tail image.' },
+  ], firstImage),
   // Multi-reference "omni" models take image_1..image_7 and reference images in the prompt: NOT a single-source I2V.
   m('kling-video-o1', [prompt, arg('duration', seconds(3, 10), '5'), arg('aspect_ratio', ratios, '16:9'), arg('resolution', ['720p', '1080p'], '1080p'), imageCount, elements], imageRefs),
   m('kling-video-v3_0_omni', [prompt, arg('duration', seconds(3, 15), '5'), arg('aspect_ratio', ratios, '16:9'), arg('resolution', ['720p', '1080p', '4k'], '1080p'), imageCount, multiShot('false'), audio, elements], imageRefs),
