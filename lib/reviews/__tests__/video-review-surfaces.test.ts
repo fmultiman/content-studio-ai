@@ -48,9 +48,10 @@ describe('Video Generation workspace', () => {
   const page = read('app/(dashboard)/videos/geracoes/[sessionId]/page.tsx')
 
   it('offers Revisar on a completed result with a usable persisted video, sending only the generation id', () => {
-    const marker = page.indexOf('VideoReviewControl source=')
+    // Parity V1 added an explicit, user-click-only `onUseRefinedPrompt` hand-off before `source`; the request still carries only the generation id.
+    const marker = page.indexOf('<VideoReviewControl')
     expect(marker).toBeGreaterThan(0)
-    const around = page.slice(marker - 200, marker + 200)
+    const around = page.slice(marker - 200, marker + 400)
     expect(around).toContain('isGenerationReviewable(generation)')
     expect(around).toContain("source={{ kind: 'video_generation', id: generation.id }}")
     expect(page.match(/<VideoReviewControl/g)).toHaveLength(1)
@@ -74,10 +75,13 @@ describe('boundaries of this mission', () => {
     expect(importers).toEqual(['app/(dashboard)/arquivos/page.tsx', 'app/(dashboard)/videos/geracoes/[sessionId]/page.tsx'])
   })
 
-  it('adds no provider or model selector, no usage/cost display and no prompt-adoption action', () => {
+  it('adds no provider or model selector, no usage/cost display and no automatic prompt adoption', () => {
     const ui = [read('components/reviews/video-review-control.tsx'), read('components/reviews/video-review-result.tsx')].join('\n')
     expect(ui).not.toMatch(/<Select|SelectItem|combobox|provider_usage|custo|R\$|\$\s?\d|gratuit/i)
-    expect(ui).not.toMatch(/onUseRefinedPrompt|setPrompt|usar prompt|aplicar prompt/i)
+    // Parity V1: the only adoption path is the optional, user-click `onUseRefinedPrompt` callback (button "Usar prompt refinado");
+    // the Review UI never writes the workspace prompt itself.
+    expect(ui).not.toMatch(/setPrompt|aplicar prompt/i)
+    expect(read('components/reviews/video-review-result.tsx')).toMatch(/item\.status === 'completed' && onUseRefinedPrompt/)
   })
 
   it('never mutates a generation, a VideoDraft or a VideoScene', () => {
