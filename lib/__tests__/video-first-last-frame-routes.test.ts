@@ -334,7 +334,8 @@ describe('Google Veo — text_to_video and first/last-frame image_to_video', () 
     vi.stubEnv('CONTENT_STUDIO_VEO_CANARY_USER_IDS', '99999999-9999-4999-8999-999999999999')
     const refused = await post({ ...base, mode: 'text_to_video', ...veoBody() })
     expect(refused.status).toBe(403)
-    expect((await refused.json()).code).toBe('FEATURE_DISABLED')
+    // A distinct code: "released, but this account is not on the allowlist" is not "switch off".
+    expect((await refused.json()).code).toBe('CANARY_RESTRICTED')
     expect(veoCalls).toEqual([])
     expect(db.tables.video_generations).toHaveLength(0)
 

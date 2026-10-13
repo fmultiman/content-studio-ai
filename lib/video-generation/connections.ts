@@ -23,7 +23,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getProviderConfigurationState } from '@/lib/credentials/provider-credentials'
-import { isVeoVideoGenerationEnabled } from '@/lib/providers/gemini/veo-feature'
+import { describeVeoAvailability, type VeoAvailability } from '@/lib/providers/gemini/veo-feature'
 import { getOwnedConnection, listConnectionsForUser } from '@/lib/provider-connections/connections'
 import { KLING_MCP_GENERATION_CREATE_SCOPE } from '@/lib/provider-connections/kling-mcp'
 import { KLING_MCP_VIDEO_SNAPSHOT_VERSION } from '@/lib/provider-connections/kling-mcp-video-capabilities'
@@ -78,14 +78,21 @@ export function describeRestConnection(state: 'configured' | 'missing'): VideoGe
 /** Google Veo through the user's own Gemini API key (BYOK). Capabilities are code-backed (veo-capabilities.ts). */
 export function describeGeminiConnection(
   state: 'configured' | 'missing',
-  enabled: boolean = isVeoVideoGenerationEnabled(),
+  availability: VeoAvailability | boolean = describeVeoAvailability(),
 ): VideoGenerationConnectionDescriptor {
-  // Callers that know the user pass `isVeoVideoGenerationEnabled(process.env, userId)`: the release switch can be limited to a
-  // canary allowlist, so "enabled" is a per-user answer.
+  // Callers that know the user pass `describeVeoAvailability(process.env, userId)`: the release switch can be limited to a
+  // canary allowlist, so availability is a per-user answer. (A boolean is accepted for callers that only know on/off.)
+  const state_ = typeof availability === 'boolean' ? (availability ? 'available' : 'switch_off') : availability
   const configured = state === 'configured'
   // A saved key is not enough: Veo also needs its release switch. Until then the controls are visible and explained,
   // but the connection cannot generate (no silent paid path exists behind a merged feature).
-  const blockedReason: VideoConnectionBlockedReason | undefined = !configured ? 'not_configured' : !enabled ? 'feature_disabled' : undefined
+  const blockedReason: VideoConnectionBlockedReason | undefined = !configured
+    ? 'not_configured'
+    : state_ === 'switch_off'
+      ? 'feature_disabled'
+      : state_ === 'canary_restricted'
+        ? 'canary_restricted'
+        : undefined
   return {
     ref: GEMINI_CONNECTION_REF,
     provider: 'gemini',
@@ -200,7 +207,7 @@ export async function listVideoGenerationConnections(
 
   return [
     describeRestConnection(restState),
-    describeGeminiConnection(geminiState, isVeoVideoGenerationEnabled(process.env, userId)),
+    describeGeminiConnection(geminiState, describeVeoAvailability(process.env, userId)),
     ...rows.filter((row) => row.provider === 'kling' && row.connection_method === 'mcp_oauth').map((row) => describeMcpConnection(row, now)),
   ]
 }
@@ -236,6 +243,7 @@ const BLOCKED_HTTP: Record<VideoConnectionBlockedReason, { status: number; messa
   capabilities_expired: { status: 409, message: 'As capacidades desta conta estão desatualizadas. Atualize a conexão.' },
   no_supported_models: { status: 409, message: 'Esta conta não oferece modelos de vídeo compatíveis com o Content Studio.' },
   feature_disabled: { status: 403, message: 'O Google Veo ainda não foi liberado neste ambiente. Use outro modelo por enquanto.' },
+  canary_restricted: { status: 403, message: 'O Google Veo está liberado apenas para contas de teste neste ambiente. Use outro modelo por enquanto.' },
 }
 
 export function blockedResponse(reason: VideoConnectionBlockedReason): { status: number; code: string; message: string } {
@@ -262,9 +270,11 @@ export async function resolveGenerationConnection(
     if (state === 'unavailable') {
       return { ok: false, status: 503, code: 'CONNECTIONS_UNAVAILABLE', message: 'Não foi possível verificar suas conexões agora.' }
     }
-    const descriptor = describeGeminiConnection(state, isVeoVideoGenerationEnabled(process.env, userId))
+    const descriptor = describeGeminiConnection(state, describeVeoAvailability(process.env, userId))
     if (!descriptor.canGenerate) {
-      if (descriptor.blockedReason === 'feature_disabled') return { ok: false, ...blockedResponse('feature_disabled') }
+      if (descriptor.blockedReason === 'feature_disabled' || descriptor.blockedReason === 'canary_restricted') {
+        return { ok: false, ...blockedResponse(descriptor.blockedReason) }
+      }
       return { ok: false, status: 422, code: 'PROVIDER_NOT_CONFIGURED', message: 'Gemini não configurado. Adicione sua chave de API em Configurações para usar o Google Veo.' }
     }
     return { ok: true, kind: 'gemini_api', descriptor }

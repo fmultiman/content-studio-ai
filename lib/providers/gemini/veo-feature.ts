@@ -25,8 +25,32 @@ export function veoCanaryUserIds(env: Env = process.env): string[] | null {
 
 /** Whether Veo may start a generation for THIS user in this runtime (switch AND, when configured, the canary allowlist). */
 export function isVeoVideoGenerationEnabled(env: Env = process.env, userId?: string | null): boolean {
-  if (env[VEO_VIDEO_GENERATION_FLAG] !== VEO_VIDEO_GENERATION_FLAG_VALUE) return false
+  return describeVeoAvailability(env, userId) === 'available'
+}
+
+/**
+ * Why Veo is (not) available to this user - the three truths the UI/operator must be able to tell apart:
+ *   available          the switch is on and the user is allowed (no allowlist configured = every authenticated user with
+ *                      their own valid Gemini BYOK connection, exactly as for any other provider);
+ *   switch_off         the release switch is absent or not the acknowledgement value;
+ *   canary_restricted  the switch is on but an explicit allowlist does not include this user.
+ */
+export type VeoAvailability = 'available' | 'switch_off' | 'canary_restricted'
+
+/**
+ * The switch value is compared after trimming surrounding whitespace and one pair of matching quotes: the dashboards and
+ * `vercel env` happily store `"enabled"` or `enabled\n` when a value is pasted. "1", "true", "ENABLED" and the like are
+ * still rejected on purpose (an acknowledgement string, not a boolean).
+ */
+function switchValue(raw: string | undefined): string {
+  if (typeof raw !== 'string') return ''
+  const trimmed = raw.trim()
+  return /^(["'])(.*)\1$/.test(trimmed) ? trimmed.slice(1, -1).trim() : trimmed
+}
+
+export function describeVeoAvailability(env: Env = process.env, userId?: string | null): VeoAvailability {
+  if (switchValue(env[VEO_VIDEO_GENERATION_FLAG]) !== VEO_VIDEO_GENERATION_FLAG_VALUE) return 'switch_off'
   const canary = veoCanaryUserIds(env)
-  if (canary === null) return true
-  return typeof userId === 'string' && canary.includes(userId.trim().toLowerCase())
+  if (canary === null) return 'available'
+  return typeof userId === 'string' && canary.includes(userId.trim().toLowerCase()) ? 'available' : 'canary_restricted'
 }
