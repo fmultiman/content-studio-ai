@@ -171,7 +171,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   // Optional read-only Portuguese view of the generation prompt: bound to the exact prompt, explicit action only.
-  const promptTranslation = usePromptTranslation({ prompt: generatedPrompt, translation: generatedPromptPt, setTranslation: setGeneratedPromptPt })
+  // `translationEpoch` marks "a saved session/draft was just loaded": its prompt and saved translation count as one pair.
+  const [translationEpoch, setTranslationEpoch] = useState(0)
+  const promptTranslation = usePromptTranslation({ prompt: generatedPrompt, translation: generatedPromptPt, setTranslation: setGeneratedPromptPt, epoch: translationEpoch })
   const [hubProjectFilter, setHubProjectFilter] = useState('all')
   const [hubProductionFilter, setHubProductionFilter] = useState('all')
   const [hubStatusFilter, setHubStatusFilter] = useState('all')
@@ -549,6 +551,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setUserInput(session.workingPrompt || '')
     setGeneratedPrompt(state.generatedPrompt || '')
     setGeneratedPromptPt(state.generatedPromptPt || '')
+    setTranslationEpoch((value) => value + 1)
     setPromptDetails(state.promptDetails || null)
     setAutoMode(Boolean(state.autoMode))
     setManualMode(state.workflowMode === 'manual')
@@ -708,6 +711,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     }
     setGeneratedPrompt(draft.generated_prompt || '')
     setGeneratedPromptPt(draft.generated_prompt_pt || '')
+    setTranslationEpoch((value) => value + 1)
     setAutoMode(draft.auto_mode)
     applyStoredImageModel(draft.selected_model)
   }
