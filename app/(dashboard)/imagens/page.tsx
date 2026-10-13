@@ -117,6 +117,16 @@ function persistableImageUrl(url: string | null | undefined) {
 /** Outcome of ONE image submission. The automatic run needs to know whether it succeeded; the handlers still toast. */
 type ImageSubmitResult = { ok: true } | { ok: false; message: string }
 
+// An HTTP error can arrive after a paid submission. Older servers omit the flag, so
+// only explicit certainty or a non-timeout 4xx authorizes a fresh request identity.
+function isDefinitiveImageFailure(status: number, body: { outcome_unknown?: unknown; code?: unknown }) {
+  if (body.outcome_unknown === true) return false
+  if (body.outcome_unknown === false) return true
+  return status >= 400 && status < 500 && status !== 408 && body.code !== 'PROVIDER_TIMEOUT'
+}
+
+const UNKNOWN_IMAGE_OUTCOME_MESSAGE = 'O resultado desta tentativa é incerto e a cobrança pode ter ocorrido. Verifique o histórico; tentar só a imagem mantém o mesmo pedido, sem iniciar outra geração.'
+
 // FUTURE-064 Slice B: the model catalog (labels, provider of each model, strict parsing) lives in lib/images/image-models.ts.
 // Dispatch is by explicit provider (OpenAI / Google Gemini / third-party NanoBananaAPI.ai); there is no "everything else".
 
@@ -1519,19 +1529,20 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     const data = await response.json()
 
     if (!response.ok) {
-      if (canonicalSessionId) imageClientRequestIdRef.current = crypto.randomUUID()
+      if (canonicalSessionId && isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error(data.error || 'Erro na API da OpenAI')
     }
 
     if (data.replayed) {
       const replay = interpretGeminiReplay(data)
       if (replay.kind !== 'image') {
+        if (replay.kind === 'failed' && !isDefinitiveImageFailure(response.status, data)) throw new Error(UNKNOWN_IMAGE_OUTCOME_MESSAGE)
         if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
         throw new Error(replay.message)
       }
     }
     if (!data.imageUrl) {
-      if (canonicalSessionId) imageClientRequestIdRef.current = crypto.randomUUID()
+      if (canonicalSessionId && isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
       throw new Error('A OpenAI nao retornou uma imagem')
     }
 
@@ -1706,8 +1717,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        // The server answered definitively (the Attempt is closed or never existed): the next click is a NEW request.
-        imageClientRequestIdRef.current = crypto.randomUUID()
+        // Keep the identity when a provider or storage failure may follow a paid submission.
+        if (isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
         const failure = describeGeminiImageFailure(response.status, data)
         // The server proved the capability is off for this deployment: stop offering Google models (no substitution).
         if (failure.capabilityOff) {
@@ -1720,13 +1731,17 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       if (data.replayed) {
         const replay = interpretGeminiReplay(data)
         if (replay.kind !== 'image') {
+          if (replay.kind === 'failed' && !isDefinitiveImageFailure(response.status, data)) {
+            setImageStatus('draft')
+            return fail(UNKNOWN_IMAGE_OUTCOME_MESSAGE, 'Resultado incerto')
+          }
           if (replay.kind === 'failed') imageClientRequestIdRef.current = crypto.randomUUID()
           setImageStatus('draft')
           return fail(replay.message, replay.kind === 'failed' ? 'Tentativa anterior falhou' : 'Geração em andamento')
         }
       }
       if (!data.image || typeof data.imageUrl !== 'string' || !data.imageUrl) {
-        imageClientRequestIdRef.current = crypto.randomUUID()
+        if (isDefinitiveImageFailure(response.status, data)) imageClientRequestIdRef.current = crypto.randomUUID()
         setImageStatus('draft')
         return fail('O Google Gemini não retornou uma imagem.')
       }
@@ -2006,9 +2021,11 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   // Regenerate: a new image from the EXACT, complete current prompt. The prompt is never rewritten or truncated here.
   const handleRegenerate = async () => {
     const prompt = generatedPrompt.trim()
-    if (!prompt) return
+    if (!prompt || imageSubmitLockRef.current) return
     setIsRegenerating(true)
     try {
+      // This action explicitly asks for a NEW generation, even after an uncertain attempt.
+      imageClientRequestIdRef.current = crypto.randomUUID()
       await handleCreateImageWithModel(selectedModel, prompt)
     } finally {
       setIsRegenerating(false)

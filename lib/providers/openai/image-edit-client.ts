@@ -141,16 +141,24 @@ export async function editOpenAIImage(input: OpenAIImageEditRequest, deps: OpenA
       }
       throw new OpenAIImageEditError(502, 'PROVIDER_UNAVAILABLE', true, 'Não foi possível concluir a edição na OpenAI.')
     }
+    // Successful HTTP receipt proves a potentially paid execution even if its body is unreadable.
+    // Quantities remain unknown until a valid envelope supplies them.
+    if (response.ok) received = { rawUsage: null, responseId: boundedResponseId(response) }
     let parsed: unknown
     try {
       parsed = JSON.parse(await readBounded(response, controller.signal))
     } catch (error) {
       if (!response.ok) throw classifyHttp(response.status, null)
-      if (error instanceof OpenAIImageEditError) throw error
-      throw invalidOutput()
+      const mapped = error instanceof OpenAIImageEditError ? error : invalidOutput()
+      mapped.received = received
+      throw mapped
     }
     if (!response.ok) throw classifyHttp(response.status, parsed)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw invalidOutput()
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      const error = invalidOutput()
+      error.received = received
+      throw error
+    }
     const envelope = parsed as Record<string, unknown>
     received = { rawUsage: envelope.usage ?? null, responseId: boundedResponseId(response) }
     try {

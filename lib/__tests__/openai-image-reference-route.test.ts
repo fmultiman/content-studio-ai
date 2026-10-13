@@ -21,6 +21,7 @@ import { POST } from '@/app/api/openai/generate-image/route'
 import { __setMockedProvidersHarnessForTests } from '@/lib/providers/execution-policy'
 import type { ImageReference } from '@/lib/image-generation/session'
 import { createFakeDb, type FakeDb, type Row } from './helpers/fake-image-db'
+import { OPENAI_IMAGE_EDIT_RESPONSE_MAX_BYTES, OPENAI_IMAGE_EDIT_TIMEOUT_MS } from '@/lib/providers/openai/image-edit-client'
 
 const USER = 'user-1'
 const PROJECT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -84,7 +85,28 @@ beforeEach(() => {
   fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => envelope())
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
 })
-afterEach(() => { __setMockedProvidersHarnessForTests(true); vi.restoreAllMocks() })
+afterEach(() => { __setMockedProvidersHarnessForTests(true); vi.useRealTimers(); vi.restoreAllMocks() })
+
+async function expectUnknownReceiptAndReplay(response: Response, responseId: string, status = 502) {
+  expect(response.status).toBe(status)
+  expect(await response.json()).toMatchObject({ outcome_unknown: true })
+  expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
+  expect(usage()).toHaveLength(1)
+  expect(usage()[0]).toMatchObject({ resource_id: attempt().id, provider_task_id: responseId,
+    quantity: null, unit: null, measurement_source: 'unknown', idempotency_key: `openai_image_edit:${attempt().id}:unknown` })
+  expect(metadata()).toMatchObject({ inputReferences: [provenance()], provider_response: { state: 'received_rejected', response_id: responseId },
+    usage_accounting: { ledger: 'recorded', rows: 1, usage: 'unknown' } })
+  const recordedUsage = structuredClone(usage())
+  const replay = await post()
+  expect(replay.status).toBe(200)
+  expect(await replay.json()).toMatchObject({ attemptId: attempt().id, status: 'failed', replayed: true, outcome_unknown: true })
+  expect(usage()).toEqual(recordedUsage)
+  expect(db.tables.image_generation_attempts).toHaveLength(1)
+  expect(db.tables.images).toHaveLength(0)
+  expect(fetchSpy).toHaveBeenCalledTimes(1)
+  expect(mocks.open).toHaveBeenCalledTimes(1)
+  expect(mocks.upload).not.toHaveBeenCalled()
+}
 
 describe('GPT Image 2 durable source transport', () => {
   it.each(['png', 'jpeg', 'webp'] as const)('forwards verified %s bytes and MIME through image[]', async (format) => {
@@ -152,6 +174,25 @@ describe('GPT Image 2 durable source transport', () => {
 })
 
 describe('unchanged text-to-image transports', () => {
+  it.each(['image_generation_sessions', 'projects', 'productions', 'image_generation_attempts'])('keeps paid recovery identity uncertain during a %s read outage', async (tableName) => {
+    let outage = false
+    seedDb({ image_generation_sessions: [session([REF], { production_id: OTHER_SOURCE })],
+      productions: [{ id: OTHER_SOURCE, project_id: PROJECT, user_id: USER }] },
+    (table, op) => outage && table === tableName && op === 'select' ? { message: 'fake recovery read outage' } : undefined)
+    mocks.upload.mockRejectedValue(new Error('fake storage unavailable'))
+    expect(await (await post()).json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE', outcome_unknown: true })
+    outage = true
+    const recovery = await post()
+    expect(recovery.status).toBe(503)
+    expect(await recovery.json()).toMatchObject({ code: 'STORE_UNAVAILABLE', outcome_unknown: true })
+    outage = false
+    expect(await (await post()).json()).toMatchObject({ replayed: true, status: 'failed', outcome_unknown: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+    expect(db.tables.image_generation_attempts).toHaveLength(1)
+    expect(usage()).toHaveLength(2)
+  })
+
   it.each(['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'])('canonical %s still uses the exact generations JSON request', async (model) => {
     seedDb({ image_generation_sessions: [session([])] })
     expect((await post({ model, sourceReferences: undefined })).status).toBe(200)
@@ -172,6 +213,52 @@ describe('unchanged text-to-image transports', () => {
     expect(fetchSpy.mock.calls[0][1].body).toBe(JSON.stringify({ model, prompt: 'Paint this scene at sunset', size: '1024x1024', quality: 'medium', n: 1 }))
     expect(db.tables.image_generation_attempts).toHaveLength(0)
     expect(mocks.open).not.toHaveBeenCalled()
+  })
+
+  it('fix-review: paid T2I output-save failure must retain uncertainty', async () => {
+    seedDb({ image_generation_sessions: [session([])] }, (table, op) =>
+      table === 'images' && op === 'upsert' ? { message: 'mock output-save failure' } : undefined)
+    const response = await post({ sourceReferences: [] })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'OUTPUT_SAVE_FAILED', outcome_unknown: true })
+    expect(attempt()).toMatchObject({ status: 'failed', source_snapshot: { references: [] }, failure_details: { outcome_unknown: true } })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openai.com/v1/images/generations')
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+    expect(mocks.open).not.toHaveBeenCalled()
+    expect(db.tables.images).toHaveLength(0)
+    const replay = await post({ sourceReferences: [] })
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: true })
+    expect(db.tables.image_generation_attempts).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('paid T2I lifecycle-write failure retains uncertainty through recovery and replay', async () => {
+    let failedLifecycleWrite = false
+    seedDb({ image_generation_sessions: [session([])] }, (table, op) => {
+      // Inject a transient finalization outage only after the provider has been called;
+      // allow the route's recovery write so its persisted flag can also be replayed.
+      if (table === 'image_generation_attempts' && op === 'update' && fetchSpy.mock.calls.length && !failedLifecycleWrite) {
+        failedLifecycleWrite = true
+        return { message: 'mock lifecycle outage after provider execution' }
+      }
+      return undefined
+    })
+    fetchSpy.mockResolvedValue(envelope({ data: [] }))
+    const response = await post({ sourceReferences: [] })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'LIFECYCLE_SAVE_FAILED', outcome_unknown: true })
+    expect(failedLifecycleWrite).toBe(true)
+    expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openai.com/v1/images/generations')
+    expect(mocks.upload).not.toHaveBeenCalled()
+    expect(mocks.open).not.toHaveBeenCalled()
+    expect(await (await post({ sourceReferences: [] })).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: true })
+    expect(db.tables.image_generation_attempts).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -299,8 +386,10 @@ describe('authorization, controls and source isolation before spending', () => {
   it('fully validates source pixels before submitting readable-header truncated PNG', async () => {
     sourceBytes = png.subarray(0, Math.floor(png.length / 2))
     expect(await sharp(sourceBytes).metadata()).toMatchObject({ width: 32, height: 24 })
-    expect(await (await post()).json()).toMatchObject({ code: 'SOURCE_IMAGE_FORMAT_UNSUPPORTED' })
+    expect(await (await post()).json()).toMatchObject({ code: 'SOURCE_IMAGE_FORMAT_UNSUPPORTED', outcome_unknown: false })
     expect(attempt()).toMatchObject({ failure_details: { outcome_unknown: false } })
+    noSubmit()
+    expect(await (await post()).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: false })
     noSubmit()
   })
 
@@ -317,9 +406,11 @@ describe('authorization, controls and source isolation before spending', () => {
 
   it('does not spend when the OpenAI BYOK credential is missing', async () => {
     mocks.credential.mockResolvedValue({ status: 'provider_not_configured', code: 'PROVIDER_NOT_CONFIGURED' })
-    expect(await (await post()).json()).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED' })
+    expect(await (await post()).json()).toMatchObject({ code: 'PROVIDER_NOT_CONFIGURED', outcome_unknown: false })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: false } })
     expect(metadata().inputReferences).toEqual([provenance()])
+    noSubmit()
+    expect(await (await post()).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: false })
     noSubmit()
   })
 })
@@ -403,29 +494,31 @@ describe('secure failures with output storage required', () => {
     fetchSpy.mockResolvedValue(envelope({ error: { message: 'private prompt and secret key' } }, http))
     const response = await post()
     expect(response.status).toBe(status)
-    expect(await response.json()).toMatchObject({ code })
+    expect(await response.json()).toMatchObject({ code, outcome_unknown: unknown })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: unknown } })
     expect(JSON.stringify(attempt())).not.toContain('private prompt and secret key')
     expect(usage()).toHaveLength(0)
-    await post()
+    expect(await (await post()).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: unknown })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
   it('maps moderation blocked as a content error without recording unreported usage', async () => {
     fetchSpy.mockResolvedValue(envelope({ error: { code: 'moderation_blocked' } }, 400))
-    expect(await (await post()).json()).toMatchObject({ code: 'PROVIDER_CONTENT_BLOCKED' })
+    expect(await (await post()).json()).toMatchObject({ code: 'PROVIDER_CONTENT_BLOCKED', outcome_unknown: false })
     expect(attempt()).toMatchObject({ failure_details: { outcome_unknown: false } })
     expect(usage()).toHaveLength(0)
   })
 
   it.each(['network', 'timeout'])('%s preserves source provenance and uncertain outcome, with no automatic retry', async (failure) => {
     fetchSpy.mockRejectedValue(Object.assign(new Error('private transport details'), { name: failure === 'timeout' ? 'AbortError' : 'TypeError' }))
-    expect((await post()).status).toBe(failure === 'timeout' ? 504 : 502)
+    const response = await post()
+    expect(response.status).toBe(failure === 'timeout' ? 504 : 502)
+    expect(await response.json()).toMatchObject({ outcome_unknown: true })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
     expect(metadata().inputReferences).toEqual([provenance()])
     expect(JSON.stringify(attempt())).not.toContain('private transport details')
     expect(usage()).toHaveLength(0)
-    await post()
+    expect(await (await post()).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: true })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -442,21 +535,63 @@ describe('secure failures with output storage required', () => {
   it.each(['null', 'throw'])('storage %s fails closed after accounting paid usage; replay does not spend again', async (failure) => {
     if (failure === 'null') mocks.upload.mockResolvedValue(null)
     else mocks.upload.mockRejectedValue(new Error('private storage details'))
-    expect(await (await post()).json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE' })
+    expect(await (await post()).json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE', outcome_unknown: true })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
     expect(metadata()).toMatchObject({ inputReferences: [provenance()], usage_accounting: { ledger: 'recorded' } })
     expect(usage()).toHaveLength(2)
     expect(db.tables.images).toHaveLength(0)
-    await post()
+    expect(await (await post()).json()).toMatchObject({ status: 'failed', replayed: true, outcome_unknown: true })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(mocks.upload).toHaveBeenCalledTimes(1)
   })
 
   it('records paid usage when output DB linking fails', async () => {
     seedDb({}, (table, op) => table === 'images' && op === 'upsert' ? { message: 'fake output link failed' } : undefined)
-    expect(await (await post()).json()).toMatchObject({ code: 'OUTPUT_SAVE_FAILED' })
+    expect(await (await post()).json()).toMatchObject({ code: 'OUTPUT_SAVE_FAILED', outcome_unknown: true })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
     expect(usage()).toHaveLength(2)
     expect(metadata().inputReferences).toEqual([provenance()])
+  })
+
+  it('cold-review: malformed 2xx retains an unknown usage event', async () => {
+    fetchSpy.mockResolvedValue(new Response('{', { status: 200, headers: { 'x-request-id': 'req-malformed' } }))
+    const response = await post()
+    expect(response.status).toBe(502)
+    expect(await response.clone().json()).toMatchObject({ code: 'INVALID_PROVIDER_RESPONSE' })
+    await expectUnknownReceiptAndReplay(response, 'req-malformed')
+  })
+
+  it.each([
+    ['truncated JSON', '{"data":[{"b64_json":"unfinished'], ['null envelope', 'null'],
+    ['array envelope', '[]'], ['primitive envelope', '42'], ['empty body', ''],
+  ])('records one unknown event for successful HTTP with %s and preserves its ID on replay', async (_name, body) => {
+    fetchSpy.mockResolvedValue(new Response(body, { status: 200, headers: { 'x-request-id': 'req-unreadable-edit' } }))
+    await expectUnknownReceiptAndReplay(await post(), 'req-unreadable-edit')
+  })
+
+  it('records a successful receipt with unknown usage when declared response size is excessive', async () => {
+    fetchSpy.mockResolvedValue(new Response('{}', { status: 200, headers: {
+      'content-length': String(OPENAI_IMAGE_EDIT_RESPONSE_MAX_BYTES + 1), 'x-request-id': 'req-oversized-edit',
+    } }))
+    await expectUnknownReceiptAndReplay(await post(), 'req-oversized-edit')
+  })
+
+  it('records a successful receipt with unknown usage after response streaming fails', async () => {
+    const stream = new ReadableStream({ start(controller) { controller.error(new Error('private response stream details')) } })
+    fetchSpy.mockResolvedValue(new Response(stream, { status: 200, headers: { 'x-request-id': 'req-broken-stream' } }))
+    await expectUnknownReceiptAndReplay(await post(), 'req-broken-stream')
+    expect(JSON.stringify(attempt())).not.toContain('private response stream details')
+  })
+
+  it('accounts for a stalled HTTP 200 body at timeout, then replays without resubmission', async () => {
+    vi.useFakeTimers()
+    const cancel = vi.fn()
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{')) }, cancel })
+    fetchSpy.mockResolvedValue(new Response(stream, { status: 200, headers: { 'x-request-id': 'req-body-timeout' } }))
+    const pending = post()
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+    await vi.advanceTimersByTimeAsync(OPENAI_IMAGE_EDIT_TIMEOUT_MS)
+    await expectUnknownReceiptAndReplay(await pending, 'req-body-timeout', 504)
+    expect(cancel).toHaveBeenCalledTimes(1)
   })
 })

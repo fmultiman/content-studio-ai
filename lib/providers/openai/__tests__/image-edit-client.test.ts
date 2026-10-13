@@ -84,19 +84,23 @@ describe('bounded inline PNG outputs and usage evidence', () => {
     await expect(editOpenAIImage(request(), { fetchImpl })).rejects.toMatchObject({ code: 'PROVIDER_IMAGE_TOO_LARGE', received: { rawUsage: { input_tokens: 105 } } })
   })
 
-  it('cancels a declared oversized envelope without parsing or inventing usage', async () => {
+  it('cancels a declared oversized 2xx envelope and retains receipt with unknown usage', async () => {
     const cancel = vi.fn()
     const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{}')) }, cancel })
-    const huge = new Response(stream, { headers: { 'content-length': String(OPENAI_IMAGE_EDIT_RESPONSE_MAX_BYTES + 1) } })
-    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(huge) })).rejects.toMatchObject({ code: 'PROVIDER_RESPONSE_TOO_LARGE', received: null })
+    const huge = new Response(stream, { headers: { 'content-length': String(OPENAI_IMAGE_EDIT_RESPONSE_MAX_BYTES + 1), 'x-request-id': 'req-oversized-declared' } })
+    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(huge) })).rejects.toMatchObject({ code: 'PROVIDER_RESPONSE_TOO_LARGE', outcomeUnknown: true,
+      received: { rawUsage: null, responseId: 'req-oversized-declared' },
+    })
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 
   it('enforces envelope bytes even when content-length is understated', async () => {
     const cancel = vi.fn()
     const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(OPENAI_IMAGE_EDIT_RESPONSE_MAX_BYTES)); controller.enqueue(new Uint8Array([1])) }, cancel })
-    const huge = new Response(stream, { headers: { 'content-length': '1' } })
-    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(huge) })).rejects.toMatchObject({ code: 'PROVIDER_RESPONSE_TOO_LARGE', received: null })
+    const huge = new Response(stream, { headers: { 'content-length': '1', 'x-request-id': 'req-oversized-stream' } })
+    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(huge) })).rejects.toMatchObject({ code: 'PROVIDER_RESPONSE_TOO_LARGE', outcomeUnknown: true,
+      received: { rawUsage: null, responseId: 'req-oversized-stream' },
+    })
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 
@@ -104,6 +108,28 @@ describe('bounded inline PNG outputs and usage evidence', () => {
     const ok = response()
     ok.headers.set('x-request-id', 'secret?unsafe=' + 'a'.repeat(150))
     expect((await editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(ok) })).responseId).toBeNull()
+  })
+
+  it.each([
+    ['malformed JSON', '{'], ['truncated JSON', '{"data":[{"b64_json":"unfinished'],
+    ['null envelope', 'null'], ['array envelope', '[]'], ['primitive envelope', '42'], ['empty body', ''],
+  ])('retains successful HTTP receipt and unknown usage for %s', async (_name, body) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(body, { status: 200, headers: { 'x-request-id': 'req-unreadable-200' } }))
+    await expect(editOpenAIImage(request(), { fetchImpl })).rejects.toMatchObject({ status: 502, code: 'INVALID_PROVIDER_RESPONSE', outcomeUnknown: true,
+      received: { rawUsage: null, responseId: 'req-unreadable-200' },
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains a successful receipt after response stream reading fails', async () => {
+    const stream = new ReadableStream({ start(controller) { controller.error(new Error('private stream details')) } })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(stream, { headers: { 'x-request-id': 'req-stream-failed' } }))
+    const promise = editOpenAIImage(request(), { fetchImpl })
+    await expect(promise).rejects.toMatchObject({ status: 502, code: 'INVALID_PROVIDER_RESPONSE', outcomeUnknown: true,
+      received: { rawUsage: null, responseId: 'req-stream-failed' },
+    })
+    await expect(promise).rejects.not.toHaveProperty('message', 'private stream details')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -125,7 +151,7 @@ describe('controlled failures and one bounded submission', () => {
   })
 
   it('maps malformed 401 bodies as credential errors instead of invalid image responses', async () => {
-    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response('not json', { status: 401 })) })).rejects.toMatchObject({ code: 'PROVIDER_CREDENTIAL_REJECTED', outcomeUnknown: false })
+    await expect(editOpenAIImage(request(), { fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response('not json', { status: 401 })) })).rejects.toMatchObject({ code: 'PROVIDER_CREDENTIAL_REJECTED', outcomeUnknown: false, received: null })
   })
 
   it('maps network failure generically and never retries', async () => {
@@ -138,7 +164,7 @@ describe('controlled failures and one bounded submission', () => {
     vi.useFakeTimers()
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() => new Promise<Response>(() => undefined))
     const promise = editOpenAIImage(request(), { fetchImpl })
-    const assertion = expect(promise).rejects.toMatchObject({ status: 504, code: 'PROVIDER_TIMEOUT', outcomeUnknown: true })
+    const assertion = expect(promise).rejects.toMatchObject({ status: 504, code: 'PROVIDER_TIMEOUT', outcomeUnknown: true, received: null })
     await vi.advanceTimersByTimeAsync(OPENAI_IMAGE_EDIT_TIMEOUT_MS)
     await assertion
     expect(fetchImpl).toHaveBeenCalledTimes(1)
@@ -149,12 +175,25 @@ describe('controlled failures and one bounded submission', () => {
     vi.useFakeTimers()
     const cancel = vi.fn()
     const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{')) }, cancel })
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(stream))
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(stream, { headers: { 'x-request-id': 'req-stalled-body' } }))
     const promise = editOpenAIImage(request(), { fetchImpl })
-    const assertion = expect(promise).rejects.toMatchObject({ code: 'PROVIDER_TIMEOUT', outcomeUnknown: true })
+    const assertion = expect(promise).rejects.toMatchObject({ code: 'PROVIDER_TIMEOUT', outcomeUnknown: true,
+      received: { rawUsage: null, responseId: 'req-stalled-body' },
+    })
     await vi.advanceTimersByTimeAsync(OPENAI_IMAGE_EDIT_TIMEOUT_MS)
     await assertion
     expect(cancel).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps received null when a non-2xx body stalls before the deadline', async () => {
+    vi.useFakeTimers()
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{')) } })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(stream, { status: 500, headers: { 'x-request-id': 'req-non-2xx' } }))
+    const promise = editOpenAIImage(request(), { fetchImpl })
+    const assertion = expect(promise).rejects.toMatchObject({ code: 'PROVIDER_TIMEOUT', outcomeUnknown: true, received: null })
+    await vi.advanceTimersByTimeAsync(OPENAI_IMAGE_EDIT_TIMEOUT_MS)
+    await assertion
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 

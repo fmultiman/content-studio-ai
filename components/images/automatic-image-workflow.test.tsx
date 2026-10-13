@@ -478,7 +478,7 @@ describe('AUTOMATIC — failures, cancellation and recovery', () => {
     await waitFor(() => expect(server.assistanceCalls()).toHaveLength(1))
     server.replyAssistance(0, 200, assistanceOk())
     await waitFor(() => expect(server.imageCalls()).toHaveLength(1))
-    server.replyImage(0, 500, { error: 'provider down' })
+    server.replyImage(0, 500, { error: 'provider down', outcome_unknown: false })
     const failed = await screen.findByTestId('automatic-run-image-failed')
     expect(promptEditor().value).toBe(GENERATED)
     expect(promptEditor().disabled).toBe(false)

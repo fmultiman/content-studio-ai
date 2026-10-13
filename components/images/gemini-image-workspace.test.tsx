@@ -425,7 +425,7 @@ describe('release switch ON (mocked): the Google path', () => {
     await manualWithPrompt()
     await clickCreate()
     await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-    server.replyGemini(0, 502, { error: 'x', code: 'PROVIDER_UNAVAILABLE' })
+    server.replyGemini(0, 502, { error: 'x', code: 'PROVIDER_UNAVAILABLE', outcome_unknown: false })
     await waitFor(() => expect(createImageButton().disabled).toBe(false))
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(server.geminiCalls()).toHaveLength(1) // no hidden retry
@@ -497,7 +497,7 @@ describe('release switch ON (mocked): the Google path', () => {
       await manualWithPrompt()
       await clickCreate()
       await waitFor(() => expect(server.geminiCalls()).toHaveLength(1))
-      server.replyGemini(0, 200, { attemptId: 'a1', status: 'failed', replayed: true, error: 'old' })
+      server.replyGemini(0, 200, { attemptId: 'a1', status: 'failed', replayed: true, error: 'old', outcome_unknown: false })
       await waitFor(() => expect(toastDescriptions().some((text) => /tentativa anterior falhou/.test(text))).toBe(true))
       expect(screen.queryByText('Gerar Novamente')).toBeNull()
       await clickCreate()

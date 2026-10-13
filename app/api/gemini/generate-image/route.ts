@@ -120,6 +120,7 @@ function submissionFailure(error: GeminiImageError): ImageSubmissionError {
 
 async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<ReturnType<typeof createClient>>; userId: string }) {
   let frozen: Awaited<ReturnType<typeof freezeAndClaimImageAttempt>> | undefined
+  let providerOutcomeUnknown = false
   try {
     frozen = await freezeAndClaimImageAttempt({
       userId: input.userId,
@@ -174,6 +175,7 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
     // Exactly one provider call. A failure closes the Attempt; the user decides whether to submit again.
     let generated: Awaited<ReturnType<typeof generateGeminiImage>>
     try {
+      providerOutcomeUnknown = true
       generated = await generateGeminiImage({
         apiKey: execution.secret,
         providerModel: input.model.providerModel,
@@ -184,6 +186,7 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       })
     } catch (error) {
       if (!isGeminiImageError(error)) throw error
+      providerOutcomeUnknown = error.outcomeUnknown
       // Google answered (2xx) but no image could be kept: account for the usage it reported (or one unknown-usage event).
       // No response at all (network, timeout, HTTP error, unreadable body) => nothing to account; the Attempt carries outcome_unknown.
       if (error.received) {
@@ -193,7 +196,8 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
         )
       }
       await failImageAttempt(attempt, `Gemini image generation failed (${error.kind})`, error.outcomeUnknown)
-      throw submissionFailure(error)
+      const mapped = submissionFailure(error)
+      throw new ImageSubmissionError(mapped.status, mapped.code, mapped.message, error.outcomeUnknown)
     }
 
     // The provider answered with a usable image: account for what Google reported BEFORE touching storage, so a storage or
@@ -209,11 +213,11 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       stored = await uploadImageToS3({ userId: input.userId, folder: 'images', buffer: generated.bytes, mimeType: generated.mimeType })
     } catch {
       await failImageAttempt(attempt, 'Gemini image generated but storage failed', true)
-      throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.')
+      throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.', true)
     }
     if (!stored) {
       await failImageAttempt(attempt, 'Gemini image generated but storage is not configured', true)
-      throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.')
+      throw new ImageSubmissionError(503, 'STORAGE_UNAVAILABLE', 'Armazenamento indisponível.', true)
     }
 
     const imageUrl = (await createPresignedReadUrl(stored.storagePath).catch(() => null)) || stored.imageUrl
@@ -231,7 +235,9 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       })
     } catch (error) {
       await failImageAttempt(attempt, 'Gemini image stored but could not be linked', true).catch(() => undefined)
-      throw error instanceof ImageSubmissionError ? error : new ImageSubmissionError(503, 'OUTPUT_SAVE_FAILED', 'Não foi possível salvar a imagem.')
+      throw error instanceof ImageSubmissionError
+        ? new ImageSubmissionError(error.status, error.code, error.message, true)
+        : new ImageSubmissionError(503, 'OUTPUT_SAVE_FAILED', 'Não foi possível salvar a imagem.', true)
     }
 
     return {
@@ -252,13 +258,13 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       replayed: false,
     }
   } catch (error) {
-    if (error instanceof ImageSubmissionError) throw error
+    if (error instanceof ImageSubmissionError && !providerOutcomeUnknown) throw error
     // A credential-store failure happens before any provider call (outcome known: nothing was sent).
-    const preSubmission = isProviderCredentialUnavailableError(error)
-    try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, 'Falha na geração', !preSubmission) } catch { /* preserve original error */ }
+    try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, 'Falha na geração', providerOutcomeUnknown) } catch { /* preserve original error */ }
+    if (error instanceof ImageSubmissionError) throw new ImageSubmissionError(error.status, error.code, error.message, true)
     // The credential store could not be read: a retryable pre-submission failure, not "not configured".
     if (isProviderCredentialUnavailableError(error)) throw new ImageSubmissionError(503, PROVIDER_CREDENTIAL_UNAVAILABLE, error.message)
-    throw new ImageSubmissionError(500, 'GENERATION_FAILED', 'Erro interno')
+    throw new ImageSubmissionError(500, 'GENERATION_FAILED', 'Erro interno', providerOutcomeUnknown)
   }
 }
 
@@ -292,7 +298,7 @@ export async function POST(request: Request) {
     try {
       return NextResponse.json(await runCanonicalGemini({ ...valid, supabase, userId: user.id }))
     } catch (error) {
-      if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+      if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code, outcome_unknown: error.outcomeUnknown }, { status: error.status })
       throw error
     }
   } catch (error) {

@@ -79,8 +79,9 @@ async function runCanonicalOpenAIEdit(input: {
       : error instanceof ImageReferenceError ? new ImageSubmissionError(error.status, error.code, 'A referência não está disponível para edição.')
         : isProviderCredentialUnavailableError(error) ? new ImageSubmissionError(503, PROVIDER_CREDENTIAL_UNAVAILABLE, 'Não foi possível carregar a API Key da OpenAI.')
           : new ImageSubmissionError(500, 'GENERATION_FAILED', 'Não foi possível concluir a edição.')
-    await failImageAttempt(attempt, mapped.message, error instanceof OpenAIImageEditError ? error.outcomeUnknown : providerAttempted).catch(() => undefined)
-    throw mapped instanceof ImageSubmissionError ? mapped : new ImageSubmissionError(mapped.status, mapped.code, mapped.message)
+    const outcomeUnknown = error instanceof OpenAIImageEditError ? error.outcomeUnknown : providerAttempted
+    await failImageAttempt(attempt, mapped.message, outcomeUnknown).catch(() => undefined)
+    throw new ImageSubmissionError(mapped.status, mapped.code, mapped.message, outcomeUnknown)
   }
 }
 
@@ -96,6 +97,7 @@ async function runCanonicalOpenAI(input: {
   sourceReferences?: ImageReference[]
 }) {
   let frozen
+  let providerOutcomeUnknown = false
   try {
     frozen = await freezeAndClaimImageAttempt({
       userId: input.userId,
@@ -119,6 +121,7 @@ async function runCanonicalOpenAI(input: {
 
     let response: Response
     try {
+      providerOutcomeUnknown = true
       response = await fetch(OPENAI_IMAGES_URL, {
         method: 'POST',
         headers: { Authorization: `Bearer ${execution.secret}`, 'Content-Type': 'application/json' },
@@ -126,18 +129,20 @@ async function runCanonicalOpenAI(input: {
       })
     } catch (error) {
       await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha de rede na OpenAI', true)
-      throw new ImageSubmissionError(502, 'PROVIDER_UNAVAILABLE', 'Não foi possível concluir a geração na OpenAI.')
+      throw new ImageSubmissionError(502, 'PROVIDER_UNAVAILABLE', 'Não foi possível concluir a geração na OpenAI.', true)
     }
 
     const responseText = await response.text()
     let data: { data?: Array<{ b64_json?: string; url?: string }>; error?: { message?: string } }
     try { data = JSON.parse(responseText) } catch {
       await failImageAttempt(frozen.attempt, 'Resposta inválida da OpenAI', true)
-      throw new ImageSubmissionError(502, 'INVALID_PROVIDER_RESPONSE', 'Resposta inválida da OpenAI')
+      throw new ImageSubmissionError(502, 'INVALID_PROVIDER_RESPONSE', 'Resposta inválida da OpenAI', true)
     }
     if (!response.ok) {
-      await failImageAttempt(frozen.attempt, data.error?.message || `Erro na OpenAI: ${response.status}`)
-      throw new ImageSubmissionError(response.status, 'PROVIDER_ERROR', data.error?.message || `Erro na OpenAI: ${response.status}`)
+      const outcomeUnknown = response.status >= 500 || response.status === 408
+      providerOutcomeUnknown = outcomeUnknown
+      await failImageAttempt(frozen.attempt, data.error?.message || `Erro na OpenAI: ${response.status}`, outcomeUnknown)
+      throw new ImageSubmissionError(response.status, 'PROVIDER_ERROR', data.error?.message || `Erro na OpenAI: ${response.status}`, outcomeUnknown)
     }
 
     const firstImage = data.data?.[0]
@@ -149,8 +154,8 @@ async function runCanonicalOpenAI(input: {
       if (storage) imageUrl = await createPresignedReadUrl(storage.storagePath) || storage.imageUrl
     }
     if (!imageUrl) {
-      await failImageAttempt(frozen.attempt, 'A OpenAI não retornou uma imagem')
-      throw new ImageSubmissionError(502, 'EMPTY_PROVIDER_RESULT', 'A OpenAI não retornou uma imagem')
+      await failImageAttempt(frozen.attempt, 'A OpenAI não retornou uma imagem', true)
+      throw new ImageSubmissionError(502, 'EMPTY_PROVIDER_RESULT', 'A OpenAI não retornou uma imagem', true)
     }
     const image = await linkImageOutput(frozen.attempt, {
       imageUrl,
@@ -175,11 +180,12 @@ async function runCanonicalOpenAI(input: {
       image, replayed: false,
     }
   } catch (error) {
-    if (error instanceof ImageSubmissionError) throw error
-    try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha na geração', true) } catch { /* preserve original error */ }
+    if (error instanceof ImageSubmissionError && !providerOutcomeUnknown) throw error
+    try { if (frozen?.attempt) await failImageAttempt(frozen.attempt, error instanceof Error ? error.message : 'Falha na geração', providerOutcomeUnknown) } catch { /* preserve original error */ }
+    if (error instanceof ImageSubmissionError) throw new ImageSubmissionError(error.status, error.code, error.message, true)
     // The credential store could not be read: a retryable pre-submission failure, not "not configured".
     if (isProviderCredentialUnavailableError(error)) throw new ImageSubmissionError(503, PROVIDER_CREDENTIAL_UNAVAILABLE, error.message)
-    throw new ImageSubmissionError(500, 'GENERATION_FAILED', error instanceof Error ? error.message : 'Erro interno')
+    throw new ImageSubmissionError(500, 'GENERATION_FAILED', error instanceof Error ? error.message : 'Erro interno', providerOutcomeUnknown)
   }
 }
 
@@ -243,7 +249,7 @@ export async function POST(request: Request) {
         return NextResponse.json(await runCanonicalOpenAI({ supabase, userId: user.id, sessionId, clientRequestId, prompt, model, size, quality,
           ...(sourceReferences !== undefined ? { sourceReferences } : {}) }))
       } catch (error) {
-        if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+        if (error instanceof ImageSubmissionError) return NextResponse.json({ error: error.message, code: error.code, outcome_unknown: error.outcomeUnknown }, { status: error.status })
         throw error
       }
     }

@@ -35,7 +35,7 @@ vi.mock('@/components/videos/i2v-source-browser', () => ({ I2vSourceBrowser: (pr
 </div> }))
 
 type Call = { url: string; method: string; body: any }
-function server(options: { model?: string; refs?: any[]; mode?: string; attempts?: any[]; project?: string | null; saveFailure?: boolean; size?: string; quality?: string } = {}) {
+function server(options: { model?: string; refs?: any[]; mode?: string; attempts?: any[]; project?: string | null; saveFailure?: boolean; size?: string; quality?: string; deduplicatePaid?: boolean } = {}) {
   let revision = 1
   let state: any = {
     schemaVersion: 1, generatedPrompt: 'The exact canonical prompt', generatedPromptPt: null, promptDetails: null,
@@ -46,6 +46,9 @@ function server(options: { model?: string; refs?: any[]; mode?: string; attempts
   const calls: Call[] = []
   let networkFailure = false
   let generationReply: { status: number; payload: unknown } | null = null
+  // Simulates the server's durable request-ID boundary after a provider accepted the request.
+  // This counter is entirely mocked; no provider or billing endpoint is called.
+  const acceptedPaidRequests = new Set<string>()
   const session = () => ({ id: SESSION, projectId: options.project === undefined ? PROJECT : options.project, productionId: null,
     currentImageId: options.attempts?.length ? OUTPUT : null, workingPrompt: 'A mountain', workingState: state, revision })
   const json = (data: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(data), { status }))
@@ -67,13 +70,17 @@ function server(options: { model?: string; refs?: any[]; mode?: string; attempts
     if (url.includes('/display?')) return json({ file: { name: 'Saved Library reference', public_url: 'https://display.test/library.png', origin: 'upload' } })
     if (url === '/api/prompt-assistance') return json({ suggestedPrompt: 'The assisted canonical prompt', operation: body.operation, provider: 'openai', model: 'gpt-4o-mini' })
     if (url === '/api/gemini/generate-image' || url === '/api/openai/generate-image') {
+      if (options.deduplicatePaid) {
+        if (acceptedPaidRequests.has(body.clientRequestId)) return json({ replayed: true, status: 'failed', outcome_unknown: true, attemptId: 'accepted-attempt' })
+        acceptedPaidRequests.add(body.clientRequestId)
+      }
       if (networkFailure) return Promise.reject(new TypeError('network'))
       if (generationReply) return json(generationReply.payload, generationReply.status)
       return json({ imageUrl: 'https://display.test/output.png', image: { id: OUTPUT }, attemptId: 'attempt' })
     }
     return json({})
   }) as typeof fetch
-  return { calls, state: () => state, failNetwork: () => { networkFailure = true }, reply: (payload: unknown, status = 200) => { networkFailure = false; generationReply = { status, payload } } }
+  return { calls, state: () => state, paidSubmissions: () => acceptedPaidRequests.size, failNetwork: () => { networkFailure = true }, reply: (payload: unknown, status = 200) => { networkFailure = false; generationReply = { status, payload } } }
 }
 function mount() { render(<GenerationSessionNavigationProvider><ImagesPageShell canonicalSessionId={SESSION} /></GenerationSessionNavigationProvider>) }
 async function ready() { await screen.findByTestId('image-reference-picker'); await waitFor(() => expect((screen.getByTestId('workflow-mode-automatic') as HTMLButtonElement).disabled).toBe(false)) }
@@ -184,7 +191,7 @@ describe('GPT Image 2 reference workflow', () => {
     const s = server({ model: 'gpt-image-2', mode: 'manual', refs: [{ type: 'image', id: IMAGE }] }); s.failNetwork(); mount(); await ready()
     await submit(); await waitFor(() => expect(imageCalls(s.calls, 'openai')).toHaveLength(1))
     s.reply({ replayed: true, status: 'processing' }); await submit(); await waitFor(() => expect(imageCalls(s.calls, 'openai')).toHaveLength(2))
-    s.reply({ replayed: true, status: 'failed' }); await submit(); await waitFor(() => expect(imageCalls(s.calls, 'openai')).toHaveLength(3))
+    s.reply({ replayed: true, status: 'failed', outcome_unknown: false }); await submit(); await waitFor(() => expect(imageCalls(s.calls, 'openai')).toHaveLength(3))
     await submit(); await waitFor(() => expect(imageCalls(s.calls, 'openai')).toHaveLength(4))
     const calls = imageCalls(s.calls, 'openai')
     expect(calls[1].body.clientRequestId).toBe(calls[0].body.clientRequestId)
@@ -212,6 +219,78 @@ describe('GPT Image 2 reference workflow', () => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 vi.setConfig({ testTimeout: 20_000 })
+
+const RETRY_PROVIDERS = [
+  { model: 'gpt-image-2', provider: 'openai' },
+  { model: 'gemini-nb-2.1', provider: 'gemini' },
+] as const
+
+const UNKNOWN_HTTP_OUTCOMES = [
+  { status: 504, payload: { error: 'The request timed out', code: 'PROVIDER_TIMEOUT' } },
+  { status: 504, payload: { error: 'The request timed out', code: 'PROVIDER_TIMEOUT', outcome_unknown: true } },
+  { status: 502, payload: { error: 'Provider response lost', code: 'PROVIDER_UNAVAILABLE', outcome_unknown: true } },
+  { status: 503, payload: { error: 'Output storage failed after provider acceptance', code: 'STORAGE_UNAVAILABLE', outcome_unknown: true } },
+  { status: 502, payload: { error: 'Provider response lost', code: 'PROVIDER_UNAVAILABLE' } },
+  { status: 503, payload: { error: 'Output storage failed after provider acceptance', code: 'STORAGE_UNAVAILABLE' } },
+] as const
+
+describe.each(RETRY_PROVIDERS)('$provider uncertain paid outcomes', ({ model, provider }) => {
+  it.each(UNKNOWN_HTTP_OUTCOMES)('Manual HTTP $status recovery keeps the original identity through an uncertain failed replay', async ({ status, payload }) => {
+    const s = server({ model, mode: 'manual', refs: [{ type: 'image', id: IMAGE }], deduplicatePaid: true })
+    s.reply(payload, status); mount(); await ready()
+    for (let count = 1; count <= 3; count++) { await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(count)) }
+    const ids = imageCalls(s.calls, provider).map((call) => call.body.clientRequestId)
+    expect(new Set(ids).size).toBe(1)
+    expect(s.paidSubmissions()).toBe(1)
+    expect(s.calls.filter((c) => c.url === '/api/prompt-assistance')).toHaveLength(0)
+  })
+
+  it.each(UNKNOWN_HTTP_OUTCOMES.slice(0, 4))('Automatic HTTP $status retry spends once and calls assistance only once', async ({ status, payload }) => {
+    const s = server({ model, mode: 'automatic', refs: [{ type: 'image', id: IMAGE }], deduplicatePaid: true })
+    s.reply(payload, status); mount(); await ready()
+    fireEvent.click(screen.getByTestId('automatic-run-start'))
+    fireEvent.click(await screen.findByTestId('automatic-run-confirm-accept'))
+    for (let count = 2; count <= 3; count++) {
+      await screen.findByTestId('automatic-run-image-failed')
+      fireEvent.click(screen.getByTestId('automatic-run-retry-image'))
+      await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(count))
+    }
+    expect(new Set(imageCalls(s.calls, provider).map((call) => call.body.clientRequestId)).size).toBe(1)
+    expect(s.paidSubmissions()).toBe(1)
+    expect(s.calls.filter((c) => c.url === '/api/prompt-assistance')).toHaveLength(1)
+  })
+
+  it.each([true, undefined])('lost network response followed by failed replay outcome_unknown=%s preserves identity', async (outcomeUnknown) => {
+    const s = server({ model, mode: 'manual', refs: [{ type: 'image', id: IMAGE }] }); s.failNetwork(); mount(); await ready()
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(1))
+    s.reply({ replayed: true, status: 'failed', ...(outcomeUnknown === undefined ? {} : { outcome_unknown: outcomeUnknown }) })
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(2))
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(3))
+    expect(new Set(imageCalls(s.calls, provider).map((call) => call.body.clientRequestId)).size).toBe(1)
+  })
+
+  it.each([
+    { status: 400, payload: { error: 'Invalid source', code: 'INVALID_IMAGE_MODEL', outcome_unknown: false } },
+    { status: 400, payload: { error: 'Invalid source', code: 'INVALID_IMAGE_MODEL' } },
+    { status: 503, payload: { error: 'Pre-provider validation unavailable', code: 'PROVIDER_CREDENTIAL_UNAVAILABLE', outcome_unknown: false } },
+  ])('definitive pre-provider HTTP $status rejection still rotates identity', async ({ status, payload }) => {
+    const s = server({ model, mode: 'manual', refs: [{ type: 'image', id: IMAGE }] }); s.reply(payload, status); mount(); await ready()
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(1))
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(2))
+    expect(imageCalls(s.calls, provider)[1].body.clientRequestId).not.toBe(imageCalls(s.calls, provider)[0].body.clientRequestId)
+  })
+
+  it('Gerar Novamente explicitly starts a fresh generation after an uncertain submission', async () => {
+    const s = server({ model, mode: 'manual', refs: [{ type: 'image', id: IMAGE }], attempts: [{ id: 'old-attempt', sequence: 1, resultImageId: OUTPUT, submittedPrompt: 'old prompt', model, sourceSnapshot: { references: [] } }], deduplicatePaid: true })
+    s.reply({ error: 'timeout', code: 'PROVIDER_TIMEOUT' }, 504); mount(); await ready()
+    await submit(); await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(1))
+    await waitFor(() => expect(create().disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar Novamente' }))
+    await waitFor(() => expect(imageCalls(s.calls, provider)).toHaveLength(2))
+    expect(imageCalls(s.calls, provider)[1].body.clientRequestId).not.toBe(imageCalls(s.calls, provider)[0].body.clientRequestId)
+    expect(s.paidSubmissions()).toBe(2) // Explicit new generation, not a recovery retry.
+  })
+})
 
 describe('Image reference workspace', () => {
   it('selects project AI, replaces via Gallery/Library/upload, persists only one durable ID and removes', async () => {

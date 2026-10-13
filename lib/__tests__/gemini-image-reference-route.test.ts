@@ -352,11 +352,12 @@ describe('I2I failure and input image usage accounting', () => {
     fetchSpy.mockImplementation(async () => { throw Object.assign(new Error('fake provider unavailable'), { name: failure === 'timeout' ? 'AbortError' : 'TypeError' }) })
     const response = await post()
     expect(response.status).toBe(failure === 'timeout' ? 504 : 502)
+    expect(await response.json()).toMatchObject({ outcome_unknown: true })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
     expect(metadata().inputReferences).toEqual([provenance()])
     expect(usage()).toHaveLength(0)
     expect(mocks.upload).not.toHaveBeenCalled()
-    expect(await (await post()).json()).toMatchObject({ replayed: true, status: 'failed' })
+    expect(await (await post()).json()).toMatchObject({ replayed: true, status: 'failed', outcome_unknown: true })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -373,12 +374,12 @@ describe('I2I failure and input image usage accounting', () => {
 
   it('preserves paid usage and input provenance after output storage fails', async () => {
     mocks.upload.mockRejectedValue(new Error('fake storage unavailable'))
-    expect(await (await post()).json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE' })
+    expect(await (await post()).json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE', outcome_unknown: true })
     expect(attempt()).toMatchObject({ status: 'failed', failure_details: { outcome_unknown: true } })
     expect(metadata()).toMatchObject({ inputReferences: [provenance()], usage_accounting: { ledger: 'recorded' } })
     expect(db.tables.images).toHaveLength(0)
     expect(usage()).toHaveLength(2)
-    await post()
+    expect(await (await post()).json()).toMatchObject({ replayed: true, status: 'failed', outcome_unknown: true })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(mocks.upload).toHaveBeenCalledTimes(1)
     expect(usage()).toHaveLength(2)
@@ -395,5 +396,24 @@ describe('I2I failure and input image usage accounting', () => {
     expect(db.writes.filter((write) => write.table === 'provider_usage_events')).toHaveLength(2)
     await post()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('fix-review: paid Gemini storage failure with lifecycle-write outage must retain uncertainty', async () => {
+    let updates = 0
+    let outage = true
+    seedDb({}, (table, op) => table === 'image_generation_attempts' && op === 'update' && ++updates >= 4 && outage ? { message: 'fake lifecycle outage' } : undefined)
+    mocks.upload.mockRejectedValue(new Error('fake storage failure'))
+    const response = await post()
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'LIFECYCLE_SAVE_FAILED', outcome_unknown: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+    expect(usage()).toHaveLength(2)
+    expect(await (await post()).json()).toMatchObject({ code: 'STORE_UNAVAILABLE', outcome_unknown: true })
+    outage = false
+    expect(await (await post()).json()).toMatchObject({ replayed: true, status: 'submitted' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(mocks.upload).toHaveBeenCalledTimes(1)
+    expect(usage()).toHaveLength(2)
   })
 })
