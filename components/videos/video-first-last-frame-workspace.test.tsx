@@ -198,6 +198,20 @@ describe('Google Veo in the same workspace', () => {
     expect(videoCalls()[0].body).not.toHaveProperty('multi_shot')
   })
 
+  it('Veo A+B below 8 s is blocked with its reason, then sendable once the user picks 8 s (explicit, never silent)', async () => {
+    state = frames({ selection: veoSelection({ duration: 4 }) })
+    await ready()
+    expect(screen.getByTestId('i2v-last-frame-note').textContent).toMatch(/só aceita imagem final em vídeos de 8 segundos/)
+    expect((screen.getByTestId('generate-video') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByTestId('generate-video'))
+    expect(videoCalls()).toHaveLength(0)
+    expect(state.lastFrame).toEqual({ type: 'library', id: LIB_B })
+    fireEvent.keyDown(screen.getByTestId('video-duration-select'), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('option', { name: '8 segundos' }))
+    await waitFor(() => expect((screen.getByTestId('generate-video') as HTMLButtonElement).disabled).toBe(false))
+    expect(screen.queryByTestId('i2v-last-frame-note')).toBeNull()
+  })
+
   it('choosing 1080p leaves 8 s as the only duration (Google rule), explained next to the controls', async () => {
     state = frames({ selection: veoSelection({ duration: 6 }) })
     await ready()

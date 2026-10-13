@@ -106,6 +106,12 @@ export interface VideoLastFrameCapability {
   audioAllowed: boolean
   /** false = multi-shot must be off when a last frame is sent (two frames define ONE continuous shot). */
   multiShotAllowed: boolean
+  /**
+   * The clip must have exactly this duration (seconds) when a last frame is sent. Google's current Veo documentation states no
+   * duration rule for first+last frame (earlier revisions required 8 s for interpolation), so Veo is restricted
+   * CONSERVATIVELY to 8 s until a paid canary proves 4/6 s are accepted.
+   */
+  requiresDuration?: number
 }
 
 export interface VideoOperationCapability {
@@ -227,11 +233,11 @@ export function defaultDuration(model: VideoModelCapability, resolution?: VideoR
  * Why a first+last-frame request is not valid for this model and context. Empty = valid. Shared by the UI (which
  * explains the reason) and the server validator (which rejects), so both always agree.
  */
-export type LastFrameConflict = 'UNSUPPORTED_MODEL' | 'RESOLUTION' | 'AUDIO' | 'MULTI_SHOT'
+export type LastFrameConflict = 'UNSUPPORTED_MODEL' | 'RESOLUTION' | 'AUDIO' | 'MULTI_SHOT' | 'DURATION'
 
 export function lastFrameConflicts(
   model: VideoModelCapability,
-  context: { resolution: VideoResolution | null; audio: VideoAudio | null; multiShot: boolean | null },
+  context: { resolution: VideoResolution | null; audio: VideoAudio | null; multiShot: boolean | null; duration: number | null },
 ): LastFrameConflict[] {
   const capability = model.lastFrame
   if (!capability) return ['UNSUPPORTED_MODEL']
@@ -239,6 +245,7 @@ export function lastFrameConflicts(
   if (capability.requiresResolution && context.resolution !== capability.requiresResolution) conflicts.push('RESOLUTION')
   if (!capability.audioAllowed && context.audio === 'on') conflicts.push('AUDIO')
   if (!capability.multiShotAllowed && context.multiShot === true) conflicts.push('MULTI_SHOT')
+  if (capability.requiresDuration !== undefined && context.duration !== capability.requiresDuration) conflicts.push('DURATION')
   return conflicts
 }
 
@@ -247,6 +254,7 @@ export const LAST_FRAME_CONFLICT_MESSAGE: Record<LastFrameConflict, (model: Vide
   RESOLUTION: (model) => `${model.label} só aceita imagem final em ${model.lastFrame?.requiresResolution ?? 'outra resolução'}. Ajuste a resolução ou remova a imagem final.`,
   AUDIO: (model) => `${model.label} não permite áudio automático com imagem final. Desligue o áudio ou remova a imagem final.`,
   MULTI_SHOT: (model) => `${model.label} não permite multi-shot com imagem final. Desligue o multi-shot ou remova a imagem final.`,
+  DURATION: (model) => `${model.label} só aceita imagem final em vídeos de ${model.lastFrame?.requiresDuration ?? 8} segundos. Ajuste a duração ou remova a imagem final.`,
 }
 
 export function defaultResolution(model: VideoModelCapability): VideoResolution {

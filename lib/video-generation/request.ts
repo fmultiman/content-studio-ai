@@ -86,6 +86,7 @@ export type VideoRequestFailureCode =
   | 'LAST_FRAME_RESOLUTION_CONFLICT'
   | 'LAST_FRAME_AUDIO_CONFLICT'
   | 'LAST_FRAME_MULTI_SHOT_CONFLICT'
+  | 'LAST_FRAME_DURATION_CONFLICT'
   | 'DURATION_RESOLUTION_CONFLICT'
 
 export type VideoRequestValidation =
@@ -224,11 +225,12 @@ export function validateVideoRequest(
   if (raw.lastFrame !== undefined && raw.lastFrame !== false) {
     if (raw.lastFrame !== true) return fail('UNSUPPORTED_LAST_FRAME', 'lastFrame must be a boolean.')
     if (operation !== 'image_to_video') return fail('UNSUPPORTED_LAST_FRAME', 'A last frame is only valid for image_to_video.')
-    const conflicts = lastFrameConflicts(model, { resolution, audio, multiShot })
+    const conflicts = lastFrameConflicts(model, { resolution, audio, multiShot, duration })
     if (conflicts.includes('UNSUPPORTED_MODEL')) return fail('UNSUPPORTED_LAST_FRAME', LAST_FRAME_CONFLICT_MESSAGE.UNSUPPORTED_MODEL(model))
     if (conflicts.includes('RESOLUTION')) return fail('LAST_FRAME_RESOLUTION_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.RESOLUTION(model))
     if (conflicts.includes('AUDIO')) return fail('LAST_FRAME_AUDIO_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.AUDIO(model))
     if (conflicts.includes('MULTI_SHOT')) return fail('LAST_FRAME_MULTI_SHOT_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.MULTI_SHOT(model))
+    if (conflicts.includes('DURATION')) return fail('LAST_FRAME_DURATION_CONFLICT', LAST_FRAME_CONFLICT_MESSAGE.DURATION(model))
     lastFrame = true
   }
 

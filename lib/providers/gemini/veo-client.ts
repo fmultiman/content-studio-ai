@@ -27,7 +27,10 @@ export const VEO_RESULT_HOST = new URL(GEMINI_API_BASE).hostname
 /** Gemini accepts ~20 MB of inline request data; two base64 frames must fit with the prompt. */
 export const VEO_MAX_FRAME_BYTES = 7 * 1000 * 1000
 
-const OPERATION_NAME = /^models\/[A-Za-z0-9._-]{1,120}\/operations\/[A-Za-z0-9._-]{1,200}$/
+// The documentation only says to GET `${BASE_URL}/${operation.name}`. Veo returns `models/{model}/operations/{id}`; the
+// `models/{model}/` prefix is tolerated as optional so a paid operation can never be lost to a stricter-than-documented
+// format. Anything else (dots-only segments, other collections, extra slashes) is still refused.
+const OPERATION_NAME = /^(?:models\/[A-Za-z0-9._-]{1,120}\/)?operations\/[A-Za-z0-9._-]{1,200}$/
 const MODEL_ID = /^veo-[a-z0-9.-]{1,80}$/
 
 export type VeoFrameMime = 'image/png' | 'image/jpeg'

@@ -116,7 +116,7 @@ export function selectedModel(
  */
 export function lastFrameBlockers(model: VideoModelCapability | null, selection: VideoFormSelection): LastFrameConflict[] {
   if (!model) return ['UNSUPPORTED_MODEL']
-  return lastFrameConflicts(model, { resolution: selection.resolution, audio: selection.audio, multiShot: selection.multiShot })
+  return lastFrameConflicts(model, { resolution: selection.resolution, audio: selection.audio, multiShot: selection.multiShot, duration: selection.duration })
 }
 
 export function reconcileSelection(

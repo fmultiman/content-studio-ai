@@ -15,7 +15,9 @@
 //   - aspect ratio 16:9 or 9:16, for text and image input alike;
 //   - resolution 720p / 1080p; 4k on Veo 3.1 and Veo 3.1 Fast only;
 //   - first + last frame: `image` + `lastFrame` in the same instance (`lastFrame` is only valid together with `image`).
-//     The page states no extra duration/resolution/audio restriction for first+last frame beyond the general ones.
+//     The current page states no duration/resolution/audio restriction for first+last frame, but earlier revisions required
+//     8 s for interpolation and the page is internally inconsistent about the other 8 s rules. Until a paid canary proves
+//     otherwise, A+B is restricted CONSERVATIVELY to 8 s (UI and server; `lastFrame.requiresDuration`).
 
 import type { VideoModelCapability, VideoOperationCapability } from './capabilities'
 
@@ -42,7 +44,7 @@ function veoModel(id: string, label: string, resolutions: VideoModelCapability['
     durationsByResolution: resolutions.includes('4k')
       ? { '1080p': [...EIGHT_SECONDS_ONLY], '4k': [...EIGHT_SECONDS_ONLY] }
       : { '1080p': [...EIGHT_SECONDS_ONLY] },
-    ...(withLastFrame ? { lastFrame: { audioAllowed: true, multiShotAllowed: true } } : {}),
+    ...(withLastFrame ? { lastFrame: { audioAllowed: true, multiShotAllowed: true, requiresDuration: 8 } } : {}),
   }
 }
 
