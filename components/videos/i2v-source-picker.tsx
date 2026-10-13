@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { I2vSourceBrowser } from '@/components/videos/i2v-source-browser'
 import { I2V_CATEGORY_SUMMARY_LABEL, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import type { ImageSourceProfile } from '@/lib/media-source/profile'
 
 // VIDEO_I2V_SOURCE_BROWSER_V1
 //
@@ -22,9 +23,10 @@ interface I2vSourcePickerProps {
   productionId: string | null
   value: I2vSourceSelection | null
   onChange: (selection: I2vSourceSelection | null) => void
+  profile?: ImageSourceProfile
 }
 
-export function I2vSourcePicker({ projectId, productionId, value, onChange }: I2vSourcePickerProps) {
+export function I2vSourcePicker({ projectId, productionId, value, onChange, profile = 'video-i2v' }: I2vSourcePickerProps) {
   const [open, setOpen] = useState(false)
   const [thumbBroken, setThumbBroken] = useState(false)
   // While a chooser upload is in flight, opening/closing/replacing/removing is locked: an upload must end in a selection.
@@ -86,6 +88,7 @@ export function I2vSourcePicker({ projectId, productionId, value, onChange }: I2
       {open && (
         <div id="i2v-source-browser-region">
           <I2vSourceBrowser
+            profile={profile}
             projectId={projectId}
             productionId={productionId}
             selectedId={value?.source.id ?? null}

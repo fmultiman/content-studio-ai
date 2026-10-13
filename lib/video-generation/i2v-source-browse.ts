@@ -3,6 +3,7 @@
 // filter, a folder path, a search text and an opaque cursor; the server re-validates all of it.
 
 import type { LibraryFolder } from '@/lib/types'
+import type { ImageSourceProfile } from '@/lib/media-source/profile'
 
 /** `current` follows the Production of the generation form; the others are explicit user choices. */
 export type ProductionFilterMode = 'current' | 'all' | 'unscoped'
@@ -19,8 +20,9 @@ export function normalizeSourceSearch(raw: string): string {
   return raw.trim().slice(0, SEARCH_MAX_LENGTH)
 }
 
-export function aiImagesUrl(input: { projectId: string; cursor?: string | null }): string {
+export function aiImagesUrl(input: { projectId: string; cursor?: string | null; profile?: ImageSourceProfile }): string {
   const query = new URLSearchParams({ projectId: input.projectId })
+  if (input.profile === 'image-reference') query.set('profile', input.profile)
   if (input.cursor) query.set('cursor', input.cursor)
   return `/api/images/browse?${query.toString()}`
 }
@@ -38,15 +40,16 @@ export interface LibraryBrowseInput {
   /** Arquivos only. Ignored while a search is active (search spans the Project + Production context). */
   folder?: string | null
   cursor?: string | null
+  profile?: ImageSourceProfile
 }
 
-/** Galeria: Creative Editor image outputs. Arquivos: reusable images. Both: PNG/JPEG only, bounded, cursor-paged. */
+/** Galeria: Creative Editor image outputs. Arquivos: reusable images. Profile formats are server allow-lists. */
 export function libraryBrowseUrl(input: LibraryBrowseInput): string {
   const query = new URLSearchParams({
     projectId: input.projectId,
     scope: input.category === 'gallery' ? 'gallery' : 'arquivos',
     kind: 'image',
-    format: 'i2v-image',
+    format: input.profile === 'image-reference' ? 'image-reference' : 'i2v-image',
     production: input.production,
   })
   const search = normalizeSourceSearch(input.search)

@@ -19,6 +19,7 @@ import { buildStoragePublicUrl, createPresignedReadUrl, deleteS3Object, headS3Ob
 import { DELETE, GET, PATCH, POST } from '@/app/api/library-files/route'
 import { GET as DOWNLOAD } from '@/app/api/library-files/[id]/download/route'
 import { resolveMediaSource } from '@/app/api/channel-piece-media/_helpers'
+import { IMAGE_REFERENCE_MAX_BYTES } from '@/lib/media-source/profile'
 
 const USER = '11111111-1111-4111-8111-111111111111'
 const VICTIM = '22222222-2222-4222-8222-222222222222'
@@ -101,6 +102,30 @@ const registration = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('POST /api/library-files — registration trusts nothing the browser says', () => {
+  it('registers a WebP reference at exactly 10 MiB using S3 MIME/size rather than browser metadata', async () => {
+    vi.mocked(headS3Object).mockResolvedValue({ size: IMAGE_REFERENCE_MAX_BYTES, contentType: 'image/webp' })
+    const response = await POST(json(registration({ profile: 'image-reference', mimeType: 'image/png', fileSize: 1 })))
+    expect(response.status).toBe(200)
+    expect(files().at(-1)).toMatchObject({ mime_type: 'image/webp', file_size: IMAGE_REFERENCE_MAX_BYTES, storage_provider: 's3', project_id: PROJECT })
+  })
+
+  it('refuses oversized actual reference objects despite a smaller claimed size', async () => {
+    vi.mocked(headS3Object).mockResolvedValue({ size: IMAGE_REFERENCE_MAX_BYTES + 1, contentType: 'image/png' })
+    const response = await POST(json(registration({ profile: 'image-reference', fileSize: 1 })))
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('REFERENCE_TOO_LARGE')
+    expect(files()).toHaveLength(1)
+  })
+
+  it('refuses GIF reference objects despite a browser PNG claim, and requires an owned Project', async () => {
+    vi.mocked(headS3Object).mockResolvedValue({ size: 100, contentType: 'image/gif' })
+    const response = await POST(json(registration({ profile: 'image-reference' })))
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('REFERENCE_FORMAT_UNSUPPORTED')
+    expect((await POST(json(registration({ profile: 'image-reference', projectId: null })))).status).toBe(404)
+    expect((await POST(json(registration({ profile: 'image-reference', projectId: FOREIGN_PROJECT })))).status).toBe(404)
+    expect(files()).toHaveLength(1)
+  })
   it('registers the user’s own key in the user’s own Project and derives kind, size and URLs server-side', async () => {
     const response = await POST(json(registration({ kind: 'document', fileSize: 999_999_999 })))
     expect(response.status).toBe(200)

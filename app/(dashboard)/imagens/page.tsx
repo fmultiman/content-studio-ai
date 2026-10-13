@@ -3,6 +3,9 @@
 import { useState, useEffect, Suspense, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { ImageReferencePicker, ImageAttemptReferences, imageReferenceFromSelection, imageReferenceModelReason, type ImageReferenceAttempt } from '@/components/images/image-reference'
+import type { I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import { imageReferenceUnsupportedModelReason } from '@/lib/images/image-reference'
 import { ImageSessionCard } from '@/components/images/image-session-card'
 import {
   DashboardPage,
@@ -135,7 +138,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [drafts, setDrafts] = useState<ImageDraft[]>([])
   const [sessions, setSessions] = useState<any[]>([])
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null)
-  const imageSourceReferencesRef = useRef<ImageGenerationWorkingStateV1['sourceReferences']>([])
+  const [imageSourceReferences, setImageSourceReferences] = useState<ImageGenerationWorkingStateV1['sourceReferences']>([])
+  const [imageReferenceSelection, setImageReferenceSelection] = useState<I2vSourceSelection | null>(null)
+  const [referenceUploadBusy, setReferenceUploadBusy] = useState(false)
   const imageGenerationConfigRef = useRef<ImageGenerationWorkingStateV1['generationConfig']>({
     size: '1024x1024', quality: 'medium', aspectRatio: '1:1', style: null, providerOptions: {},
   })
@@ -192,6 +197,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [geminiImageAvailability, setGeminiImageAvailability] = useState<GeminiImageAvailability | null>(null)
   const [isGeneratingNanoBanana, setIsGeneratingNanoBanana] = useState(false)
   const imageClientRequestIdRef = useRef<string>(crypto.randomUUID())
+  const imageRequestIdentityRef = useRef<string | null>(null)
   const [automationEnabled, setAutomationEnabled] = useState(false)
   const [defaultImageModel, setDefaultImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL)
   const [selectedModel, setSelectedModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL)
@@ -252,12 +258,15 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     geminiImageAvailability,
     canonicalWorkspace,
   })
-  const automaticStartReason: string | null = automaticOptionReason
+  const referenceDisabledReason = referenceUploadBusy ? 'Aguarde o envio da referência terminar.'
+    : imageSourceReferences.length && !selectedProject ? 'Selecione um projeto para enviar a referência.'
+    : imageReferenceModelReason(persistedModelValue, imageSourceReferences)
+  const automaticStartReason: string | null = referenceDisabledReason ?? automaticOptionReason
     ?? (!imageReadiness.ready ? imageReadiness.message.charAt(0).toLowerCase() + imageReadiness.message.slice(1) : null)
     ?? (userInput.trim() ? null : 'escreva a descrição da imagem.')
-  // The manual button is only blocked for Google models and an unrecognized model (OpenAI/NanoBanana keep their existing behavior).
-  const createDisabledReason: string | null =
-    !imageReadiness.ready && (unrecognizedModel || isGeminiImageModel(selectedModel)) ? imageReadiness.message : null
+  // An attached reference additionally blocks any model that cannot send it.
+  const createDisabledReason: string | null = referenceDisabledReason ?? (
+    !imageReadiness.ready && (unrecognizedModel || isGeminiImageModel(selectedModel)) ? imageReadiness.message : null)
   const mode: WorkflowMode = autoMode && automaticOptionReason === null ? 'automatic' : manualMode ? 'manual' : 'assisted'
 
   // Invalidates any in-flight assistance request (generation counter + client abort) and drops a pending suggestion.
@@ -283,11 +292,11 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       imageStatus,
       currentAttempt,
       currentImageId: currentImage?.id || null,
-      sourceReferences: imageSourceReferencesRef.current,
+      sourceReferences: imageSourceReferences,
       generationConfig: imageGenerationConfigRef.current,
       legacyImageUrl: persistableImageUrl(imageUrl),
     },
-  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl])
+  }), [userInput, generatedPrompt, generatedPromptPt, promptDetails, autoMode, manualMode, persistedModelValue, imageStatus, currentAttempt, currentImage?.id, imageUrl, imageSourceReferences])
 
   const imageSessionContextRef = useRef({ canonicalSessionId, onCreated: null as ((session: any) => void) | null })
   imageSessionContextRef.current.canonicalSessionId = canonicalSessionId
@@ -412,7 +421,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [currentEvaluation, setCurrentEvaluation] = useState<ImageEvaluation | null>(null)
   const [currentReview, setCurrentReview] = useState<ReviewRecordV1 | null>(null)
-  const [generationAttempts, setGenerationAttempts] = useState<GenerationAttempt[]>([])
+  const [generationAttempts, setGenerationAttempts] = useState<(GenerationAttempt & ImageReferenceAttempt)[]>([])
 
   // Refs para scroll automático
   const promptSectionRef = useRef<HTMLDivElement>(null)
@@ -558,7 +567,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     applyStoredImageModel(state.selectedModel)
     setCurrentAttempt(state.currentAttempt || 1)
     setImageStatus(state.imageStatus || 'draft')
-    imageSourceReferencesRef.current = state.sourceReferences || []
+    setImageSourceReferences(state.sourceReferences || [])
+    setImageReferenceSelection(null)
     imageGenerationConfigRef.current = state.generationConfig || imageGenerationConfigRef.current
     setCurrentImage(current)
     setImageUrl(await getDisplayUrlForImage(current) || state.legacyImageUrl || null)
@@ -572,11 +582,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         prompt: attempt.submittedPrompt || '',
         imageUrl: await getDisplayUrlForImage(output),
         imageId: attempt.resultImageId || null,
+        sourceReferences: attempt.sourceSnapshot?.references || [],
         model: attempt.model || 'unknown',
         evaluation: attempt.legacyEvaluation || null,
         review,
         timestamp: attempt.submittedAt || attempt.createdAt,
-      } as GenerationAttempt
+      } as GenerationAttempt & ImageReferenceAttempt
     }))
     setGenerationAttempts(history)
     const currentHistoryAttempt = history
@@ -634,11 +645,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         prompt: attempt.submittedPrompt || '',
         imageUrl: await getDisplayUrlForImage(output),
         imageId: attempt.resultImageId || null,
+        sourceReferences: attempt.sourceSnapshot?.references || [],
         model: attempt.model || 'unknown',
         evaluation: attempt.legacyEvaluation || null,
         review,
         timestamp: attempt.submittedAt || attempt.createdAt,
-      } as GenerationAttempt
+      } as GenerationAttempt & ImageReferenceAttempt
     }))
     setGenerationAttempts(history)
     const currentHistoryAttempt = history
@@ -1442,6 +1454,13 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       toast({ title: 'Modelo de imagem inválido', description: message, variant: 'destructive' })
       return { ok: false, message }
     }
+    const referenceReason = referenceUploadBusy ? 'Aguarde o envio da referência terminar.'
+      : imageSourceReferences.length && !selectedProject ? 'Selecione um projeto para enviar a referência.'
+      : imageReferenceModelReason(known, imageSourceReferences)
+    if (referenceReason) {
+      toast({ title: 'Referência indisponível', description: referenceReason, variant: 'destructive' })
+      return { ok: false, message: referenceReason }
+    }
     if (imageSubmitLockRef.current) return { ok: false, message: 'Já existe uma geração de imagem em andamento.' }
     imageSubmitLockRef.current = true
     try {
@@ -1629,8 +1648,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   }
 
   // FUTURE-064 Slice B: official Google Gemini ("Nano Banana") text-to-image through POST /api/gemini/generate-image.
-  // Exactly one request per call, no retry, no provider fallback, no source images. The backend owns resolution (1K) and the
-  // model alias -> official id mapping; this sends only { prompt, model, aspectRatio, sessionId, clientRequestId }.
+  // The backend owns model resolution and loading reference bytes from durable IDs.
+  // Network retries reuse the request ID only while prompt, model and references still match.
   const handleGenerateGeminiImage = async (model: ImageModel, prompt: string): Promise<ImageSubmitResult> => {
     const fail = (message: string, title = 'Erro na geração'): ImageSubmitResult => {
       toast({ title, description: message, variant: 'destructive' })
@@ -1649,6 +1668,11 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
       await flushImageSubmission(prompt, model)
       setGeneratedPrompt(prompt)
       setSelectedModel(model)
+      const requestIdentity = JSON.stringify({ prompt, model, aspectRatio: GEMINI_IMAGE_DEFAULT_ASPECT_RATIO, sourceReferences: imageSourceReferences })
+      if (imageRequestIdentityRef.current !== null && imageRequestIdentityRef.current !== requestIdentity) {
+        imageClientRequestIdRef.current = crypto.randomUUID()
+      }
+      imageRequestIdentityRef.current = requestIdentity
       const clientRequestId = imageClientRequestIdRef.current
       let response: Response
       try {
@@ -1661,6 +1685,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
             aspectRatio: GEMINI_IMAGE_DEFAULT_ASPECT_RATIO,
             sessionId: canonicalSessionId,
             clientRequestId,
+            ...(imageSourceReferences.length ? { sourceReferences: imageSourceReferences } : {}),
           }),
         })
       } catch {
@@ -2568,13 +2593,13 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 selectedProject={selectedProject}
                 setSelectedProject={setSelectedProject}
                 mode={mode}
-                workflowBusy={workflowBusy}
+                workflowBusy={workflowBusy || referenceUploadBusy}
                 modeControl={
                   <WorkflowModeControl
                     mode={mode}
                     onChange={changeWorkflowMode}
                     automaticUnavailableReason={automaticOptionReason}
-                    disabled={workflowBusy}
+                    disabled={workflowBusy || referenceUploadBusy}
                   />
                 }
                 automaticPanel={
@@ -2606,6 +2631,23 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 onUseDescriptionAsPrompt={() => updateGeneratedPrompt(userInput.trim())}
               />
 
+              {canonicalWorkspace && (
+                <ImageReferencePicker
+                  projectId={selectedProject}
+                  productionId={productionId}
+                  references={imageSourceReferences}
+                  selection={imageReferenceSelection}
+                  onChange={(selection) => {
+                    setImageReferenceSelection(selection)
+                    setImageSourceReferences(selection ? [imageReferenceFromSelection(selection)] : [])
+                  }}
+                  mode={mode}
+                  disabled={workflowBusy || isCreatingImage || isGeneratingNanoBanana || isRegenerating}
+                  unavailableReason={imageReferenceUnsupportedModelReason(persistedModelValue)}
+                  onUploadBusyChange={setReferenceUploadBusy}
+                />
+              )}
+
               {/* Prompt Section */}
               <div ref={promptSectionRef}>
                 <PromptSection
@@ -2628,7 +2670,8 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   geminiImage={{ availability: geminiImageAvailability, canonicalWorkspace }}
                   unrecognizedModel={unrecognizedModel}
                   createDisabledReason={createDisabledReason}
-                  workflowBusy={workflowBusy}
+                  sourceReferences={imageSourceReferences}
+                  workflowBusy={workflowBusy || referenceUploadBusy}
                   selectedModel={selectedModel}
                   onModelChange={handleModelChange}
                 />
@@ -2646,6 +2689,12 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                     isApproving={isApproving}
                     imageName={userInput.slice(0, 50)}
                     imageId={currentImage?.id ?? null}
+                    onUseAsReference={canonicalWorkspace && currentImage?.id ? () => {
+                      setImageSourceReferences([{ type: 'image', id: currentImage.id }])
+                      setImageReferenceSelection({ source: { type: 'generated', id: currentImage.id }, summary: { category: 'ai', label: userInput.slice(0, 50) || 'Imagem gerada por IA', thumbnailUrl: imageUrl, productionName: productionTitle, folder: null } })
+                    } : undefined}
+                    referenceActionDisabled={workflowBusy || isCreatingImage || isGeneratingNanoBanana || isRegenerating || referenceUploadBusy}
+                    usedReferences={<ImageAttemptReferences projectId={selectedProject} references={currentImage?.id ? generationAttempts.filter((attempt) => attempt.imageId === currentImage.id).sort((a, b) => b.attempt - a.attempt)[0]?.sourceReferences : undefined} />}
                     evaluatorEnabled={evaluatorEnabled}
                     evaluation={currentEvaluation}
                     review={currentReview}
@@ -2661,6 +2710,13 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                 <GenerationHistory
                   attempts={generationAttempts}
                   onUsePrompt={handleUseRefinedPrompt}
+                  projectId={selectedProject}
+                  referenceActionDisabled={workflowBusy || isCreatingImage || isGeneratingNanoBanana || isRegenerating || referenceUploadBusy}
+                  onUseAsReference={canonicalWorkspace ? (attempt) => {
+                    if (!attempt.imageId) return
+                    setImageSourceReferences([{ type: 'image', id: attempt.imageId }])
+                    setImageReferenceSelection({ source: { type: 'generated', id: attempt.imageId }, summary: { category: 'ai', label: `Tentativa ${attempt.attempt}`, thumbnailUrl: attempt.imageUrl, productionName: productionTitle, folder: null } })
+                  } : undefined}
                 />
               )}
             </>

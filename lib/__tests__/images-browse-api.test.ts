@@ -117,6 +117,20 @@ describe('GET /api/images/browse — scoping', () => {
 })
 
 describe('GET /api/images/browse — eligibility and payload', () => {
+  it('includes WebP only in the explicit image-reference profile, still scoped to owner and Project', async () => {
+    seed([image(1), image(2, { mime_type: 'image/webp' }), image(3, { mime_type: 'image/gif' }), image(4, { mime_type: 'image/webp', project_id: PROJECT_B }), image(5, { mime_type: 'image/webp', user_id: OTHER })])
+    const body = await (await browse({ projectId: PROJECT_A, profile: 'image-reference' })).json()
+    expect(body.images.map((item: Row) => item.id).sort()).toEqual([uuid(1), uuid(2)])
+    expect((await (await browse()).json()).images.map((item: Row) => item.id)).toEqual([uuid(1)])
+  })
+
+  it('refuses arbitrary source profiles before browsing or signing', async () => {
+    seed([image(1)])
+    const response = await browse({ projectId: PROJECT_A, profile: 'image/gif' })
+    expect(response.status).toBe(400)
+    expect((await response.json()).code).toBe('INVALID_SOURCE_PROFILE')
+    expect(createPresignedReadUrl).not.toHaveBeenCalled()
+  })
   it('offers only PNG/JPEG images that carry a stored object (other formats, unknown MIME and legacy URL-only rows are not sources)', async () => {
     seed([
       image(1),

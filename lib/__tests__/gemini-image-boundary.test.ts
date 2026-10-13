@@ -37,11 +37,11 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
   })
 
   it('only the route imports the image client; the registry and the switch have a closed set of importers', () => {
-    expect(importers(/providers\/gemini\/image-client/, [ROUTE])).toEqual([])
+    expect(importers(/providers\/gemini\/image-client/, [ROUTE, 'lib/image-generation/reference-media.ts'])).toEqual([])
     // Slice B: the browser-safe catalog/readiness modules read the alias registry; nothing else does.
-    expect(importers(/providers\/gemini\/image-models/, [ROUTE, CLIENT, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts'])).toEqual([])
+    expect(importers(/providers\/gemini\/image-models/, [ROUTE, CLIENT, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts', 'lib/images/image-reference.ts', 'lib/image-generation/execution.ts', 'lib/image-generation/reference-media.ts'])).toEqual([])
     // Slice B: the authenticated settings route derives the browser-safe availability class from the switch.
-    expect(importers(/providers\/gemini\/image-feature/, [ROUTE, 'app/api/settings/providers/route.ts'])).toEqual([])
+    expect(importers(/providers\/gemini\/image-feature/, [ROUTE, 'app/api/settings/providers/route.ts', 'lib/images/image-reference.ts', 'lib/image-generation/execution.ts', 'lib/image-generation/reference-media.ts'])).toEqual([])
   })
 
   it('UI wiring (Slice B) goes only through the browser-safe lib/images modules, never the server client or the switch', () => {
@@ -93,12 +93,12 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
     expect(route.match(/\bfor\s*\(/g) ?? []).toHaveLength(1)
   })
 
-  it('the client is text-to-image only: no input image part can be built', () => {
+  it('the client sends only inline reference bytes, never source URLs or Files API', () => {
     const client = code(read(CLIENT).text)
     expect(client).not.toMatch(/fileData|file_data|Files API|uploadFile/i)
-    // the only `inlineData` mention is when READING the response
+    // References must be byte parts; their authorized durable IDs stay on the server.
     const requestBuilder = client.slice(client.indexOf('export function buildGeminiImageRequestBody'), client.indexOf('export async function generateGeminiImage'))
-    expect(requestBuilder).not.toMatch(/inlineData|inline_data/)
+    expect(requestBuilder).toMatch(/inlineData/); expect(requestBuilder).not.toMatch(/url|fileData/i)
   })
 
   it('keeps the key out of URLs, logs and messages, and never logs bodies or prompts', () => {
@@ -139,13 +139,13 @@ describe('Gemini image generation — server-only, UI-free, closed', () => {
   })
 
   it('leaves the legacy NanoBanana and OpenAI image routes free of Gemini image code', () => {
-    for (const path of ['app/api/nanobanana/generate/route.ts', 'app/api/nanobanana/callback/route.ts', 'app/api/nanobanana/status/[taskId]/route.ts', 'app/api/openai/generate-image/route.ts', 'lib/image-generation/execution.ts']) {
+    for (const path of ['app/api/nanobanana/generate/route.ts', 'app/api/nanobanana/callback/route.ts', 'app/api/nanobanana/status/[taskId]/route.ts', 'app/api/openai/generate-image/route.ts']) {
       expect(code(read(path).text), path).not.toMatch(/providers\/gemini\/image|gemini-nb-|generateGeminiImage/)
     }
   })
 
   it('does not change credential storage, grants or schema: no scripts/ or credential file is touched by the slice', () => {
-    expect(importers(/providers\/gemini\/image/, [ROUTE, CLIENT, MODELS, FEATURE, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts', 'app/api/settings/providers/route.ts'])).toEqual([])
+    expect(importers(/providers\/gemini\/image/, [ROUTE, CLIENT, MODELS, FEATURE, 'lib/images/image-models.ts', 'lib/images/image-readiness.ts', 'app/api/settings/providers/route.ts', 'lib/images/image-reference.ts', 'lib/image-generation/execution.ts', 'lib/image-generation/reference-media.ts'])).toEqual([])
     expect(readdirSync(join(ROOT, 'scripts')).filter((name) => /gemini.*image|image.*gemini/i.test(name))).toEqual([])
   })
 })

@@ -109,7 +109,8 @@ export function installI2vFetch(state: I2vFixtureState) {
     if (url.startsWith('/api/images/browse?')) {
       if (state.aiFail) return json({ error: 'x' }, 500)
       const params = new URL(url, 'http://x').searchParams
-      const rows = state.ai.filter((row) => row.project_id === params.get('projectId') && ELIGIBLE.includes(row.mime_type))
+      const eligible = params.get('profile') === 'image-reference' ? [...ELIGIBLE, 'image/webp'] : ELIGIBLE
+      const rows = state.ai.filter((row) => row.project_id === params.get('projectId') && eligible.includes(row.mime_type))
       const { slice, nextCursor } = pageOf(rows, params.get('cursor'), state.pageSize)
       return json({ images: slice, nextCursor, limit: state.pageSize })
     }
@@ -127,6 +128,7 @@ export function installI2vFetch(state: I2vFixtureState) {
         if (params.get('kind')) rows = rows.filter((row) => row.kind === params.get('kind'))
       }
       if (params.get('format') === 'i2v-image') rows = rows.filter((row) => ELIGIBLE.includes(row.mime_type))
+      if (params.get('format') === 'image-reference') rows = rows.filter((row) => [...ELIGIBLE, 'image/webp'].includes(row.mime_type))
       if (production === 'unscoped') rows = rows.filter((row) => !row.production_id)
       else if (production !== 'all') rows = rows.filter((row) => row.production_id === production)
       if (params.get('folder')) rows = rows.filter((row) => row.folder === params.get('folder'))

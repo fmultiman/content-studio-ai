@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PromptLanguagePanel, type PromptLanguageView } from '@/components/prompts/prompt-language-panel'
+import { imageReferenceModelReason, type ImageReference } from '@/lib/images/image-reference'
 import type { WorkflowMode } from './image-workflow-controls'
 import { ImageIcon, Loader2, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
@@ -16,6 +17,7 @@ import type { GeminiImageAvailability } from '@/lib/images/gemini-availability'
 export type { ImageModel }
 
 interface PromptSectionProps {
+  sourceReferences?: ImageReference[]
   generatedPrompt: string
   setGeneratedPrompt: (value: string) => void
   suggestedPrompt?: string
@@ -55,6 +57,7 @@ interface PromptSectionProps {
 
 export function PromptSection({
   generatedPrompt,
+  sourceReferences = [],
   setGeneratedPrompt,
   suggestedPrompt = '',
   suggestedOperation = null,
@@ -236,8 +239,8 @@ export function PromptSection({
                     <SelectGroup key={group.provider}>
                       <SelectLabel>{group.label}</SelectLabel>
                       {group.options.map((option) => (
-                        <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-                          {option.label}
+                        <SelectItem key={option.value} value={option.value} disabled={option.disabled || Boolean(imageReferenceModelReason(option.value, sourceReferences))}>
+                          {option.label}{imageReferenceModelReason(option.value, sourceReferences) ? ' — referência não suportada' : ''}
                         </SelectItem>
                       ))}
                     </SelectGroup>

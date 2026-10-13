@@ -6,16 +6,23 @@ import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Check, X, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { useState } from 'react'
+import { ImageAttemptReferences, type ImageReferenceAttempt } from './image-reference'
 import type { GenerationAttempt } from '@/lib/types'
 
 interface GenerationHistoryProps {
-  attempts: GenerationAttempt[]
+  attempts: (GenerationAttempt & ImageReferenceAttempt)[]
+  projectId?: string | null
+  onUseAsReference?: (attempt: GenerationAttempt) => void
+  referenceActionDisabled?: boolean
   onSelectAttempt?: (attempt: GenerationAttempt) => void
   onUsePrompt?: (prompt: string) => void
 }
 
 export function GenerationHistory({ 
   attempts, 
+  projectId = null,
+  onUseAsReference,
+  referenceActionDisabled = false,
   onSelectAttempt,
   onUsePrompt,
 }: GenerationHistoryProps) {
@@ -91,6 +98,9 @@ export function GenerationHistory({
                   )}
                 </button>
                 
+                <ImageAttemptReferences references={attempt.sourceReferences} projectId={projectId} />
+                {onUseAsReference && attempt.imageId && <Button size="sm" variant="outline" disabled={referenceActionDisabled} onClick={() => onUseAsReference(attempt)}>Usar como referência</Button>}
+
                 {/* Expanded Content */}
                 {expandedId === attempt.id && (
                   <div className="mt-4 space-y-4 border-t border-border/50 pt-4">

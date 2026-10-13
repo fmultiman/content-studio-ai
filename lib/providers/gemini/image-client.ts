@@ -1,4 +1,4 @@
-// FUTURE-064 Slice A — official Gemini API image generation client (text-to-image ONLY). SERVER ONLY.
+// FUTURE-064 Slice A — official Gemini API image generation and editing client. SERVER ONLY.
 //
 // Contract (Google Gemini API, https://ai.google.dev/api/generate-content, verified 2026-10-11):
 //   POST {GEMINI_API_BASE}/v1beta/models/{model}:generateContent   (host constant lives only in client.ts)
@@ -22,6 +22,7 @@
 import sharp from 'sharp'
 import { GEMINI_API_BASE } from './client'
 import { extractGeminiUsage, type GeminiUsage } from './usage'
+import { GEMINI_IMAGE_ALIASES, resolveGeminiImageModel } from './image-models'
 
 export const GEMINI_IMAGE_TIMEOUT_MS = 120_000
 /** Decoded image ceiling. A 1K Gemini image is a few MiB; anything near this is not a legitimate result. */
@@ -100,6 +101,7 @@ export type GeminiImageRequest = {
   aspectRatio: string
   imageSize: string
   timeoutMs?: number
+  referenceImages?: ReadonlyArray<{ bytes: Buffer; mimeType: GeminiImageMimeType }>
 }
 
 export type GeminiImageResult = {
@@ -201,9 +203,12 @@ export function buildGeminiImageUrl(providerModel: string) {
   return `${GEMINI_API_BASE}/v1beta/models/${encodeURIComponent(providerModel)}:generateContent`
 }
 
-export function buildGeminiImageRequestBody(input: Pick<GeminiImageRequest, 'prompt' | 'aspectRatio' | 'imageSize'>) {
+export function buildGeminiImageRequestBody(input: Pick<GeminiImageRequest, 'prompt' | 'aspectRatio' | 'imageSize' | 'referenceImages'>) {
   return {
-    contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
+    contents: [{ role: 'user', parts: [
+      { text: input.prompt },
+      ...(input.referenceImages ?? []).map((image) => ({ inlineData: { mimeType: image.mimeType, data: image.bytes.toString('base64') } })),
+    ] }],
     generationConfig: {
       responseModalities: ['IMAGE'],
       imageConfig: { aspectRatio: input.aspectRatio, imageSize: input.imageSize },
@@ -212,6 +217,26 @@ export function buildGeminiImageRequestBody(input: Pick<GeminiImageRequest, 'pro
 }
 
 export async function generateGeminiImage(input: GeminiImageRequest, options: GeminiImageClientOptions = {}): Promise<GeminiImageResult> {
+  // Validate references again at the adapter boundary. T2I retains its exact existing payload.
+  const references = input.referenceImages ?? []
+  let maxRequestBytes: number | undefined
+  if (references.length) {
+    const model = GEMINI_IMAGE_ALIASES.map(resolveGeminiImageModel).find((entry) => entry?.providerModel === input.providerModel)
+    if (!model || references.length > model.referenceCapabilities.maxReferences || !model.imageSizes.includes(input.imageSize) || !model.aspectRatios.includes(input.aspectRatio)) {
+      throw new GeminiImageError('invalid_request', 'Unsupported image reference configuration.')
+    }
+    maxRequestBytes = model.referenceCapabilities.maxRequestBytes
+    for (const image of references) {
+      if (!model.referenceCapabilities.mimeTypes.includes(image.mimeType) || !hasSignature(image.bytes, image.mimeType)) {
+        throw new GeminiImageError('invalid_request', 'Unsupported image reference format.')
+      }
+      if (image.bytes.length > model.referenceCapabilities.maxBytes) throw new GeminiImageError('invalid_request', 'Image reference is larger than allowed.')
+    }
+  }
+  const requestBody = JSON.stringify(buildGeminiImageRequestBody(input))
+  if (maxRequestBytes !== undefined && Buffer.byteLength(requestBody, 'utf8') > maxRequestBytes) {
+    throw new GeminiImageError('invalid_request', 'Inline request is larger than allowed.')
+  }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? GEMINI_IMAGE_TIMEOUT_MS)
@@ -223,7 +248,7 @@ export async function generateGeminiImage(input: GeminiImageRequest, options: Ge
       response = await fetchImpl(buildGeminiImageUrl(input.providerModel), {
         method: 'POST',
         headers: { 'x-goog-api-key': input.apiKey, 'content-type': 'application/json' },
-        body: JSON.stringify(buildGeminiImageRequestBody(input)),
+        body: requestBody,
         redirect: 'error',
         signal: controller.signal,
       })

@@ -112,10 +112,49 @@ describe('generateGeminiImage — official generateContent contract', () => {
     expect(init.redirect).toBe('error')
   })
 
-  it('has no way to carry an input image: the request body is text-only', () => {
+  it('keeps text-to-image payloads text-only when no reference is submitted', () => {
     const body = JSON.stringify(buildGeminiImageRequestBody({ prompt: 'x', aspectRatio: '16:9', imageSize: '1K' }))
     expect(body).not.toMatch(/inlineData|fileData|inline_data|file_data/)
     expect(buildGeminiImageUrl('gemini-3.1-flash-lite-image')).toContain('/models/gemini-3.1-flash-lite-image:generateContent')
+  })
+
+  it.each(['gemini-nano-banana-2.1', 'gemini-3.1-flash-lite-image'])('sends instruction and one inline reference to %s, with image input usage preserved', async (providerModel) => {
+    for (const [mimeType, bytes] of [['image/png', png], ['image/jpeg', jpeg], ['image/webp', webp]] as const) {
+      const { fetchImpl, promise } = run(ok(imageBody(png, 'image/png', {
+        usageMetadata: { promptTokenCount: 305, promptTokensDetails: [{ modality: 'TEXT', tokenCount: 5 }, { modality: 'IMAGE', tokenCount: 300 }], candidatesTokenCount: 1290 },
+      })), { providerModel, referenceImages: [{ bytes, mimeType }] })
+      const result = await promise
+      const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+      expect(JSON.parse(init.body as string).contents).toEqual([{ role: 'user', parts: [{ text: 'a red fox' }, { inlineData: { mimeType, data: bytes.toString('base64') } }] }])
+      expect(result.usage).toMatchObject({ promptTokens: 305, promptTokensDetails: [{ modality: 'TEXT', tokens: 5 }, { modality: 'IMAGE', tokens: 300 }] })
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it.each([
+    ['two references', () => ({ referenceImages: [{ bytes: png, mimeType: 'image/png' }, { bytes: png, mimeType: 'image/png' }] })],
+    ['unsupported MIME', () => ({ referenceImages: [{ bytes: png, mimeType: 'image/gif' }] })],
+    ['forged MIME', () => ({ referenceImages: [{ bytes: jpeg, mimeType: 'image/png' }] })],
+    ['too many bytes', () => ({ referenceImages: [{ bytes: Buffer.concat([png, Buffer.alloc(10 * 1024 * 1024)]), mimeType: 'image/png' }] })],
+    ['Lite 2K', () => ({ providerModel: 'gemini-3.1-flash-lite-image', imageSize: '2K', referenceImages: [{ bytes: png, mimeType: 'image/png' }] })],
+    ['unsupported ratio', () => ({ aspectRatio: '7:3', referenceImages: [{ bytes: png, mimeType: 'image/png' }] })],
+    ['unknown provider model', () => ({ providerModel: 'other', referenceImages: [{ bytes: png, mimeType: 'image/png' }] })],
+    ['inline request exceeds 20MB', () => ({ prompt: 'é'.repeat(10 * 1000 * 1000), referenceImages: [{ bytes: png, mimeType: 'image/png' }] })],
+  ] as const)('rejects %s before fetching or submitting a paid request', async (_name, overrides) => {
+    const { fetchImpl, promise } = run(ok(imageBody(png)), overrides())
+    expect(await kindOf(promise)).toBe('invalid_request')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('separates documented per-model sizes from deliberately smaller V1 reference caps', () => {
+    const full = resolveGeminiImageModel('gemini-nb-2.1')!
+    const lite = resolveGeminiImageModel('gemini-nb-lite')!
+    expect(full.providerImageSizes).toEqual(['1K', '2K', '4K'])
+    expect(lite.providerImageSizes).toEqual(['1K'])
+    for (const model of [full, lite]) {
+      expect(model.imageSizes).toEqual(['1K'])
+      expect(model.referenceCapabilities).toMatchObject({ maxReferences: 1, providerMaxReferences: 14, maxBytes: 10 * 1024 * 1024, maxRequestBytes: 20 * 1000 * 1000 })
+    }
   })
 
   it('returns validated bytes, mime type, dimensions, and normalized usage (unknown stays null, never 0)', async () => {

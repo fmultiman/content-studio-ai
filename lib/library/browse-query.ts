@@ -8,6 +8,7 @@
 
 import { isUuid } from '@/lib/library/production-scope'
 import { I2V_SOURCE_MIME_TYPES } from '@/lib/video-generation/i2v-source'
+import { IMAGE_REFERENCE_MIME_TYPES } from '@/lib/media-source/profile'
 
 export const BROWSE_DEFAULT_LIMIT = 48
 export const BROWSE_MAX_LIMIT = 100
@@ -31,10 +32,11 @@ export function parseScope(raw: string | null): BrowseScope | 'none' | null {
   return (BROWSE_SCOPES as readonly string[]).includes(raw) ? (raw as BrowseScope) : null
 }
 
-/** Typed source-format eligibility. Only the I2V image rule exists; it maps to a fixed MIME allow-list. */
+/** Typed source-format profiles map to fixed server-owned MIME allow-lists. */
 export function parseFormat(raw: string | null): readonly string[] | 'none' | null {
   if (raw === null || raw === '') return 'none'
-  return raw === 'i2v-image' ? I2V_SOURCE_MIME_TYPES : null
+  if (raw === 'i2v-image') return I2V_SOURCE_MIME_TYPES
+  return raw === 'image-reference' ? IMAGE_REFERENCE_MIME_TYPES : null
 }
 
 export function clampLimit(raw: string | null): number {

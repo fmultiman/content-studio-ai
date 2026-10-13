@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { i2vSourceFields, type I2vSourceSelection } from '@/lib/video-generation/i2v-source'
+import { IMAGE_REFERENCE_MAX_BYTES, type ImageSourceProfile } from '@/lib/media-source/profile'
 import {
   PROD_CURRENT,
   PROD_OTHER,
@@ -37,11 +38,12 @@ import { I2vSourcePicker } from './i2v-source-picker'
 
 let changes: Array<I2vSourceSelection | null> = []
 
-function Harness({ projectId = PROJECT, productionId = PROD_CURRENT }: { projectId?: string; productionId?: string | null }) {
+function Harness({ projectId = PROJECT, productionId = PROD_CURRENT, profile }: { projectId?: string; productionId?: string | null; profile?: ImageSourceProfile }) {
   const [value, setValue] = useState<I2vSourceSelection | null>(null)
   return (
     <>
       <I2vSourcePicker
+        profile={profile}
         projectId={projectId}
         productionId={productionId}
         value={value}
@@ -90,6 +92,56 @@ const chooseProduction = async (label: string | RegExp) => {
   fireEvent.keyDown(screen.getByTestId('i2v-source-production-filter'), { key: 'Enter' })
   fireEvent.click(await screen.findByRole('option', { name: label }))
 }
+
+describe('image-reference profile on the shared chooser', () => {
+  const openReference = async () => {
+    render(<Harness profile="image-reference" />)
+    fireEvent.click(screen.getByTestId('i2v-source-choose'))
+    await screen.findByTestId('i2v-source-browser')
+  }
+
+  it('passes the explicit profile to generated images and Library browse', async () => {
+    state.ai = [aiRow('webp', { mime_type: 'image/webp' })]
+    state.library = [libraryRow('ref-webp', { mime_type: 'image/webp', production_id: PROD_CURRENT })]
+    await openReference()
+    await screen.findByTestId('i2v-ai-option-webp')
+    expect(state.requests).toContain(`/api/images/browse?projectId=${PROJECT}&profile=image-reference`)
+    tab('library')
+    await screen.findByTestId('i2v-library-option-ref-webp')
+    expect(lastParams('arquivos').get('format')).toBe('image-reference')
+    fireEvent.click(screen.getByTestId('i2v-library-option-ref-webp'))
+    expect(changes.at(-1)?.source).toEqual({ type: 'library', id: 'ref-webp' })
+  })
+
+  it('uploads WebP durably through S3 and Library registration with Project/profile context', async () => {
+    await openReference()
+    tab('upload')
+    await waitFor(() => expect(screen.getByTestId('i2v-upload-destination').textContent).toContain('Maitê'))
+    const input = screen.getByTestId('i2v-upload-input')
+    expect(input.getAttribute('accept')).toBe('image/png,image/jpeg,image/webp')
+    fireEvent.change(input, { target: { files: [new File(['webp'], 'referencia.webp', { type: 'image/webp' })] } })
+    await waitFor(() => expect(changes.at(-1)?.source).toEqual({ type: 'library', id: 'lib-uploaded' }))
+    expect(state.uploads.presign).toMatchObject({ folder: 'library', profile: 'image-reference', projectId: PROJECT, mimeType: 'image/webp', fileSize: 4 })
+    expect(state.uploads.put?.type).toBe('image/webp')
+    expect(state.uploads.save).toMatchObject({ projectId: PROJECT, profile: 'image-reference', mimeType: 'image/webp', storageProvider: 's3' })
+  })
+
+  it('accepts exactly 10 MiB and refuses larger references before any upload request', async () => {
+    await openReference()
+    tab('upload')
+    await waitFor(() => expect(screen.getByTestId('i2v-upload-destination').textContent).toContain('Maitê'))
+    const input = screen.getByTestId('i2v-upload-input')
+    const tooLarge = new File(['x'], 'big.png', { type: 'image/png' })
+    Object.defineProperty(tooLarge, 'size', { value: IMAGE_REFERENCE_MAX_BYTES + 1 })
+    fireEvent.change(input, { target: { files: [tooLarge] } })
+    expect(screen.getByRole('alert').textContent).toContain('10 MiB')
+    expect(state.uploads.presign).toBeUndefined()
+    const atLimit = new File(['x'], 'limit.png', { type: 'image/png' })
+    Object.defineProperty(atLimit, 'size', { value: IMAGE_REFERENCE_MAX_BYTES })
+    fireEvent.change(input, { target: { files: [atLimit] } })
+    await waitFor(() => expect(state.uploads.save?.fileSize).toBe(IMAGE_REFERENCE_MAX_BYTES))
+  })
+})
 
 describe('compact field', () => {
   it('15. the browser is collapsed initially: only "Escolher uma imagem", no grid and no request', () => {

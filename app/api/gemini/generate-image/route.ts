@@ -1,4 +1,4 @@
-// FUTURE-064 Slice A — official Google Gemini ("Nano Banana") text-to-image, canonical Session/Attempt only.
+// FUTURE-064 Slice A — official Google Gemini ("Nano Banana") image generation/editing, canonical Session/Attempt only.
 //
 // Shape follows the synchronous OpenAI route (the provider returns the image inline), NOT the NanoBananaAPI.ai
 // submit/callback/poll flow (that is a different, third-party provider and is untouched).
@@ -7,7 +7,7 @@
 //   1. authenticate                      - nothing else is evaluated for an anonymous caller
 //   2. release switch                    - disabled by default; nothing durable and no credential is touched
 //   3. FUTURE-050 execution policy       - Preview/local/unknown runtimes never spend
-//   4. validate the request              - closed schema, closed model registry, no source images
+//   4. validate the request              - closed schema, closed model registry, durable source identities
 //   5. freezeAndClaimImageAttempt        - ownership, immutable snapshot, idempotency, exactly one Attempt per request
 //   6. resolveProviderExecution(gemini)  - the existing Gemini BYOK resolver; missing vs unavailable stay distinct
 //   7. ONE Gemini call, no retry         - failures close the Attempt; a retry is a new, explicit request
@@ -21,8 +21,10 @@ import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { resolveProviderExecution } from '@/lib/credentials/provider-execution'
 import { PROVIDER_CREDENTIAL_UNAVAILABLE, isProviderCredentialUnavailableError } from '@/lib/credentials/api-credential-store'
 import { providerCredentialUnavailableResponse } from '@/lib/credentials/provider-credential-http'
-import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, ImageSubmissionError } from '@/lib/image-generation/execution'
+import { freezeAndClaimImageAttempt, failImageAttempt, imageAttemptReplay, linkImageOutput, recordImageReferenceProvenance, ImageSubmissionError } from '@/lib/image-generation/execution'
 import type { ImageGenerationAttemptRow } from '@/lib/image-generation/attempt'
+import { ImageReferenceSchema, type ImageReference } from '@/lib/image-generation/session'
+import { ImageReferenceError, loadGeminiImageReferences } from '@/lib/image-generation/reference-media'
 import { generateGeminiImage, isGeminiImageError, type GeminiImageError } from '@/lib/providers/gemini/image-client'
 import { accountGeminiImageUsage, type GeminiImageUsageContext } from '@/lib/usage/gemini-image-usage'
 import {
@@ -44,15 +46,15 @@ import {
 
 const MAX_BODY_CHARS = 64 * 1024
 const MAX_PROMPT_CHARS = 20_000
-const ALLOWED_FIELDS = new Set(['prompt', 'model', 'aspectRatio', 'sessionId', 'clientRequestId'])
-// Any field that looks like an input image / reference / mask / file is an image-to-image attempt: not in V1.
+const ALLOWED_FIELDS = new Set(['prompt', 'model', 'aspectRatio', 'sessionId', 'clientRequestId', 'sourceReferences'])
+// Only sourceReferences may identify an input. Raw images, URLs, masks and files are rejected.
 const SOURCE_FIELD = /image|img|photo|picture|reference|source|mask|inline|file|attach|upload|media|video/i
 
 class RequestRejected extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message) }
 }
 
-type ValidRequest = { prompt: string; model: GeminiImageModel; aspectRatio: string; sessionId: string; clientRequestId: string }
+type ValidRequest = { prompt: string; model: GeminiImageModel; aspectRatio: string; sessionId: string; clientRequestId: string; sourceReferences?: ImageReference[] }
 
 async function parseRequest(request: Request): Promise<ValidRequest> {
   const text = await request.text()
@@ -81,12 +83,23 @@ async function parseRequest(request: Request): Promise<ValidRequest> {
   }
 
   const aspectRatio = fields.aspectRatio === undefined ? GEMINI_IMAGE_DEFAULT_ASPECT_RATIO : fields.aspectRatio
-  if (!isGeminiImageAspectRatio(aspectRatio)) throw new RequestRejected(400, 'INVALID_ASPECT_RATIO', 'Proporção de imagem inválida.')
+  if (!isGeminiImageAspectRatio(aspectRatio) || !model.aspectRatios.includes(aspectRatio)) throw new RequestRejected(400, 'INVALID_ASPECT_RATIO', 'Proporção de imagem inválida.')
+
+  let sourceReferences: ImageReference[] | undefined
+  if (fields.sourceReferences !== undefined) {
+    if (!Array.isArray(fields.sourceReferences)) throw new RequestRejected(400, 'INVALID_SOURCE_REFERENCE', 'Referência inválida.')
+    if (fields.sourceReferences.length > model.referenceCapabilities.maxReferences) throw new RequestRejected(400, 'SOURCE_REFERENCE_LIMIT', 'Use uma referência por geração.')
+    sourceReferences = fields.sourceReferences.map((reference) => {
+      const parsed = ImageReferenceSchema.safeParse(reference)
+      if (!parsed.success) throw new RequestRejected(400, 'INVALID_SOURCE_REFERENCE', 'Use o identificador de uma imagem ou arquivo da Biblioteca.')
+      return parsed.data
+    })
+  }
 
   if (typeof fields.sessionId !== 'string' || typeof fields.clientRequestId !== 'string') {
     throw new RequestRejected(400, 'SESSION_REQUEST_ID_REQUIRED', 'sessionId e clientRequestId são obrigatórios')
   }
-  return { prompt, model, aspectRatio, sessionId: fields.sessionId, clientRequestId: fields.clientRequestId }
+  return { prompt, model, aspectRatio, sessionId: fields.sessionId, clientRequestId: fields.clientRequestId, ...(sourceReferences !== undefined ? { sourceReferences } : {}) }
 }
 
 function submissionFailure(error: GeminiImageError): ImageSubmissionError {
@@ -115,11 +128,26 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       prompt: input.prompt,
       provider: GEMINI_IMAGE_PROVIDER,
       model: input.model.alias,
+      ...(input.sourceReferences !== undefined ? { sourceReferences: input.sourceReferences } : {}),
       // Part of the idempotency fingerprint: a different size/ratio/provider model is a different request.
       config: { aspectRatio: input.aspectRatio, imageSize: GEMINI_IMAGE_SIZE, providerModel: input.model.providerModel },
     })
     if (!frozen.claimed) return imageAttemptReplay(frozen.attempt)
     const attempt: ImageGenerationAttemptRow = frozen.attempt
+
+    // Load only after the exclusive claim. A replay never reads media or calls the provider again.
+    let references: Awaited<ReturnType<typeof loadGeminiImageReferences>>
+    try {
+      references = await loadGeminiImageReferences({ db: input.supabase, userId: input.userId,
+        projectId: attempt.project_id, references: (attempt.source_snapshot?.references ?? []) as ImageReference[], model: input.model })
+      if (references.length) {
+        await recordImageReferenceProvenance(attempt, references.map((reference) => reference.provenance))
+      }
+    } catch (error) {
+      await failImageAttempt(attempt, 'Não foi possível validar a referência.', false)
+      if (error instanceof ImageReferenceError) throw new ImageSubmissionError(error.status, error.code, error.message)
+      throw error
+    }
 
     const execution = await resolveProviderExecution(input.supabase, { userId: input.userId, provider: GEMINI_IMAGE_PROVIDER })
     if (execution.status !== 'ready') {
@@ -139,6 +167,7 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
       imageSize: GEMINI_IMAGE_SIZE,
       funding: execution.executionMode,
       credentialSource: execution.credentialSource,
+      ...(references.length ? { inputReferences: references.map((reference) => reference.provenance) } : {}),
       ...response,
     })
 
@@ -151,6 +180,7 @@ async function runCanonicalGemini(input: ValidRequest & { supabase: Awaited<Retu
         prompt: input.prompt,
         aspectRatio: input.aspectRatio,
         imageSize: GEMINI_IMAGE_SIZE,
+        ...(references.length ? { referenceImages: references.map(({ bytes, mimeType }) => ({ bytes, mimeType })) } : {}),
       })
     } catch (error) {
       if (!isGeminiImageError(error)) throw error

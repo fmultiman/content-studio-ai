@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +10,9 @@ import type { ReviewRecordV1 } from '@/lib/reviews/contracts'
 import { SaveImageToLibrary } from '@/components/images/save-image-to-library'
 
 interface ImageResultProps {
+  onUseAsReference?: () => void
+  referenceActionDisabled?: boolean
+  usedReferences?: ReactNode
   imageUrl: string
   status: 'draft' | 'generating' | 'approved' | 'rejected'
   onRegenerate: () => void
@@ -29,6 +33,9 @@ interface ImageResultProps {
 
 export function ImageResult({
   imageUrl,
+  onUseAsReference,
+  referenceActionDisabled = false,
+  usedReferences,
   status,
   onRegenerate,
   onApprove,
@@ -121,6 +128,9 @@ export function ImageResult({
             />
           )}
         </div>
+
+        {usedReferences}
+        {onUseAsReference && imageId && <Button variant="outline" onClick={onUseAsReference} disabled={referenceActionDisabled || status === 'generating'}>Usar como referência</Button>}
 
         {/* Evaluation Result */}
         {(review || evaluation) && (
