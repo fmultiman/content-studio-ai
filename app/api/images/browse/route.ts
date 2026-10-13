@@ -4,7 +4,7 @@ import { isTrustedImageStoragePath } from '@/lib/storage/image-path'
 import { presignImageObject } from '@/lib/storage/image-storage'
 import { isUuid } from '@/lib/library/production-scope'
 import { clampLimit, decodeCursor, encodeCursor, keysetFilter } from '@/lib/library/browse-query'
-import { I2V_SOURCE_MIME_TYPES } from '@/lib/video-generation/i2v-source'
+import { parseImageSourceProfile, sourceMimeTypes } from '@/lib/media-source/profile'
 
 // VIDEO_I2V_SOURCE_BROWSER_V1 — "Geradas por IA".
 //
@@ -44,6 +44,8 @@ export async function GET(request: Request) {
     const cursor = decodeCursor(params.get('cursor'))
     if (cursor === null) return NextResponse.json({ error: 'Cursor inválido.', code: 'INVALID_CURSOR' }, { status: 400 })
     const limit = clampLimit(params.get('limit'))
+    const profile = parseImageSourceProfile(params.get('profile'))
+    if (!profile) return NextResponse.json({ error: 'Perfil de imagem inválido.', code: 'INVALID_SOURCE_PROFILE' }, { status: 400 })
 
     let query = supabase
       .from('images')
@@ -51,7 +53,7 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
       .eq('project_id', projectId)
       .not('storage_path', 'is', null)
-      .in('mime_type', [...I2V_SOURCE_MIME_TYPES])
+      .in('mime_type', [...sourceMimeTypes(profile)])
     if (cursor !== 'none') query = query.or(keysetFilter(cursor))
 
     const { data, error } = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1)

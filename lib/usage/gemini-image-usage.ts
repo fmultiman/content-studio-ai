@@ -70,6 +70,8 @@ export type GeminiImageUsageContext = {
   rejectedAs?: string | null
   responseId?: string | null
   modelVersion?: string | null
+  /** Verified input provenance, retained when accounting writes the lifecycle metadata. */
+  inputReferences?: unknown[]
 }
 
 export type GeminiImageUsageCompleteness = 'reported' | 'partial' | 'unknown'
@@ -230,6 +232,7 @@ export async function markGeminiImageAttemptAccounting(
 ): Promise<boolean> {
   const { attribution } = describeGeminiImageUsage(usage)
   const resultMetadata = {
+    ...(context.inputReferences?.length ? { operation: 'image_to_image', inputReferences: context.inputReferences } : {}),
     provider_response: {
       state: context.providerResponse,
       ...(context.rejectedAs ? { rejected_as: context.rejectedAs } : {}),

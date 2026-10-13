@@ -486,6 +486,11 @@ describe('scope=gallery — Creative Editor image outputs only (Galeria source)'
 })
 
 describe('format=i2v-image — PNG and JPEG only (source eligibility, not a Library-wide format rule)', () => {
+  it('image-reference explicitly permits PNG/JPEG/WebP while Video keeps PNG/JPEG', async () => {
+    seed([file(1), file(2, { mime_type: 'image/jpeg' }), file(3, { mime_type: 'image/webp' }), file(4, { mime_type: 'image/gif' }), file(5, { mime_type: 'image/webp', user_id: OTHER }), file(6, { mime_type: 'image/webp', project_id: PROJECT_B })])
+    expect((await ids(await browse({ projectId: PROJECT_A, scope: 'arquivos', kind: 'image', format: 'image-reference' }))).sort()).toEqual([uuid(1), uuid(2), uuid(3)])
+    expect((await ids(await browse({ projectId: PROJECT_A, format: 'i2v-image' }))).sort()).toEqual([uuid(1), uuid(2)])
+  })
   beforeEach(() => {
     seed([
       file(1, { mime_type: 'image/png' }),

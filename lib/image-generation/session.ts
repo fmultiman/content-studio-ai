@@ -10,10 +10,11 @@ export const IMAGE_SESSION_LIMITS = {
   listMax: 100,
 } as const
 
-const ImageReferenceSchema = z.object({
+export const ImageReferenceSchema = z.object({
   type: z.enum(['image', 'library_file']),
   id: z.string().refine(isUuid, 'reference id must be a UUID'),
 }).strict()
+export type ImageReference = z.infer<typeof ImageReferenceSchema>
 
 export const ImageGenerationWorkingStateV1Schema = z.object({
   schemaVersion: z.literal(1),

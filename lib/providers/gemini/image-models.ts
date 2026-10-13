@@ -22,11 +22,33 @@ export type GeminiImageModel = {
   providerModel: string
   /** pt-BR label for the later UI slice. */
   label: string
+  referenceCapabilities: {
+    /** V1 deliberately exposes one input; the documented provider ceiling is separate. */
+    maxReferences: number
+    providerMaxReferences: number
+    maxBytes: number
+    maxRequestBytes: number
+    mimeTypes: readonly string[]
+    maxDimension: number
+  }
+  aspectRatios: readonly string[]
+  imageSizes: readonly string[]
+  providerImageSizes: readonly string[]
 }
 
+// Google image-generation / image-understanding / generate-content docs, checked 2026-10-13.
+// 20 MB applies to the complete inline request, including base64 and the prompt.
+const REFERENCE_CAPABILITIES = Object.freeze({
+  maxReferences: 1, providerMaxReferences: 14, maxBytes: 10 * 1024 * 1024,
+  maxRequestBytes: 20 * 1000 * 1000,
+  mimeTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp']),
+  // Application decoding ceiling, not a Google model limit.
+  maxDimension: 8192,
+})
+const ASPECT_RATIOS = Object.freeze(['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'])
 const REGISTRY: ReadonlyArray<GeminiImageModel> = Object.freeze([
-  Object.freeze({ alias: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', label: 'Google Gemini — Nano Banana 2.1 (oficial)' }),
-  Object.freeze({ alias: 'gemini-nb-lite', providerModel: 'gemini-3.1-flash-lite-image', label: 'Google Gemini — Nano Banana 2 Lite (oficial)' }),
+  Object.freeze({ alias: 'gemini-nb-2.1', providerModel: 'gemini-nano-banana-2.1', label: 'Google Gemini — Nano Banana 2.1 (oficial)', referenceCapabilities: REFERENCE_CAPABILITIES, aspectRatios: ASPECT_RATIOS, imageSizes: Object.freeze(['1K']), providerImageSizes: Object.freeze(['1K', '2K', '4K']) }),
+  Object.freeze({ alias: 'gemini-nb-lite', providerModel: 'gemini-3.1-flash-lite-image', label: 'Google Gemini — Nano Banana 2 Lite (oficial)', referenceCapabilities: REFERENCE_CAPABILITIES, aspectRatios: ASPECT_RATIOS, imageSizes: Object.freeze(['1K']), providerImageSizes: Object.freeze(['1K']) }),
 ])
 
 export const GEMINI_IMAGE_ALIASES: ReadonlyArray<GeminiImageAlias> = REGISTRY.map((entry) => entry.alias)

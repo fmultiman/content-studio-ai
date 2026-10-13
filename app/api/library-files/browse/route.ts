@@ -23,7 +23,7 @@ import {
 //   - projectId is REQUIRED and must be the caller's own Project
 //   - production: all (default) | unscoped | <uuid of a Production of THAT Project>
 //   - folder (exact path, independent of Production), kind, q (name search), trash,
-//     scope (arquivos | gallery), format (i2v-image: PNG/JPEG only)
+//     scope (arquivos | gallery), format (i2v-image: PNG/JPEG, image-reference: PNG/JPEG/WebP)
 //   - order: created_at DESC, id DESC; keyset cursor; default 48, max 100 per page
 // Signed URLs are created only for the rows of the returned page (<= 100), never for the whole Library.
 

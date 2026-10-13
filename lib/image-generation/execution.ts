@@ -5,7 +5,8 @@ import { createPresignedReadUrl, uploadImageToS3 } from '@/lib/storage/s3'
 import { fetchRemoteImage, NANOBANANA_RESULT_IMAGE_POLICY } from '@/lib/security/safe-remote-image'
 import { generateImageAttemptFingerprint } from './idempotency'
 import { ATTEMPT_COLUMNS, type ImageGenerationAttemptRow } from './attempt'
-import { isUuid, parseWorkingState, type ImageGenerationSessionRow } from './session'
+import { isUuid, parseWorkingState, ImageReferenceSchema, type ImageReference, type ImageGenerationSessionRow } from './session'
+import { resolveGeminiImageModel } from '@/lib/providers/gemini/image-models'
 
 export class ImageSubmissionError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message) }
@@ -14,6 +15,7 @@ export class ImageSubmissionError extends Error {
 export async function freezeAndClaimImageAttempt(input: {
   userId: string; sessionId: unknown; clientRequestId: unknown; prompt: string;
   provider: string; model: string; config: Record<string, unknown>;
+  sourceReferences?: ImageReference[];
 }) {
   if (!isUuid(input.sessionId) || !isUuid(input.clientRequestId)) {
     throw new ImageSubmissionError(400, 'SESSION_REQUEST_ID_REQUIRED', 'Session e clientRequestId são obrigatórios.')
@@ -35,9 +37,14 @@ export async function freezeAndClaimImageAttempt(input: {
   }
   const state = parseWorkingState(session.working_state)
   if (!state.success) throw new ImageSubmissionError(409, 'INVALID_WORKING_STATE', 'Estado da geração inválido.')
-  // Existing adapters are text-to-image only. Never pretend references were sent.
-  if (state.data.sourceReferences.length) throw new ImageSubmissionError(400, 'SOURCE_NOT_SUPPORTED', 'Este modelo ainda não envia referências de imagem.')
-  const sourceSnapshot = { references: [], metadata: { userInput: session.working_prompt } }
+  const references = input.sourceReferences ?? state.data.sourceReferences
+  if (!references.every((reference) => ImageReferenceSchema.safeParse(reference).success)) throw new ImageSubmissionError(400, 'INVALID_SOURCE_REFERENCE', 'Referência inválida.')
+  const referenceModel = input.provider === 'gemini' ? resolveGeminiImageModel(input.model) : null
+  // Never silently drop a reference for adapters without image inputs.
+  if (references.length && !referenceModel) throw new ImageSubmissionError(400, 'SOURCE_NOT_SUPPORTED', 'Este modelo ainda não envia referências de imagem.')
+  if (referenceModel && references.length > referenceModel.referenceCapabilities.maxReferences) throw new ImageSubmissionError(400, 'SOURCE_REFERENCE_LIMIT', 'Use uma referência por geração.')
+  if (references.length && !session.project_id) throw new ImageSubmissionError(400, 'SOURCE_PROJECT_REQUIRED', 'Selecione um projeto para usar uma referência.')
+  const sourceSnapshot = { references, metadata: { userInput: session.working_prompt } }
   const fingerprint = generateImageAttemptFingerprint({
     sessionId: input.sessionId, submittedPrompt: input.prompt, provider: input.provider,
     model: input.model, submittedConfig: input.config, sourceSnapshot,
@@ -47,6 +54,9 @@ export async function freezeAndClaimImageAttempt(input: {
   let existing = await find()
   if (existing.error) throw new ImageSubmissionError(503, 'STORE_UNAVAILABLE', 'Não foi possível verificar o pedido.')
   if (!existing.data) {
+    // An explicit request must agree with the persisted state before a new execution.
+    // Replays below use their immutable snapshot even after the Session changes.
+    if (input.sourceReferences && JSON.stringify(references) !== JSON.stringify(state.data.sourceReferences)) throw new ImageSubmissionError(409, 'SOURCE_STATE_CONFLICT', 'A referência mudou. Salve a geração antes de enviar.')
     for (let n = 0; n < 3; n++) {
       const latest = await db.from('image_generation_attempts').select('sequence').eq('session_id', input.sessionId)
         .order('sequence', { ascending: false }).limit(1).maybeSingle()
@@ -72,7 +82,7 @@ export async function freezeAndClaimImageAttempt(input: {
   // description; subsequent Session edits do not invalidate a network retry.
   const replayFingerprint = generateImageAttemptFingerprint({
     sessionId: input.sessionId, submittedPrompt: input.prompt, provider: input.provider,
-    model: input.model, submittedConfig: input.config, sourceSnapshot: attempt.source_snapshot,
+    model: input.model, submittedConfig: input.config, sourceSnapshot: { ...attempt.source_snapshot, references },
   })
   if (attempt.request_fingerprint !== replayFingerprint) throw new ImageSubmissionError(409, 'IDEMPOTENCY_CONFLICT', 'Este pedido já foi usado com outros parâmetros.')
   const claim = await db.from('image_generation_attempts').update({ status: 'submitted' })
@@ -86,6 +96,13 @@ export async function failImageAttempt(attempt: ImageGenerationAttemptRow, messa
     status: 'failed', failure_details: { message, outcome_unknown: outcomeUnknown }, completed_at: new Date().toISOString(),
   }).eq('id', attempt.id).eq('user_id', attempt.user_id).in('status', ['submitted', 'processing'])
   if (result.error) throw new ImageSubmissionError(503, 'LIFECYCLE_SAVE_FAILED', 'Não foi possível registrar o resultado.')
+}
+
+export async function recordImageReferenceProvenance(attempt: ImageGenerationAttemptRow, inputReferences: unknown[]) {
+  const result = await createServiceRoleSupabase().from('image_generation_attempts').update({
+    result_metadata: { operation: 'image_to_image', inputReferences },
+  }).eq('id', attempt.id).eq('user_id', attempt.user_id).eq('status', 'submitted')
+  if (result.error) throw new ImageSubmissionError(503, 'PROVENANCE_SAVE_FAILED', 'Não foi possível registrar a referência.')
 }
 
 export async function markImageAttemptProcessing(attempt: ImageGenerationAttemptRow, providerTaskId: string) {

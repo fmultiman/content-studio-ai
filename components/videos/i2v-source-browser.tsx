@@ -31,6 +31,7 @@ import {
 } from '@/lib/video-generation/i2v-source-browse'
 import { SourceList, type SourceTileItem } from '@/components/videos/i2v-source-list'
 import { I2vSourceUpload } from '@/components/videos/i2v-source-upload'
+import type { ImageSourceProfile } from '@/lib/media-source/profile'
 import { usePagedSource, type Page } from '@/components/videos/use-paged-source'
 
 // VIDEO_I2V_SOURCE_BROWSER_V1 — the chooser itself: Geradas por IA | Galeria | Arquivos | Enviar.
@@ -95,6 +96,7 @@ export function I2vSourceBrowser({
   locked = false,
   onUploadBusyChange,
   defaultProductionMode = 'current',
+  profile = 'video-i2v',
 }: {
   projectId: string
   /** The Production of the generation form. Default filter, and the Production of any upload. */
@@ -107,6 +109,7 @@ export function I2vSourceBrowser({
   onUploadBusyChange?: (busy: boolean) => void
   /** The Production filter before the user chooses one. AI Video keeps 'current'; a Project-scoped caller (Static) passes 'all'. */
   defaultProductionMode?: ProductionFilterMode
+  profile?: ImageSourceProfile
 }) {
   const [category, setCategory] = useState<I2vSourceCategory>('ai')
   // An explicit Production filter choice is remembered WITH the generation Production it was made for: a different
@@ -178,7 +181,7 @@ export function I2vSourceBrowser({
   const production = productionParam(productionMode, productionId)
 
   // ---- per-category lists (exactly one is active at a time) ----------------------------------------------------
-  const aiUrl = category === 'ai' ? aiImagesUrl({ projectId }) : null
+  const aiUrl = category === 'ai' ? aiImagesUrl({ projectId, profile }) : null
   const ai = usePagedSource<AiImageRow>({
     url: aiUrl,
     withCursor: appendCursor,
@@ -189,7 +192,7 @@ export function I2vSourceBrowser({
   // Arquivos waits for the Project root folder (or for the folder list to fail, then browses without a folder).
   const libraryReady = category === 'gallery' || Boolean(rootPath) || foldersFailed
   const libraryUrl = libraryActive && libraryReady
-    ? libraryBrowseUrl({ category: category as 'gallery' | 'library', projectId, production, search, folder: category === 'library' ? activeFolder : null })
+    ? libraryBrowseUrl({ category: category as 'gallery' | 'library', projectId, production, search, folder: category === 'library' ? activeFolder : null, profile })
     : null
   const library = usePagedSource<LibraryRow>({
     url: libraryUrl,
@@ -446,6 +449,7 @@ export function I2vSourceBrowser({
 
         {category === 'upload' && (
           <I2vSourceUpload
+            profile={profile}
             projectId={projectId}
             productionId={productionId}
             productionName={currentProductionName}

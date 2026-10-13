@@ -149,7 +149,7 @@ describe('request validation (closed schema, closed model registry)', () => {
 
   it.each([
     [{ image: 'data:image/png;base64,AAAA' }], [{ images: ['x'] }], [{ imageUrl: 'https://x.test/a.png' }], [{ image_url: 'x' }],
-    [{ sourceImage: 'x' }], [{ sourceImages: [] }], [{ sourceReferences: [{ type: 'image', id: 'x' }] }], [{ referenceImages: ['x'] }],
+    [{ sourceImage: 'x' }], [{ sourceImages: [] }], [{ referenceImages: ['x'] }],
     [{ references: [] }], [{ inlineData: { mimeType: 'image/png', data: 'AAAA' } }], [{ fileData: {} }], [{ mask: 'x' }],
     [{ files: [] }], [{ attachments: [] }], [{ inputImage: 'x' }], [{ video: 'x' }],
   ])('explicitly rejects image-to-image input %j', async (extra) => {
@@ -217,11 +217,11 @@ describe('ownership', () => {
     nothingHappened()
   })
 
-  it('rejects a Session that already carries image references (no image-to-image through session state)', async () => {
+  it('requires a project when a Session carries image references', async () => {
     useDb(createFakeDb({ image_generation_sessions: [session({ working_state: { ...state, sourceReferences: [{ type: 'image', id: '44444444-4444-4444-8444-444444444444' }] } })] }))
     const response = await post(body())
     expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code: 'SOURCE_NOT_SUPPORTED' })
+    expect(await response.json()).toMatchObject({ code: 'SOURCE_PROJECT_REQUIRED' })
     nothingHappened()
   })
 })
