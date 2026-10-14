@@ -10,6 +10,9 @@ import {
   ESTIMATED_COST_LABEL,
   PARTIAL_ESTIMATED_COST_LABEL,
   PRICING_UNAVAILABLE_LABEL,
+  SIMULATED_COST_LABEL,
+  costState,
+  describeCostCoverage,
   estimatedCostDetails,
   formatEstimatedAmount,
   unpricedReason,
@@ -247,9 +250,20 @@ export function UsageHistory() {
                     ))}
                   </ul>
                 )}
+                {costSummary.simulatedEvents > 0 && (
+                  <p className="text-xs text-muted-foreground" data-testid="usage-cost-simulated">
+                    {costSummary.simulatedTotals.map((total) => formatEstimatedAmount(total.amount, total.currency)).join(' + ')} em simulação a preço atual para{' '}
+                    {costSummary.simulatedEvents} {costSummary.simulatedEvents === 1 ? 'registro anterior' : 'registros anteriores'} à primeira tabela de preços — fora do total estimado.
+                  </p>
+                )}
                 {costSummary.unpricedEvents > 0 && (
                   <p className="text-xs text-muted-foreground" data-testid="usage-cost-unpriced">
                     {costSummary.unpricedEvents} {costSummary.unpricedEvents === 1 ? 'registro' : 'registros'} sem preço disponível — não entram no total e não valem zero.
+                  </p>
+                )}
+                {!costSummary.complete && costSummary.totalEvents > 0 && (
+                  <p className="text-xs font-medium" data-testid="usage-cost-coverage">
+                    Cobertura: {describeCostCoverage(costSummary)}
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground" data-testid="usage-cost-disclaimer">
@@ -310,16 +324,33 @@ export function UsageHistory() {
                           {ESTIMATED_COST_LABEL}: {formatEstimatedAmount(event.estimated_cost.amount, event.estimated_cost.currency)}
                         </p>
                       )}
-                      {event.estimated_cost && event.estimated_cost.status !== 'estimated' && (
+                      {event.estimated_cost && event.estimated_cost.status === 'simulated' && (
                         <p
                           className="text-xs text-muted-foreground"
                           tabIndex={0}
                           data-testid="usage-cost"
-                          data-status={event.estimated_cost.status}
-                          title={unpricedReason(event.estimated_cost) ?? undefined}
+                          data-status="simulated"
+                          title={estimatedCostDetails(event.estimated_cost).join(' · ')}
                         >
-                          {PRICING_UNAVAILABLE_LABEL}
+                          {SIMULATED_COST_LABEL}: {formatEstimatedAmount(event.estimated_cost.amount, event.estimated_cost.currency)}
                         </p>
+                      )}
+                      {event.estimated_cost && (event.estimated_cost.status === 'unavailable' || event.estimated_cost.status === 'ambiguous') && (
+                        <>
+                          <p
+                            className="text-xs text-muted-foreground"
+                            tabIndex={0}
+                            data-testid="usage-cost"
+                            data-status={event.estimated_cost.status}
+                            data-cost-state={costState(event.estimated_cost).key}
+                            title={unpricedReason(event.estimated_cost) ?? undefined}
+                          >
+                            {PRICING_UNAVAILABLE_LABEL}
+                          </p>
+                          {costState(event.estimated_cost).key === 'unknown' && (
+                            <p className="text-xs text-muted-foreground" data-testid="usage-cost-state">{costState(event.estimated_cost).label}</p>
+                          )}
+                        </>
                       )}
                     </div>
                   </li>

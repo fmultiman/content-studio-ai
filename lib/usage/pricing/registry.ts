@@ -7,7 +7,11 @@ import { parseFixed, type Fixed } from './decimal'
 
 // `image_output` (FUTURE-064 Slice D) = the price of IMAGE-modality output tokens. It is a category of its own on purpose:
 // image output is billed at a different rate than text/thinking output and must never fall back to the `output` price.
-export const PRICING_CATEGORIES = ['input', 'cached_input', 'output', 'image_output', 'unit'] as const
+// PROVIDER_COST_ATTRIBUTION_V1 widens it again: `image_input` = IMAGE-modality INPUT tokens (OpenAI GPT Image bills text and image input at different rates),
+// and `video_second_<resolution>` = one generated second of video at that output resolution (Google Veo is priced per second AND per resolution).
+export const PRICING_CATEGORIES = [
+  'input', 'cached_input', 'output', 'image_output', 'image_input', 'unit', 'video_second_720p', 'video_second_1080p', 'video_second_4k',
+] as const
 export type PricingCategory = (typeof PRICING_CATEGORIES)[number]
 
 export const EFFECTIVE_FROM_BASES = ['official_effective_date', 'observed_at_source'] as const
