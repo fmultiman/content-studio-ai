@@ -285,13 +285,13 @@ describe('Google Veo client — first/last frame', () => {
   const params = { apiKey: 'AIza-SECRET-KEY', model: 'veo-3.1-fast-generate-preview', prompt: 'a door opens', duration: 8, resolution: '720p' as const, aspectRatio: '16:9' as const }
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-  it('builds instances[0] with prompt + image + lastFrame (inlineData) and the explicit parameters', () => {
+  it('builds instances[0] with prompt + image + lastFrame ({ bytesBase64Encoded, mimeType }) and the explicit parameters', () => {
     const body = buildVeoSubmitBody({ ...params, firstFrame: first, lastFrame: last })
     expect(body.instances).toHaveLength(1)
     expect(body.instances[0]).toEqual({
       prompt: 'a door opens',
-      image: { inlineData: { mimeType: 'image/png', data: Buffer.from(first.bytes).toString('base64') } },
-      lastFrame: { inlineData: { mimeType: 'image/jpeg', data: Buffer.from(last.bytes).toString('base64') } },
+      image: { bytesBase64Encoded: Buffer.from(first.bytes).toString('base64'), mimeType: 'image/png' },
+      lastFrame: { bytesBase64Encoded: Buffer.from(last.bytes).toString('base64'), mimeType: 'image/jpeg' },
     })
     expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8 })
   })
@@ -369,12 +369,13 @@ describe('Google Veo client — first/last frame', () => {
     const body = buildVeoSubmitBody({ ...params, duration: 8, firstFrame: first, lastFrame: last }) as any
     expect(Object.keys(body).sort()).toEqual(['instances', 'parameters'])
     expect(Object.keys(body.instances[0]).sort()).toEqual(['image', 'lastFrame', 'prompt'])
-    // image / lastFrame are { inlineData: { mimeType, data } } - camelCase mimeType, base64 data; never bytesBase64Encoded.
+    // PRODUCTION-PROVEN: image / lastFrame are { bytesBase64Encoded, mimeType }. The { inlineData: { mimeType, data } } form shown on the
+    // docs page was REFUSED by the live endpoint (HTTP 400 "`inlineData` isn't supported by this model"), so it must never be sent.
     for (const frame of [body.instances[0].image, body.instances[0].lastFrame]) {
-      expect(Object.keys(frame)).toEqual(['inlineData'])
-      expect(Object.keys(frame.inlineData).sort()).toEqual(['data', 'mimeType'])
+      expect(Object.keys(frame).sort()).toEqual(['bytesBase64Encoded', 'mimeType'])
+      expect(typeof frame.bytesBase64Encoded).toBe('string')
     }
-    expect(JSON.stringify(body)).not.toMatch(/bytesBase64Encoded|mime_type/)
+    expect(JSON.stringify(body)).not.toMatch(/inlineData|mime_type/)
     // The docs show durationSeconds only as quoted table values and never in a REST body; the field is an integer and is sent as a
     // JSON number (confirm in the paid canary).
     expect(typeof body.parameters.durationSeconds).toBe('number')

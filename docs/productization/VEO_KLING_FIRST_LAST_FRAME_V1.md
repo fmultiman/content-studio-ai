@@ -19,7 +19,7 @@ usa mocks, e o Veo é entregue **desligado** (ver "Liberação").
 | Kling MCP | `who_am_i` real da conta do proprietário (2026-10-13, somente leitura, sem custo) | Entrada **opcional** `tail_image` (URL de `file_upload`) em `kling-video-v2_5`, `kling-video-v2_6` e `kling-video-v3_0`. **Não** existe em `kling-video-v3_0_turbo`; `kling-video-o1` e `kling-video-v3_0_omni` usam `image_1..image_7` (referências). |
 
 Pontos que a documentação **não** fecha e só o canário pago confirma (ver seção 10): formato exato de `image`/`lastFrame`
-(`inlineData` conforme a página do Veo; algumas APIs Google aceitam `bytesBase64Encoded`), tipo de `durationSeconds`
+(**resolvido em produção**: `bytesBase64Encoded` + `mimeType`; o `inlineData` da página foi recusado com HTTP 400), tipo de `durationSeconds`
 (número enviado), e se o Kling 3.0 REST aceita `last_frame` com `multi_shot` ligado (por isso fica desligado).
 
 ## 2. Modelos com A + B realmente habilitados
@@ -41,7 +41,7 @@ conexão para MCP). Um snapshot MCP salvo *antes* desta entrega não tem a capac
 | | Kling REST | Kling MCP | Google Veo |
 |---|---|---|---|
 | Credencial | chave Kling (BYOK) | OAuth da conta Kling | chave Gemini (BYOK) |
-| Entrega das imagens | **URLs pré-assinadas** (S3 privado, curta duração) | **bytes** → `file_upload` do provedor (as duas imagens sobem *antes* da ferramenta paga) → URLs do provedor em `first_image`/`tail_image` | **bytes inline** em `inlineData` (≤ 7 MB por imagem; PNG/JPEG) |
+| Entrega das imagens | **URLs pré-assinadas** (S3 privado, curta duração) | **bytes** → `file_upload` do provedor (as duas imagens sobem *antes* da ferramenta paga) → URLs do provedor em `first_image`/`tail_image` | **bytes inline** em `{ bytesBase64Encoded, mimeType }` (≤ 7 MB por imagem; PNG/JPEG) |
 | B no payload | `last_frame` (3.0) · `image_tail` (2.6) | `tail_image` | `lastFrame` |
 | Conclusão | callback assinado (HMAC) + `/sync` | poller (VPS) + `/sync` | poller (VPS) + `/sync`; chave do dono resolvida no servidor (`status_read`) |
 | Resultado | URL temporária → copiada para S3 privado | idem | URI Google (2 dias) → copiada para S3 privado com o header da chave **apenas no host de origem** |
@@ -115,7 +115,7 @@ Kling continua com uso desconhecido (nenhum transporte informa). Custos conhecid
 * **O Veo é entregue DESLIGADO** (`CONTENT_STUDIO_VEO_VIDEO_GENERATION`, valor exato `enabled`, como o interruptor do Gemini Image): a conexão aparece, os controles são visíveis e explicados, mas `canGenerate=false` (`FEATURE_DISABLED`, 403) até o operador ligá-lo **depois** do canário autorizado. O guard FUTURE-050 (Production-only) vale em adição.
 * Canários pagos que ainda são necessários (cada um exige autorização explícita do proprietário):
   1. **Veo texto → vídeo** (Fast, 720p, 4 s — o mais barato) para validar o contrato de `predictLongRunning`, o formato de `durationSeconds`, polling, download com header e o evento derivado.
-  2. **Veo A + B** (Fast, 720p, 4 s): `inlineData` para `image`/`lastFrame` (ver ressalva da seção 1).
+  2. **Veo A + B** (Fast, 720p, 8 s): `bytesBase64Encoded` para `image`/`lastFrame`.
   3. **Kling REST 3.0 A + B** (`last_frame`) e **Kling 2.6 A + B** (`image_tail`, 1080p, sem áudio).
   4. **Kling MCP A + B** (`tail_image` via `file_upload`), de preferência `kling-video-v2_6` ou `v3_0`.
   5. Só então ligar `CONTENT_STUDIO_VEO_VIDEO_GENERATION` em Production e, se desejado, aplicar a migração de preços.
@@ -126,7 +126,7 @@ Kling continua com uso desconhecido (nenhum transporte informa). Custos conhecid
 |---|---|---|---|
 | Endpoint | `POST …/v1beta/{model=models/*}:predictLongRunning`; `instances[]`/`parameters` são `google.protobuf.Value` (referência da API) | idem | igual |
 | Corpo | `instances[0]` = `{ prompt, image, lastFrame }` e `parameters` irmão (exemplo REST de first/last frame) | idem | igual |
-| `image` / `lastFrame` | `{ "inlineData": { "mimeType": "image/png", "data": <base64> } }`; nenhum exemplo REST usa `bytesBase64Encoded` ou `mime_type` | idem (teste fixa as chaves) | igual |
+| `image` / `lastFrame` | a página mostra `{ "inlineData": { "mimeType", "data" } }` | **`{ bytesBase64Encoded, mimeType }`** | **a página está errada para predictLongRunning**: o endpoint real respondeu HTTP 400 "`inlineData` isn't supported by this model" (canário real de 2026-10-14, não cobrado) |
 | `aspectRatio` / `resolution` | strings (`"9:16"`, `"4k"` em `parameters`) | strings | igual |
 | `durationSeconds` | **nunca aparece em um corpo REST**; a tabela lista `"4"`, `"6"`, `"8"` sem declarar tipo | número JSON | **única incerteza do contrato** — confirmar no canário (campo inteiro; um `Value` numérico é o formato padrão) |
 | `numberOfVideos` | aparece só no exemplo REST de extensão; os SDKs usam outro nome (`sampleCount`) | **não enviado** (padrão = 1 vídeo por pedido) | removido após o primeiro canário (Google recusou o pedido T2V com HTTP 4xx; o parâmetro era o principal suspeito) |
