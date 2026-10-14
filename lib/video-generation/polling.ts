@@ -2,6 +2,10 @@
 //
 // Transport-aware status sync + the MCP poller.
 //
+// KLING_REST_RECOVERY_V1: Kling REST (API key) rows are polled by the SAME poller. The signed webhook is still the primary completion
+// path; the poller is the recovery path when it never arrives (`GET /tasks?task_ids=`). Completion is the shared compare-and-swap, so a
+// webhook and a poll can never finalize (or bill-record) the same generation twice.
+//
 // VEO_KLING_FIRST_LAST_FRAME_V1: Google Veo is polled by the SAME poller. A Veo generation is a Gemini API long-running
 // operation: there is no callback, so its operation name is the task id and its rows (provider = 'gemini') are due-polled
 // exactly like MCP rows, with the OWNER's Gemini key resolved server-side for status reads (they never spend).
@@ -61,7 +65,7 @@ import {
   type CompletionDependencies,
 } from './completion'
 import { QUEUED_ORPHAN_AGE_MS } from './poll-constants'
-import { GeminiVeoTransport, KlingMcpTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
+import { GeminiVeoTransport, KlingMcpTransport, KlingRestTransport, type KlingVideoTransport, type VideoTaskStatus } from './transport'
 
 /** Per-job cadence tiers: [inclusive upper bound of `poll_attempts`, delay to the next check]. */
 export const POLL_SCHEDULE = [
@@ -222,7 +226,7 @@ export async function syncGenerationWithProvider(
     try {
       const result = await completeVideoGeneration(
         db,
-        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState, usage: status.usage, downloadHeaders: status.downloadHeaders },
+        { ...identity, resultUrl: status.resultUrl, providerState: status.rawState, usage: status.usage, downloadHeaders: status.downloadHeaders, providerBilling: status.providerBilling },
         { download: options.download, now: options.now },
       )
       return { outcome: mapOutcome(result.outcome), generation: result.generation }
@@ -318,15 +322,30 @@ export async function createVeoTransportForGeneration(
   return new GeminiVeoTransport(execution.secret)
 }
 
-/** The transport that can read this stored generation. MCP and Google Veo rows are polled; REST Kling rows use the callback. */
+/**
+ * KLING_REST_RECOVERY_V1 - the Kling REST (API key) transport for a stored generation. The signed webhook stays the primary way a REST
+ * generation completes; this lets the SAME poller recover one whose callback never arrived. The key is resolved for the generation's
+ * OWN user with `status_read` (reading a task spends nothing). Null when that user no longer has a Kling key; a credential-store outage
+ * throws (transient, retried later).
+ */
+export async function createKlingRestTransportForGeneration(
+  db: SupabaseClient,
+  generation: Record<string, any>,
+): Promise<KlingVideoTransport | null> {
+  const execution = await resolveProviderExecution(db, { userId: generation.user_id, provider: 'kling', purpose: 'status_read' })
+  if (execution.status !== 'ready') return null
+  return new KlingRestTransport(execution.secret)
+}
+
+/** The transport that can read this stored generation: Google Veo, Kling REST or Kling MCP, by what the row says it was submitted with. */
 async function transportForPolledGeneration(
   db: SupabaseClient,
   generation: Record<string, any>,
   deps: McpPollDependencies,
 ): Promise<KlingVideoTransport | null> {
-  return generation.provider === 'gemini'
-    ? createVeoTransportForGeneration(db, generation)
-    : createMcpTransportForGeneration(db, generation, deps)
+  if (generation.provider === 'gemini') return createVeoTransportForGeneration(db, generation)
+  if (generation.transport === 'rest') return createKlingRestTransportForGeneration(db, generation)
+  return createMcpTransportForGeneration(db, generation, deps)
 }
 
 export interface PollSummary {
@@ -388,7 +407,7 @@ export async function pollDueMcpGenerations(
       status: 'failed',
       error_details: { code: 'SUBMISSION_INTERRUPTED', message: 'O envio ao provedor foi interrompido antes de ser confirmado.' },
     })
-    .or('transport.eq.mcp,provider.eq.gemini')
+    .in('transport', ['mcp', 'rest'])
     .eq('status', 'queued')
     .is('task_id', null)
     .lt('created_at', orphanCutoff)
@@ -398,7 +417,7 @@ export async function pollDueMcpGenerations(
   const { data: dueRows, error } = await db
     .from('video_generations')
     .select('*')
-    .or('transport.eq.mcp,provider.eq.gemini')
+    .in('transport', ['mcp', 'rest'])
     .in('status', ['submitted', 'processing'])
     .lte('next_poll_at', now.toISOString())
     .order('next_poll_at', { ascending: true })
@@ -428,14 +447,17 @@ export async function pollDueMcpGenerations(
       if (!transport) {
         // The grant this paid job depends on no longer exists: it cannot be retrieved here.
         const veo = claimed.provider === 'gemini'
+        const klingRest = !veo && claimed.transport === 'rest'
         await failVideoGeneration(db, {
           generationId: claimed.id,
           taskId: claimed.task_id,
-          transport: veo ? 'rest' : 'mcp',
+          transport: veo || klingRest ? 'rest' : 'mcp',
           code: 'CONNECTION_UNAVAILABLE',
           message: veo
             ? 'A chave Gemini não está mais disponível. O vídeo fica no Google por 2 dias: verifique-o diretamente na sua conta Google.'
-            : 'A conexão com a conta Kling não está mais disponível. Verifique o resultado diretamente na sua conta Kling.',
+            : klingRest
+              ? 'A chave da API Kling não está mais disponível. Verifique o resultado diretamente no console da API Kling.'
+              : 'A conexão com a conta Kling não está mais disponível. Verifique o resultado diretamente na sua conta Kling.',
         }).catch(() => undefined)
         count('connection_unavailable')
         return

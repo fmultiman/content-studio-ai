@@ -551,8 +551,9 @@ describe('POST /api/video-generations — transport is chosen from the RESOLVED 
       status: 'submitted',
       request_config: { duration: 5, resolution: '720p', audio: 'off', multi_shot: false, aspect_ratio: '16:9', output_count: 1 },
     })
-    // REST does not schedule polling.
-    expect(db.tables.video_generations[0].next_poll_at).toBeUndefined()
+    // KLING_REST_RECOVERY_V1: REST is scheduled too (the signed webhook still completes it first when it arrives; the poller recovers it).
+    expect(db.tables.video_generations[0].next_poll_at).toBeTruthy()
+    expect(db.tables.video_generations[0].poll_attempts).toBe(0)
     expect(JSON.stringify(db.tables.video_generations[0])).not.toContain('user-rest-key')
   })
 

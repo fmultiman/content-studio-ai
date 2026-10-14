@@ -59,8 +59,12 @@ describe('isSchedulerStalled — provider sync is recovery only', () => {
     expect(isSchedulerStalled(row({ next_poll_at: at(-SCHEDULER_STALL_MS - 1) }), NOW)).toBe(true)
   })
 
+  it('a SCHEDULED REST row (Kling REST / Veo) is recoverable too; a legacy REST row without a schedule never is', () => {
+    expect(isSchedulerStalled(row({ transport: 'rest', next_poll_at: at(-SCHEDULER_STALL_MS - 1) }), NOW)).toBe(true)
+    expect(isSchedulerStalled(row({ transport: 'rest', next_poll_at: null }), NOW)).toBe(false)
+  })
+
   it.each([
-    ['a REST generation (completes by callback)', { transport: 'rest' }],
     ['a legacy row without transport', { transport: null }],
     ['a row without a provider task', { task_id: null }],
     ['a terminal row', { status: 'succeeded' }],
