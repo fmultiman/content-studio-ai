@@ -256,3 +256,98 @@ describe('partial vs complete estimated cost (aggregate label only)', () => {
     expect(heading().getAttribute('data-complete')).toBe('true')
   })
 })
+
+// PROVIDER_COST_ATTRIBUTION_V1 — GPT Image 2 / Veo / Kling on the same screen: estimated, simulated and unknown are different things,
+// and a total always states its coverage.
+describe('cost attribution states on the usage screen', () => {
+  const simulatedCost = (amount: string): Cost =>
+    ({
+      ...(estimatedCost(amount) as any),
+      status: 'simulated',
+      basis: 'current_list_price_simulation',
+      assumptions: ['list_price_equivalent', 'price_observed_at_source', 'current_price_simulation', 'byok_invoice_may_differ'],
+    }) as Cost
+  const openaiOut = (id: string, cost: Cost) =>
+    event(id, 'output_tokens', 1756, cost, { provider: 'openai', operation: 'image_generation', model: 'gpt-image-2', occurred_at: '2026-10-13T17:20:39.000Z' })
+  const veo = (id: string, seconds: number, cost: Cost) =>
+    event(id, 'seconds', seconds, cost, { operation: 'image_to_video', model: 'veo-3.1-fast-generate-preview', measurement_source: 'derived', funding: null })
+  const klingUnknown = () =>
+    event('k-ab', null, null, unavailable('usage_unknown'), { provider: 'kling', operation: 'image_to_video', model: 'kling-v3', funding: null })
+  const plain = (text: string | null | undefined) => (text ?? '').replace(/ /g, ' ')
+
+  it('a row before the first known price is shown as a SIMULATION at the current price, with its own label and explanation', async () => {
+    respond(payload([openaiOut('o1', simulatedCost('0.05268'))]))
+    await ready()
+    const cost = screen.getByTestId('usage-cost')
+    expect(cost.getAttribute('data-status')).toBe('simulated')
+    expect(plain(cost.textContent)).toMatch(/^Simulação a preço atual: US\$ 0,0527$/)
+    expect(cost.textContent).not.toMatch(/Custo estimado/)
+    expect(cost.getAttribute('title')).toMatch(/simulação, não uma estimativa do período/)
+    expect(cost.getAttribute('title')).toMatch(/Valor cobrado não disponível/)
+  })
+
+  it('the simulation is kept OUT of the estimated total: nothing estimated -> no total, the simulated figure is stated apart', async () => {
+    respond(payload([openaiOut('o1', simulatedCost('0.05268')), openaiOut('o2', simulatedCost('0.008342'))]))
+    await ready()
+    expect(screen.queryAllByTestId('usage-cost-total')).toHaveLength(0)
+    expect(screen.getByTestId('usage-cost-none')).toBeTruthy()
+    expect(plain(screen.getByTestId('usage-cost-simulated').textContent)).toMatch(/US\$ 0,061 em simulação a preço atual para\s*2 registros anteriores à primeira tabela de preços — fora do total estimado/)
+  })
+
+  it('states the coverage: estimated + simulated + unpriced rows; Kling unknown consumption is never a zero', async () => {
+    respond(
+      payload([
+        veo('v1', 4, estimatedCost('0.4')),
+        veo('v2', 4, estimatedCost('0.4')),
+        veo('v3', 8, estimatedCost('0.8')),
+        openaiOut('o1', simulatedCost('0.05268')),
+        openaiOut('o2', simulatedCost('0.008342')),
+        klingUnknown(),
+      ]),
+    )
+    await ready()
+    expect(screen.getByTestId('usage-cost-heading').textContent).toBe('Custo estimado parcial (preço de tabela)')
+    expect(plain(screen.getByTestId('usage-cost-total').textContent)).toMatch(/US\$ 1,60.*3 registros com preço/)
+    expect(plain(screen.getByTestId('usage-cost-coverage').textContent)).toBe(
+      'Cobertura: US$ 1,60 estimados + US$ 0,061 simulados a preço atual (2 registros anteriores à tabela) + 1 registro sem precificação',
+    )
+    expect(screen.getByTestId('usage-cost-unpriced').textContent).toMatch(/1 registro sem preço disponível — não entram no total e não valem zero/)
+    expect(document.body.textContent).not.toMatch(/US\$\s?0,00(?![0-9])/)
+  })
+
+  it('the Kling row with no reported consumption is "Consumo desconhecido" with no amount; a row that merely has no price is not called unknown', async () => {
+    respond(payload([klingUnknown(), event('k-mcp', 'credits', 18, unavailable('measurement_not_provider_reported'), { provider: 'kling', transport: 'mcp', funding: null, measurement_source: 'balance_delta' })]))
+    await ready()
+    const costs = screen.getAllByTestId('usage-cost')
+    expect(costs.map((c) => c.getAttribute('data-cost-state'))).toEqual(['unknown', 'unknown'])
+    expect(screen.getAllByTestId('usage-cost-state').map((c) => c.textContent)).toEqual(['Consumo desconhecido', 'Consumo desconhecido'])
+    expect(costs.every((c) => c.textContent === 'Preço indisponível')).toBe(true)
+    const rows = screen.getAllByTestId('usage-row')
+    expect(within(rows[0]).getByTestId('usage-quantity').textContent).toBe('Uso não informado')
+    expect(within(rows[0]).getByTestId('usage-quantity').getAttribute('data-known')).toBe('false')
+    cleanup()
+    respond(payload([event('o', 'input_tokens', 5, unavailable('no_pricing_for_model'))]))
+    await ready()
+    expect(screen.queryByTestId('usage-cost-state')).toBeNull()
+    expect(screen.getByTestId('usage-cost').getAttribute('data-cost-state')).toBe('unpriced')
+  })
+
+  it('a derived quantity (Veo seconds) says it was derived, not measured by the provider, and is still priced as an estimate', async () => {
+    respond(payload([veo('v3', 8, estimatedCost('0.8', { assumptions: ['list_price_equivalent', 'usage_derived_from_request', 'paid_tier_list_price'] }))]))
+    await ready()
+    const row = screen.getByTestId('usage-row')
+    expect(within(row).getByTestId('usage-quantity').textContent).toBe('8 segundos')
+    expect(within(row).getByTestId('usage-source').textContent).toBe('Medição: derivado (não medido pelo provedor)')
+    expect(within(row).getByTestId('usage-source').getAttribute('title')).toMatch(/Não é uma medição do provedor/)
+    expect(within(row).getByTestId('usage-cost').getAttribute('title')).toMatch(/duração é a do pedido entregue/)
+    expect(plain(within(row).getByTestId('usage-cost').textContent)).toMatch(/^Custo estimado: US\$ 0,80$/)
+  })
+
+  it('every row fully estimated: no coverage warning', async () => {
+    respond(payload([veo('v1', 4, estimatedCost('0.4')), veo('v2', 8, estimatedCost('0.8'))]))
+    await ready()
+    expect(screen.getByTestId('usage-cost-heading').textContent).toBe('Custo estimado (preço de tabela)')
+    expect(screen.queryByTestId('usage-cost-coverage')).toBeNull()
+    expect(screen.queryByTestId('usage-cost-simulated')).toBeNull()
+  })
+})

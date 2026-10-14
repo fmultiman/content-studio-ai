@@ -114,7 +114,7 @@ const SOURCE_LABEL: Record<MeasurementSource, string> = {
   provider_reported: 'Informado pelo provedor',
   balance_delta: 'Diferença de saldo',
   estimated: 'Estimado',
-  derived: 'Calculado',
+  derived: 'Derivado (não medido pelo provedor)',
   manual_import: 'Importado manualmente',
   unknown: 'Uso não informado pelo provedor',
 }
@@ -128,7 +128,7 @@ const SOURCE_HELP: Record<MeasurementSource, string> = {
   provider_reported: 'O provedor informou este consumo para esta execução.',
   balance_delta: 'Calculado pela diferença de saldo da conta; pode incluir outras execuções ao mesmo tempo.',
   estimated: 'Valor estimado pelo Content Studio, não informado pelo provedor.',
-  derived: 'Calculado a partir de outros dados informados pelo provedor.',
+  derived: 'Calculado pelo Content Studio a partir de outros dados (por exemplo, a duração pedida de um vídeo entregue). Não é uma medição do provedor.',
   manual_import: 'Registrado manualmente.',
   unknown: 'A execução aconteceu, mas o provedor não informou quanto foi consumido.',
 }

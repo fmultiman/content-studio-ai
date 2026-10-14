@@ -41,5 +41,6 @@ export function legacyCostMatrix(): ProviderUsageCostInput[] {
 /** Stable one-line encoding of a cost: status plus the amount (estimated) or the reason (otherwise), and the tier used. */
 export function encodeCost(cost: ProviderUsageCost): string {
   if (cost.status === 'estimated') return `estimated:${cost.amount}:${cost.currency}:${cost.serviceTier}:${cost.components.map((c) => `${c.category}=${c.quantity}`).join('+')}`
+  if (cost.status === 'simulated') return `simulated:${cost.amount}:${cost.currency}`
   return `${cost.status}:${cost.reason}`
 }
