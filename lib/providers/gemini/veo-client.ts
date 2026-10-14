@@ -3,7 +3,9 @@
 // Contract (ai.google.dev/gemini-api/docs/veo):
 //   submit   POST {base}/v1beta/models/{model}:predictLongRunning
 //            { instances: [{ prompt, image?, lastFrame? }], parameters: { aspectRatio, resolution, durationSeconds } }
-//            `image` / `lastFrame` = { inlineData: { mimeType, data } }; `lastFrame` is only valid together with `image`.
+//            `image` / `lastFrame` = { bytesBase64Encoded, mimeType }; `lastFrame` is only valid together with `image`.
+//            (PRODUCTION-PROVEN: the `{ inlineData: { mimeType, data } }` form that the Veo docs page shows is REFUSED by
+//            predictLongRunning with HTTP 400 "`inlineData` isn't supported by this model".)
 //   status   GET  {base}/v1beta/{operation.name}        -> { done, error?, response.generateVideoResponse.generatedSamples[0].video.uri }
 //   download GET  {video.uri} with the same `x-goog-api-key` header (the provider keeps the result for 2 days).
 //
@@ -92,8 +94,13 @@ export interface VeoClientOptions {
 
 const toBase64 = (bytes: Uint8Array) => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64')
 
+/**
+ * The predict `Image` message: `{ bytesBase64Encoded, mimeType }`. The Veo documentation page shows `{ inlineData: { mimeType, data } }`
+ * for `image` / `lastFrame`, but the live predictLongRunning endpoint answered the first image-to-video request with
+ * HTTP 400 "`inlineData` isn't supported by this model" (not billed), so the documented-for-generateContent shape is never used here.
+ */
 function inlineFrame(frame: VeoFrame) {
-  return { inlineData: { mimeType: frame.mimeType, data: toBase64(frame.bytes) } }
+  return { bytesBase64Encoded: toBase64(frame.bytes), mimeType: frame.mimeType }
 }
 
 /** The exact JSON sent to Google. Exported so tests can assert the wire contract without any network. */
