@@ -177,6 +177,35 @@ describe('first/last frame — the real /videos workspace', () => {
   })
 })
 
+describe('history playback (any provider)', () => {
+  it('"Assistir" on a finished attempt opens the player with a fresh playback URL (the dialog needs a card, not a raw row)', async () => {
+    const PLAY = 'https://s3.example.test/signed/play.mp4?sig=1'
+    attempts = [{
+      id: 'gen-done', status: 'succeeded', prompt: 'A calm empty table', mode: 'text_to_video', provider: 'gemini', transport: 'rest', model: 'veo-3.1-fast-generate-preview',
+      created_at: '2026-10-14T00:21:52.000Z', updated_at: '2026-10-14T00:22:26.000Z', public_url: PLAY, storage_path: 'u/videos/ai/p/gen-done.mp4',
+      request_config: { duration: 4, resolution: '720p', aspect_ratio: '16:9' },
+    }]
+    const base = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>)
+    const original = base.getMockImplementation() as (input: unknown, init?: RequestInit) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/api/video-generations/gen-done/playback-url')) return json({ url: PLAY })
+      return original(input, init)
+    }))
+    state = frames({ selection: veoSelection({ operation: 'text_to_video' }), lastFrame: undefined })
+    delete (state as { lastFrame?: unknown }).lastFrame
+    await ready()
+    fireEvent.click(await screen.findByTestId('attempt-watch-gen-done'))
+    const video = await waitFor(() => {
+      const element = document.querySelector('video')
+      expect(element).toBeTruthy()
+      return element as HTMLVideoElement
+    })
+    expect(video.getAttribute('src')).toBe(PLAY)
+    expect(screen.getByRole('dialog').textContent).toMatch(/720p · 16:9 · 4s/)
+  })
+})
+
 describe('Google Veo in the same workspace', () => {
   it('Veo accepts A + B, shows its own controls (aspect ratio, 8 s at 1080p, native audio) and sends the Google connection', async () => {
     state = frames({ selection: veoSelection() })

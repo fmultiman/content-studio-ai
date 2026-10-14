@@ -168,14 +168,18 @@ export function VideoGenerationPreviewDialog({
                 </div>
 
                 <div className="space-y-2 text-sm">
-                  <p>
-                    <span className="font-medium">Project:</span>{' '}
-                    {item.projectName || 'Project não identificado'}
-                  </p>
-                  <p>
-                    <span className="font-medium">Production:</span>{' '}
-                    {item.productionName || 'Sem Production associada'}
-                  </p>
+                  {item.projectName !== undefined && (
+                    <p>
+                      <span className="font-medium">Project:</span>{' '}
+                      {item.projectName || 'Project não identificado'}
+                    </p>
+                  )}
+                  {item.productionName !== undefined && (
+                    <p>
+                      <span className="font-medium">Production:</span>{' '}
+                      {item.productionName || 'Sem Production associada'}
+                    </p>
+                  )}
                   <p>
                     <span className="font-medium">Atualizada em:</span>{' '}
                     {new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(item.updatedAt))}

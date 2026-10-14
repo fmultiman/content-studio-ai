@@ -1050,7 +1050,18 @@ function WorkspacePageContent() {
                             size="sm"
                             onClick={() => {
                               if (generation.status === 'succeeded') {
-                                setSelectedVideoGeneration(generation)
+                                // The player dialog renders a CARD (title/meta/updatedAt/generation), exactly like the hub builds it - not a
+                                // raw attempt row, which made it throw while rendering. The workspace has no project/production NAMES, so
+                                // it passes none and the dialog omits those rows instead of printing a guess.
+                                setSelectedVideoGeneration({
+                                  id: generation.id,
+                                  kind: 'generation' as const,
+                                  title: generation.prompt || 'Geração IA',
+                                  meta: `${generation.provider === 'gemini' ? 'Google Veo' : 'Kling'} · ${generation.mode === 'image_to_video' ? 'I2V' : 'T2V'}`,
+                                  status: generation.status,
+                                  updatedAt: generation.updated_at ?? generation.created_at,
+                                  generation,
+                                })
                               } else {
                                 toast(describeGenerationNotReady(generation))
                               }
