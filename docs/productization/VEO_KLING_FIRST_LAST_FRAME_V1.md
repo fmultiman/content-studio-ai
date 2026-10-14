@@ -129,7 +129,7 @@ Kling continua com uso desconhecido (nenhum transporte informa). Custos conhecid
 | `image` / `lastFrame` | `{ "inlineData": { "mimeType": "image/png", "data": <base64> } }`; nenhum exemplo REST usa `bytesBase64Encoded` ou `mime_type` | idem (teste fixa as chaves) | igual |
 | `aspectRatio` / `resolution` | strings (`"9:16"`, `"4k"` em `parameters`) | strings | igual |
 | `durationSeconds` | **nunca aparece em um corpo REST**; a tabela lista `"4"`, `"6"`, `"8"` sem declarar tipo | número JSON | **única incerteza do contrato** — confirmar no canário (campo inteiro; um `Value` numérico é o formato padrão) |
-| `numberOfVideos` | aparece no exemplo REST oficial de extensão (3.1) | `1` | igual (1 vídeo por pedido) |
+| `numberOfVideos` | aparece só no exemplo REST de extensão; os SDKs usam outro nome (`sampleCount`) | **não enviado** (padrão = 1 vídeo por pedido) | removido após o primeiro canário (Google recusou o pedido T2V com HTTP 4xx; o parâmetro era o principal suspeito) |
 | A+B exige 8 s? | **não declarado** (a tabela só exige 8 s para extensão, imagens de referência, 1080p e 4k); revisões anteriores exigiam 8 s na interpolação | **restrito a 8 s** | dúvida ⇒ restrição conservadora (UI + servidor), reversível após o canário |
 | `personGeneration` | `allow_all` (texto) / `allow_adult` (imagem/interpolação) | **não enviado** (padrão do provedor) | confirmar no canário A+B |
 | Operação | `jq -r .name` do POST; `GET ${BASE_URL}/${operation_name}` com `x-goog-api-key`; `done == true` | `GET …/v1beta/{name}`; `name` aceito com ou sem o prefixo `models/{model}/` (nunca outro caminho) | igual (+ tolerância) |

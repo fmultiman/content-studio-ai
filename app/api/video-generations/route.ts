@@ -536,7 +536,20 @@ function describeVeoSubmitFailure(error: unknown) {
     const message = unknown
       ? 'Não foi possível confirmar o envio ao Google Veo. Verifique a sua conta Google antes de tentar novamente.'
       : veo.message
-    return { code, httpStatus, message, outcomeUnknown: unknown, errorDetails: { code, message, outcome_unknown: unknown } }
+    return {
+      code,
+      httpStatus,
+      message,
+      outcomeUnknown: unknown,
+      errorDetails: {
+        code,
+        message,
+        outcome_unknown: unknown,
+        // For diagnosis only: the HTTP status and Google's bounded, key-redacted message (it names the offending field).
+        ...(veo.status ? { provider_status: veo.status } : {}),
+        ...(veo.providerText ? { provider_text: veo.providerText } : {}),
+      },
+    }
   }
   // Anything unclassified after the request was built may have reached Google.
   const message = 'Não foi possível confirmar o envio ao Google Veo. Verifique a sua conta Google antes de tentar novamente.'

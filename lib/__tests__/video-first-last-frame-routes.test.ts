@@ -383,7 +383,7 @@ describe('Google Veo — text_to_video and first/last-frame image_to_video', () 
     expect(veoCalls).toHaveLength(1)
     expect(veoCalls[0]).toMatchObject({ method: 'POST', url: 'https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-fast-generate-preview:predictLongRunning' })
     expect(veoCalls[0].headers['x-goog-api-key']).toBe(GEMINI_KEY)
-    expect(veoCalls[0].body).toEqual({ instances: [{ prompt: base.prompt }], parameters: { aspectRatio: '9:16', resolution: '720p', durationSeconds: 6, numberOfVideos: 1 } })
+    expect(veoCalls[0].body).toEqual({ instances: [{ prompt: base.prompt }], parameters: { aspectRatio: '9:16', resolution: '720p', durationSeconds: 6 } })
     expect(db.tables.video_generations[0]).toMatchObject({
       provider: 'gemini', transport: 'rest', connection_id: null, model: 'veo-3.1-fast-generate-preview', status: 'submitted', task_id: OP, poll_attempts: 0,
       request_config: { duration: 6, resolution: '720p', aspect_ratio: '9:16', output_count: 1 },
@@ -402,7 +402,7 @@ describe('Google Veo — text_to_video and first/last-frame image_to_video', () 
     const instance = veoCalls[0].body.instances[0]
     expect(Object.keys(instance).sort()).toEqual(['image', 'prompt'])
     expect(instance.image.inlineData.mimeType).toBe('image/png')
-    expect(veoCalls[0].body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8, numberOfVideos: 1 })
+    expect(veoCalls[0].body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8 })
     expect(db.tables.video_generations[0].request_config).not.toHaveProperty('last_frame')
   })
 
@@ -477,11 +477,17 @@ describe('Google Veo — text_to_video and first/last-frame image_to_video', () 
     const db = makeDb({ geminiKey: GEMINI_KEY })
     signIn(db)
     installVeo()
-    veoReply = () => new Response(JSON.stringify({ error: { message: 'bad prompt' } }), { status: 400 })
+    veoReply = () => new Response(JSON.stringify({ error: { message: 'Invalid value at parameters.durationSeconds' } }), { status: 400 })
     const response = await post({ ...base, mode: 'text_to_video', ...veoBody() })
     expect(response.status).toBe(422)
-    expect(await response.json()).toMatchObject({ code: 'PROVIDER_REJECTED', outcomeUnknown: false })
-    expect(db.tables.video_generations[0]).toMatchObject({ status: 'failed', error_details: { outcome_unknown: false } })
+    const body = await response.json()
+    expect(body).toMatchObject({ code: 'PROVIDER_REJECTED', outcomeUnknown: false })
+    // The browser never receives Google's text; the attempt keeps the status and the bounded message for diagnosis.
+    expect(JSON.stringify(body)).not.toContain('durationSeconds')
+    expect(db.tables.video_generations[0]).toMatchObject({
+      status: 'failed',
+      error_details: { outcome_unknown: false, provider_status: 400, provider_text: 'Invalid value at parameters.durationSeconds' },
+    })
     expect(veoCalls).toHaveLength(1)
   })
 
