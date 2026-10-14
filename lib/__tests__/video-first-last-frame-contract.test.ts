@@ -293,7 +293,19 @@ describe('Google Veo client — first/last frame', () => {
       image: { inlineData: { mimeType: 'image/png', data: Buffer.from(first.bytes).toString('base64') } },
       lastFrame: { inlineData: { mimeType: 'image/jpeg', data: Buffer.from(last.bytes).toString('base64') } },
     })
-    expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8, numberOfVideos: 1 })
+    expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8 })
+  })
+
+  it('a refusal keeps Google’s message BOUNDED and key-redacted for diagnosis (never the user-facing text)', async () => {
+    const long = 'Invalid value at parameters.durationSeconds ' + 'x'.repeat(500) + ' AIza-SECRET-KEY and AIzaSyABCDEFGHIJKLMNOP'
+    const error = (await submitVeoVideo(params, { fetchImpl: (async () => json({ error: { message: long } }, 400)) as any }).catch((e) => e)) as VeoError
+    expect(error).toMatchObject({ kind: 'rejected', status: 400, outcomeUnknown: false })
+    expect(error.providerText!.length).toBeLessThanOrEqual(300)
+    expect(error.providerText).toContain('parameters.durationSeconds')
+    expect(error.providerText).not.toContain('AIza')
+    expect(error.message).not.toContain('durationSeconds')
+    // No provider message => null (never invented).
+    expect(((await submitVeoVideo(params, { fetchImpl: (async () => json({}, 400)) as any }).catch((e) => e)) as VeoError).providerText).toBeNull()
   })
 
   it('text-to-video carries no image/lastFrame; a last frame without a first frame is refused before any network I/O', async () => {
@@ -366,7 +378,8 @@ describe('Google Veo client — first/last frame', () => {
     // The docs show durationSeconds only as quoted table values and never in a REST body; the field is an integer and is sent as a
     // JSON number (confirm in the paid canary).
     expect(typeof body.parameters.durationSeconds).toBe('number')
-    expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8, numberOfVideos: 1 })
+    // Only the documented parameters: no output-count field at all (one video per request is the default).
+    expect(body.parameters).toEqual({ aspectRatio: '16:9', resolution: '720p', durationSeconds: 8 })
   })
 
   it('accepts the documented operation name with or without the models/{model}/ prefix, and still refuses any other path', async () => {

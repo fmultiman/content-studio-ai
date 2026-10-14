@@ -2,7 +2,7 @@
 //
 // Contract (ai.google.dev/gemini-api/docs/veo):
 //   submit   POST {base}/v1beta/models/{model}:predictLongRunning
-//            { instances: [{ prompt, image?, lastFrame? }], parameters: { aspectRatio, resolution, durationSeconds, numberOfVideos } }
+//            { instances: [{ prompt, image?, lastFrame? }], parameters: { aspectRatio, resolution, durationSeconds } }
 //            `image` / `lastFrame` = { inlineData: { mimeType, data } }; `lastFrame` is only valid together with `image`.
 //   status   GET  {base}/v1beta/{operation.name}        -> { done, error?, response.generateVideoResponse.generatedSamples[0].video.uri }
 //   download GET  {video.uri} with the same `x-goog-api-key` header (the provider keeps the result for 2 days).
@@ -66,13 +66,19 @@ export class VeoError extends Error {
   /** True when the request may have reached Google and been billed but we cannot confirm it. Never retried. */
   readonly outcomeUnknown: boolean
   readonly status: number | null
+  /**
+   * Google's own error message for a refusal, BOUNDED and with every key-looking token redacted. Kept only so a refused
+   * request can be diagnosed (it names the offending field); never shown as the user-facing message.
+   */
+  readonly providerText: string | null
 
-  constructor(kind: VeoErrorKind, message: string, options: { outcomeUnknown?: boolean; status?: number | null } = {}) {
+  constructor(kind: VeoErrorKind, message: string, options: { outcomeUnknown?: boolean; status?: number | null; providerText?: string | null } = {}) {
     super(message)
     this.name = 'VeoError'
     this.kind = kind
     this.outcomeUnknown = options.outcomeUnknown ?? false
     this.status = options.status ?? null
+    this.providerText = options.providerText ?? null
   }
 }
 
@@ -111,20 +117,33 @@ export function buildVeoSubmitBody(params: Omit<VeoSubmitParams, 'apiKey'>) {
       aspectRatio: params.aspectRatio,
       resolution: params.resolution,
       durationSeconds: params.duration,
-      // One action -> one VideoGeneration -> one video.
-      numberOfVideos: 1,
+      // No output-count parameter: the documented default for these models is ONE video per request ("1 video per request"),
+      // and the SDKs name the field differently (`sampleCount`) from the extension example (`numberOfVideos`). Sending a
+      // parameter whose name the Gemini API may not recognise bought nothing and risked a 4xx refusal.
     },
   }
 }
 
-function classifyHttp(status: number): VeoError {
+const PROVIDER_TEXT_MAX = 300
+
+/** Google's `error.message`, whitespace-collapsed, bounded, and stripped of anything that looks like an API key. */
+export function boundedProviderText(body: unknown, apiKey?: string): string | null {
+  const message = (body as { error?: { message?: unknown } } | null)?.error?.message
+  if (typeof message !== 'string' || !message.trim()) return null
+  let text = message.replace(/\s+/g, ' ').trim()
+  if (apiKey) text = text.split(apiKey).join('[redacted]')
+  text = text.replace(/AIza[0-9A-Za-z_-]{10,}/g, '[redacted]')
+  return text.slice(0, PROVIDER_TEXT_MAX)
+}
+
+function classifyHttp(status: number, providerText: string | null = null): VeoError {
   if (status === 401 || status === 403) {
-    return new VeoError('invalid_credential', 'O Google recusou a chave Gemini ou ela não tem acesso ao Veo (requer uma conta com faturamento ativo).', { status })
+    return new VeoError('invalid_credential', 'O Google recusou a chave Gemini ou ela não tem acesso ao Veo (requer uma conta com faturamento ativo).', { status, providerText })
   }
-  if (status === 429) return new VeoError('quota', 'O limite de uso da sua conta Google foi atingido. Tente novamente mais tarde.', { status })
-  if (status === 404) return new VeoError('unsupported_model', 'O Google não encontrou este modelo Veo para a sua chave.', { status })
-  if (status >= 500) return new VeoError('provider_unavailable', 'O Google Veo está indisponível no momento.', { status, outcomeUnknown: true })
-  return new VeoError('rejected', 'O Google recusou esta geração (parâmetros ou conteúdo não aceitos).', { status })
+  if (status === 429) return new VeoError('quota', 'O limite de uso da sua conta Google foi atingido. Tente novamente mais tarde.', { status, providerText })
+  if (status === 404) return new VeoError('unsupported_model', 'O Google não encontrou este modelo Veo para a sua chave.', { status, providerText })
+  if (status >= 500) return new VeoError('provider_unavailable', 'O Google Veo está indisponível no momento.', { status, outcomeUnknown: true, providerText })
+  return new VeoError('rejected', 'O Google recusou esta geração (parâmetros ou conteúdo não aceitos).', { status, providerText })
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -161,7 +180,7 @@ export async function submitVeoVideo(params: VeoSubmitParams, options: VeoClient
     throw new VeoError('provider_unavailable', 'Não foi possível confirmar o envio ao Google Veo.', { outcomeUnknown: true })
   }
 
-  if (!response.ok) throw classifyHttp(response.status)
+  if (!response.ok) throw classifyHttp(response.status, boundedProviderText(await readJson(response), params.apiKey))
 
   const payload = (await readJson(response)) as { name?: unknown } | null
   const name = typeof payload?.name === 'string' ? payload.name : ''
