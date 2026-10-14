@@ -115,7 +115,14 @@ async function casTerminal(
 
 export async function completeVideoGeneration(
   db: SupabaseClient,
-  params: Identity & { resultUrl: string; providerState?: string | null; usage?: UsageMeasurement | null; downloadHeaders?: Record<string, string> },
+  params: Identity & {
+    resultUrl: string
+    providerState?: string | null
+    usage?: UsageMeasurement | null
+    downloadHeaders?: Record<string, string>
+    /** Billing facts the provider stated (amount / charge_type / package_type); stored for audit, never inferred. */
+    providerBilling?: object
+  },
   deps: CompletionDependencies = {},
 ): Promise<CompletionResult> {
   const loaded = await loadIdentified(db, params)
@@ -159,6 +166,7 @@ export async function completeVideoGeneration(
       transport: params.transport,
       provider_task_id: params.taskId,
       ...(params.providerState ? { provider_state: params.providerState } : {}),
+      ...(params.providerBilling && Object.keys(params.providerBilling).length > 0 ? { provider_billing: params.providerBilling } : {}),
       completed_at: now.toISOString(),
     },
   })

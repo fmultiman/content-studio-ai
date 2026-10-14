@@ -331,13 +331,14 @@ describe('syncGenerationWithProvider — status transitions', () => {
 })
 
 describe('pollDueMcpGenerations — the scheduled poller (no user session)', () => {
-  it('polls only MCP rows that are in flight AND due; terminal, not-yet-due, REST and unscheduled rows are skipped', async () => {
+  it('polls only SCHEDULED rows (MCP and REST) that are in flight AND due; terminal, not-yet-due and unscheduled/legacy rows are skipped', async () => {
     const db = dbWith([
       generation({ id: 'due', task_id: 't-due' }),
       generation({ id: 'not-due', task_id: 't-nd', next_poll_at: iso(60_000) }),
       generation({ id: 'done', task_id: 't-done', status: 'succeeded', next_poll_at: null }),
       generation({ id: 'failed', task_id: 't-f', status: 'failed', next_poll_at: null }),
       generation({ id: 'rest', task_id: 't-rest', transport: 'rest', next_poll_at: iso(-1000) }),
+      generation({ id: 'rest-unscheduled', task_id: 't-rest-u', transport: 'rest', next_poll_at: null }),
       generation({ id: 'legacy', task_id: 't-legacy', transport: null, next_poll_at: null }),
     ])
     const transport = transportReturning({ state: 'processing', rawState: 'processing' })
@@ -345,9 +346,10 @@ describe('pollDueMcpGenerations — the scheduled poller (no user session)', () 
 
     const summary = await pollDueMcpGenerations(db, { now: () => NOW, transportFactory: factory })
 
-    expect(summary).toMatchObject({ due: 1, claimed: 1, outcomes: { processing: 1 } })
-    expect(transport.getStatus).toHaveBeenCalledTimes(1)
-    expect(transport.getStatus).toHaveBeenCalledWith('t-due')
+    // The due MCP row AND the due scheduled REST row (the recovery path); nothing else.
+    expect(summary).toMatchObject({ due: 2, claimed: 2, outcomes: { processing: 2 } })
+    expect(transport.getStatus).toHaveBeenCalledTimes(2)
+    expect(transport.getStatus.mock.calls.map((call: any[]) => call[0]).sort()).toEqual(['t-due', 't-rest'])
   })
 
   it('leases each row: an immediate second run (or a concurrent one) does not poll it again', async () => {
@@ -513,11 +515,12 @@ describe('pollDueMcpGenerations — the scheduled poller (no user session)', () 
       generation({ id: 'rest-queued', transport: 'rest', status: 'queued', task_id: null, next_poll_at: null, created_at: iso(-(QUEUED_ORPHAN_AGE_MS + 1000)) }),
     ])
     const summary = await pollDueMcpGenerations(db, { now: () => NOW, transportFactory: async () => null })
-    expect(summary.outcomes.interrupted).toBe(1)
+    // REST rows are scheduled work too now (Kling REST + Veo): an interrupted REST submission is ended the same way.
+    expect(summary.outcomes.interrupted).toBe(2)
     const byId = (id: string) => db.tables.video_generations.find((row: any) => row.id === id)
     expect(byId('stale-queued')).toMatchObject({ status: 'failed', error_details: { code: 'SUBMISSION_INTERRUPTED' } })
     expect(byId('fresh-queued').status).toBe('queued')
-    expect(byId('rest-queued').status).toBe('queued')
+    expect(byId('rest-queued')).toMatchObject({ status: 'failed', error_details: { code: 'SUBMISSION_INTERRUPTED' } })
   })
 
   it('a store failure while listing due rows is surfaced (the route reports it), not swallowed', async () => {

@@ -58,6 +58,8 @@ export interface KlingTaskItem {
   status: 'submitted' | 'processing' | 'succeeded' | 'failed'
   message?: string
   outputs?: KlingOutput[]
+  /** KLING_REST_RECOVERY_V1: what Kling says the task cost (schema undocumented; validated by lib/video-generation/kling-billing.ts). */
+  billing?: unknown
   created_at: number
   updated_at: number
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceRoleSupabase } from '@/lib/supabase/service-role'
 import { completeVideoGeneration, failVideoGeneration } from '@/lib/video-generation/completion'
 import * as crypto from 'crypto'
+import { readKlingBilling } from '@/lib/video-generation/kling-billing'
 
 // The shared completion downloads and re-uploads the video: give it the same headroom as the poller.
 export const maxDuration = 300
@@ -136,7 +137,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      await completeVideoGeneration(supabase, { ...identity, resultUrl: videoUrl, providerState: 'succeeded' })
+      // The callback payload may carry the same `billing` the task query returns: only a validated `unit` charge becomes usage.
+      const billing = readKlingBilling(data.billing)
+      await completeVideoGeneration(supabase, {
+        ...identity,
+        resultUrl: videoUrl,
+        providerState: 'succeeded',
+        ...(billing.usage ? { usage: billing.usage } : {}),
+        ...(billing.facts ? { providerBilling: billing.facts as Record<string, unknown> } : {}),
+      })
     } else if (status === 'failed') {
       await failVideoGeneration(supabase, {
         ...identity,

@@ -12,6 +12,7 @@
 // from a client-supplied value.
 
 import { KlingAdapter, type KlingSettings } from '@/lib/providers/kling/adapter'
+import { readKlingBilling, type KlingBillingFacts } from './kling-billing'
 import { assertProviderExecutionAllowed } from '@/lib/providers/execution-policy'
 import { getVeoOperation, isSafeVeoResultUri, submitVeoVideo, VeoError } from '@/lib/providers/gemini/veo-client'
 import type { UsageMeasurement } from '@/lib/usage/provider-usage'
@@ -71,10 +72,12 @@ export type VideoTaskStatus =
        * redirect target, never persisted, never logged.
        */
       downloadHeaders?: Record<string, string>
+      /** The billing facts the provider stated for this task (amount / charge_type / package_type), for audit. Never invented. */
+      providerBilling?: KlingBillingFacts
       /**
        * Provider-native usage for THIS task — set ONLY when the provider's own response states it.
-       * Neither current Kling transport does (REST task items and MCP query_tasks carry no cost),
-       * so today the usage ledger records these executions with unknown usage.
+       * Kling MCP query_tasks carries no cost (unknown usage). The Kling REST task item MAY carry a `billing` object: a validated
+       * `unit` charge becomes provider-reported units (KLING_REST_RECOVERY_V1); any other shape stays unknown.
        */
       usage?: UsageMeasurement | null
     }
@@ -138,7 +141,16 @@ export class KlingRestTransport implements KlingVideoTransport {
     const item = await this.adapter.getTaskStatus(taskId)
     if (item.status === 'succeeded') {
       const video = item.outputs?.find((output) => output.type === 'video')
-      return { state: 'succeeded', resultUrl: video?.url ?? null, rawState: item.status }
+      // The REST task item MAY state what the task cost. Only a validated `unit` charge becomes a usage quantity (provider_reported);
+      // anything else stays unknown. (Earlier comments said neither transport reports usage: the REST task item can.)
+      const billing = readKlingBilling(item.billing)
+      return {
+        state: 'succeeded',
+        resultUrl: video?.url ?? null,
+        rawState: item.status,
+        ...(billing.usage ? { usage: billing.usage } : {}),
+        ...(billing.facts ? { providerBilling: billing.facts } : {}),
+      }
     }
     if (item.status === 'failed') {
       return { state: 'failed', message: item.message || 'Provider failed', code: 'PROVIDER_FAILED', rawState: item.status }

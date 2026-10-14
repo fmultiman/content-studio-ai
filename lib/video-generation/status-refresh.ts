@@ -41,9 +41,12 @@ export function isInFlightGeneration(generation: Pick<RefreshableGeneration, 'st
   return typeof generation.status === 'string' && IN_FLIGHT.has(generation.status)
 }
 
-/** True only for an MCP row with a provider task whose scheduled check is long overdue. */
+/**
+ * True only for a SCHEDULED row (MCP, or REST with a next_poll_at: Kling REST and Google Veo) with a provider task whose scheduled
+ * check is long overdue. Legacy REST rows carry no schedule, so they are never selected.
+ */
 export function isSchedulerStalled(generation: RefreshableGeneration, nowMs: number): boolean {
-  if (generation.transport !== 'mcp' || !generation.task_id) return false
+  if ((generation.transport !== 'mcp' && generation.transport !== 'rest') || !generation.task_id) return false
   if (generation.status !== 'submitted' && generation.status !== 'processing') return false
   if (!generation.next_poll_at) return false
   const due = Date.parse(generation.next_poll_at)

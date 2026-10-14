@@ -137,6 +137,8 @@ export function videoGenerationUsageEvent(
         aspect_ratio: config.aspect_ratio ?? null,
         output_count: config.output_count ?? null,
       },
+      // What the provider itself stated about the cost of this task (Kling REST task billing), when it did.
+      ...(generation.result_metadata?.provider_billing ? { provider_billing: generation.result_metadata.provider_billing } : {}),
     },
     idempotencyKey: videoGenerationUsageKey(generation.id),
     occurredAt,

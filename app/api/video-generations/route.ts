@@ -469,7 +469,10 @@ export async function POST(req: NextRequest) {
       status: 'submitted',
       task_id: submitRes.taskId,
       provider_metadata: submitRes.providerMetadata,
-      ...(transport.transport === 'mcp' || resolved.kind === 'gemini_api' ? { next_poll_at: initialNextPollAt(), poll_attempts: 0 } : {}),
+      // Every transport is polled: MCP and Google Veo have no callback; for Kling REST the signed webhook completes the generation
+      // first when it arrives, and the poller recovers it when it does not (completion is idempotent).
+      next_poll_at: initialNextPollAt(),
+      poll_attempts: 0,
     }
     let recorded = await serverDb.from('video_generations').update(submittedPatch).eq('id', generation.id).select().single()
     if (recorded.error || !recorded.data) {
