@@ -72,4 +72,16 @@ Verificação de que os testes não são vácuos: com a pré-seleção desligada
 
 ## Verificação
 
-Preenchida na entrega do PR (typecheck, lint, suíte de testes e smoke).
+| Verificação | Resultado |
+|---|---|
+| `tsc --noEmit -p tsconfig.typecheck.json` | sem erros |
+| ESLint nos arquivos alterados e novos | 0 erros; 13 avisos, todos em código pré-existente não alterado (React Compiler/exhaustive-deps) |
+| Testes novos (5 arquivos) | 68 passam |
+| Suíte completa | 6672 passam, 68 ignorados, 5 falham (abaixo) |
+
+Falhas da suíte completa, nenhuma causada por esta onda:
+
+- `lib/creative/video-editor/__tests__/static-parity.test.ts` e `lib/creative/authoring/__tests__/editor-workspace.test.ts`: já falham em `main` (esperam o rótulo “Estilo”; o código publicado diz “Estilos”). Esta onda não altera `lib/creative`.
+- `video-first-last-frame-workspace.test.tsx` (1) e `video-generation-workspace.test.tsx` (2): falharam sob a carga da suíte completa e **passam** ao rodar os arquivos isoladamente (dependem de tempo; nenhum assert deles envolve os textos ou status alterados).
+
+Smoke autenticado e não pago: o preview da Vercel exige login SSO da Vercel (indisponível para o navegador de automação) e não há sessão de aplicativo para `localhost`, então o smoke autenticado é feito em Production após o merge, sem geração, Review ou tradução pagas. O resultado é registrado no PR.
