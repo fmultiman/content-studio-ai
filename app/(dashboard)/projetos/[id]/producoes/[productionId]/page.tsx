@@ -50,7 +50,8 @@ import {
   Clapperboard,
   ChevronRight,
 } from 'lucide-react'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { GenerationStatusBadge } from '@/components/videos/generation-status-badge'
+import { describeGenerationStatus, sessionHubStatus } from '@/lib/video-generation/status-presentation'
 import { GenerationProvenance } from '@/components/videos/generation-provenance'
 import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
@@ -365,7 +366,7 @@ export default function ProductionDetailPage() {
         ...videoSessions.map((s) => {
           const sessionGenerations = videoGenerations.filter((g) => g.session_id === s.id)
           const latestAttempt = sessionGenerations[0] ?? null
-          const status = latestAttempt ? latestAttempt.status : 'Sem tentativas'
+          const status = sessionHubStatus(latestAttempt)
           const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
           const sessionTime = new Date(s.updatedAt).getTime()
           const recency = Math.max(sessionTime, latestTime)
@@ -844,7 +845,7 @@ export default function ProductionDetailPage() {
                               <ContextMetadata
                                 dense
                                 items={[
-                                  { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                  { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                   { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                                 ]}
                               />
@@ -871,7 +872,7 @@ export default function ProductionDetailPage() {
                                     data-testid="production-watch-generation"
                                   >
                                     <Video className="h-4 w-4" />
-                                    {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
+                                    {item.generation.status === 'succeeded' ? 'Assistir' : describeGenerationStatus(item.generation.status).label}
                                   </Button>
                                   <Button
                                     size="sm"

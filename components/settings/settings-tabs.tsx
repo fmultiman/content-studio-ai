@@ -28,6 +28,17 @@ export const SETTINGS_TABS: ReadonlyArray<{ value: string; label: string; Icon: 
   { value: 'usage', label: 'Uso e custos', Icon: Gauge },
 ]
 
+export const DEFAULT_SETTINGS_TAB = 'profile'
+
+/**
+ * STRUCTURAL_WAVE_0 (D5): the tab a `/configuracoes?tab=<value>` deep link asks for. Only an exact, known tab value is honoured;
+ * anything else (missing, empty, unknown, wrong case, repeated, a prototype key) falls back to the default tab - never an error and
+ * never a blank panel.
+ */
+export function resolveSettingsTab(requested: string | null | undefined): string {
+  return SETTINGS_TABS.some((tab) => tab.value === requested) ? (requested as string) : DEFAULT_SETTINGS_TAB
+}
+
 export function SettingsTabsList() {
   return (
     <TabsList

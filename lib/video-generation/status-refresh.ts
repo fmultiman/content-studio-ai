@@ -17,6 +17,8 @@
 // minutes ahead while a row is being checked, the next check ~10-20 s ahead
 // otherwise), so under normal operation the page never triggers a provider call.
 
+import { videoProviderPhrases } from './connection-presentation'
+
 /** How often the page re-reads generation status from the database (no provider call). */
 export const STATUS_REFRESH_MS = 10_000
 
@@ -84,12 +86,16 @@ export interface NotReadyNotice {
  * What the card says when "Assistir" is pressed on a generation without a playable result. A failed generation is
  * terminal: it is reported as failed (with the recorded reason) — never as "not ready yet".
  */
-export function describeGenerationNotReady(generation: { status?: string | null; error_details?: { message?: unknown } | null }): NotReadyNotice {
+export function describeGenerationNotReady(generation: { status?: string | null; provider?: string | null; error_details?: { message?: unknown } | null }): NotReadyNotice {
   if (generation.status === 'failed') {
     const message = generation.error_details?.message
     return {
       title: 'A geração falhou',
-      description: typeof message === 'string' && message.trim() ? message : 'A Kling não concluiu esta geração.',
+      // STRUCTURAL_WAVE_0 (D22): the fallback names the provider the generation really used. A row without a provider predates
+      // Google Veo, so it is Kling (the same reading describeGenerationProvenance uses).
+      description: typeof message === 'string' && message.trim()
+        ? message
+        : `${videoProviderPhrases(generation.provider === 'gemini' ? 'gemini' : 'kling').subject} não concluiu esta geração.`,
       variant: 'destructive',
     }
   }

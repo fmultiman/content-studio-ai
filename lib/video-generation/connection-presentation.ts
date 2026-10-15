@@ -52,6 +52,34 @@ export function spendingSourceCopy(funding: VideoGenerationConnectionDescriptor[
     : 'Usa o pacote de recursos da sua API Kling.'
 }
 
+/**
+ * STRUCTURAL_WAVE_0 (D22): the provider of the SELECTED connection, in the grammatical forms the UI messages need, so a Google Veo user
+ * is never told about "a Kling". No selection (or a provider this build does not know) reads as the neutral "provedor".
+ * Presentation only: it never decides routing, capabilities or credentials.
+ */
+export interface VideoProviderPhrases {
+  /** "Kling" / "Google Veo" / "provedor de vídeo" */
+  name: string
+  /** "à Kling" / "ao Google Veo" / "ao provedor" */
+  to: string
+  /** "para a Kling" / "para o Google Veo" / "para o provedor" */
+  toward: string
+  /** "A Kling" / "O Google Veo" / "O provedor" */
+  subject: string
+}
+
+const VIDEO_PROVIDER_PHRASES: Readonly<Record<string, VideoProviderPhrases>> = Object.freeze({
+  kling: { name: 'Kling', to: 'à Kling', toward: 'para a Kling', subject: 'A Kling' },
+  gemini: { name: 'Google Veo', to: 'ao Google Veo', toward: 'para o Google Veo', subject: 'O Google Veo' },
+})
+const NEUTRAL_VIDEO_PROVIDER: VideoProviderPhrases = { name: 'provedor de vídeo', to: 'ao provedor', toward: 'para o provedor', subject: 'O provedor' }
+
+export function videoProviderPhrases(provider: string | null | undefined): VideoProviderPhrases {
+  return typeof provider === 'string' && Object.prototype.hasOwnProperty.call(VIDEO_PROVIDER_PHRASES, provider)
+    ? VIDEO_PROVIDER_PHRASES[provider]
+    : NEUTRAL_VIDEO_PROVIDER
+}
+
 /** Product-facing name of a connection, e.g. "Minha conta Kling — Pro" / "Kling API". */
 export function connectionDisplayName(connection: Pick<VideoGenerationConnectionDescriptor, 'label' | 'accountLabel'>): string {
   return connection.accountLabel ? `${connection.label} — ${connection.accountLabel}` : connection.label

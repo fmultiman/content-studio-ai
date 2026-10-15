@@ -37,9 +37,10 @@ import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-
 import { VideoReviewControl } from '@/components/reviews/video-review-control'
 import { isGenerationReviewable } from '@/lib/reviews/video-review-presentation'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { GenerationStatusBadge } from '@/components/videos/generation-status-badge'
+import { describeGenerationStatus } from '@/lib/video-generation/status-presentation'
 import { Card, CardContent } from '@/components/ui/card'
-import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
+import { connectionNamesById, videoProviderPhrases } from '@/lib/video-generation/connection-presentation'
 import { attemptToWorkingState, type VideoGenerationWorkingStateV1 } from '@/lib/video-generation/working-state'
 import type { SessionResponse } from '@/lib/video-generation/session'
 import { useGenerationSessionAutosave } from '@/hooks/use-generation-session-autosave'
@@ -696,7 +697,7 @@ function WorkspacePageContent() {
         return unknown('Recebemos uma resposta ilegível. Confira as tentativas antes de iniciar outro vídeo.')
       }
       if (data.outcomeUnknown === true || (!res.ok && ((res.status >= 500 && !data.code) || data.code === 'IDEMPOTENCY_KEY_REUSED'))) {
-        return unknown(data.error || 'Não foi possível confirmar o envio à Kling.')
+        return unknown(data.error || `Não foi possível confirmar o envio ${videoProviderPhrases(selectedConnection(connections, submittedState.selection)?.provider).to}.`)
       }
       if (!res.ok) {
         rememberPending(null)
@@ -730,7 +731,7 @@ function WorkspacePageContent() {
     : saveState === 'conflict' ? 'Resolva o conflito de autoria antes de usar assistência.' : null
   const automaticReason = !automationEnabled ? 'Ative “Permitir modo Automático” em Configurações.'
     : unconfirmedSubmission ? 'Confira o envio anterior no histórico antes de iniciar outro vídeo.'
-    : !activeConnection?.canGenerate || !selection.operation || !selection.modelId ? 'Selecione uma conexão Kling disponível e um modelo compatível.'
+    : !activeConnection?.canGenerate || !selection.operation || !selection.modelId ? 'Selecione uma conexão de vídeo disponível e um modelo compatível.'
     : selection.operation === 'image_to_video' && !sourceSelection?.source ? 'Selecione uma imagem de origem.'
     : lastFrameIssue ? lastFrameIssue
     : assistanceReason
@@ -808,7 +809,7 @@ function WorkspacePageContent() {
         if (run.cancelled || epoch !== assistanceEpoch.current) return false
         run.stage = 'video'
         setAutomaticStage('video')
-        setAutomaticMessage('Enviando um vídeo para a Kling.')
+        setAutomaticMessage(`Enviando um vídeo ${videoProviderPhrases(selectedConnection(connections, snapshot.selection)?.provider).toward}.`)
         return true
       })
       if (run.cancelled || epoch !== assistanceEpoch.current) return
@@ -1040,7 +1041,7 @@ function WorkspacePageContent() {
                           <p className="text-sm font-medium line-clamp-2" title={generation.prompt}>
                             {generation.prompt}
                           </p>
-                          <StatusBadge label={generation.status} tone="neutral" />
+                          <GenerationStatusBadge status={generation.status} />
                         </div>
 
                         <GenerationProvenance generation={generation} connectionNames={connectionNames} />
@@ -1070,7 +1071,7 @@ function WorkspacePageContent() {
                             data-testid={`attempt-watch-${generation.id}`}
                           >
                             <Video className="h-4 w-4" />
-                            {generation.status === 'succeeded' ? 'Assistir' : generation.status}
+                            {generation.status === 'succeeded' ? 'Assistir' : describeGenerationStatus(generation.status).label}
                           </Button>
 
                           <SaveGenerationToLibrary generation={generation} size="sm" onSaved={markGenerationSaved} />

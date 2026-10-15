@@ -64,7 +64,7 @@ export function PromptLanguagePanel({
             {canTranslate && hasPrompt && <p className="text-xs text-muted-foreground" data-testid={`${idPrefix}-translation-cost`}>{PROMPT_TRANSLATION_COST_NOTICE}</p>}
             {!canTranslate && (
               <p role="status" className="text-xs text-amber-200" data-testid={`${idPrefix}-translation-unavailable`}>
-                {unavailableReason} <a href="/configuracoes" className="font-medium underline underline-offset-4">Configurar provedor</a>
+                {unavailableReason} <a href="/configuracoes?tab=api" className="font-medium underline underline-offset-4">Configurar provedor</a>
               </p>
             )}
             {error && <p role="alert" className="text-xs text-destructive" data-testid={`${idPrefix}-translation-error`}>{error}</p>}

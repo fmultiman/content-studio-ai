@@ -11,7 +11,7 @@
  * render, result player) was removed: `/videos?draft=` is redirected by
  * proxy.ts, with a client-side fallback below.
  *
- * /videos also hosts AI video generation (Kling API / MCP): generations are SOURCE MEDIA with
+ * /videos also hosts AI video generation (Kling API / MCP, Google Veo): generations are SOURCE MEDIA with
  * their own history cards, saved explicitly to Arquivos and opened in a Creative Editor only
  * on an explicit action — a generation never becomes a VideoDraft by itself.
  */
@@ -46,7 +46,8 @@ import {
 } from '@/components/ui/select'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { GenerationStatusBadge } from '@/components/videos/generation-status-badge'
+import { describeGenerationStatus, sessionHubStatus, videoHubStatusFilterOptions } from '@/lib/video-generation/status-presentation'
 import { Video, Loader2, ChevronRight, ArrowLeft, Search, Zap, Clapperboard } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, VideoDraft } from '@/lib/types'
@@ -94,7 +95,8 @@ function VideosPageContent() {
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
   const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
-  const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
+  // STRUCTURAL_WAVE_0 (D22): whether ANY video provider key is configured (Kling API or Gemini for Google Veo); null = not known.
+  const [videoProviderConfigured, setVideoProviderConfigured] = useState<boolean | null>(null)
 
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — names of the account connections, only so
   // history can say WHICH connection an MCP generation used. Best effort: if it cannot be loaded (or the
@@ -198,7 +200,9 @@ function VideosPageContent() {
 
         if (providersResponse.ok) {
           const providersPayload = await providersResponse.json()
-          setKlingConfigured(providersPayload?.providers?.kling?.status === 'configured')
+          setVideoProviderConfigured(
+            providersPayload?.providers?.kling?.status === 'configured' || providersPayload?.providers?.gemini?.status === 'configured',
+          )
         } else {
           console.error('[v0] Provider status load error:', providersResponse.status)
         }
@@ -221,7 +225,9 @@ function VideosPageContent() {
     const production = productions.find((p) => p.id === s.productionId)
     const sessionGenerations = generations.filter((g) => g.session_id === s.id)
     const latestAttempt = sessionGenerations[0] ?? null
-    const derivedStatus = latestAttempt ? latestAttempt.status : 'Sem tentativas'
+    // The STORED status of the latest Attempt (or "no_attempts"); the pt-BR label is applied only when rendering, and the filter
+    // below compares the same stored values.
+    const derivedStatus = sessionHubStatus(latestAttempt)
     const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
     const sessionTime = new Date(s.updatedAt).getTime()
     const recency = Math.max(sessionTime, latestTime)
@@ -375,7 +381,7 @@ function VideosPageContent() {
             }
           }} className="gap-1" data-testid="watch-generation">
             <Video className="h-4 w-4" />
-            {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
+            {item.generation.status === 'succeeded' ? 'Assistir' : describeGenerationStatus(item.generation.status).label}
           </Button>
           <Button
             size={size}
@@ -532,11 +538,11 @@ function VideosPageContent() {
                       </p>
                     )}
                     
-                    {klingConfigured === false && (
+                    {videoProviderConfigured === false && (
                       <StateMessage
                         tone="info"
-                        title="Kling API não configurada"
-                        description="Adicione sua chave de API em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
+                        title="Nenhum provedor de vídeo configurado"
+                        description="Adicione a chave da Kling ou do Google Gemini (Google Veo) em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
                         actionLabel="Abrir Configurações"
                         onAction={() => router.push('/configuracoes?tab=api')}
                         compact
@@ -643,7 +649,9 @@ function VideosPageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos os status</SelectItem>
-                        <SelectItem value="Rascunho">Rascunho</SelectItem>
+                        {videoHubStatusFilterOptions().map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -716,7 +724,7 @@ function VideosPageContent() {
                                     items={[
                                       { label: 'Project', value: item.projectName, title: item.projectName },
                                       { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                       { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                                     ]}
                                   />
@@ -756,7 +764,7 @@ function VideosPageContent() {
                                   items={[
                                     { label: 'Project', value: item.projectName, title: item.projectName },
                                     { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                     { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
                                   ]}
                                 />
@@ -812,7 +820,7 @@ function VideosPageContent() {
                                     items={[
                                       { label: 'Project', value: item.projectName, title: item.projectName },
                                       { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                       { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                                     ]}
                                   />
@@ -845,7 +853,7 @@ function VideosPageContent() {
                                   items={[
                                     { label: 'Project', value: item.projectName, title: item.projectName },
                                     { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                     { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
                                   ]}
                                 />

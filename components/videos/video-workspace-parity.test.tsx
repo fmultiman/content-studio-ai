@@ -124,7 +124,9 @@ describe('Generation + Review workspace parity V1 — real Video workspace, mock
     fireEvent.click(screen.getByTestId('video-assistance-apply'))
     expect((screen.getByLabelText('Prompt de geração') as HTMLTextAreaElement).value).toBe('Suggested temporal scene prompt')
     expect(videoCalls()).toHaveLength(0)
-    expect(screen.getByTestId('video-assistance-cost-notice').textContent).toMatch(/BYOK.*Kling.*parciais/)
+    // STRUCTURAL_WAVE_0 (D22): the notice is provider-neutral (it also applies to Google Veo).
+    expect(screen.getByTestId('video-assistance-cost-notice').textContent).toMatch(/BYOK.*conexão de vídeo.*parciais/)
+    expect(screen.getByTestId('video-assistance-cost-notice').textContent).not.toMatch(/Kling/)
     await waitFor(() => expect(state.assistance?.mode).toBe('assisted'))
     expect(state.assistance?.description).toContain('coastal sunrise')
   })
