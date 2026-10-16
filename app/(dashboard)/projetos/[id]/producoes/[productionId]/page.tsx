@@ -776,7 +776,7 @@ export default function ProductionDetailPage() {
                     {workspaceErrors.imageSessions
                       ? 'Não foi possível carregar as sessões de imagem.'
                       : workspaceErrors.imageDrafts || legacyLinksUnavailable ? 'Lista parcial de imagens; rascunhos legados indisponíveis.'
-                      : imageDraftsHasMore ? 'Lista parcial de imagens vinculadas.'
+                      : imageDraftsHasMore || imageSessionsHasMore && imageWorkCount === 0 ? 'Lista parcial de imagens vinculadas.'
                       : imageWorkCount === 0
                         ? 'Nenhuma imagem vinculada.'
                         : `${describeOverviewImages({ sessions: imageContinuity.sessions.length, legacyDrafts: visibleLegacyImageDrafts.length, hasMore: imageSessionsHasMore })}.`}
@@ -835,7 +835,7 @@ export default function ProductionDetailPage() {
                         )}
                       </div>
                     )}
-                    {!workspaceErrors.imageSessions && !workspaceErrors.imageDrafts && !legacyLinksUnavailable && imageWorkCount === 0 && (
+                    {!workspaceErrors.imageSessions && !workspaceErrors.imageDrafts && !legacyLinksUnavailable && !imageSessionsHasMore && !imageDraftsHasMore && imageWorkCount === 0 && (
                       <Card className="border-dashed" data-testid="production-images-empty">
                         <CardContent className="flex flex-col items-center justify-center py-10">
                           <ImageIcon className="mb-3 h-10 w-10 text-muted-foreground" />

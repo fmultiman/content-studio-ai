@@ -107,7 +107,7 @@ export function describeOverviewImages({ sessions, legacyDrafts, hasMore = false
   const parts: string[] = []
   if (sessions > 0) parts.push(`${sessions}${hasMore ? '+' : ''} ${sessions === 1 ? 'sessão de imagem' : 'sessões de imagem'}`)
   if (legacyDrafts > 0) parts.push(plural(legacyDrafts, 'rascunho legado', 'rascunhos legados'))
-  return parts.length > 0 ? parts.join(' · ') : 'Sem imagens vinculadas'
+  return parts.length > 0 ? parts.join(' · ') : hasMore ? 'Lista parcial de sessões de imagem' : 'Sem imagens vinculadas'
 }
 
 /** Production overview, Videos: generation sessions, Creative Editor edits and standalone historical generations, each on its own. */

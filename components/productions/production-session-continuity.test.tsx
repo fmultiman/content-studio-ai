@@ -184,6 +184,14 @@ describe('Images tab - canonical Sessions', () => {
 })
 
 describe('Images tab - empty and failure states', () => {
+  it('a truncated page containing only archived Sessions cannot claim that the Production is empty', async () => {
+    sources.imageSessions = ok({ sessions: [imageSession('archived', { status: 'archived' })], hasMore: true })
+    await open('images')
+    expect(screen.queryByTestId('production-images-empty')).toBeNull()
+    expect(screen.getByTestId('images-tab-summary').textContent).toBe('Lista parcial de imagens vinculadas.')
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Visão Geral' }), { button: 0 })
+    expect(screen.getByTestId('overview-images').textContent).toBe('Lista parcial de sessões de imagem')
+  })
   it('does not resurrect a legacy draft whose Session is outside the displayed page or has moved scope', async () => {
     sources.imageSessions = ok({ sessions: [imageSession('recent')], hasMore: true })
     sources.imageDrafts = ok({ drafts: [legacyDraft('linked-outside')], linkedLegacyDraftIds: ['linked-outside'] })

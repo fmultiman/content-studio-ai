@@ -57,7 +57,7 @@ Testes direcionados cobrem regras puras, consultas e ownership, listagens no lim
 
 | Verificação local em 16/10/2026 | Resultado |
 | --- | --- |
-| Suíte direcionada de continuidade, APIs, ownership, Onda 0, workspace e autosave | 557 testes, 21 arquivos, todos passaram |
+| Suíte direcionada de continuidade, APIs, ownership, Onda 0, workspace e autosave | 558 testes, 21 arquivos, todos passaram |
 | Compatibilidade dos contratos de VideoDraft/Creative Editor | 137 testes, seis arquivos, todos passaram |
 | `pnpm typecheck` | Passou |
 | `pnpm lint` | Passou, zero erros e 50 avisos no projeto |
@@ -65,7 +65,7 @@ Testes direcionados cobrem regras puras, consultas e ownership, listagens no lim
 | `pnpm build` | Passou, Next.js 16.2.4/Turbopack |
 | `git diff --check` | Passou |
 
-Total: 694 testes em 27 arquivos; não foi executada suíte global. As seis suítes adicionais são `video-canvas`, `temporal-items`, `single-writer`, `scene-composition`, `free-composition` e `element-timing`, pois importam a API de VideoDraft alterada.
+Total: 695 testes em 27 arquivos; não foi executada suíte global. As seis suítes adicionais são `video-canvas`, `temporal-items`, `single-writer`, `scene-composition`, `free-composition` e `element-timing`, pois importam a API de VideoDraft alterada.
 
 Preview e smoke são registrados na PR e no artefato de entrega. Smoke autenticado só conta como validado se executado no preview desta branch; navegação em produção não valida a mudança.
 
