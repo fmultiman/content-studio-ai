@@ -206,7 +206,7 @@ function ProductionCard({ production }: { production: RecentProductionCard }) {
             { label: 'Project', value: production.projectName, title: production.projectName },
             {
               // One number per entity (sessions, edits and contents are different things and are never summed).
-              label: 'Itens vinculados',
+              label: 'Contagem',
               value: <span data-testid="production-counters">{describeProductionCounters(production.counters)}</span>,
             },
             { label: 'Atualizado', value: formatDate(production.activityAt) },

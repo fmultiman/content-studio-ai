@@ -151,6 +151,26 @@ describe('Dashboard continuity - empty states and failures', () => {
     expect(screen.getByText('Teaser')).toBeTruthy()
   })
 
+  it('a partial Production count names the unavailable categories instead of looking complete', async () => {
+    tables.video_drafts = [{ id: 'edit-1', user_id: ME, project_id: P1, production_id: PR1, name: 'Teaser', updated_at: iso(12) }]
+    failing = new Set(['image_generation_sessions'])
+    await renderDashboard()
+    expect(screen.getByTestId('production-counters').textContent).toBe('1 edição de vídeo · sem contagem de: sessões de imagem')
+  })
+
+  it('an all-zero Production count names what is counted and does not deny legacy items that are still listed', async () => {
+    // An old ImageDraft no Session carries and a standalone historical video generation: neither is in the counters.
+    tables.image_drafts = [{ id: 'd-orphan', user_id: ME, project_id: P1, production_id: PR1, name: 'Rascunho órfão', user_input: 'x', image_status: 'draft', updated_at: iso(8) }]
+    tables.video_generations = [{ id: 'g-old', user_id: ME, session_id: null, project_id: P1, production_id: PR1, status: 'succeeded', created_at: iso(7) }]
+    await renderDashboard()
+    const text = screen.getByTestId('production-counters').textContent ?? ''
+    expect(text).not.toMatch(/nenhum item vinculado/i)
+    expect(text).toContain('Sem sessões de imagem, sessões de vídeo, edições de vídeo ou conteúdos')
+    expect(text).toContain('Rascunhos legados de imagem e gerações de vídeo avulsas não entram nesta contagem')
+    // Preserved where it already was: the orphan legacy draft keeps its own card.
+    expect(screen.getByText('Rascunho órfão')).toBeTruthy()
+  })
+
   it('unreadable totals never produce a "you have no Projects" claim', async () => {
     tables = { projects: [], productions: [], image_drafts: [], video_drafts: [], editorial_contents: [], image_generation_sessions: [], video_generation_sessions: [], video_generations: [] }
     failing = new Set(['projects'])

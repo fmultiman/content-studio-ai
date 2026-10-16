@@ -81,7 +81,7 @@ export function excludeLinkedImageDrafts<T extends { id: string }>(drafts: reado
  *   videoSessions  Video generation sessions
  *   videoDrafts    VideoDrafts (Creative Editor edits)
  *   editorial      Editorial contents
- * `null` = unknown (the count could not be read): it is omitted from text, never shown as 0.
+ * `null` = unknown (the count could not be read): it is named as unavailable in the text, never shown as 0.
  */
 export interface ProductionCounters {
   imageSessions: number | null
@@ -92,14 +92,31 @@ export interface ProductionCounters {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
+const COUNTER_CATEGORIES = [
+  { key: 'imageSessions', one: 'sessão de imagem', many: 'sessões de imagem' },
+  { key: 'videoSessions', one: 'sessão de vídeo', many: 'sessões de vídeo' },
+  { key: 'videoDrafts', one: 'edição de vídeo', many: 'edições de vídeo' },
+  { key: 'editorial', one: 'conteúdo', many: 'conteúdos' },
+] as const satisfies ReadonlyArray<{ key: keyof ProductionCounters; one: string; many: string }>
+
+/**
+ * Text for the counters, entity by entity. It only ever speaks about the four categories above:
+ *   - a category that could not be read is NAMED as unavailable, so a partial count never looks complete;
+ *   - when every counted category is 0 it says so by name, because legacy ImageDrafts no Session carries and standalone historical
+ *     video generations are not part of these counters, so "nothing linked" would be a claim this count cannot make.
+ */
 export function describeProductionCounters(counters: ProductionCounters): string {
-  const parts: string[] = []
-  if (counters.imageSessions) parts.push(plural(counters.imageSessions, 'sessão de imagem', 'sessões de imagem'))
-  if (counters.videoSessions) parts.push(plural(counters.videoSessions, 'sessão de vídeo', 'sessões de vídeo'))
-  if (counters.videoDrafts) parts.push(plural(counters.videoDrafts, 'edição de vídeo', 'edições de vídeo'))
-  if (counters.editorial) parts.push(plural(counters.editorial, 'conteúdo', 'conteúdos'))
+  const known = COUNTER_CATEGORIES.filter((category) => counters[category.key] !== null)
+  const unavailable = COUNTER_CATEGORIES.filter((category) => counters[category.key] === null)
+  if (known.length === 0) return 'Contagem indisponível'
+
+  const positives = known.filter((category) => (counters[category.key] ?? 0) > 0)
+  const shown = positives.length > 0 ? positives : unavailable.length > 0 ? known : []
+  const parts = shown.map((category) => plural(counters[category.key] ?? 0, category.one, category.many))
+
+  if (unavailable.length > 0) return `${parts.join(' · ')} · sem contagem de: ${unavailable.map((category) => category.many).join(', ')}`
   if (parts.length > 0) return parts.join(' · ')
-  return Object.values(counters).some((value) => value === null) ? 'Contagem indisponível' : 'Nenhum item vinculado'
+  return 'Sem sessões de imagem, sessões de vídeo, edições de vídeo ou conteúdos. Rascunhos legados de imagem e gerações de vídeo avulsas não entram nesta contagem.'
 }
 
 /** Production overview, Images: sessions are the canonical count; legacy drafts no session carries are named as such. */

@@ -228,11 +228,33 @@ describe('activity dates and counters', () => {
     expect(all[0]).toMatchObject({ projectName: 'Sem Project', productionName: null, href: '/imagens/geracoes/is-1' })
   })
 
-  it('describes counters entity by entity; unknown counts are omitted, never printed as 0', () => {
+  it('describes counters entity by entity; unknown counts are never printed as 0', () => {
     expect(describeProductionCounters({ imageSessions: 2, videoSessions: 1, videoDrafts: 3, editorial: 1 })).toBe('2 sessões de imagem · 1 sessão de vídeo · 3 edições de vídeo · 1 conteúdo')
-    expect(describeProductionCounters({ imageSessions: 0, videoSessions: 0, videoDrafts: 0, editorial: 0 })).toBe('Nenhum item vinculado')
-    expect(describeProductionCounters({ imageSessions: null, videoSessions: 4, videoDrafts: null, editorial: null })).toBe('4 sessões de vídeo')
     expect(describeProductionCounters({ imageSessions: null, videoSessions: null, videoDrafts: null, editorial: null })).toBe('Contagem indisponível')
+  })
+
+  // ISSUE 1: a partial count must say which categories are unavailable instead of looking complete.
+  it('a partial count names every unavailable category, whatever the known counts are', () => {
+    const partial = describeProductionCounters({ imageSessions: null, videoSessions: 4, videoDrafts: null, editorial: null })
+    expect(partial).toBe('4 sessões de vídeo · sem contagem de: sessões de imagem, edições de vídeo, conteúdos')
+    expect(describeProductionCounters({ imageSessions: 3, videoSessions: 1, videoDrafts: 2, editorial: null })).toBe(
+      '3 sessões de imagem · 1 sessão de vídeo · 2 edições de vídeo · sem contagem de: conteúdos',
+    )
+    // Known zeros are not lost when the only other categories are unavailable.
+    expect(describeProductionCounters({ imageSessions: 0, videoSessions: null, videoDrafts: 0, editorial: null })).toBe(
+      '0 sessões de imagem · 0 edições de vídeo · sem contagem de: sessões de vídeo, conteúdos',
+    )
+    // A complete count never carries the "unavailable" marker.
+    expect(describeProductionCounters({ imageSessions: 1, videoSessions: 0, videoDrafts: 0, editorial: 0 })).not.toContain('sem contagem')
+  })
+
+  // ISSUE 2: "nothing counted" must name what was counted and must not claim the Production has no linked work.
+  it('an all-zero count names the counted categories and does not claim the Production is empty', () => {
+    const empty = describeProductionCounters({ imageSessions: 0, videoSessions: 0, videoDrafts: 0, editorial: 0 })
+    expect(empty).not.toMatch(/nenhum item vinculado/i)
+    expect(empty).toBe(
+      'Sem sessões de imagem, sessões de vídeo, edições de vídeo ou conteúdos. Rascunhos legados de imagem e gerações de vídeo avulsas não entram nesta contagem.',
+    )
   })
 
   it('recent items are ordered by their real update date across all entities', () => {
