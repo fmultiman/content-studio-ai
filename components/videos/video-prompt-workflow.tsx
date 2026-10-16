@@ -59,7 +59,7 @@ export function VideoPromptWorkflow({
               <SelectContent>{PROMPT_ASSISTANCE_MODELS.map((entry) => <SelectItem key={`${entry.provider}:${entry.id}`} value={`${entry.provider}:${entry.id}`} disabled={!providerStatusLoaded || !configured.has(entry.provider)}>{entry.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <p className="text-xs text-muted-foreground" data-testid="video-assistance-cost-notice">A assistência usa sua chave do provedor selecionado (BYOK) e pode gerar cobrança. A geração de vídeo usa separadamente a conexão Kling escolhida. Em Uso, custos estimados podem ser parciais ou indisponíveis.</p>
+          <p className="text-xs text-muted-foreground" data-testid="video-assistance-cost-notice">A assistência usa sua chave do provedor selecionado (BYOK) e pode gerar cobrança. A geração de vídeo usa separadamente a conexão de vídeo escolhida. Em Uso, custos estimados podem ser parciais ou indisponíveis.</p>
           {reason && <p className="text-xs text-muted-foreground" role="status" data-testid="video-assistance-disabled-reason">{reason}</p>}
           {mode === 'assisted' && (
             <div className="flex flex-wrap gap-2">

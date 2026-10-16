@@ -2,7 +2,8 @@
 
 import { IMAGE_MODEL_LABELS, parseImageModel, GEMINI_IMAGE_MODEL_NOT_RELEASED_MESSAGE, isGeminiImageReleasedModel, type ImageModel } from '@/lib/images/image-models'
 import { geminiImageAvailabilityMessage, parseGeminiImageAvailability, type GeminiImageAvailability } from '@/lib/images/gemini-availability'
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme } from 'next-themes'
 import {
@@ -22,7 +23,7 @@ import { Loader2, Moon, Sun, Monitor, Save, Check, Sparkles, Brain } from 'lucid
 import { AiProviderCredentialCard, type AiProviderCredentialStatus } from '@/components/settings/ai-provider-credential-card'
 import { KlingMcpConnectionCard } from '@/components/settings/kling-mcp-connection-card'
 import { UsageHistory } from '@/components/settings/usage-history'
-import { SettingsTabsList } from '@/components/settings/settings-tabs'
+import { SettingsTabsList, resolveSettingsTab } from '@/components/settings/settings-tabs'
 import { ChangePasswordForm } from '@/components/settings/change-password-form'
 import { Separator } from '@/components/ui/separator'
 import type { PublicProviderConnection } from '@/lib/provider-connections/types'
@@ -59,15 +60,23 @@ const studioIntensityOptions: Array<{
   },
 ]
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const { toast } = useToast()
+  // STRUCTURAL_WAVE_0 (D5): `?tab=<value>` deep links (the AI-credential CTAs use `?tab=api`). An unknown value falls back to the
+  // default tab. A tab the user picks stays picked; a NEW `tab` value in the URL (client navigation) is followed once.
+  const requestedTab = useSearchParams()?.get('tab') ?? null
   const { theme, setTheme } = useTheme()
   const { studioIntensity, setStudioIntensity } = useStudioIntensity()
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState('profile')
+  const [activeTab, setActiveTab] = useState(() => resolveSettingsTab(requestedTab))
+  const [seenRequestedTab, setSeenRequestedTab] = useState(requestedTab)
+  if (seenRequestedTab !== requestedTab) {
+    setSeenRequestedTab(requestedTab)
+    if (requestedTab) setActiveTab(resolveSettingsTab(requestedTab))
+  }
   const [saveFeedback, setSaveFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [providerStatuses, setProviderStatuses] = useState<Record<string, AiProviderCredentialStatus>>({
     openai: 'loading',
@@ -968,5 +977,13 @@ export default function SettingsPage() {
           </Tabs>
       </DashboardPageContent>
     </DashboardPage>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center py-24"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+      <SettingsPageContent />
+    </Suspense>
   )
 }

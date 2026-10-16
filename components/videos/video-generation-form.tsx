@@ -186,8 +186,8 @@ export function VideoGenerationForm({
             </Select>
           </div>
         )}
-        {renderPromptField('video-working-prompt', 'Prompt de geração', 'Escreva seu prompt enquanto configura uma conexão Kling.', 'min-h-[140px]')}
-        <p className="text-xs text-muted-foreground" role="status">{connections.length === 0 ? 'Configure uma conexão Kling em Configurações' : 'Selecione uma conexão Kling com capacidades disponíveis'} para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
+        {renderPromptField('video-working-prompt', 'Prompt de geração', 'Escreva seu prompt enquanto configura uma conexão de vídeo.', 'min-h-[140px]')}
+        <p className="text-xs text-muted-foreground" role="status">{connections.length === 0 ? 'Configure uma conexão de vídeo em Configurações' : 'Selecione uma conexão de vídeo com capacidades disponíveis'} para escolher o modelo e gerar o vídeo. Você pode continuar editando e salvando o prompt.</p>
       </fieldset>
     )
   }

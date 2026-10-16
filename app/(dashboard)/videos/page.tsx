@@ -11,14 +11,20 @@
  * render, result player) was removed: `/videos?draft=` is redirected by
  * proxy.ts, with a client-side fallback below.
  *
- * /videos also hosts AI video generation (Kling API / MCP): generations are SOURCE MEDIA with
+ * /videos also hosts AI video generation (Kling API / MCP, Google Veo): generations are SOURCE MEDIA with
  * their own history cards, saved explicitly to Arquivos and opened in a Creative Editor only
  * on an explicit action — a generation never becomes a VideoDraft by itself.
  */
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
+import {
+  connectionNamesById,
+  describeBlockedConnection,
+  isEnvironmentBlockedReason,
+  summarizeVideoConnections,
+  type VideoConnectionsSummary,
+} from '@/lib/video-generation/connection-presentation'
 import type { VideoConnectionsResponse } from '@/lib/video-generation/capabilities'
 import {
   describeGenerationNotReady,
@@ -46,7 +52,8 @@ import {
 } from '@/components/ui/select'
 import { ContextMetadata } from '@/components/ui/context-metadata'
 import { StateMessage } from '@/components/ui/state-message'
-import { StatusBadge } from '@/components/ui/status-badge'
+import { GenerationStatusBadge } from '@/components/videos/generation-status-badge'
+import { describeGenerationStatus, sessionHubStatus, videoHubStatusFilterOptions } from '@/lib/video-generation/status-presentation'
 import { Video, Loader2, ChevronRight, ArrowLeft, Search, Zap, Clapperboard } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import type { Project, Production, VideoDraft } from '@/lib/types'
@@ -94,26 +101,16 @@ function VideosPageContent() {
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
   const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
-  const [klingConfigured, setKlingConfigured] = useState<boolean | null>(null)
+  // STRUCTURAL_WAVE_0 (D22): what the connection descriptors (the existing GET /api/video-generations/connections authority: no
+  // provider call, no credits lookup) say about the user's ability to generate - none configured / configured but blocked / available.
+  // null = the connections could not be read: the hub then says NOTHING about providers instead of claiming the user has none.
+  const [connectionsSummary, setConnectionsSummary] = useState<VideoConnectionsSummary | null>(null)
 
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — names of the account connections, only so
   // history can say WHICH connection an MCP generation used. Best effort: if it cannot be loaded (or the
-  // connection is gone) the card shows the transport alone and never invents a name.
+  // connection is gone) the card shows the transport alone and never invents a name. Read from the same
+  // connections response as the notice above (one request).
   const [connectionNames, setConnectionNames] = useState<ReadonlyMap<string, string>>(new Map())
-  const hasMcpConnectionRows = generations.some((item: any) => item.transport === 'mcp' && item.connection_id)
-  useEffect(() => {
-    if (!hasMcpConnectionRows) return
-    let cancelled = false
-    fetch('/api/video-generations/connections')
-      .then((response) => (response.ok ? (response.json() as Promise<VideoConnectionsResponse>) : null))
-      .then((payload) => {
-        if (!cancelled && payload) setConnectionNames(connectionNamesById(payload.connections))
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [hasMcpConnectionRows])
 
   // VIDEO_GENERATION_POLLING_LATENCY_V1 — status refresh and provider polling are SEPARATE.
   // The background scheduler completes MCP generations (there is no callback); while any
@@ -172,13 +169,14 @@ function VideosPageContent() {
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, sessionsResponse, providersResponse] = await Promise.all([
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, sessionsResponse, connectionsResponse] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('productions').select('*').order('updated_at', { ascending: false }),
           fetch('/api/video-drafts?limit=50'),
           fetch('/api/video-generations'),
           fetch('/api/video-generation-sessions?all=true'),
-          fetch('/api/settings/providers'),
+          // A failed lookup must never break the hub or read as "no provider".
+          fetch('/api/video-generations/connections').catch(() => null),
         ])
         const draftsData = await draftsResponse.json()
         const generationsData = await generationsResponse.json()
@@ -196,11 +194,15 @@ function VideosPageContent() {
         if (sessionsResponse.ok) setSessions(sessionsData.sessions || [])
         else console.error('[v0] Video sessions load error:', sessionsData)
 
-        if (providersResponse.ok) {
-          const providersPayload = await providersResponse.json()
-          setKlingConfigured(providersPayload?.providers?.kling?.status === 'configured')
+        const connectionsPayload: VideoConnectionsResponse | null = connectionsResponse?.ok
+          ? await connectionsResponse.json().catch(() => null)
+          : null
+        if (Array.isArray(connectionsPayload?.connections)) {
+          setConnectionsSummary(summarizeVideoConnections(connectionsPayload.connections))
+          setConnectionNames(connectionNamesById(connectionsPayload.connections))
         } else {
-          console.error('[v0] Provider status load error:', providersResponse.status)
+          setConnectionsSummary(null)
+          console.error('[v0] Video connections load error:', connectionsResponse?.status ?? 'network')
         }
 
         setLoadError(null)
@@ -221,7 +223,9 @@ function VideosPageContent() {
     const production = productions.find((p) => p.id === s.productionId)
     const sessionGenerations = generations.filter((g) => g.session_id === s.id)
     const latestAttempt = sessionGenerations[0] ?? null
-    const derivedStatus = latestAttempt ? latestAttempt.status : 'Sem tentativas'
+    // The STORED status of the latest Attempt (or "no_attempts"); the pt-BR label is applied only when rendering, and the filter
+    // below compares the same stored values.
+    const derivedStatus = sessionHubStatus(latestAttempt)
     const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
     const sessionTime = new Date(s.updatedAt).getTime()
     const recency = Math.max(sessionTime, latestTime)
@@ -375,7 +379,7 @@ function VideosPageContent() {
             }
           }} className="gap-1" data-testid="watch-generation">
             <Video className="h-4 w-4" />
-            {item.generation.status === 'succeeded' ? 'Assistir' : item.generation.status}
+            {item.generation.status === 'succeeded' ? 'Assistir' : describeGenerationStatus(item.generation.status).label}
           </Button>
           <Button
             size={size}
@@ -532,16 +536,35 @@ function VideosPageContent() {
                       </p>
                     )}
                     
-                    {klingConfigured === false && (
-                      <StateMessage
-                        tone="info"
-                        title="Kling API não configurada"
-                        description="Adicione sua chave de API em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
-                        actionLabel="Abrir Configurações"
-                        onAction={() => router.push('/configuracoes?tab=api')}
-                        compact
-                        className="mt-3"
-                      />
+                    {/* Provider notice, from the connection descriptors. Three distinct truths: nothing configured / configured but
+                        unable to generate (the descriptors' own reasons) / able to generate (no notice). Unknown (connections not
+                        readable) says nothing. */}
+                    {connectionsSummary?.kind === 'none' && (
+                      <div data-testid="video-providers-notice" data-state="none">
+                        <StateMessage
+                          tone="info"
+                          title="Nenhum provedor de vídeo configurado"
+                          description="Adicione a chave da Kling ou do Google Gemini (Google Veo) em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
+                          actionLabel="Abrir Configurações"
+                          onAction={() => router.push('/configuracoes?tab=api')}
+                          compact
+                          className="mt-3"
+                        />
+                      </div>
+                    )}
+                    {connectionsSummary?.kind === 'blocked' && (
+                      <div data-testid="video-providers-notice" data-state="blocked">
+                        <StateMessage
+                          tone="info"
+                          title="Nenhuma conexão de vídeo disponível para gerar agora"
+                          description={connectionsSummary.blocked.map(describeBlockedConnection).join(' ')}
+                          {...(connectionsSummary.blocked.every((entry) => isEnvironmentBlockedReason(entry.reason))
+                            ? {}
+                            : { actionLabel: 'Abrir Configurações', onAction: () => router.push('/configuracoes?tab=api') })}
+                          compact
+                          className="mt-3"
+                        />
+                      </div>
                     )}
 
                     <div className="flex flex-col gap-2 mt-4">
@@ -643,7 +666,9 @@ function VideosPageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos os status</SelectItem>
-                        <SelectItem value="Rascunho">Rascunho</SelectItem>
+                        {videoHubStatusFilterOptions().map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -716,7 +741,7 @@ function VideosPageContent() {
                                     items={[
                                       { label: 'Project', value: item.projectName, title: item.projectName },
                                       { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                       { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                                     ]}
                                   />
@@ -756,7 +781,7 @@ function VideosPageContent() {
                                   items={[
                                     { label: 'Project', value: item.projectName, title: item.projectName },
                                     { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                     { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
                                   ]}
                                 />
@@ -812,7 +837,7 @@ function VideosPageContent() {
                                     items={[
                                       { label: 'Project', value: item.projectName, title: item.projectName },
                                       { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                      { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                      { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                       { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleDateString('pt-BR') },
                                     ]}
                                   />
@@ -845,7 +870,7 @@ function VideosPageContent() {
                                   items={[
                                     { label: 'Project', value: item.projectName, title: item.projectName },
                                     { label: 'Production', value: item.productionName || 'Sem Production associada', title: item.productionName || 'Sem Production associada' },
-                                    { label: 'Status', value: <StatusBadge label={item.status} tone="neutral" /> },
+                                    { label: 'Status', value: <GenerationStatusBadge status={item.status} /> },
                                     { label: 'Atualizado', value: new Date(item.updatedAt).toLocaleString('pt-BR') },
                                   ]}
                                 />

@@ -162,6 +162,35 @@ export function getProductionsForProject(
     .sort((a, b) => compareDateDesc(a.updated_at, b.updated_at))
 }
 
+/**
+ * STRUCTURAL_WAVE_0 (D4): the "Criar nova imagem" context a `/imagens?project=&production=` entry may pre-select.
+ *
+ * Only identifiers that exist in the lists the signed-in user can actually read are honoured, and a Production only together with
+ * the Project it belongs to - a URL can never select a Project or Production the user does not have, nor a mismatched pair.
+ *   - valid Project + Production of that Project -> both
+ *   - valid Project, missing/invalid/mismatched Production -> the Project only (the user still chooses the Production)
+ *   - no Project but a valid Production -> that Production and its own Project
+ *   - anything else -> nothing (the hub starts empty, as before)
+ */
+export function resolveDraftHubCreateContext({
+  requestedProjectId,
+  requestedProductionId,
+  projects,
+  productions,
+}: {
+  requestedProjectId: string | null | undefined
+  requestedProductionId: string | null | undefined
+  projects: DraftHubProject[]
+  productions: DraftHubProduction[]
+}): { projectId: string; productionId: string } {
+  const none = { projectId: '', productionId: '' }
+  const production = requestedProductionId ? productions.find((entry) => entry.id === requestedProductionId) : undefined
+  const projectId = requestedProjectId || production?.project_id || ''
+  const project = projectId ? projects.find((entry) => entry.id === projectId) : undefined
+  if (!project) return none
+  return { projectId: project.id, productionId: production && production.project_id === project.id ? production.id : '' }
+}
+
 export function getDraftHubProductionLabel(
   production: DraftHubProduction,
   projects: DraftHubProject[],

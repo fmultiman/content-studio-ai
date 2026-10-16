@@ -82,7 +82,10 @@ import {
   getDraftHubEmptyState,
   getDraftHubProductionLabel,
   getProductionsForProject,
+  resolveDraftHubCreateContext,
 } from '@/lib/draft-hub'
+
+const IMAGE_DRAFTS_SECTION_ID = 'image-draft-hub'
 
 type GeneratedImageResult = {
   imageUrl: string
@@ -195,6 +198,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
   const [hubSearch, setHubSearch] = useState('')
   const [hubCreateProjectId, setHubCreateProjectId] = useState('')
   const [hubCreateProductionId, setHubCreateProductionId] = useState('')
+  // STRUCTURAL_WAVE_0 (D4): the Production -> /imagens?project=&production= entry pre-selects the creation context ONCE, after the
+  // Projects/Productions the user can read have loaded. It never creates a Session and never runs in the canonical workspace.
+  const hubContextSeeded = useRef<string | null>(null)
   const [hubViewMode, setHubViewMode] = useViewModePreference('image-draft-hub-view', 'list')
   
   // Provider configuration status — booleans only. The full secret never
@@ -819,6 +825,20 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
           .order('updated_at', { ascending: false })
 
         if (!cancelled && productionsData) setProductions(productionsData)
+
+        // Pre-select the creation context for this entry once (a retry or an unrelated re-fetch never overrides the user's choice).
+        const requestedHubContext = canonicalWorkspace ? null : `${searchParams.get('project') ?? ''}|${searchParams.get('production') ?? ''}`
+        if (!cancelled && requestedHubContext && requestedHubContext !== '|' && hubContextSeeded.current !== requestedHubContext) {
+          hubContextSeeded.current = requestedHubContext
+          const seeded = resolveDraftHubCreateContext({
+            requestedProjectId: searchParams.get('project'),
+            requestedProductionId: searchParams.get('production'),
+            projects: projectsData ?? [],
+            productions: productionsData ?? [],
+          })
+          setHubCreateProjectId(seeded.projectId)
+          setHubCreateProductionId(seeded.productionId)
+        }
 
         const { data: { user } } = await supabase.auth.getUser()
         if (!cancelled && user) {
@@ -2178,6 +2198,14 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
     setHubStatusFilter('all')
     setHubSearch('')
   }
+  // STRUCTURAL_WAVE_0 (D6): "Ver todos" in the compact drafts card used to push the legacy drafts route, a compatibility route that redirects
+  // straight back here. The complete, filterable list is the drafts section further down this same page, so go to it.
+  const showAllDrafts = () => {
+    const section = document.getElementById(IMAGE_DRAFTS_SECTION_ID)
+    if (!section) return
+    section.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    section.focus({ preventScroll: true })
+  }
   const renderImageHub = () => (
     <div className="space-y-6">
       <section className="rounded-xl border border-border/50 bg-card/30 p-6 backdrop-blur-sm">
@@ -2275,7 +2303,7 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
         )}
       </section>
 
-      <section className="space-y-4" aria-labelledby="image-draft-filters">
+      <section id={IMAGE_DRAFTS_SECTION_ID} tabIndex={-1} className="space-y-4 outline-none" aria-labelledby="image-draft-filters" data-testid="image-draft-hub-section">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="image-draft-filters" className="text-lg font-semibold text-foreground">
@@ -2532,8 +2560,9 @@ export function ImagesPageContent({ canonicalSessionId }: { canonicalSessionId?:
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => router.push('/imagens/rascunhos')}
+                    onClick={showAllDrafts}
                     className="gap-1 text-sm"
+                    data-testid="image-drafts-view-all"
                   >
                     Ver todos
                     <ChevronRight className="h-4 w-4" />
