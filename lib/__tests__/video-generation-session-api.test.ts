@@ -510,6 +510,14 @@ describe('PATCH /api/video-generation-sessions/[id] — optimistic concurrency',
 
 // ===========================================================================
 describe('GET /api/video-generation-sessions?productionId — list', () => {
+  it('reports truncation without returning more than the existing Session cap', async () => {
+    signIn(makeDb(Array.from({ length: SESSION_LIMITS.listMax + 1 }, (_, n) => sessionRow({ id: `session-${n}` }))))
+    const body = await (await list(`?productionId=${PRODUCTION}`)).json()
+    expect(body.sessions).toHaveLength(SESSION_LIMITS.listMax)
+    expect(body.hasMore).toBe(true)
+    signIn(makeDb([sessionRow()]))
+    expect((await (await list(`?productionId=${PRODUCTION}`)).json()).hasMore).toBe(false)
+  })
   const rows = () => [
     sessionRow({ id: SESSION, updated_at: stamp(5) }),
     sessionRow({ id: SESSION_2, updated_at: stamp(9) }),

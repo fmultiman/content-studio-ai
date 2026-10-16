@@ -33,15 +33,19 @@ export async function GET(req: NextRequest) {
       query = query.eq('production_id', productionId)
     }
 
+    // One extra row tells whether the cap cut the list (`hasMore`), so no screen presents a truncated list as the complete one.
     const { data, error } = await query
       .order('updated_at', { ascending: false })
       .order('id', { ascending: false })
-      .limit(SESSION_LIMITS.listMax)
+      .limit(SESSION_LIMITS.listMax + 1)
     if (error) {
       return NextResponse.json({ error: 'Não foi possível carregar as sessões agora.', code: 'STORE_UNAVAILABLE' }, { status: 503 })
     }
 
-    return NextResponse.json({ sessions: ((data ?? []) as unknown as SessionRow[]).map(toSessionResponse) })
+    const fetched = (data ?? []) as unknown as SessionRow[]
+    const hasMore = fetched.length > SESSION_LIMITS.listMax
+    const rows = hasMore ? fetched.slice(0, SESSION_LIMITS.listMax) : fetched
+    return NextResponse.json({ sessions: rows.map(toSessionResponse), hasMore })
   } catch {
     return NextResponse.json({ error: 'Erro interno ao listar as sessões.', code: 'INTERNAL_ERROR' }, { status: 500 })
   }

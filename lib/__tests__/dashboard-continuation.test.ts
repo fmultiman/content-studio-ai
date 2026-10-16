@@ -134,7 +134,7 @@ describe('UX-H3A Dashboard continuation helpers', () => {
     )
   })
 
-  it('counts related image, video and editorial work per Production', () => {
+  it('counts related work per ENTITY per Production (STRUCTURAL_WAVE_1A1: sessions, edits and contents are never summed)', () => {
     const [card] = buildRecentProductions({
       productions,
       projects,
@@ -143,9 +143,11 @@ describe('UX-H3A Dashboard continuation helpers', () => {
       editorialContents,
     })
 
+    // Legacy ImageDrafts are no longer a continuity counter (sessions are); only one VideoDraft and one editorial content exist here.
     expect(card.counters).toEqual({
-      images: 1,
-      videos: 1,
+      imageSessions: 0,
+      videoSessions: 0,
+      videoDrafts: 1,
       editorial: 1,
     })
   })

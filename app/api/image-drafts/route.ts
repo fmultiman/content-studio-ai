@@ -131,6 +131,7 @@ export async function GET(request: Request) {
     }
 
     const productionId = searchParams.get('productionId')
+    const continuity = searchParams.get('continuity') === 'true' && Boolean(productionId)
 
     // Validate UUID format when productionId filter is used
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -146,7 +147,7 @@ export async function GET(request: Request) {
 
     if (productionId) {
       // No pagination infrastructure yet; 200 is a defensive cap for MVP
-      query = query.eq('production_id', productionId).limit(200)
+      query = query.eq('production_id', productionId).limit(continuity ? 201 : 200)
     } else if (limit) {
       const parsedLimit = Number(limit)
       query = query.limit(Number.isFinite(parsedLimit) ? parsedLimit : 5)
@@ -161,6 +162,17 @@ export async function GET(request: Request) {
       )
     }
 
+    if (continuity) {
+      const drafts = (data ?? []).slice(0, 200)
+      const ids = drafts.map((draft) => draft.id)
+      // Resolve the actual legacy relationship, including Sessions outside the displayed page or in another scope. Never infer one
+      // from matching Project/Production. The unique legacy_image_draft_id constraint bounds this to one row per draft.
+      const links = ids.length ? await supabase.from('image_generation_sessions').select('legacy_image_draft_id')
+        .eq('user_id', user.id).in('legacy_image_draft_id', ids).limit(ids.length) : { data: [], error: null }
+      return NextResponse.json({ drafts, hasMore: (data?.length ?? 0) > 200,
+        linkedLegacyDraftIds: links.error ? null : (links.data ?? []).map((row) => row.legacy_image_draft_id),
+      })
+    }
     return NextResponse.json({ drafts: data || [] })
   } catch (error) {
     console.error('[Image Drafts GET] Error:', error)
