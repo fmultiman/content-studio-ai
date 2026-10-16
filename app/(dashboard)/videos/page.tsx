@@ -18,7 +18,13 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { connectionNamesById } from '@/lib/video-generation/connection-presentation'
+import {
+  connectionNamesById,
+  describeBlockedConnection,
+  isEnvironmentBlockedReason,
+  summarizeVideoConnections,
+  type VideoConnectionsSummary,
+} from '@/lib/video-generation/connection-presentation'
 import type { VideoConnectionsResponse } from '@/lib/video-generation/capabilities'
 import {
   describeGenerationNotReady,
@@ -95,27 +101,16 @@ function VideosPageContent() {
   const [publicationDraft, setPublicationDraft] = useState<VideoDraft | null>(null)
   const [selectedVideoGeneration, setSelectedVideoGeneration] = useState<any | null>(null)
   
-  // STRUCTURAL_WAVE_0 (D22): whether ANY video provider key is configured (Kling API or Gemini for Google Veo); null = not known.
-  const [videoProviderConfigured, setVideoProviderConfigured] = useState<boolean | null>(null)
+  // STRUCTURAL_WAVE_0 (D22): what the connection descriptors (the existing GET /api/video-generations/connections authority: no
+  // provider call, no credits lookup) say about the user's ability to generate - none configured / configured but blocked / available.
+  // null = the connections could not be read: the hub then says NOTHING about providers instead of claiming the user has none.
+  const [connectionsSummary, setConnectionsSummary] = useState<VideoConnectionsSummary | null>(null)
 
   // VIDEO_GENERATION_MODAL_SAFETY_AND_TRANSPORT_UX_V1 — names of the account connections, only so
   // history can say WHICH connection an MCP generation used. Best effort: if it cannot be loaded (or the
-  // connection is gone) the card shows the transport alone and never invents a name.
+  // connection is gone) the card shows the transport alone and never invents a name. Read from the same
+  // connections response as the notice above (one request).
   const [connectionNames, setConnectionNames] = useState<ReadonlyMap<string, string>>(new Map())
-  const hasMcpConnectionRows = generations.some((item: any) => item.transport === 'mcp' && item.connection_id)
-  useEffect(() => {
-    if (!hasMcpConnectionRows) return
-    let cancelled = false
-    fetch('/api/video-generations/connections')
-      .then((response) => (response.ok ? (response.json() as Promise<VideoConnectionsResponse>) : null))
-      .then((payload) => {
-        if (!cancelled && payload) setConnectionNames(connectionNamesById(payload.connections))
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [hasMcpConnectionRows])
 
   // VIDEO_GENERATION_POLLING_LATENCY_V1 — status refresh and provider polling are SEPARATE.
   // The background scheduler completes MCP generations (there is no callback); while any
@@ -174,13 +169,14 @@ function VideosPageContent() {
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, sessionsResponse, providersResponse] = await Promise.all([
+        const [{ data: projectsData }, { data: productionsData }, draftsResponse, generationsResponse, sessionsResponse, connectionsResponse] = await Promise.all([
           supabase.from('projects').select('*').order('created_at', { ascending: false }),
           supabase.from('productions').select('*').order('updated_at', { ascending: false }),
           fetch('/api/video-drafts?limit=50'),
           fetch('/api/video-generations'),
           fetch('/api/video-generation-sessions?all=true'),
-          fetch('/api/settings/providers'),
+          // A failed lookup must never break the hub or read as "no provider".
+          fetch('/api/video-generations/connections').catch(() => null),
         ])
         const draftsData = await draftsResponse.json()
         const generationsData = await generationsResponse.json()
@@ -198,13 +194,15 @@ function VideosPageContent() {
         if (sessionsResponse.ok) setSessions(sessionsData.sessions || [])
         else console.error('[v0] Video sessions load error:', sessionsData)
 
-        if (providersResponse.ok) {
-          const providersPayload = await providersResponse.json()
-          setVideoProviderConfigured(
-            providersPayload?.providers?.kling?.status === 'configured' || providersPayload?.providers?.gemini?.status === 'configured',
-          )
+        const connectionsPayload: VideoConnectionsResponse | null = connectionsResponse?.ok
+          ? await connectionsResponse.json().catch(() => null)
+          : null
+        if (Array.isArray(connectionsPayload?.connections)) {
+          setConnectionsSummary(summarizeVideoConnections(connectionsPayload.connections))
+          setConnectionNames(connectionNamesById(connectionsPayload.connections))
         } else {
-          console.error('[v0] Provider status load error:', providersResponse.status)
+          setConnectionsSummary(null)
+          console.error('[v0] Video connections load error:', connectionsResponse?.status ?? 'network')
         }
 
         setLoadError(null)
@@ -538,16 +536,35 @@ function VideosPageContent() {
                       </p>
                     )}
                     
-                    {videoProviderConfigured === false && (
-                      <StateMessage
-                        tone="info"
-                        title="Nenhum provedor de vídeo configurado"
-                        description="Adicione a chave da Kling ou do Google Gemini (Google Veo) em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
-                        actionLabel="Abrir Configurações"
-                        onAction={() => router.push('/configuracoes?tab=api')}
-                        compact
-                        className="mt-3"
-                      />
+                    {/* Provider notice, from the connection descriptors. Three distinct truths: nothing configured / configured but
+                        unable to generate (the descriptors' own reasons) / able to generate (no notice). Unknown (connections not
+                        readable) says nothing. */}
+                    {connectionsSummary?.kind === 'none' && (
+                      <div data-testid="video-providers-notice" data-state="none">
+                        <StateMessage
+                          tone="info"
+                          title="Nenhum provedor de vídeo configurado"
+                          description="Adicione a chave da Kling ou do Google Gemini (Google Veo) em Configurações — ou conecte sua conta Kling — para gerar vídeos com IA."
+                          actionLabel="Abrir Configurações"
+                          onAction={() => router.push('/configuracoes?tab=api')}
+                          compact
+                          className="mt-3"
+                        />
+                      </div>
+                    )}
+                    {connectionsSummary?.kind === 'blocked' && (
+                      <div data-testid="video-providers-notice" data-state="blocked">
+                        <StateMessage
+                          tone="info"
+                          title="Nenhuma conexão de vídeo disponível para gerar agora"
+                          description={connectionsSummary.blocked.map(describeBlockedConnection).join(' ')}
+                          {...(connectionsSummary.blocked.every((entry) => isEnvironmentBlockedReason(entry.reason))
+                            ? {}
+                            : { actionLabel: 'Abrir Configurações', onAction: () => router.push('/configuracoes?tab=api') })}
+                          compact
+                          className="mt-3"
+                        />
+                      </div>
                     )}
 
                     <div className="flex flex-col gap-2 mt-4">

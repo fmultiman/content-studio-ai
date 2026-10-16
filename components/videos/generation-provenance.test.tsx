@@ -110,8 +110,13 @@ describe('/videos wiring', () => {
     expect(page.match(/<GenerationProvenance /g) ?? []).toHaveLength(2)
     expect(page).toMatch(/item\.kind === 'generation'/)
   })
-  it('only loads connection names when an MCP generation exists (no extra request otherwise) and never blocks history on it', () => {
-    expect(page).toMatch(/hasMcpConnectionRows/)
-    expect(page).toMatch(/\.catch\(\(\) => undefined\)/)
+  it('takes connection names from the ONE connections response the hub already reads (no separate request) and never blocks history on it', () => {
+    // STRUCTURAL_WAVE_0 (D22): the hub reads the existing connections authority once for the provider notice; the names come from
+    // that same response. The request is best effort: a failure becomes null and the history still loads (behaviour is tested in
+    // video-status-hub.test.tsx).
+    expect(page.match(/fetch\('\/api\/video-generations\/connections'\)/g) ?? []).toHaveLength(1)
+    expect(page).toMatch(/fetch\('\/api\/video-generations\/connections'\)\.catch\(\(\) => null\)/)
+    expect(page).toMatch(/setConnectionNames\(connectionNamesById\(connectionsPayload\.connections\)\)/)
+    expect(page).not.toMatch(/hasMcpConnectionRows/)
   })
 })

@@ -11,7 +11,7 @@
 //   API  -> the user's Kling API resource package
 //   MCP  -> the credits of the connected Kling account (web)
 
-import type { VideoGenerationConnectionDescriptor } from './capabilities'
+import type { VideoConnectionBlockedReason, VideoGenerationConnectionDescriptor } from './capabilities'
 import { parseConnectionRef } from './connection-ref'
 
 export type TransportBadge = 'API' | 'MCP'
@@ -78,6 +78,55 @@ export function videoProviderPhrases(provider: string | null | undefined): Video
   return typeof provider === 'string' && Object.prototype.hasOwnProperty.call(VIDEO_PROVIDER_PHRASES, provider)
     ? VIDEO_PROVIDER_PHRASES[provider]
     : NEUTRAL_VIDEO_PROVIDER
+}
+
+/**
+ * STRUCTURAL_WAVE_0 (D22): what the connection descriptors (GET /api/video-generations/connections, the existing server authority)
+ * say about the user's ability to generate video, for the /videos hub notice. Three distinct truths, never collapsed:
+ *   none       no provider/connection is configured at all (every descriptor is `not_configured`, or there are none)
+ *   blocked    at least one connection exists, but none can generate right now (`reasons` are the descriptors' own blockedReason)
+ *   available  at least one connection can generate (no notice)
+ * Unknown (the connections could not be read) is NOT a state here: the caller keeps `null` and says nothing, instead of claiming the
+ * user has no provider. Pure: it reads descriptors the server already produced and decides nothing about routing or credentials.
+ */
+export type VideoConnectionsSummary =
+  | { kind: 'none' }
+  | { kind: 'blocked'; blocked: Array<{ name: string; reason: VideoConnectionBlockedReason | null }> }
+  | { kind: 'available' }
+
+export function summarizeVideoConnections(
+  connections: ReadonlyArray<Pick<VideoGenerationConnectionDescriptor, 'label' | 'accountLabel' | 'status' | 'canGenerate' | 'blockedReason'>>,
+): VideoConnectionsSummary {
+  if (connections.some((connection) => connection.canGenerate)) return { kind: 'available' }
+  const existing = connections.filter((connection) => connection.status !== 'not_configured')
+  if (existing.length === 0) return { kind: 'none' }
+  return {
+    kind: 'blocked',
+    blocked: existing.map((connection) => ({ name: connectionDisplayName(connection), reason: connection.blockedReason ?? null })),
+  }
+}
+
+/** Why one existing connection cannot generate, in one sentence each (the same facts as the server's blocked responses). */
+const BLOCKED_REASON_COPY: Readonly<Record<VideoConnectionBlockedReason, string>> = Object.freeze({
+  not_configured: 'não está configurada.',
+  authorization_required: 'precisa ser reautorizada em Configurações.',
+  connection_error: 'está com erro. Verifique-a em Configurações.',
+  generation_authorization_required: 'é somente leitura. Autorize a geração em Configurações.',
+  capabilities_missing: 'ainda não teve as capacidades carregadas. Atualize a conexão em Configurações.',
+  capabilities_expired: 'está com as capacidades desatualizadas. Atualize a conexão em Configurações.',
+  no_supported_models: 'não oferece modelos de vídeo compatíveis com o Content Studio.',
+  feature_disabled: 'ainda não foi liberado neste ambiente.',
+  canary_restricted: 'está liberado apenas para contas de teste neste ambiente.',
+})
+
+export function describeBlockedConnection(entry: { name: string; reason: VideoConnectionBlockedReason | null }): string {
+  const copy = entry.reason && Object.prototype.hasOwnProperty.call(BLOCKED_REASON_COPY, entry.reason) ? BLOCKED_REASON_COPY[entry.reason] : 'não está disponível para gerar agora.'
+  return `${entry.name} ${copy}`
+}
+
+/** Reasons only the environment can lift (the user cannot fix them in Configurações): no "open settings" action for those. */
+export function isEnvironmentBlockedReason(reason: VideoConnectionBlockedReason | null): boolean {
+  return reason === 'feature_disabled' || reason === 'canary_restricted'
 }
 
 /** Product-facing name of a connection, e.g. "Minha conta Kling — Pro" / "Kling API". */

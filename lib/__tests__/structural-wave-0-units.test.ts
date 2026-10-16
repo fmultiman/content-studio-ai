@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildVideoDraftHubCards, resolveDraftHubCreateContext } from '@/lib/draft-hub'
-import { videoProviderPhrases } from '@/lib/video-generation/connection-presentation'
+import {
+  describeBlockedConnection,
+  isEnvironmentBlockedReason,
+  summarizeVideoConnections,
+  videoProviderPhrases,
+} from '@/lib/video-generation/connection-presentation'
+import { describeGeminiConnection, describeRestConnection } from '@/lib/video-generation/connections'
 import { describeGenerationNotReady } from '@/lib/video-generation/status-refresh'
 import {
   NO_ATTEMPTS_STATUS,
@@ -107,6 +113,56 @@ describe('D22 - provider-aware wording', () => {
   it('a recorded reason always wins, and a pending generation is still just "Aguardando"', () => {
     expect(describeGenerationNotReady({ status: 'failed', provider: 'gemini', error_details: { message: 'Cota excedida' } }).description).toBe('Cota excedida')
     expect(describeGenerationNotReady({ status: 'processing', provider: 'gemini' })).toEqual({ title: 'Aguardando', description: 'O vídeo ainda não está pronto.' })
+  })
+})
+
+describe('D22 - summary of the connection descriptors (hub notice)', () => {
+  const base = { label: 'Minha conta Kling', accountLabel: 'Pro', status: 'connected' as const, canGenerate: false }
+  const rest = describeRestConnection('configured')
+  const restMissing = describeRestConnection('missing')
+  const veoOk = describeGeminiConnection('configured', true)
+  const veoMissing = describeGeminiConnection('missing', true)
+
+  it('available as soon as ONE connection can generate (Kling API, Google Veo or a Kling MCP account)', () => {
+    expect(summarizeVideoConnections([rest, veoMissing])).toEqual({ kind: 'available' })
+    expect(summarizeVideoConnections([restMissing, veoOk])).toEqual({ kind: 'available' })
+    expect(summarizeVideoConnections([restMissing, veoMissing, { ...base, canGenerate: true }])).toEqual({ kind: 'available' })
+    // A blocked connection never hides a usable one.
+    expect(summarizeVideoConnections([{ ...base, blockedReason: 'connection_error', status: 'error' }, rest])).toEqual({ kind: 'available' })
+  })
+
+  it('none: no connection exists, or every descriptor is "not configured"', () => {
+    expect(summarizeVideoConnections([])).toEqual({ kind: 'none' })
+    expect(summarizeVideoConnections([restMissing, veoMissing])).toEqual({ kind: 'none' })
+  })
+
+  it('blocked: a connection exists but cannot generate - carrying the descriptor\'s own reason, not a verdict of "none"', () => {
+    const summary = summarizeVideoConnections([restMissing, veoMissing, { ...base, blockedReason: 'generation_authorization_required' }])
+    expect(summary).toEqual({ kind: 'blocked', blocked: [{ name: 'Minha conta Kling — Pro', reason: 'generation_authorization_required' }] })
+    expect(summarizeVideoConnections([restMissing, describeGeminiConnection('configured', false)])).toEqual({
+      kind: 'blocked', blocked: [{ name: 'Google Veo', reason: 'feature_disabled' }],
+    })
+  })
+
+  it('every blocked reason the server can produce has a sentence, and none of them invents a reason', () => {
+    const reasons = [
+      'authorization_required', 'connection_error', 'generation_authorization_required', 'capabilities_missing',
+      'capabilities_expired', 'no_supported_models', 'feature_disabled', 'canary_restricted',
+    ] as const
+    for (const reason of reasons) {
+      const sentence = describeBlockedConnection({ name: 'Conexão X', reason })
+      expect(sentence.startsWith('Conexão X ')).toBe(true)
+      expect(sentence).not.toContain('não está disponível para gerar agora')
+    }
+    expect(describeBlockedConnection({ name: 'Conexão X', reason: null })).toBe('Conexão X não está disponível para gerar agora.')
+  })
+
+  it('only release-level reasons are outside the user\'s reach', () => {
+    expect(isEnvironmentBlockedReason('feature_disabled')).toBe(true)
+    expect(isEnvironmentBlockedReason('canary_restricted')).toBe(true)
+    for (const reason of ['authorization_required', 'connection_error', 'generation_authorization_required', 'capabilities_missing', 'capabilities_expired', 'no_supported_models', null] as const) {
+      expect(isEnvironmentBlockedReason(reason)).toBe(false)
+    }
   })
 })
 
