@@ -3,6 +3,7 @@
 import { ChevronRight, ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 export type ImageSessionCardSession = {
   id: string
@@ -14,14 +15,18 @@ export type ImageSessionCardSession = {
 
 // IMAGE_GENERATION_WORKSPACE_REGRESSION_RECOVERY_V1: "Gerações recentes" card. Shows the server-resolved
 // thumbnail of the Session's current image, or an intentional placeholder when there is none.
-export function ImageSessionCard({ session, projectName, productionTitle, onContinue }: {
+// STRUCTURAL_WAVE_1A1: the Production workspace reuses this card for the canonical Sessions of its Images tab; it may also show the
+// Session's own status (`statusLabel`, from the Session's working state) next to the context.
+export function ImageSessionCard({ session, projectName, productionTitle, statusLabel, statusTone = 'neutral', onContinue }: {
   session: ImageSessionCardSession
   projectName?: string | null
   productionTitle?: string | null
+  statusLabel?: string | null
+  statusTone?: 'neutral' | 'positive' | 'success' | 'info' | 'warning' | 'danger'
   onContinue: (sessionId: string) => void
 }) {
   return (
-    <Card className="border-border/50 bg-card/30" data-testid="image-session-card">
+    <Card className="border-border/50 bg-card/30" data-testid="image-session-card" data-session-id={session.id}>
       <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="flex min-w-0 items-center gap-3">
           {session.thumbnailUrl ? (
@@ -36,6 +41,11 @@ export function ImageSessionCard({ session, projectName, productionTitle, onCont
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{session.workingPrompt || session.name || 'Geração sem descrição'}</p>
             <p className="text-xs text-muted-foreground">{projectName || 'Sem Project'} · {productionTitle || 'Sem Production'} · {new Date(session.updatedAt).toLocaleDateString('pt-BR')}</p>
+            {statusLabel ? (
+              <div className="mt-1" data-testid="image-session-status">
+                <StatusBadge label={statusLabel} tone={statusTone} />
+              </div>
+            ) : null}
           </div>
         </div>
         <Button size="sm" onClick={() => onContinue(session.id)} className="gap-1">Continuar <ChevronRight className="h-4 w-4" /></Button>

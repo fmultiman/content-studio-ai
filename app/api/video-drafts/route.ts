@@ -259,7 +259,7 @@ export async function GET(request: Request) {
 
     if (productionId) {
       // No pagination infrastructure yet; 200 is a defensive cap for MVP
-      query = query.eq('production_id', productionId).limit(200)
+      query = query.eq('production_id', productionId).limit(201)
     } else {
       query = query.limit(Number.isFinite(limit) ? limit : 5)
     }
@@ -273,7 +273,7 @@ export async function GET(request: Request) {
       )
     }
 
-    return NextResponse.json({ drafts: data || [] })
+    return NextResponse.json({ drafts: productionId ? (data ?? []).slice(0, 200) : data || [], hasMore: Boolean(productionId) && (data?.length ?? 0) > 200 })
   } catch (error) {
     console.error('[Video Drafts GET] Error:', error)
     return NextResponse.json(

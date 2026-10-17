@@ -39,13 +39,17 @@ export async function GET(req: NextRequest) {
     if (projectId) query = query.eq('project_id', projectId)
     if (productionId) query = query.eq('production_id', productionId)
     if (legacyImageDraftId) query = query.eq('legacy_image_draft_id', legacyImageDraftId)
-    const { data, error } = await query.order('updated_at', { ascending: false }).order('id', { ascending: false }).limit(IMAGE_SESSION_LIMITS.listMax)
+    // One extra row tells whether the cap cut the list (`hasMore`), so no screen presents a truncated list as the complete one.
+    const { data, error } = await query.order('updated_at', { ascending: false }).order('id', { ascending: false }).limit(IMAGE_SESSION_LIMITS.listMax + 1)
     if (error) return errorResponse(503, 'STORE_UNAVAILABLE', 'Sessions could not be loaded.')
-    const rows = (data ?? []) as unknown as ImageGenerationSessionRow[]
+    const fetched = (data ?? []) as unknown as ImageGenerationSessionRow[]
+    const hasMore = fetched.length > IMAGE_SESSION_LIMITS.listMax
+    const rows = hasMore ? fetched.slice(0, IMAGE_SESSION_LIMITS.listMax) : fetched
     // Thumbnail resolution is best-effort: a failure must never hide the Sessions themselves.
     const thumbnails = await resolveSessionThumbnails(supabase, user.id, rows.map((row) => row.current_image_id)).catch(() => new Map<string, string>())
     return NextResponse.json({
       sessions: rows.map((row) => ({ ...toSessionResponse(row), thumbnailUrl: row.current_image_id ? thumbnails.get(row.current_image_id) ?? null : null })),
+      hasMore,
     })
   } catch {
     return errorResponse(500, 'INTERNAL_ERROR', 'Could not list Image generation sessions.')

@@ -57,9 +57,9 @@ export function productionWorkspaceLoadingMessage(section: 'page' | 'overview' |
     case 'overview':
       return 'Carregando entregáveis da Production...'
     case 'images':
-      return 'Carregando rascunhos de imagem...'
+      return 'Carregando sessões de imagem...'
     case 'videos':
-      return 'Carregando rascunhos de vídeo...'
+      return 'Carregando sessões e edições de vídeo...'
     case 'editorial':
       return 'Carregando conteúdos da Production...'
   }

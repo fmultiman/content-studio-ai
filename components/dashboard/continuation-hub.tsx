@@ -27,6 +27,7 @@ import type {
   RecentProjectCard,
   RecentWorkItem,
 } from '@/lib/dashboard-continuation'
+import { describeProductionCounters } from '@/lib/session-continuity'
 
 type DashboardContinuationProps = {
   userName: string
@@ -34,6 +35,7 @@ type DashboardContinuationProps = {
   workItems: RecentWorkItem[]
   projects: RecentProjectCard[]
   emptyState: DashboardEmptyState | null
+  hasLoadError?: boolean
 }
 
 export function DashboardContinuationHub({
@@ -42,6 +44,7 @@ export function DashboardContinuationHub({
   workItems,
   projects,
   emptyState,
+  hasLoadError = false,
 }: DashboardContinuationProps) {
   const latestProduction = productions[0] ?? null
   const latestProject = projects[0] ?? null
@@ -85,8 +88,8 @@ export function DashboardContinuationHub({
           </div>
         ) : (
           <EmptyPanel
-            title="Nenhuma Production ainda"
-            description="Crie uma Production dentro de um Project para organizar imagens, vídeos e conteúdos."
+            title={hasLoadError ? 'Productions indisponíveis agora' : 'Nenhuma Production ainda'}
+            description={hasLoadError ? 'Atualize a página para tentar carregar novamente.' : 'Crie uma Production dentro de um Project para organizar imagens, vídeos e conteúdos.'}
             href={latestProject?.href ?? '/projetos'}
             actionLabel={latestProject ? 'Abrir Project recente' : 'Abrir Projects'}
           />
@@ -99,20 +102,20 @@ export function DashboardContinuationHub({
             Itens recentes
           </h3>
           <p className="text-sm text-muted-foreground">
-            Acesso rápido a rascunhos e conteúdos sem substituir a Production.
+            Acesso rápido a sessões de geração, edições e conteúdos sem substituir a Production.
           </p>
         </div>
 
         {workItems.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {workItems.map((item) => (
-              <WorkItemCard key={`${item.type}-${item.id}`} item={item} />
+              <WorkItemCard key={`${item.entity}-${item.id}`} item={item} />
             ))}
           </div>
         ) : (
           <EmptyPanel
-            title="Sem itens recentes"
-            description="Quando uma Production tiver rascunhos ou conteúdos, eles aparecerão aqui."
+            title={hasLoadError ? 'Itens recentes indisponíveis agora' : 'Sem itens recentes'}
+            description={hasLoadError ? 'Atualize a página para tentar carregar novamente.' : 'Quando uma Production tiver sessões de geração, edições ou conteúdos, eles aparecerão aqui.'}
             href={latestProduction?.href ?? '/projetos'}
             actionLabel={latestProduction ? 'Abrir Production' : 'Abrir Projects'}
           />
@@ -137,8 +140,8 @@ export function DashboardContinuationHub({
           </div>
         ) : (
           <EmptyPanel
-            title="Nenhum Project criado"
-            description="Projects guardam identidade, contexto e histórico do trabalho."
+            title={hasLoadError ? 'Projects indisponíveis agora' : 'Nenhum Project criado'}
+            description={hasLoadError ? 'Atualize a página para tentar carregar novamente.' : 'Projects guardam identidade, contexto e histórico do trabalho.'}
             href="/projetos?new=true"
             actionLabel="Criar Project"
           />
@@ -202,8 +205,9 @@ function ProductionCard({ production }: { production: RecentProductionCard }) {
           items={[
             { label: 'Project', value: production.projectName, title: production.projectName },
             {
-              label: 'Itens vinculados',
-              value: `${production.counters.images} imagens · ${production.counters.videos} vídeos · ${production.counters.editorial} conteúdos`,
+              // One number per entity (sessions, edits and contents are different things and are never summed).
+              label: 'Contagem',
+              value: <span data-testid="production-counters">{describeProductionCounters(production.counters)}</span>,
             },
             { label: 'Atualizado', value: formatDate(production.activityAt) },
           ]}
@@ -222,17 +226,11 @@ function ProductionCard({ production }: { production: RecentProductionCard }) {
 }
 
 function WorkItemCard({ item }: { item: RecentWorkItem }) {
-  const statusTone =
-    item.status === 'Aprovada' || item.status === 'Pronto'
-      ? 'positive'
-      : item.status === 'Gerando'
-        ? 'warning'
-        : item.status === 'Rejeitada'
-          ? 'danger'
-          : 'neutral'
+  // The tone comes from the entity's own status (computed with the item), not from guessing it out of the label.
+  const statusTone = item.statusTone
 
   return (
-    <Card className="border-border/50 bg-card/25 transition-colors hover:border-border">
+    <Card className="border-border/50 bg-card/25 transition-colors hover:border-border" data-testid="dashboard-work-item" data-entity={item.entity}>
       <CardContent className="space-y-3 p-4">
         <div className="flex min-w-0 items-start gap-2">
           <WorkItemIcon type={item.type} />
@@ -283,7 +281,7 @@ function ProjectCard({ project }: { project: RecentProjectCard }) {
           items={[
             {
               label: 'Productions',
-              value: `${project.productionCount} ${project.productionCount === 1 ? 'Production' : 'Productions'}`,
+              value: project.productionCount === null ? 'Contagem indisponível' : `${project.productionCount} ${project.productionCount === 1 ? 'Production' : 'Productions'}`,
             },
             { label: 'Identidade', value: project.identityLabel },
             { label: 'Atualizado', value: formatDate(project.updatedAt) },

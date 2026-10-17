@@ -52,6 +52,14 @@ import {
 } from 'lucide-react'
 import { GenerationStatusBadge } from '@/components/videos/generation-status-badge'
 import { describeGenerationStatus, sessionHubStatus } from '@/lib/video-generation/status-presentation'
+import {
+  buildProductionImageContinuity,
+  describeOverviewImages,
+  describeOverviewVideos,
+  type ProductionImageSessionInput,
+} from '@/lib/session-continuity'
+import { ImageSessionCard } from '@/components/images/image-session-card'
+import { StateMessage } from '@/components/ui/state-message'
 import { GenerationProvenance } from '@/components/videos/generation-provenance'
 import { SaveGenerationToLibrary } from '@/components/videos/save-generation-to-library'
 import { VideoGenerationPreviewDialog } from '@/components/videos/video-generation-preview-dialog'
@@ -129,6 +137,23 @@ export default function ProductionDetailPage() {
 
   // Workspace data
   const [imageDrafts, setImageDrafts] = useState<ImageDraft[]>([])
+  // STRUCTURAL_WAVE_1A1: Image generation SESSIONS are the canonical continuity of the Images tab; `imageDrafts` is the legacy list.
+  const [imageSessions, setImageSessions] = useState<ProductionImageSessionInput[]>([])
+  const [imageSessionsHasMore, setImageSessionsHasMore] = useState(false)
+  const [videoSessionsHasMore, setVideoSessionsHasMore] = useState(false)
+  const [linkedLegacyDraftIds, setLinkedLegacyDraftIds] = useState<string[]>([])
+  const [legacyLinksUnavailable, setLegacyLinksUnavailable] = useState(false)
+  const [imageDraftsHasMore, setImageDraftsHasMore] = useState(false)
+  const [videoDraftsHasMore, setVideoDraftsHasMore] = useState(false)
+  const [videoGenerationsHasMore, setVideoGenerationsHasMore] = useState(false)
+  const [workspaceErrors, setWorkspaceErrors] = useState({
+    imageSessions: false,
+    imageDrafts: false,
+    videoDrafts: false,
+    videoSessions: false,
+    videoGenerations: false,
+  })
+  const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0)
   const [videoDrafts, setVideoDrafts] = useState<VideoDraft[]>([])
   const [videoSessions, setVideoSessions] = useState<any[]>([])
   const [videoGenerations, setVideoGenerations] = useState<any[]>([])
@@ -203,36 +228,62 @@ export default function ProductionDetailPage() {
 
   useEffect(() => {
     if (!production) return
+    let cancelled = false
+    // Every source is read on its own: one failing never hides the others, and a failure is REMEMBERED (workspaceErrors) so a tab
+    // can say "could not load" instead of claiming the Production has nothing.
+    const read = async (url: string, collection: string) => {
+      try {
+        const response = await fetch(url)
+        const data = await response.json().catch(() => null)
+        return response.ok && Array.isArray(data?.[collection]) ? { ok: true as const, data } : { ok: false as const }
+      } catch {
+        return { ok: false as const }
+      }
+    }
     const loadWorkspace = async () => {
       setIsLoadingWorkspace(true)
+      setImageSessions([])
+      setImageDrafts([])
+      setVideoSessions([])
+      setVideoDrafts([])
+      setVideoGenerations([])
+      setEditorialContents([])
       try {
-        const [imgRes, vidRes, ecRes, vidSessionsRes, vidGenerationsRes] = await Promise.all([
-          fetch(`/api/image-drafts?productionId=${productionId}`),
-          fetch(`/api/video-drafts?productionId=${productionId}`),
-          fetch(`/api/editorial-contents?productionId=${productionId}`),
-          fetch(`/api/video-generation-sessions?productionId=${productionId}`),
-          fetch(`/api/video-generations?productionId=${productionId}`),
+        // The image Sessions are read with the Production's OWN Project and Production (authoritative from the Production record).
+        const [imgSessions, imgDrafts, vidDrafts, ecs, vidSessions, vidGenerations] = await Promise.all([
+          read(`/api/image-generation-sessions?projectId=${production.project_id}&productionId=${productionId}`, 'sessions'),
+          read(`/api/image-drafts?productionId=${productionId}&continuity=true`, 'drafts'),
+          read(`/api/video-drafts?productionId=${productionId}`, 'drafts'),
+          read(`/api/editorial-contents?productionId=${productionId}`, 'editorialContents'),
+          read(`/api/video-generation-sessions?productionId=${productionId}`, 'sessions'),
+          read(`/api/video-generations?productionId=${productionId}&continuity=true`, 'generations'),
         ])
-        const [imgData, vidData, ecData, vidSessionsData, vidGenerationsData] = await Promise.all([
-          imgRes.json(),
-          vidRes.json(),
-          ecRes.json(),
-          vidSessionsRes.json(),
-          vidGenerationsRes.json(),
-        ])
-        if (imgRes.ok) setImageDrafts(imgData.drafts || [])
-        if (vidRes.ok) setVideoDrafts(vidData.drafts || [])
-        if (ecRes.ok) setEditorialContents(ecData.editorialContents || [])
-        if (vidSessionsRes.ok) setVideoSessions(vidSessionsData.sessions || [])
-        if (vidGenerationsRes.ok) setVideoGenerations(vidGenerationsData.generations || [])
-      } catch {
-        // silently fail — workspace items are non-critical
+        if (cancelled) return
+        if (imgSessions.ok) { setImageSessions(imgSessions.data.sessions || []); setImageSessionsHasMore(imgSessions.data.hasMore === true) }
+        if (imgDrafts.ok) {
+          setImageDrafts(imgDrafts.data.drafts || [])
+          setLinkedLegacyDraftIds(imgDrafts.data.linkedLegacyDraftIds ?? [])
+          setLegacyLinksUnavailable(imgDrafts.data.linkedLegacyDraftIds === null)
+          setImageDraftsHasMore(imgDrafts.data.hasMore === true)
+        }
+        if (vidDrafts.ok) { setVideoDrafts(vidDrafts.data.drafts || []); setVideoDraftsHasMore(vidDrafts.data.hasMore === true) }
+        if (ecs.ok) setEditorialContents(ecs.data.editorialContents || [])
+        if (vidSessions.ok) { setVideoSessions(vidSessions.data.sessions || []); setVideoSessionsHasMore(vidSessions.data.hasMore === true) }
+        if (vidGenerations.ok) { setVideoGenerations(vidGenerations.data.generations || []); setVideoGenerationsHasMore(vidGenerations.data.hasMore === true) }
+        setWorkspaceErrors({
+          imageSessions: !imgSessions.ok,
+          imageDrafts: !imgDrafts.ok,
+          videoDrafts: !vidDrafts.ok,
+          videoSessions: !vidSessions.ok,
+          videoGenerations: !vidGenerations.ok,
+        })
       } finally {
-        setIsLoadingWorkspace(false)
+        if (!cancelled) setIsLoadingWorkspace(false)
       }
     }
     loadWorkspace()
-  }, [production, productionId])
+    return () => { cancelled = true }
+  }, [production, productionId, workspaceReloadKey])
 
   useEffect(() => {
     const hasMcp = videoGenerations.some((g: any) => g.transport === 'mcp' && g.connection_id)
@@ -362,11 +413,23 @@ export default function ProductionDetailPage() {
 
       const standaloneGenerations = videoGenerations.filter((g) => g.session_id === null || g.session_id === undefined)
 
+      // STRUCTURAL_WAVE_1A1: the canonical Image Sessions of THIS Production (re-checked against its Project and Production) and the
+      // legacy drafts that no Session carries; a draft a Session already carries is the same work and is not listed twice.
+      const imageContinuity = buildProductionImageContinuity({ sessions: imageSessions, legacyDrafts: imageDrafts, projectId, productionId, linkedLegacyDraftIds })
+      // If the Sessions could not be read the linkage is unknown, so the legacy list is withheld (never risk listing work twice).
+      const visibleLegacyImageDrafts = workspaceErrors.imageSessions || workspaceErrors.imageDrafts || legacyLinksUnavailable ? [] : imageContinuity.legacyDrafts
+      const imageWorkCount = imageContinuity.sessions.length + visibleLegacyImageDrafts.length
+
+      // Video Sessions of THIS Production only (their scope is mandatory; a row from a list endpoint is re-checked, never trusted blindly).
+      const scopedVideoSessions = videoSessions.filter((s) => s.projectId === projectId && s.productionId === productionId)
+      const videoSessionCount = scopedVideoSessions.length
+
       const productionAiCards = [
-        ...videoSessions.map((s) => {
+        ...scopedVideoSessions.map((s) => {
           const sessionGenerations = videoGenerations.filter((g) => g.session_id === s.id)
           const latestAttempt = sessionGenerations[0] ?? null
-          const status = sessionHubStatus(latestAttempt)
+          const attemptsIncomplete = workspaceErrors.videoGenerations || videoGenerationsHasMore
+          const status = !latestAttempt && attemptsIncomplete ? '' : sessionHubStatus(latestAttempt)
           const latestTime = latestAttempt ? new Date(latestAttempt.created_at).getTime() : 0
           const sessionTime = new Date(s.updatedAt).getTime()
           const recency = Math.max(sessionTime, latestTime)
@@ -375,7 +438,7 @@ export default function ProductionDetailPage() {
             id: s.id,
             kind: 'session' as const,
             title: s.workingState?.prompt || 'Workspace de geração',
-            meta: `Sessão · ${sessionGenerations.length} tentativa${sessionGenerations.length !== 1 ? 's' : ''}`,
+            meta: attemptsIncomplete ? 'Sessão · histórico parcial de tentativas' : `Sessão · ${sessionGenerations.length} tentativa${sessionGenerations.length !== 1 ? 's' : ''}`,
             status,
             recency,
             updatedAt: s.updatedAt,
@@ -563,11 +626,11 @@ export default function ProductionDetailPage() {
               </TabsTrigger>
               <TabsTrigger value="images" className="gap-2">
                 <ImageIcon className="h-4 w-4" />
-                Imagens {imageDrafts.length > 0 && `(${imageDrafts.length})`}
+                Imagens
               </TabsTrigger>
               <TabsTrigger value="videos" className="gap-2">
                 <Video className="h-4 w-4" />
-                Vídeos {videoDrafts.length > 0 && `(${videoDrafts.length})`}
+                Vídeos
               </TabsTrigger>
               <TabsTrigger value="editorial" className="gap-2">
                 <FileText className="h-4 w-4" />
@@ -603,10 +666,15 @@ export default function ProductionDetailPage() {
                           <ImageIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium">Imagens</p>
-                            <p className="text-xs text-muted-foreground">
-                              {imageDrafts.length === 0
-                                ? 'Sem imagens vinculadas'
-                                : `${imageDrafts.length} rascunho${imageDrafts.length > 1 ? 's' : ''}`}
+                            <p className="text-xs text-muted-foreground" data-testid="overview-images">
+                              {workspaceErrors.imageSessions || workspaceErrors.imageDrafts || legacyLinksUnavailable
+                                ? 'Indisponível agora'
+                                : imageDraftsHasMore ? 'Lista parcial de imagens'
+                                : describeOverviewImages({
+                                    sessions: imageContinuity.sessions.length,
+                                    legacyDrafts: visibleLegacyImageDrafts.length,
+                                    hasMore: imageSessionsHasMore,
+                                  })}
                             </p>
                           </div>
                         </div>
@@ -614,10 +682,16 @@ export default function ProductionDetailPage() {
                           <Video className="h-5 w-5 shrink-0 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium">Vídeos</p>
-                            <p className="text-xs text-muted-foreground">
-                              {videoDrafts.length === 0
-                                ? 'Sem vídeos vinculados'
-                                : `${videoDrafts.length} rascunho${videoDrafts.length > 1 ? 's' : ''}`}
+                            <p className="text-xs text-muted-foreground" data-testid="overview-videos">
+                              {workspaceErrors.videoSessions || workspaceErrors.videoDrafts || workspaceErrors.videoGenerations
+                                ? 'Contagem parcial indisponível agora'
+                                : videoDraftsHasMore || videoGenerationsHasMore ? 'Lista parcial de vídeos'
+                                : describeOverviewVideos({
+                                    sessions: videoSessionCount,
+                                    drafts: videoDrafts.length,
+                                    standaloneGenerations: standaloneGenerations.length,
+                                    sessionsHasMore: videoSessionsHasMore,
+                                  })}
                             </p>
                           </div>
                         </div>
@@ -698,8 +772,14 @@ export default function ProductionDetailPage() {
             <TabsContent value="images" className="mt-4">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    {imageDrafts.length === 0 ? 'Nenhuma imagem vinculada.' : `${imageDrafts.length} rascunho${imageDrafts.length > 1 ? 's' : ''} vinculado${imageDrafts.length > 1 ? 's' : ''}.`}
+                  <p className="text-sm text-muted-foreground" data-testid="images-tab-summary">
+                    {workspaceErrors.imageSessions
+                      ? 'Não foi possível carregar as sessões de imagem.'
+                      : workspaceErrors.imageDrafts || legacyLinksUnavailable ? 'Lista parcial de imagens; rascunhos legados indisponíveis.'
+                      : imageDraftsHasMore || imageSessionsHasMore && imageWorkCount === 0 ? 'Lista parcial de imagens vinculadas.'
+                      : imageWorkCount === 0
+                        ? 'Nenhuma imagem vinculada.'
+                        : `${describeOverviewImages({ sessions: imageContinuity.sessions.length, legacyDrafts: visibleLegacyImageDrafts.length, hasMore: imageSessionsHasMore })}.`}
                   </p>
                   <Button
                     size="sm"
@@ -721,21 +801,66 @@ export default function ProductionDetailPage() {
                       {productionWorkspaceLoadingMessage('images')}
                     </p>
                   </div>
-                ) : imageDrafts.length === 0 ? (
-                  <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-10">
-                      <ImageIcon className="mb-3 h-10 w-10 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Nenhuma imagem vinculada a esta Produção.</p>
-                    </CardContent>
-                  </Card>
                 ) : (
-                  <div className="space-y-2">
-                    {imageDrafts.map((draft) => (
-                      <Card key={draft.id} className="border-border/50 bg-card/30">
+                  <>
+                    {workspaceErrors.imageSessions && (
+                      <div data-testid="images-sessions-error">
+                        <StateMessage
+                          tone="error"
+                          title="Não foi possível carregar as sessões de imagem"
+                          description="As sessões desta Produção não puderam ser lidas agora; isto não significa que ela não tenha imagens."
+                          actionLabel="Tentar novamente"
+                          onAction={() => setWorkspaceReloadKey((key) => key + 1)}
+                          compact
+                        />
+                      </div>
+                    )}
+                    {imageContinuity.sessions.length > 0 && (
+                      <div className="space-y-2" data-testid="production-image-sessions">
+                        {imageContinuity.sessions.map((session) => (
+                          <ImageSessionCard
+                            key={session.id}
+                            session={{ id: session.id, name: session.title, workingPrompt: null, updatedAt: session.updatedAt, thumbnailUrl: session.thumbnailUrl }}
+                            projectName={project?.name}
+                            productionTitle={productionDisplay.title}
+                            statusLabel={session.status.label}
+                            statusTone={session.status.tone}
+                            onContinue={() => router.push(session.href)}
+                          />
+                        ))}
+                        {imageSessionsHasMore && (
+                          <p className="text-xs text-muted-foreground" data-testid="images-sessions-truncated">
+                            Mostrando as sessões mais recentes; há mais sessões nesta Produção do que a lista comporta.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {!workspaceErrors.imageSessions && !workspaceErrors.imageDrafts && !legacyLinksUnavailable && !imageSessionsHasMore && !imageDraftsHasMore && imageWorkCount === 0 && (
+                      <Card className="border-dashed" data-testid="production-images-empty">
+                        <CardContent className="flex flex-col items-center justify-center py-10">
+                          <ImageIcon className="mb-3 h-10 w-10 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">Nenhuma imagem vinculada a esta Produção.</p>
+                        </CardContent>
+                      </Card>
+                    )}
+                    {(workspaceErrors.imageDrafts || legacyLinksUnavailable) && !workspaceErrors.imageSessions && (
+                      <p className="text-xs text-muted-foreground" data-testid="images-legacy-error">
+                        Não foi possível verificar os rascunhos de imagem legados desta Produção.
+                      </p>
+                    )}
+                    {imageDraftsHasMore && <p className="text-xs text-muted-foreground">Mostrando apenas os rascunhos legados mais recentes.</p>}
+                    {visibleLegacyImageDrafts.length > 0 && (
+                      <div className="space-y-2" data-testid="production-legacy-image-drafts">
+                        <div>
+                          <h3 className="text-sm font-medium text-foreground">Rascunhos legados sem sessão</h3>
+                          <p className="text-xs text-muted-foreground">Trabalho antigo que ainda não tem uma sessão de geração.</p>
+                        </div>
+                    {visibleLegacyImageDrafts.map((draft) => (
+                      <Card key={draft.id} className="border-border/50 bg-card/30" data-testid={`production-legacy-image-draft-${draft.id}`}>
                         <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
                           <div className="min-w-0 space-y-3">
                             <CardTitle className="line-clamp-1 text-sm">
-                              {draft.name || draft.user_input.split('\n')[0].slice(0, 60) || 'Rascunho sem título'}
+                              {draft.name || draft.user_input?.split('\n')[0].slice(0, 60) || 'Rascunho sem título'}
                             </CardTitle>
                             <ContextMetadata
                               dense
@@ -776,7 +901,7 @@ export default function ProductionDetailPage() {
                                 setUnlinkTarget({
                                   type: 'image',
                                   id: draft.id,
-                                  name: draft.name || draft.user_input.split('\n')[0].slice(0, 40) || 'Rascunho',
+                                  name: draft.name || draft.user_input?.split('\n')[0].slice(0, 40) || 'Rascunho',
                                 })
                               }
                             >
@@ -787,7 +912,9 @@ export default function ProductionDetailPage() {
                         </CardContent>
                       </Card>
                     ))}
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </TabsContent>
@@ -795,6 +922,18 @@ export default function ProductionDetailPage() {
             {/* Vídeos */}
             <TabsContent value="videos" className="mt-4">
               <div className="space-y-6">
+                {!isLoadingWorkspace && (workspaceErrors.videoSessions || workspaceErrors.videoGenerations || workspaceErrors.videoDrafts) && (
+                  <div data-testid="videos-load-error">
+                    <StateMessage
+                      tone="error"
+                      title="Não foi possível carregar parte dos vídeos desta Produção"
+                      description="Alguma lista (sessões, gerações ou edições) não pôde ser lida agora; isto não significa que ela esteja vazia."
+                      actionLabel="Tentar novamente"
+                      onAction={() => setWorkspaceReloadKey((key) => key + 1)}
+                      compact
+                    />
+                  </div>
+                )}
                 {/* Gerações IA */}
                 <div className="space-y-3" data-testid="production-ai-group">
                   <div className="flex items-center justify-between">
@@ -813,7 +952,7 @@ export default function ProductionDetailPage() {
                         {productionWorkspaceLoadingMessage('videos')}
                       </p>
                     </div>
-                  ) : productionAiCards.length === 0 ? (
+                  ) : productionAiCards.length === 0 && !(workspaceErrors.videoSessions || workspaceErrors.videoGenerations) ? (
                     <Card className="border-dashed" data-testid="production-ai-empty">
                       <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
                         <Zap className="mb-2 h-8 w-8 opacity-40" />
@@ -896,6 +1035,14 @@ export default function ProductionDetailPage() {
                       ))}
                     </div>
                   )}
+                  {!isLoadingWorkspace && videoSessionsHasMore && (
+                    <p className="text-xs text-muted-foreground" data-testid="video-sessions-truncated">
+                      Mostrando as sessões mais recentes; há mais sessões de vídeo nesta Produção do que a lista comporta.
+                    </p>
+                  )}
+                  {!isLoadingWorkspace && (videoDraftsHasMore || videoGenerationsHasMore) && (
+                    <p className="text-xs text-muted-foreground" data-testid="videos-history-truncated">Listas parciais: mostrando as edições e o histórico de geração mais recentes.</p>
+                  )}
                 </div>
 
                 {/* Edições */}
@@ -926,7 +1073,7 @@ export default function ProductionDetailPage() {
                         {productionWorkspaceLoadingMessage('videos')}
                       </p>
                     </div>
-                  ) : videoDrafts.length === 0 ? (
+                  ) : videoDrafts.length === 0 && !workspaceErrors.videoDrafts ? (
                     <Card className="border-dashed" data-testid="production-editions-empty">
                       <CardContent className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
                         <Clapperboard className="mb-2 h-8 w-8 opacity-40" />

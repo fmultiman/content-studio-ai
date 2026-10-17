@@ -607,6 +607,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const productionId = searchParams.get('productionId')
     const projectId = searchParams.get('projectId')
+    const continuity = searchParams.get('continuity') === 'true' && Boolean(productionId)
 
     const sessionId = searchParams.get('sessionId')
     if (sessionId !== null) {
@@ -643,11 +644,13 @@ export async function GET(req: NextRequest) {
       query = query.eq('project_id', projectId)
     }
 
-    const { data: generations, error } = await query
+    if (continuity) query = query.limit(201)
+    const { data: fetchedGenerations, error } = await query
 
     if (error) {
       throw error
     }
+    const generations = continuity ? (fetchedGenerations ?? []).slice(0, 200) : fetchedGenerations
 
     // "Saved in Arquivos" is durable server state: the promotion pointer counts only while its LibraryFile
     // is live. A trashed file reads as not saved (matching render -> Arquivos), so saving again is offered.
@@ -675,7 +678,7 @@ export async function GET(req: NextRequest) {
       })
     )
 
-    return NextResponse.json({ generations: signedGenerations })
+    return NextResponse.json({ generations: signedGenerations, ...(continuity ? { hasMore: (fetchedGenerations?.length ?? 0) > 200 } : {}) })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
