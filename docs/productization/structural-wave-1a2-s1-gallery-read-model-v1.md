@@ -63,7 +63,7 @@ Leitura: hoje nenhum scratch foi apagado nem expira por regra do bucket; o rende
 ## Limitações conhecidas deste passo
 
 - A página `/galeria` ainda usa as buscas antigas (S2). Este endpoint ainda não tem consumidor.
-- Filtro por Production e busca por texto não estão no servidor (busca limitada aos itens carregados, D5; Production no S2 ou depois).
+- ~~Filtro por Production não estava no servidor~~ — entregue no S2 (`docs/productization/structural-wave-1a2-s2-gallery-cutover-v1.md`). A busca por texto segue limitada aos itens carregados (D5).
 - Saídas “fora de ordem” podem surgir quando uma fonte se recupera no meio da paginação (documentado acima).
 - Imagens: 8 linhas de `images` não têm Attempt nem rascunho; são preservadas como `unscoped`, `provenance: null` (podem incluir imagens não geradas por IA escritas por caminhos legados do navegador — pergunta U1 em aberto).
 - Um LibraryFile `origin='studio_render'` sem `source_render_execution_id` (0 linhas hoje) não aparece mais, pois a Galeria nova só lista as quatro fontes. Execuções apagadas (FK `ON DELETE SET NULL`) deixariam o arquivo salvo apenas em Arquivos.

@@ -1,127 +1,128 @@
 /**
- * Phase 2I-C2.2 — Gallery video preview correction.
+ * Phase 2I-C2.2 — Gallery video preview correction (re-pointed at the Wave 1A-2 S2 Gallery).
  *
- * Root cause: the Gallery preview modal rendered
- * `<video src={output.downloadUrl}>` directly, where `downloadUrl` is the
- * attachment-disposition ENDPOINT (`/api/render-executions/:id/output-url?
- * disposition=attachment`) — an API route that returns `{ url, expiresAt }`
- * JSON, not a video stream. The browser's <video> tag issued a GET to that
- * endpoint (matching the reported Network evidence) and failed to decode
- * the JSON response as media, producing a black player stuck at 0:00 —
- * while the exact same execution's MP4 played fine from /videos, which
- * correctly fetches the JSON first and assigns the resolved `url` to the
- * player. These are source-regex tests, matching this repo's existing
- * convention for this exact file (see the Phase 2I-C1 hydration tests
- * above in this same describe block's file).
+ * Root cause (unchanged, and still guarded here): the Gallery preview modal once rendered
+ * `<video src={output.downloadUrl}>` directly, where `downloadUrl` is the attachment-disposition ENDPOINT
+ * (`/api/render-executions/:id/output-url?disposition=attachment`) - an API route that returns `{ url, expiresAt }` JSON, not a
+ * video stream. The browser's <video> tag issued a GET to that endpoint and failed to decode the JSON as media, producing a black
+ * player stuck at 0:00, while the same MP4 played fine from /videos, which fetches the JSON first and assigns the resolved `url`.
+ *
+ * Since Wave 1A-2 S2 the media layer lives in `components/gallery/gallery-media.tsx` (fed by the per-item endpoints that
+ * `lib/gallery/outputs.ts` names in `access`). These are source-regex tests, matching this repo's convention for this file; the
+ * runtime behaviour of the same rules is exercised in `components/gallery/gallery-page.test.tsx`.
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
-const galleryPageSource = readFileSync(
-  join(process.cwd(), 'app', '(dashboard)', 'galeria', 'page.tsx'),
-  'utf-8',
-)
-const galleryLibrarySource = readFileSync(
-  join(process.cwd(), 'lib', 'gallery-output-library.ts'),
-  'utf-8',
-)
+const read = (...segments: string[]) => readFileSync(join(process.cwd(), ...segments), 'utf-8').replace(/\r\n/g, '\n')
+const galleryPageSource = read('app', '(dashboard)', 'galeria', 'page.tsx')
+const mediaSource = read('components', 'gallery', 'gallery-media.tsx')
+const outputsSource = read('lib', 'gallery', 'outputs.ts')
+const uiModelSource = read('lib', 'gallery', 'ui-model.ts')
 
 describe('Phase 2I-C2.2 — Gallery Visualizar never uses the attachment endpoint', () => {
-  it('the modal video player source comes from a fetched inline signed URL, not output.downloadUrl', () => {
-    expect(galleryPageSource).not.toMatch(/<video[\s\S]{0,80}src=\{output\.downloadUrl\}/)
-    expect(galleryPageSource).toMatch(/<video[\s\S]{0,80}src=\{videoPreviewUrl\}/)
+  it('the modal video player source comes from a fetched inline signed URL, never from an endpoint', () => {
+    expect(mediaSource).not.toMatch(/<video[\s\S]{0,120}src=\{output\.access/)
+    expect(mediaSource).not.toMatch(/<video[\s\S]{0,120}src=\{[^}]*Endpoint/)
+    expect(mediaSource).toMatch(/<video[\s\S]{0,120}src=\{state\.url\}/)
   })
 
-  it('the preview fetch targets videoPreviewEndpoint (no disposition param)', () => {
-    expect(galleryPageSource).toMatch(/fetch\(endpoint\)/)
-    expect(galleryPageSource).toMatch(/loadVideoPreview\(output\.videoPreviewEndpoint\)/)
+  it('the preview fetch targets previewEndpoint (no disposition param); only a download uses the other one', () => {
+    expect(mediaSource).toMatch(/purpose === 'download' \? item\.access\.downloadEndpoint : item\.access\.previewEndpoint/)
+    expect(mediaSource).toMatch(/useOutputMedia\(output, 'preview', true\)/)
   })
 
-  it('gallery-output-library sets videoPreviewEndpoint without a disposition query param', () => {
-    const match = galleryLibrarySource.match(/videoPreviewEndpoint: `([^`]*)`/)
-    expect(match).not.toBeNull()
-    expect(match![1]).not.toContain('disposition')
+  it('the canonical outputs set previewEndpoint without a disposition query param', () => {
+    const previews = outputsSource.match(/previewEndpoint: `[^`]*`/g) ?? []
+    expect(previews.length).toBeGreaterThanOrEqual(3)
+    for (const preview of previews) expect(preview).not.toContain('disposition')
   })
 })
 
 describe('Phase 2I-C2.2 — Baixar still uses the attachment endpoint, resolved before navigating', () => {
-  it('handleDownload fetches the attachment endpoint and only navigates using the resolved url', () => {
-    expect(galleryPageSource).toMatch(/const response = await fetch\(output\.downloadUrl\)/)
-    expect(galleryPageSource).toMatch(/link\.href = data\.url/)
-    // Regression guard: never assign the raw endpoint string directly as
-    // the anchor href for a video download again.
-    expect(galleryPageSource).not.toMatch(/link\.href = output\.downloadUrl/)
+  it('download fetches the attachment endpoint and only navigates using the resolved url', () => {
+    expect(mediaSource).toMatch(/const answer = await fetchMediaUrl\(output, 'download'\)/)
+    expect(mediaSource).toMatch(/anchor\(answer\.url, ''\)/)
+    // Regression guard: never assign the raw endpoint string as the anchor href again.
+    expect(mediaSource).not.toMatch(/link\.href = output\.access/)
+    expect(mediaSource).not.toMatch(/anchor\(output\.access/)
   })
 
-  it('download endpoint still carries disposition=attachment', () => {
-    const match = galleryLibrarySource.match(/downloadUrl: `([^`]*)`/)
-    expect(match).not.toBeNull()
-    expect(match![1]).toContain('disposition=attachment')
+  it('download endpoints of renders and AI videos still carry disposition=attachment', () => {
+    expect((outputsSource.match(/downloadEndpoint: `[^`]*disposition=attachment`/g) ?? []).length).toBe(2)
   })
 })
 
 describe('Phase 2I-C2.2 — modal preview lifecycle', () => {
-  it('clears previous video preview state before deciding whether to fetch a new one (covers both item-switch and close)', () => {
-    expect(galleryPageSource).toMatch(
-      /useEffect\(\(\) => \{[\s\S]{0,800}setVideoPreviewUrl\(null\)\s*setVideoPreviewError\(null\)\s*setIsLoadingVideoPreview\(false\)/,
-    )
+  it('clears the previous media state before deciding whether to fetch a new one (covers both item-switch and close)', () => {
+    expect(mediaSource).toMatch(/if \(!item \|\| !enabled\) \{[\s\S]{0,200}setState\(\{ status: 'idle' \}\)[\s\S]{0,40}return/)
+    expect(mediaSource).toMatch(/setState\(\{ status: 'loading' \}\)/)
   })
 
-  it('the clearing effect is keyed on the target item, not the whole output object', () => {
-    const effectMatch = galleryPageSource.match(
-      /setVideoPreviewUrl\(null\)[\s\S]*?\}, \[([^\]]*)\]\)/,
-    )
-    expect(effectMatch).not.toBeNull()
-    expect(effectMatch![1]).toContain('output?.id')
+  it('the effect is keyed on the target item, not the whole output object', () => {
+    const effect = mediaSource.match(/\}, \[(item\?\.key[^\]]*)\]\)/)
+    expect(effect).not.toBeNull()
+    expect(effect![1]).toContain('item?.key')
+    expect(effect![1]).not.toMatch(/\bitem\b(?!\?\.key)/)
   })
 
-  it('reopening (a fresh output?.id) re-fetches rather than reusing stale state', () => {
-    expect(galleryPageSource).toMatch(/return loadVideoPreview\(output\.videoPreviewEndpoint\)/)
+  it('reopening a preview re-fetches (the dialog content is keyed by output) rather than reusing stale state', () => {
+    expect(galleryPageSource).toMatch(/<GalleryPreviewMedia key=\{output\.key\} output=\{output\} \/>/)
+    expect(mediaSource).toMatch(/return \(\) => abort\.abort\(\)/)
   })
 
-  it('a failed preview fetch shows a bounded error with retry, never fakes playback', () => {
-    expect(galleryPageSource).toMatch(/setVideoPreviewError\('Não foi possível carregar a prévia do vídeo\.'\)/)
-    expect(galleryPageSource).toMatch(/onClick=\{retryVideoPreview\}/)
-    expect(galleryPageSource).not.toMatch(/videoPreviewError[\s\S]{0,120}<video/)
+  it('a failed preview shows a bounded error with retry, never fakes playback', () => {
+    expect(mediaSource).toMatch(/describeMediaFailure\(reason\)/)
+    expect(mediaSource).toMatch(/onClick=\{retryWithFreshUrl\}/)
+    // The player/picture is only rendered after the failed branch has returned.
+    expect(mediaSource.indexOf("state.status === 'failed' || elementFailed")).toBeLessThan(mediaSource.indexOf('<video'))
+  })
+
+  it('an endpoint that answered 200 can still hand the element an unreadable object: native errors of BOTH elements are handled', () => {
+    const preview = mediaSource.slice(mediaSource.indexOf('export function GalleryPreviewMedia('), mediaSource.indexOf('export async function downloadOutput'))
+    expect(preview).toMatch(/<video[^>]*onError=\{\(\) => setElementFailed\(true\)\}/)
+    expect(preview).toMatch(/<img[^>]*onError=\{\(\) => setElementFailed\(true\)\}/)
+    // The retry clears the element error and asks the endpoint again; nothing retries by itself.
+    expect(preview).toMatch(/setElementFailed\(false\)\s*retry\(\)/)
+    expect(preview).not.toMatch(/setTimeout|setInterval/)
   })
 
   it('Download remains reachable independent of preview loading/error state', () => {
-    expect(galleryPageSource).toMatch(/disabled=\{!output\.canDownload\}/)
-    expect(galleryPageSource).toMatch(/onClick=\{\(\) => onDownload\(output\)\}/)
+    expect(galleryPageSource).toMatch(/<Button type="button" onClick=\{\(\) => onDownload\(output\)\}>/)
+    expect(galleryPageSource).not.toMatch(/disabled=\{!output\.canDownload\}/)
   })
 })
 
 describe('Phase 2I-C2.2 — video cards never show the broken-image state', () => {
-  it('GalleryImageFrame has a dedicated video branch before the "Imagem indisponível" fallback', () => {
-    const start = galleryPageSource.indexOf('function GalleryImageFrame(')
-    const end = galleryPageSource.indexOf('function GalleryEmptyStateView(')
+  it('the media frame has a dedicated video branch that returns before the picture fallback and never fetches', () => {
+    const start = mediaSource.indexOf('export function GalleryMediaFrame(')
+    const end = mediaSource.indexOf('/** Large picture / player')
     expect(start).toBeGreaterThan(-1)
     expect(end).toBeGreaterThan(start)
-    const frameSource = galleryPageSource.slice(start, end)
-    expect(frameSource).toMatch(/output\.mediaType === 'video' && !imageUrl/)
-    expect(frameSource).toMatch(/Vídeo renderizado/)
-    // The video branch's `if` check must appear textually BEFORE the
-    // broken-image label IN CODE (single-quoted JSX text, not the
-    // surrounding doc comment's double-quoted mention of the same phrase),
-    // proving it short-circuits rather than falling through to it.
-    expect(frameSource.indexOf("'video' && !imageUrl")).toBeLessThan(
-      frameSource.indexOf("'Imagem indisponível'"),
-    )
+    const frame = mediaSource.slice(start, end)
+    expect(frame).toMatch(/if \(!isPicture\) \{/)
+    expect(frame).toMatch(/data-testid="gallery-video-placeholder"/)
+    expect(frame).toMatch(/useOutputMedia\(output, 'thumbnail', isPicture && near\)/) // a video never asks for a thumbnail
+    expect(frame.indexOf('if (!isPicture)')).toBeLessThan(frame.indexOf('Carregando…'))
+    expect(mediaSource).toMatch(/video_render: 'Vídeo renderizado'/)
   })
 
   it('does not introduce a new thumbnail-generation backend or a fake thumbnail', () => {
-    expect(galleryLibrarySource).toMatch(/thumbnailUrl: null,\s*\n\s*downloadUrl: `\/api\/render-executions/)
+    expect(mediaSource).not.toMatch(/poster=|thumbnail-generation|canvas|ffmpeg/i)
+    expect(uiModelSource).toMatch(/export function mediaRenderer/)
   })
 })
 
-describe('Phase 2I-C2.2 — image Gallery behavior is unaffected', () => {
-  it('the image branch of GalleryImageFrame is unchanged (still keys off thumbnailUrl/imageUrl + hasError)', () => {
-    expect(galleryPageSource).toMatch(/const imageUrl = output\.thumbnailUrl \|\| output\.imageUrl/)
-    expect(galleryPageSource).toMatch(/onError=\{\(\) => setHasError\(true\)\}/)
+describe('Phase 2I-C2.2 — pictures keep their behaviour', () => {
+  it('a picture resolves lazily, retries once when its URL expired, then shows the honest placeholder', () => {
+    expect(mediaSource).toMatch(/useNearViewport\(\)/)
+    expect(mediaSource).toMatch(/if \(!retried\.current\) \{\s*retried\.current = true\s*retry\(\)/)
+    expect(mediaSource).toMatch(/broken > 1/)
   })
 
-  it('the modal still renders GalleryImageFrame for non-video items', () => {
-    expect(galleryPageSource).toMatch(/<GalleryImageFrame key=\{output\.id\} output=\{output\} \/>/)
+  it('the modal renders a picture (not a player) for AI images and static renders', () => {
+    expect(mediaSource).toMatch(/renderer === 'video' \? \(/)
+    expect(mediaSource).toMatch(/data-testid="gallery-preview-image"/)
   })
 })

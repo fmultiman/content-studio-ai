@@ -311,8 +311,9 @@ interface CursorPayload {
   p: Partial<Record<GalleryOutputType, [string, string]>>
 }
 
-export function filterFingerprint(types: readonly GalleryOutputType[], projectId: string | null): string {
-  return `${[...types].sort().join(',')}|${projectId ?? ''}`
+/** Every server-side filter a position depends on: a cursor never crosses a changed type, Project or Production. */
+export function filterFingerprint(types: readonly GalleryOutputType[], projectId: string | null, productionId: string | null = null): string {
+  return `${[...types].sort().join(',')}|${projectId ?? ''}|${productionId ?? ''}`
 }
 
 export function encodeGalleryCursor(fingerprint: string, positions: SourcePositions): string {

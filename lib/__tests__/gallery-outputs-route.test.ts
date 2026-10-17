@@ -178,6 +178,95 @@ describe('GET /api/gallery/outputs', () => {
   })
 })
 
+describe('GET /api/gallery/outputs - Production filter (S2A)', () => {
+  const P2 = u(11)
+  const PR2 = u(21) // another Production of P1
+  const PR_B = u(22) // a Production of P2 (also the caller's)
+  const PR_THEIRS = u(23)
+
+  beforeEach(() => {
+    tables.projects.push({ id: P2, user_id: ME, name: 'Outro' })
+    tables.productions.push(
+      { id: PR2, user_id: ME, project_id: P1, title: 'Outra', intention: null },
+      { id: PR_B, user_id: ME, project_id: P2, title: 'Do P2', intention: null },
+      { id: PR_THEIRS, user_id: OTHER, project_id: THEIR_PROJECT, title: 'Alheia', intention: null },
+    )
+    // PR1: the AI video row (401) + the image (101, through its Attempt). PR2: another AI video. Unscoped: an image with no claim.
+    tables.image_generation_attempts = [{ id: u(201), user_id: ME, session_id: u(301), project_id: P1, production_id: PR1, result_image_id: u(101), status: 'succeeded', completed_at: '2026-10-01T10:00:00.000000Z' }]
+    tables.images.push({ ...tables.images[0], id: u(102), user_input: 'Sem Production', created_at: '2026-09-30T10:00:00.000000Z' })
+    tables.video_generations.push({ ...tables.video_generations[0], id: u(402), production_id: PR2, created_at: '2026-10-03T10:00:00.000000Z' })
+  })
+
+  it('returns only the verified members of that Production across families, with an exact total', async () => {
+    const response = await call(`?productionId=${PR1}&totals=1`)
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.items.map((item: Row) => item.key)).toEqual([`video_generation:${u(401)}`, `image:${u(101)}`])
+    expect(body.items.every((item: Row) => item.productionId === PR1 && item.productionState === 'resolved')).toBe(true)
+    expect(body.totals).toMatchObject({ global: 2, globalExact: true })
+    expect(body).toMatchObject({ partial: false, nextCursor: null })
+  })
+
+  it('a Production alone implies its Project; both together must agree', async () => {
+    expect((await call(`?productionId=${PR1}&projectId=${P1}`)).status).toBe(200)
+    const mismatch = await call(`?productionId=${PR1}&projectId=${P2}`)
+    expect(mismatch.status).toBe(400)
+    expect(await mismatch.json()).toMatchObject({ code: 'PROJECT_PRODUCTION_MISMATCH' })
+    expect((await (await call(`?productionId=${PR_B}`)).json()).items).toEqual([]) // PR_B (Project P2) holds nothing
+  })
+
+  it('refuses invalid, unknown and foreign Productions without revealing them', async () => {
+    expect((await call('?productionId=nope')).status).toBe(400)
+    expect((await call(`?productionId=${u(999)}`)).status).toBe(404)
+    const foreign = await call(`?productionId=${PR_THEIRS}`)
+    expect(foreign.status).toBe(404)
+    expect(JSON.stringify(await foreign.json())).not.toContain('Alheia')
+    expect((await call(`?productionId=${PR_THEIRS}&projectId=${P1}`)).status).toBe(404)
+  })
+
+  it('a Production lookup that fails is a 503, never an empty Gallery', async () => {
+    failing = new Set(['productions'])
+    const response = await call(`?productionId=${PR1}`)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'PRODUCTION_UNAVAILABLE' })
+  })
+
+  it('cursors are bound to the Production: not usable unfiltered, under another Production, or with another Production\'s filter', async () => {
+    tables.video_generations.push({ ...tables.video_generations[0], id: u(403), created_at: '2026-10-04T10:00:00.000000Z' })
+    const first = await (await call(`?productionId=${PR1}&limit=1`)).json()
+    expect(first.items).toHaveLength(1)
+    const cursor = encodeURIComponent(first.nextCursor)
+    expect((await call(`?productionId=${PR1}&limit=1&cursor=${cursor}`)).status).toBe(200)
+    for (const other of [`?cursor=${cursor}`, `?productionId=${PR2}&cursor=${cursor}`, `?projectId=${P1}&cursor=${cursor}`, `?productionId=${PR1}&type=image&cursor=${cursor}`]) {
+      const response = await call(other)
+      expect(response.status, other).toBe(400)
+      expect(await response.json()).toMatchObject({ code: 'CURSOR_FILTER_MISMATCH' })
+    }
+    // And a cursor from the unfiltered collection does not open a filtered one.
+    const unfiltered = await (await call('?limit=1')).json()
+    expect((await call(`?productionId=${PR1}&cursor=${encodeURIComponent(unfiltered.nextCursor)}`)).status).toBe(400)
+  })
+
+  it('walking a filtered collection page by page yields each member once and then ends', async () => {
+    tables.video_generations.push({ ...tables.video_generations[0], id: u(403), created_at: '2026-10-04T10:00:00.000000Z' })
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < 10; page += 1) {
+      const body: Row = await (await call(`?productionId=${PR1}&limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)).json()
+      seen.push(...body.items.map((item: Row) => item.key))
+      cursor = body.nextCursor
+      if (!cursor) break
+    }
+    expect(seen).toEqual([`video_generation:${u(403)}`, `video_generation:${u(401)}`, `image:${u(101)}`])
+  })
+
+  it('stays read-only and user-scoped: another user cannot reach the caller\'s Production data', async () => {
+    tables.video_generations.push({ ...tables.video_generations[0], id: u(404), user_id: OTHER })
+    const body = await (await call(`?productionId=${PR1}`)).json()
+    expect(body.items.some((item: Row) => item.id === u(404))).toBe(false)
+  })
+})
+
 describe('read-only boundary', () => {
   const source = (relative: string) => readFileSync(path.join(process.cwd(), relative), 'utf8')
 
@@ -199,8 +288,9 @@ describe('read-only boundary', () => {
     }
   })
 
-  it('the existing Gallery page, Arquivos and per-item endpoints are untouched by this step', () => {
-    expect(source('app/(dashboard)/galeria/page.tsx')).not.toContain('/api/gallery/outputs')
+  it('the per-item media endpoints and Arquivos are untouched (the Gallery page consumes this endpoint since S2, through its hook)', () => {
+    expect(source('hooks/use-gallery-outputs.ts')).toContain('/api/gallery/outputs')
     expect(source('app/api/gallery/video-outputs/route.ts')).toContain("'video_draft_id'")
+    expect(source('app/(dashboard)/arquivos/page.tsx')).not.toContain('/api/gallery/outputs')
   })
 })

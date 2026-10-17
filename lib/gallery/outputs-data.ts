@@ -64,9 +64,16 @@ function must<T>(result: { data: T | null; error: unknown }, code: string): T {
  */
 export const AUX_LOOKUP_LIMIT = 1000
 
-async function readComplete(query: PromiseLike<{ data: unknown; error: unknown; count: number | null }> & { limit(count: number): any }, code: string): Promise<Row[]> {
-  const result = (await query.limit(AUX_LOOKUP_LIMIT)) as { data: unknown; error: unknown; count: number | null }
+async function readComplete(
+  query: PromiseLike<{ data: unknown; error: unknown; count: number | null }> & { limit(count: number): any },
+  code: string,
+  options: { limit?: number; tooLargeCode?: string } = {},
+): Promise<Row[]> {
+  const limit = options.limit ?? AUX_LOOKUP_LIMIT
+  const result = (await query.limit(limit)) as { data: unknown; error: unknown; count: number | null }
   if (result.error || !Array.isArray(result.data) || typeof result.count !== 'number') throw new GallerySourceError(code)
+  // Strictly more matches than the explicit ceiling is a size problem; fewer rows than matches under it is a server-side cut.
+  if (options.tooLargeCode && result.count > limit) throw new GallerySourceError(options.tooLargeCode)
   if (result.data.length < result.count) throw new GallerySourceError(code)
   return result.data as Row[]
 }
@@ -86,6 +93,10 @@ export interface LoaderContext {
   userId: string
   limit: number
   projectId: string | null
+  /** A verified Production (owned by the caller; `projectId` is its Project). It filters BEFORE pagination and counting. */
+  productionId: string | null
+  /** Per-request memo: the Production membership of a family is computed once for the list AND for its count. */
+  memo: Map<string, Promise<string[]>>
   after: SourcePosition | undefined
 }
 
@@ -160,19 +171,100 @@ function instantOf(raw: unknown): string {
   return instant
 }
 
+// -- Production filter (S2A) ----------------------------------------------------------------------------------------------------------
+//
+// Each family reaches its Production through a different canonical relationship, and the filter replicates EXACTLY the rule the
+// list uses to resolve `productionState: 'resolved'` for that family, so a filtered list is the same set as the resolved items of
+// the unfiltered one (conflicting and unscoped outputs are never inside a Production):
+//
+//   video_generation  the row's own production_id + project_id                       -> plain column filters
+//   video_render      video_drafts of the Production (same Project)   -> render.video_draft_id IN (...)
+//   static_render     editorial_contents of the Production -> their channel_pieces     -> render.channel_piece_id IN (...)
+//   image             Attempts / legacy drafts that name the Production, then the SAME claim resolution as the list
+//
+// The id sets are read to completion under an explicit ceiling (FILTER_ID_LIMIT, URL-safe). A Production that exceeds it, or a
+// lookup the server cut short, FAILS the family (PRODUCTION_FILTER_TOO_LARGE / PRODUCTION_FILTER_UNAVAILABLE): the filter is never
+// applied to part of a Production. Nothing is retrieved without bound and nothing is filtered in memory after pagination.
+
+export const FILTER_ID_LIMIT = 200
+
+function memoized(ctx: LoaderContext, key: string, compute: () => Promise<string[]>): Promise<string[]> {
+  const existing = ctx.memo.get(key)
+  if (existing) return existing
+  const pending = compute()
+  ctx.memo.set(key, pending)
+  return pending
+}
+
+const filterIds = (query: any) => readComplete(query, 'PRODUCTION_FILTER_UNAVAILABLE', { limit: FILTER_ID_LIMIT, tooLargeCode: 'PRODUCTION_FILTER_TOO_LARGE' })
+const unique = (values: Iterable<unknown>): string[] => [...new Set([...values].filter((value): value is string => typeof value === 'string' && value.length > 0))]
+
+/** The claim list the image rules use: Attempts are authoritative; the legacy draft only speaks for an image no Attempt names. */
+function imageProductionClaims(attempts: readonly Row[], drafts: readonly Row[]): Array<string | null | undefined> {
+  return attempts.length > 0 ? attempts.map((attempt) => attempt.production_id) : drafts.map((draft) => draft.production_id)
+}
+
+function imageIdsInProduction(ctx: LoaderContext): Promise<string[]> {
+  return memoized(ctx, 'image', async () => {
+    const production = ctx.productionId as string
+    const project = ctx.projectId as string
+    const [named, held] = await Promise.all([
+      filterIds(ctx.userDb.from('image_generation_attempts').select('result_image_id', { count: 'exact' }).eq('user_id', ctx.userId).eq('production_id', production).not('result_image_id', 'is', null)),
+      filterIds(ctx.userDb.from('image_drafts').select('current_image_id', { count: 'exact' }).eq('user_id', ctx.userId).eq('production_id', production).not('current_image_id', 'is', null)),
+    ])
+    const candidates = unique([...named.map((row) => row.result_image_id), ...held.map((row) => row.current_image_id)])
+    if (candidates.length === 0) return []
+    if (candidates.length > FILTER_ID_LIMIT) throw new GallerySourceError('PRODUCTION_FILTER_TOO_LARGE')
+
+    // Verify membership with the SAME claim resolution as the list: a candidate that also has a different verified claim is a
+    // conflict, and one whose Project is not the Production's Project is not a member.
+    const images = await filterIds(ctx.userDb.from('images').select('id, project_id', { count: 'exact' }).eq('user_id', ctx.userId).in('id', candidates))
+    const attempts = await readComplete(ctx.userDb.from('image_generation_attempts').select('id, production_id, result_image_id', { count: 'exact' }).eq('user_id', ctx.userId).in('result_image_id', candidates), 'PRODUCTION_FILTER_UNAVAILABLE')
+    const drafts = await readComplete(ctx.userDb.from('image_drafts').select('id, production_id, current_image_id', { count: 'exact' }).eq('user_id', ctx.userId).in('current_image_id', candidates), 'PRODUCTION_FILTER_UNAVAILABLE')
+    const context = await loadOwnedContext(ctx.userDb, ctx.userId, [project], [...attempts.map((attempt) => attempt.production_id), ...drafts.map((draft) => draft.production_id), production])
+    return images
+      .filter((image) => image.project_id === project)
+      .filter((image) => {
+        const claims = imageProductionClaims(attempts.filter((attempt) => attempt.result_image_id === image.id), drafts.filter((draft) => draft.current_image_id === image.id))
+        return resolveProductionClaims({ claims, projectId: image.project_id ?? null, productions: context.productions }).productionId === production
+      })
+      .map((image) => image.id as string)
+  })
+}
+
+function videoDraftIdsInProduction(ctx: LoaderContext): Promise<string[]> {
+  return memoized(ctx, 'video_render', async () => {
+    const rows = await filterIds(ctx.userDb.from('video_drafts').select('id', { count: 'exact' }).eq('user_id', ctx.userId).eq('production_id', ctx.productionId as string).eq('project_id', ctx.projectId as string))
+    return unique(rows.map((row) => row.id))
+  })
+}
+
+function channelPieceIdsInProduction(ctx: LoaderContext): Promise<string[]> {
+  return memoized(ctx, 'static_render', async () => {
+    const contentRows = await filterIds(ctx.userDb.from('editorial_contents').select('id', { count: 'exact' }).eq('user_id', ctx.userId).eq('production_id', ctx.productionId as string).eq('project_id', ctx.projectId as string))
+    const contents = unique(contentRows.map((row) => row.id))
+    if (contents.length === 0) return []
+    const pieceRows = await filterIds(ctx.userDb.from('channel_pieces').select('id', { count: 'exact' }).eq('user_id', ctx.userId).in('editorial_content_id', contents))
+    return unique(pieceRows.map((row) => row.id))
+  })
+}
+
 // -- Source: AI images -------------------------------------------------------------------------------------------------------------------
 
-function imageQuery(userDb: SupabaseClient, userId: string, projectId: string | null, columns: string, head: boolean) {
+function imageQuery(userDb: SupabaseClient, userId: string, projectId: string | null, columns: string, head: boolean, memberIds: string[] | null) {
   let query = head
     ? userDb.from('images').select('id', { count: 'exact', head: true })
     : userDb.from('images').select(columns)
   query = query.eq('user_id', userId)
   if (projectId) query = query.eq('project_id', projectId)
+  if (memberIds) query = query.in('id', memberIds)
   return query
 }
 
 async function loadImages(ctx: LoaderContext): Promise<GalleryOutput[]> {
-  let query = imageQuery(ctx.userDb, ctx.userId, ctx.projectId, IMAGE_COLUMNS, false)
+  const members = ctx.productionId ? await imageIdsInProduction(ctx) : null
+  if (members && members.length === 0) return []
+  let query = imageQuery(ctx.userDb, ctx.userId, ctx.projectId, IMAGE_COLUMNS, false, members)
   query = query.or(combineOrGroups([IMAGE_ASSET_FILTER, ...(ctx.after ? [keysetFilterOn('created_at', ctx.after)] : [])]) as string)
   const rows = must<Row[]>(await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(ctx.limit + 1), 'IMAGES_UNAVAILABLE')
   if (rows.length === 0) return []
@@ -200,7 +292,7 @@ async function loadImages(ctx: LoaderContext): Promise<GalleryOutput[]> {
     const imageDrafts = drafts.filter((draft) => draft.current_image_id === row.id)
     const projectId: string | null = row.project_id ?? null
     // Legacy draft claims count only when no Attempt names the image: the Attempt is the authoritative writer.
-    const claims = imageAttempts.length > 0 ? imageAttempts.map((attempt) => attempt.production_id) : imageDrafts.map((draft) => draft.production_id)
+    const claims = imageProductionClaims(imageAttempts, imageDrafts)
     const scope = scopeFields(context, projectId, claims)
     const provenance: GalleryProvenance = resolveImageProvenance(
       imageAttempts.map((attempt) => ({ id: attempt.id, session_id: attempt.session_id ?? null, production_id: attempt.production_id ?? null, completed_at: attempt.completed_at ?? null })),
@@ -234,24 +326,28 @@ async function loadImages(ctx: LoaderContext): Promise<GalleryOutput[]> {
 }
 
 async function countImages(ctx: LoaderContext): Promise<number> {
-  const result = await imageQuery(ctx.userDb, ctx.userId, ctx.projectId, '', true).or(IMAGE_ASSET_FILTER)
+  const members = ctx.productionId ? await imageIdsInProduction(ctx) : null
+  if (members && members.length === 0) return 0
+  const result = await imageQuery(ctx.userDb, ctx.userId, ctx.projectId, '', true, members).or(IMAGE_ASSET_FILTER)
   return exactCount(result)
 }
 
 // -- Source: AI videos -------------------------------------------------------------------------------------------------------------------
 
-function videoGenerationQuery(userDb: SupabaseClient, userId: string, projectId: string | null, columns: string, head: boolean) {
+function videoGenerationQuery(userDb: SupabaseClient, userId: string, projectId: string | null, productionId: string | null, columns: string, head: boolean) {
   let query = head
     ? userDb.from('video_generations').select('id', { count: 'exact', head: true })
     : userDb.from('video_generations').select(columns)
   // "Completed" = succeeded WITH a stored object (completion writes both atomically). The path itself is never selected.
   query = query.eq('user_id', userId).eq('status', 'succeeded').not('storage_path', 'is', null)
   if (projectId) query = query.eq('project_id', projectId)
+  // The row carries its own Production: a plain column filter, together with the Project it must belong to.
+  if (productionId) query = query.eq('production_id', productionId)
   return query
 }
 
 async function loadVideoGenerations(ctx: LoaderContext): Promise<GalleryOutput[]> {
-  let query = videoGenerationQuery(ctx.userDb, ctx.userId, ctx.projectId, VIDEO_GENERATION_COLUMNS, false)
+  let query = videoGenerationQuery(ctx.userDb, ctx.userId, ctx.projectId, ctx.productionId, VIDEO_GENERATION_COLUMNS, false)
   if (ctx.after) query = query.or(keysetFilterOn('created_at', ctx.after))
   const rows = must<Row[]>(await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(ctx.limit + 1), 'VIDEO_GENERATIONS_UNAVAILABLE')
   if (rows.length === 0) return []
@@ -298,24 +394,27 @@ async function loadVideoGenerations(ctx: LoaderContext): Promise<GalleryOutput[]
 }
 
 async function countVideoGenerations(ctx: LoaderContext): Promise<number> {
-  return exactCount(await videoGenerationQuery(ctx.userDb, ctx.userId, ctx.projectId, '', true))
+  return exactCount(await videoGenerationQuery(ctx.userDb, ctx.userId, ctx.projectId, ctx.productionId, '', true))
 }
 
 // -- Sources: Creative Editor renders ------------------------------------------------------------------------------------------------
 
-function renderQuery(renderDb: SupabaseClient, userId: string, projectId: string | null, kind: 'video' | 'static_still', columns: string, head: boolean) {
+function renderQuery(renderDb: SupabaseClient, userId: string, projectId: string | null, kind: 'video' | 'static_still', columns: string, head: boolean, within?: { column: 'video_draft_id' | 'channel_piece_id'; ids: string[] }) {
   let query = head
     ? renderDb.from('render_executions').select('id', { count: 'exact', head: true })
     : renderDb.from('render_executions').select(columns)
   // `completed_at` is the ordering instant of a completed render; completion always writes it, a row without it cannot be ordered.
   query = query.eq('user_id', userId).eq('kind', kind).eq('status', 'completed').not('completed_at', 'is', null)
   if (projectId) query = query.eq('project_id', projectId)
+  if (within) query = query.in(within.column, within.ids)
   return query
 }
 
 async function loadVideoRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
   if (!ctx.renderDb) throw new GallerySourceError('RENDER_SERVICE_UNAVAILABLE')
-  let query = renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, 'video', VIDEO_RENDER_COLUMNS, false)
+  const within = await renderMembership(ctx, 'video')
+  if (within && within.ids.length === 0) return []
+  let query = renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, 'video', VIDEO_RENDER_COLUMNS, false, within)
   if (ctx.after) query = query.or(keysetFilterOn('completed_at', ctx.after))
   const rows = must<Row[]>(await query.order('completed_at', { ascending: false }).order('id', { ascending: false }).limit(ctx.limit + 1), 'VIDEO_RENDERS_UNAVAILABLE')
   if (rows.length === 0) return []
@@ -364,7 +463,9 @@ async function loadVideoRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
 
 async function loadStaticRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
   if (!ctx.renderDb) throw new GallerySourceError('RENDER_SERVICE_UNAVAILABLE')
-  let query = renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, 'static_still', STATIC_RENDER_COLUMNS, false)
+  const within = await renderMembership(ctx, 'static_still')
+  if (within && within.ids.length === 0) return []
+  let query = renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, 'static_still', STATIC_RENDER_COLUMNS, false, within)
   if (ctx.after) query = query.or(keysetFilterOn('completed_at', ctx.after))
   const rows = must<Row[]>(await query.order('completed_at', { ascending: false }).order('id', { ascending: false }).limit(ctx.limit + 1), 'STATIC_RENDERS_UNAVAILABLE')
   if (rows.length === 0) return []
@@ -418,9 +519,18 @@ async function loadStaticRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
   })
 }
 
+async function renderMembership(ctx: LoaderContext, kind: 'video' | 'static_still'): Promise<{ column: 'video_draft_id' | 'channel_piece_id'; ids: string[] } | undefined> {
+  if (!ctx.productionId) return undefined
+  return kind === 'video'
+    ? { column: 'video_draft_id', ids: await videoDraftIdsInProduction(ctx) }
+    : { column: 'channel_piece_id', ids: await channelPieceIdsInProduction(ctx) }
+}
+
 async function countRenders(ctx: LoaderContext, kind: 'video' | 'static_still'): Promise<number> {
   if (!ctx.renderDb) throw new GallerySourceError('RENDER_SERVICE_UNAVAILABLE')
-  return exactCount(await renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, kind, '', true))
+  const within = await renderMembership(ctx, kind)
+  if (within && within.ids.length === 0) return 0
+  return exactCount(await renderQuery(ctx.renderDb, ctx.userId, ctx.projectId, kind, '', true, within))
 }
 
 function exactCount(result: { count: number | null; error: unknown }): number {
@@ -451,6 +561,8 @@ function failureCode(error: unknown): string {
 export interface GalleryOutputsQuery {
   types: readonly GalleryOutputType[]
   projectId: string | null
+  /** A Production the caller already proved to own (its Project is `projectId`). null = no Production filter. */
+  productionId?: string | null
   limit: number
   positions: SourcePositions
   includeTotals: boolean
@@ -458,7 +570,10 @@ export interface GalleryOutputsQuery {
 
 export async function loadGalleryOutputs(deps: { userDb: SupabaseClient; renderDb: SupabaseClient | null; userId: string }, query: GalleryOutputsQuery): Promise<GalleryOutputsResponse> {
   const selected = GALLERY_OUTPUT_TYPES.filter((type) => query.types.includes(type))
-  const contextFor = (type: GalleryOutputType): LoaderContext => ({ ...deps, limit: query.limit, projectId: query.projectId, after: query.positions[type] })
+  const memo = new Map<string, Promise<string[]>>()
+  const productionId = query.productionId ?? null
+  if (productionId && !query.projectId) throw new Error('A Production filter needs the Production\'s Project')
+  const contextFor = (type: GalleryOutputType): LoaderContext => ({ ...deps, limit: query.limit, projectId: query.projectId, productionId, memo, after: query.positions[type] })
 
   const results: SourceResult[] = await Promise.all(
     GALLERY_OUTPUT_TYPES.map(async (type): Promise<SourceResult> => {
@@ -473,7 +588,7 @@ export async function loadGalleryOutputs(deps: { userDb: SupabaseClient; renderD
     }),
   )
 
-  const page = assembleGalleryPage({ results, previous: query.positions, limit: query.limit, fingerprint: filterFingerprint(selected, query.projectId) })
+  const page = assembleGalleryPage({ results, previous: query.positions, limit: query.limit, fingerprint: filterFingerprint(selected, query.projectId, productionId) })
 
   let totals: GalleryOutputsResponse['totals']
   if (query.includeTotals) {
