@@ -292,6 +292,9 @@ describe('provider connection (OAuth) boundary — KLING_MCP_OAUTH_CONNECTION_SP
       path === 'app/api/video-drafts/[id]/render/route.ts' ||
       path === 'app/api/creative/static-authoring/render/route.ts' ||
       path === 'app/api/gallery/video-outputs/route.ts' ||
+      // STRUCTURAL_WAVE_1A2_S1: the Gallery read model lists completed render_executions (no browser SELECT policy) with the
+      // service-role client, handed ONLY to the two render loaders and always filtered by the authenticated user id.
+      path === 'app/api/gallery/outputs/route.ts' ||
       path === 'app/api/channel-piece-media/upload/route.ts' ||
       path === 'app/api/kling/callback/route.ts' ||
       // FUTURE_059_BYOK_CREDENTIAL_HARDENING_SLICE_1: the server-only BYOK credential store reads/writes the provider
