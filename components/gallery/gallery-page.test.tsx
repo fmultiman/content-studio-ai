@@ -642,6 +642,194 @@ describe('Gallery - media through the per-item authenticated endpoints', () => {
   })
 })
 
+// -- A signed URL that does not load -------------------------------------------------------------------------------------------------------
+
+describe('Gallery - the endpoint answers 200 but the object cannot be loaded', () => {
+  const renderPath = `/api/render-executions/${uuid(303)}/output-url`
+  const imagePath = `/api/images/${uuid(101)}/signed-url`
+  const lastPreview = () => screen.getByRole('dialog')
+  const callsTo = (path: string) => mediaCalls.filter((call) => call === path).length
+  const errorText = /O arquivo não está disponível agora/
+
+  beforeEach(() => {
+    outputsHandler = () => ({
+      body: envelope([
+        output('image', 1, { title: 'Imagem A' }),
+        output('video_generation', 2, { title: 'Vídeo B' }),
+        output('video_render', 3, { title: 'Render C' }),
+        output('static_render', 4, { title: 'Render D' }),
+      ]),
+    })
+  })
+
+  const preview = async (title: string) => {
+    await screen.findAllByTestId('gallery-output')
+    const card = cards().find((entry) => within(entry).queryByText(title))!
+    fireEvent.click(within(card).getByRole('button', { name: /Visualizar/ }))
+    await screen.findByRole('dialog')
+  }
+
+  it('a picture that fails to load shows an explicit error instead of a broken element, and the card stays', async () => {
+    await openGallery()
+    await preview('Imagem A')
+    const image = await within(lastPreview()).findByTestId('gallery-preview-image')
+    fireEvent.error(image)
+    expect(await within(lastPreview()).findByText(errorText)).toBeTruthy()
+    expect(within(lastPreview()).getByRole('alert')).toBeTruthy()
+    expect(within(lastPreview()).queryByTestId('gallery-preview-image')).toBeNull()
+    expect(within(lastPreview()).getByRole('button', { name: /Tentar novamente/ })).toBeTruthy()
+    expect(cards()).toHaveLength(4)
+    expect(keysOnScreen()).toContain(`image:${uuid(101)}`)
+  })
+
+  it('a video that fails to load or play shows the same explicit error - AI video and rendered MP4', async () => {
+    await openGallery()
+    await preview('Vídeo B')
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-video'))
+    expect(await within(lastPreview()).findByText(errorText)).toBeTruthy()
+    expect(within(lastPreview()).queryByTestId('gallery-preview-video')).toBeNull()
+    fireEvent.keyDown(lastPreview(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await preview('Render C')
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-video'))
+    expect(await within(lastPreview()).findByText(errorText)).toBeTruthy()
+    expect(cards()).toHaveLength(4)
+  })
+
+  it('"Tentar novamente" asks the existing endpoint for a FRESH url, clears the error and restores the preview', async () => {
+    await openGallery()
+    await preview('Render C')
+    const first = await within(lastPreview()).findByTestId('gallery-preview-video')
+    expect(first.getAttribute('src')).toBe(`https://signed.test${renderPath}.inline`)
+    fireEvent.error(first)
+    await within(lastPreview()).findByText(errorText)
+    const before = callsTo(renderPath)
+
+    mediaBodies[renderPath] = { url: 'https://signed.test/fresh/render.mp4', expiresAt: '2030-01-01T00:00:00Z' }
+    fireEvent.click(within(lastPreview()).getByRole('button', { name: /Tentar novamente/ }))
+    const restored = await within(lastPreview()).findByTestId('gallery-preview-video')
+    expect(callsTo(renderPath)).toBe(before + 1)
+    expect(restored.getAttribute('src')).toBe('https://signed.test/fresh/render.mp4') // a new transient URL, not the failed one
+    expect(within(lastPreview()).queryByText(errorText)).toBeNull()
+    expect(within(lastPreview()).queryByRole('alert')).toBeNull()
+    expect(mediaCalls.some((call) => call.includes('attachment'))).toBe(false) // still the inline endpoint
+  })
+
+  it('a retry that fails again shows the error again - one request per click, never an automatic loop', async () => {
+    await openGallery()
+    await preview('Imagem A')
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-image'))
+    await within(lastPreview()).findByText(errorText)
+    const afterFirstError = callsTo(imagePath)
+    await new Promise((resolve) => setTimeout(resolve, 80)) // nothing retries by itself
+    expect(callsTo(imagePath)).toBe(afterFirstError)
+
+    fireEvent.click(within(lastPreview()).getByRole('button', { name: /Tentar novamente/ }))
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-image'))
+    expect(await within(lastPreview()).findByText(errorText)).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(callsTo(imagePath)).toBe(afterFirstError + 1)
+    expect(cards()).toHaveLength(4)
+  })
+
+  it('a retry whose endpoint now refuses replaces the element error with the endpoint\'s own explanation (nothing stale is kept)', async () => {
+    await openGallery()
+    await preview('Render C')
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-video'))
+    await within(lastPreview()).findByText(errorText)
+    mediaStatus[renderPath] = 404
+    fireEvent.click(within(lastPreview()).getByRole('button', { name: /Tentar novamente/ }))
+    expect(await within(lastPreview()).findByText(errorText)).toBeTruthy()
+    expect(within(lastPreview()).queryByTestId('gallery-preview-video')).toBeNull()
+    mediaStatus[renderPath] = 200
+    fireEvent.click(within(lastPreview()).getByRole('button', { name: /Tentar novamente/ }))
+    expect(await within(lastPreview()).findByTestId('gallery-preview-video')).toBeTruthy()
+  })
+
+  it('switching outputs cannot retain an old error: the next output starts clean, and reopening the failed one asks again', async () => {
+    await openGallery()
+    await preview('Render C')
+    fireEvent.error(await within(lastPreview()).findByTestId('gallery-preview-video'))
+    await within(lastPreview()).findByText(errorText)
+    fireEvent.keyDown(lastPreview(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await preview('Render D')
+    expect(await within(lastPreview()).findByTestId('gallery-preview-image')).toBeTruthy()
+    expect(within(lastPreview()).queryByText(errorText)).toBeNull()
+    expect(within(lastPreview()).queryByRole('alert')).toBeNull()
+    fireEvent.keyDown(lastPreview(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const before = callsTo(renderPath)
+    await preview('Render C')
+    expect(await within(lastPreview()).findByTestId('gallery-preview-video')).toBeTruthy() // fresh attempt, not the remembered failure
+    expect(within(lastPreview()).queryByText(errorText)).toBeNull()
+    expect(callsTo(renderPath)).toBe(before + 1)
+  })
+
+  it('keeps the signed URL transient: it is element state only - never an identity, a key or an attribute of the output', async () => {
+    await openGallery()
+    await preview('Render C')
+    const video = await within(lastPreview()).findByTestId('gallery-preview-video')
+    fireEvent.error(video)
+    await within(lastPreview()).findByText(errorText)
+    for (const card of cards()) {
+      for (const name of card.getAttributeNames()) expect(card.getAttribute(name)).not.toContain('signed.test')
+    }
+    expect(keysOnScreen().every((key) => /^[a-z_]+:[0-9a-f-]{36}$/.test(key!))).toBe(true)
+  })
+
+  // -- Download fallback --------------------------------------------------------------------------------------------------------------
+
+  it('image download: when the fetch fails and the browser blocks the fallback window, the failure is REPORTED, not hidden', async () => {
+    mediaStatus[`${imagePath}.png`] = 500 // the blob fetch of the resolved image URL fails
+    const open = vi.spyOn(window, 'open').mockReturnValue(null) // pop-up blocked
+    await openGallery()
+    await screen.findAllByTestId('gallery-output')
+    fireEvent.click(within(cards()[0]).getByRole('button', { name: /Baixar/ }))
+    expect(await screen.findByText(/o navegador bloqueou a abertura/)).toBeTruthy()
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(cards()).toHaveLength(4)
+  })
+
+  it('image download: the fallback window counts as success only when it really opened (and is detached from the page)', async () => {
+    mediaStatus[`${imagePath}.png`] = 500
+    const opened = { opener: 'page' } as unknown as Window
+    const open = vi.spyOn(window, 'open').mockReturnValue(opened)
+    await openGallery()
+    await screen.findAllByTestId('gallery-output')
+    fireEvent.click(within(cards()[0]).getByRole('button', { name: /Baixar/ }))
+    await waitFor(() => expect(open).toHaveBeenCalledWith(`https://signed.test${imagePath}.png`, '_blank'))
+    expect(opened.opener).toBeNull()
+    expect(screen.queryByText(/Ação não concluída/)).toBeNull()
+  })
+
+  it('a browser that refuses to start a video/render download is a reported failure', async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => { throw new Error('download blocked') })
+    await openGallery()
+    await screen.findAllByTestId('gallery-output')
+    fireEvent.click(within(cards()[1]).getByRole('button', { name: /Baixar/ }))
+    expect(await screen.findByText('Não foi possível baixar o vídeo.')).toBeTruthy()
+    expect(cards()).toHaveLength(4)
+  })
+
+  it('a successful download clears a previous failure message', async () => {
+    mediaStatus[`/api/video-generations/${uuid(202)}/playback-url`] = 404
+    const hrefs: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { hrefs.push(this.href) })
+    await openGallery()
+    await screen.findAllByTestId('gallery-output')
+    fireEvent.click(within(cards()[1]).getByRole('button', { name: /Baixar/ }))
+    await screen.findByText('Não foi possível baixar o vídeo.')
+    mediaStatus[`/api/video-generations/${uuid(202)}/playback-url`] = 200
+    fireEvent.click(within(cards()[1]).getByRole('button', { name: /Baixar/ }))
+    await waitFor(() => expect(screen.queryByText('Não foi possível baixar o vídeo.')).toBeNull())
+    expect(hrefs).toHaveLength(1)
+  })
+})
+
 // -- Layouts ------------------------------------------------------------------------------------------------------------------------------
 
 describe('Gallery - Cards and Lista', () => {

@@ -73,10 +73,19 @@ describe('Phase 2I-C2.2 — modal preview lifecycle', () => {
   })
 
   it('a failed preview shows a bounded error with retry, never fakes playback', () => {
-    expect(mediaSource).toMatch(/describeMediaFailure\(state\.reason\)/)
-    expect(mediaSource).toMatch(/onClick=\{retry\}/)
+    expect(mediaSource).toMatch(/describeMediaFailure\(reason\)/)
+    expect(mediaSource).toMatch(/onClick=\{retryWithFreshUrl\}/)
     // The player/picture is only rendered after the failed branch has returned.
-    expect(mediaSource.indexOf("state.status === 'failed'")).toBeLessThan(mediaSource.indexOf('<video'))
+    expect(mediaSource.indexOf("state.status === 'failed' || elementFailed")).toBeLessThan(mediaSource.indexOf('<video'))
+  })
+
+  it('an endpoint that answered 200 can still hand the element an unreadable object: native errors of BOTH elements are handled', () => {
+    const preview = mediaSource.slice(mediaSource.indexOf('export function GalleryPreviewMedia('), mediaSource.indexOf('export async function downloadOutput'))
+    expect(preview).toMatch(/<video[^>]*onError=\{\(\) => setElementFailed\(true\)\}/)
+    expect(preview).toMatch(/<img[^>]*onError=\{\(\) => setElementFailed\(true\)\}/)
+    // The retry clears the element error and asks the endpoint again; nothing retries by itself.
+    expect(preview).toMatch(/setElementFailed\(false\)\s*retry\(\)/)
+    expect(preview).not.toMatch(/setTimeout|setInterval/)
   })
 
   it('Download remains reachable independent of preview loading/error state', () => {

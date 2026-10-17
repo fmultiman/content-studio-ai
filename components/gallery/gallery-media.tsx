@@ -140,6 +140,14 @@ export function GalleryMediaFrame({ output, compact = false }: { output: Gallery
 export function GalleryPreviewMedia({ output }: { output: GalleryOutput }) {
   const renderer = mediaRenderer(output)
   const { state, retry } = useOutputMedia(output, 'preview', true)
+  // The endpoint answering 200 with a URL does not prove the object exists or is still readable: the element can still fail to
+  // load it (object gone, URL expired, storage/network error, playback error). That failure is shown here, for THIS output only
+  // (the dialog content is keyed by output, so it can never leak into the next one) and is cleared only by an explicit retry.
+  const [elementFailed, setElementFailed] = useState(false)
+  const retryWithFreshUrl = () => {
+    setElementFailed(false)
+    retry() // asks the existing per-item endpoint again: a NEW transient URL, once per click (no automatic retry loop)
+  }
 
   if (state.status === 'idle' || state.status === 'loading') {
     return (
@@ -149,12 +157,14 @@ export function GalleryPreviewMedia({ output }: { output: GalleryOutput }) {
       </div>
     )
   }
-  if (state.status === 'failed') {
+  if (state.status === 'failed' || elementFailed) {
+    // Either the endpoint refused (typed reason) or the element could not load/play the object it was given.
+    const reason = state.status === 'failed' ? state.reason : 'unavailable'
     return (
-      <div className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground" role="alert">
+      <div className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground" role="alert" data-testid="gallery-preview-error">
         <AlertCircle className="h-8 w-8 text-red-400" aria-hidden />
-        <p>{describeMediaFailure(state.reason)}</p>
-        <Button variant="outline" size="sm" className="gap-2" onClick={retry}>
+        <p>{describeMediaFailure(reason)}</p>
+        <Button variant="outline" size="sm" className="gap-2" onClick={retryWithFreshUrl}>
           <RefreshCw className="h-3 w-3" />
           Tentar novamente
         </Button>
@@ -163,26 +173,34 @@ export function GalleryPreviewMedia({ output }: { output: GalleryOutput }) {
   }
   return renderer === 'video' ? (
     // The INLINE endpoint's URL: never the attachment-disposition one that Download uses.
-    <video key={output.key} src={state.url} controls playsInline className="h-full w-full bg-black object-contain" crossOrigin="anonymous" data-testid="gallery-preview-video" />
+    <video key={`${output.key}:${state.url}`} src={state.url} controls playsInline className="h-full w-full bg-black object-contain" crossOrigin="anonymous" data-testid="gallery-preview-video" onError={() => setElementFailed(true)} />
   ) : (
-    <img key={output.key} src={state.url} alt={output.title} className="max-h-[70vh] w-full object-contain" data-testid="gallery-preview-image" />
+    <img key={`${output.key}:${state.url}`} src={state.url} alt={output.title} className="max-h-[70vh] w-full object-contain" data-testid="gallery-preview-image" onError={() => setElementFailed(true)} />
   )
 }
 
 /**
  * Saves the output through its own download endpoint. Renders and AI videos answer with an attachment-disposition URL (the browser
  * downloads it); AI images answer with the image URL, fetched as a blob so the file gets a real name, with a plain open as fallback.
+ *
+ * `ok: true` is only returned when the browser action actually happened. Whatever is KNOWN to have failed - the endpoint, the image
+ * fetch followed by a blocked pop-up, or a browser that refuses to start the download - is reported as a failure. (Whether the
+ * file finally lands on disk after the browser takes over is not observable from a page.)
  */
 export async function downloadOutput(output: GalleryOutput): Promise<{ ok: true } | { ok: false; message: string }> {
+  const failure = { ok: false as const, message: output.mediaType === 'video' ? 'Não foi possível baixar o vídeo.' : 'Não foi possível baixar o arquivo.' }
   const answer = await fetchMediaUrl(output, 'download')
-  if (!answer.ok) return { ok: false, message: output.mediaType === 'video' ? 'Não foi possível baixar o vídeo.' : 'Não foi possível baixar o arquivo.' }
+  if (!answer.ok) return failure
   const anchor = (href: string, name: string) => {
     const link = document.createElement('a')
     link.href = href
     link.download = name
     document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    try {
+      link.click()
+    } finally {
+      document.body.removeChild(link)
+    }
   }
   if (output.type === 'image') {
     try {
@@ -190,14 +208,29 @@ export async function downloadOutput(output: GalleryOutput): Promise<{ ok: true 
       if (!response.ok) throw new Error('image download failed')
       const blob = await response.blob()
       const objectUrl = window.URL.createObjectURL(blob)
-      anchor(objectUrl, downloadFilename(output, blob.type))
-      window.URL.revokeObjectURL(objectUrl)
+      try {
+        anchor(objectUrl, downloadFilename(output, blob.type))
+      } finally {
+        window.URL.revokeObjectURL(objectUrl)
+      }
       return { ok: true }
     } catch {
-      window.open(answer.url, '_blank', 'noopener,noreferrer')
+      // Fallback: let the browser open the (signed) image itself. A blocked pop-up is a known failure, not a success.
+      let opened: Window | null = null
+      try {
+        opened = window.open(answer.url, '_blank')
+      } catch {
+        opened = null
+      }
+      if (!opened) return { ok: false, message: 'Não foi possível baixar o arquivo: o navegador bloqueou a abertura. Permita pop-ups para este site ou tente novamente.' }
+      opened.opener = null
       return { ok: true }
     }
   }
-  anchor(answer.url, '')
+  try {
+    anchor(answer.url, '')
+  } catch {
+    return failure
+  }
   return { ok: true }
 }
