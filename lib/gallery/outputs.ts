@@ -291,6 +291,19 @@ export interface SourcePosition {
 
 export type SourcePositions = Partial<Record<GalleryOutputType, SourcePosition>>
 
+/**
+ * The cursor is a client-held POSITION in the caller's own collection, not a credential. It is Base64URL-encoded JSON: readable
+ * and editable by anyone, and it carries no signature, MAC or secret (this step deliberately adds none). Its safety does not come
+ * from being tamper-evident but from three other properties:
+ *   1. it is validated strictly (version, filters, canonical instant, UUID): only values that match those closed grammars are
+ *      ever placed in a query filter, so it cannot carry query syntax;
+ *   2. every query it feeds is still scoped to the authenticated user, so a hand-edited cursor can only select a different
+ *      position inside the caller's OWN outputs - never another user's data;
+ *   3. its size is bounded BEFORE any parsing.
+ * Consequently a valid-shaped edited cursor is accepted: it merely skips or repeats part of the caller's own list.
+ */
+export const GALLERY_CURSOR_MAX_LENGTH = 2048
+
 interface CursorPayload {
   v: 1
   /** Fingerprint of the filters the cursor belongs to: a cursor never crosses a changed filter. */
@@ -313,9 +326,15 @@ export function encodeGalleryCursor(fingerprint: string, positions: SourcePositi
 
 export type CursorDecode = { ok: true; positions: SourcePositions } | { ok: false; reason: 'MALFORMED' | 'FILTER_MISMATCH' }
 
-/** Anything that is not exactly a cursor this endpoint produced for these filters is refused BEFORE it reaches a query. */
+/**
+ * Strict parsing of a cursor input. It refuses oversized, undecodable, wrong-version, other-filter or non-canonical input
+ * BEFORE any of it can reach a query. It does NOT authenticate the cursor (see GALLERY_CURSOR_MAX_LENGTH): a well-formed cursor
+ * with different, valid-shaped values is accepted and just names another position in the caller's own collection.
+ */
 export function decodeGalleryCursor(raw: string | null, fingerprint: string): CursorDecode {
   if (raw === null || raw === '') return { ok: true, positions: {} }
+  // Bound the input before decoding/parsing: a legitimate cursor is well under 1 KiB.
+  if (raw.length > GALLERY_CURSOR_MAX_LENGTH) return { ok: false, reason: 'MALFORMED' }
   try {
     const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Partial<CursorPayload>
     if (!parsed || parsed.v !== 1 || typeof parsed.f !== 'string' || typeof parsed.p !== 'object' || parsed.p === null || Array.isArray(parsed.p)) {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createGalleryFakeDb, type Row } from './helpers/gallery-fake-db'
-import { encodeGalleryCursor, filterFingerprint, GALLERY_OUTPUT_TYPES } from '@/lib/gallery/outputs'
+import { encodeGalleryCursor, filterFingerprint, GALLERY_CURSOR_MAX_LENGTH, GALLERY_OUTPUT_TYPES } from '@/lib/gallery/outputs'
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 vi.mock('@/lib/supabase/service-role', () => ({ createServiceRoleSupabaseOrNull: vi.fn() }))
@@ -88,6 +88,23 @@ describe('GET /api/gallery/outputs', () => {
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ code: 'CURSOR_FILTER_MISMATCH' })
     expect((await call(`?cursor=${cursor}`)).status).toBe(200)
+  })
+
+  it('refuses an oversized cursor with 400 before any data is read', async () => {
+    const response = await call(`?cursor=${'A'.repeat(GALLERY_CURSOR_MAX_LENGTH + 1)}`)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'INVALID_CURSOR' })
+  })
+
+  it('a hand-edited cursor of valid shape is accepted but can only move inside the caller\'s OWN outputs', async () => {
+    tables.images.push({ ...tables.images[0], id: u(102), user_id: OTHER, user_input: 'Imagem de outra pessoa', created_at: '2026-09-30T10:00:00.000000Z' })
+    const edited = encodeGalleryCursor(filterFingerprint(GALLERY_OUTPUT_TYPES, null), { image: { at: '2030-01-01T00:00:00.000000Z', id: u(999) } })
+    const response = await call(`?cursor=${edited}`)
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.items.every((item: Row) => item.id !== u(102))).toBe(true)
+    expect(JSON.stringify(body)).not.toContain('outra pessoa')
+    expect(body.items.map((item: Row) => item.key)).toContain(`image:${u(101)}`)
   })
 
   it('a pagination cursor continues the same collection without repeating', async () => {

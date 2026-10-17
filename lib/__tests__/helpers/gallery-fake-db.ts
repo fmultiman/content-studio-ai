@@ -11,7 +11,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // Every write method throws. `failing` tables answer with an error; `failingHead` tables only fail count queries.
 
 export type Row = Record<string, any>
-export type Recorded = { table: string; select: string; filters: string[]; or: string[]; order: string[]; limit?: number; head: boolean }
+export type Recorded = { table: string; select: string; filters: string[]; or: string[]; order: string[]; limit?: number; head: boolean; count: boolean }
+export type FakeOptions = {
+  /** Simulates the server's silent response cap per table (PostgREST max rows): rows beyond it are dropped, the exact count is not. */
+  maxRows?: Record<string, number>
+  /** Tables whose responses carry no total count. */
+  noCount?: Set<string>
+}
 
 type Condition = (row: Row) => boolean
 
@@ -73,16 +79,16 @@ function project(row: Row, select: string): Row {
   return out
 }
 
-export function createGalleryFakeDb(tables: Record<string, Row[]>, failing: Set<string> = new Set(), failingHead: Set<string> = new Set()) {
+export function createGalleryFakeDb(tables: Record<string, Row[]>, failing: Set<string> = new Set(), failingHead: Set<string> = new Set(), options: FakeOptions = {}) {
   const log: Recorded[] = []
   const client = {
     from(table: string) {
-      const recorded: Recorded = { table, select: '', filters: [], or: [], order: [], head: false }
+      const recorded: Recorded = { table, select: '', filters: [], or: [], order: [], head: false, count: false }
       const conditions: Condition[] = []
       const orders: Array<{ column: string; ascending: boolean }> = []
       let single = false
       const builder: any = {
-        select(columns: string, options?: { head?: boolean; count?: string }) { recorded.select = columns; recorded.head = Boolean(options?.head); return builder },
+        select(columns: string, selectOptions?: { head?: boolean; count?: string }) { recorded.select = columns; recorded.head = Boolean(selectOptions?.head); recorded.count = Boolean(selectOptions?.count); return builder },
         eq(column: string, value: unknown) { recorded.filters.push(`eq:${column}`); conditions.push((row) => row[column] === value); return builder },
         in(column: string, values: unknown[]) { recorded.filters.push(`in:${column}`); conditions.push((row) => values.includes(row[column])); return builder },
         is(column: string, value: null) { recorded.filters.push(`is:${column}`); conditions.push((row) => (row[column] ?? null) === value); return builder },
@@ -112,9 +118,13 @@ export function createGalleryFakeDb(tables: Record<string, Row[]>, failing: Set<
             return 0
           })
           if (recorded.head) return resolve({ data: null, error: null, count: rows.length })
+          const total = rows.length
           if (recorded.limit !== undefined) rows = rows.slice(0, recorded.limit)
+          const cap = options.maxRows?.[table]
+          if (cap !== undefined) rows = rows.slice(0, cap)
           const projected = rows.map((row) => project(row, recorded.select))
-          return resolve({ data: single ? (projected[0] ?? null) : projected, error: null, count: null })
+          const count = recorded.count && !options.noCount?.has(table) ? total : null
+          return resolve({ data: single ? (projected[0] ?? null) : projected, error: null, count })
         },
       }
       return builder

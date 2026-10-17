@@ -53,6 +53,24 @@ function must<T>(result: { data: T | null; error: unknown }, code: string): T {
   return (result.data ?? []) as T
 }
 
+/**
+ * Auxiliary (related-data) lookups: attempts, legacy drafts, saved files, drafts, pieces, contents, Productions, Projects.
+ *
+ * A lookup that the database cut short (PostgREST caps every response at its configured max rows, silently) would give a page
+ * incomplete saved-file metadata or a Production/Session that is missing a conflicting claim. So every lookup asks for the
+ * exact total of the SAME filter and the source only continues when it received ALL matching rows. An unreadable or smaller-
+ * than-total answer fails the affected source: completeness is established, never assumed. `AUX_LOOKUP_LIMIT` is an explicit
+ * ceiling on top of the server cap; a lookup that matches more rows than that fails too.
+ */
+export const AUX_LOOKUP_LIMIT = 1000
+
+async function readComplete(query: PromiseLike<{ data: unknown; error: unknown; count: number | null }> & { limit(count: number): any }, code: string): Promise<Row[]> {
+  const result = (await query.limit(AUX_LOOKUP_LIMIT)) as { data: unknown; error: unknown; count: number | null }
+  if (result.error || !Array.isArray(result.data) || typeof result.count !== 'number') throw new GallerySourceError(code)
+  if (result.data.length < result.count) throw new GallerySourceError(code)
+  return result.data as Row[]
+}
+
 // The images list never selects `image_url`: legacy rows hold multi-megabyte data URLs in it. "Has an asset" is filtered in SQL.
 const IMAGE_ASSET_FILTER = 'image_url.not.is.null,thumbnail_url.not.is.null,storage_path.not.is.null,thumbnail_path.not.is.null'
 
@@ -60,9 +78,6 @@ const IMAGE_COLUMNS = 'id, project_id, user_input, generated_prompt, status, mod
 const VIDEO_GENERATION_COLUMNS = 'id, project_id, production_id, session_id, mode, prompt, provider, model, library_file_id, created_at'
 const VIDEO_RENDER_COLUMNS = 'id, project_id, video_draft_id, completed_at, output_mime_type, output_duration_ms, output_width, output_height'
 const STATIC_RENDER_COLUMNS = 'id, project_id, channel_piece_id, completed_at, output_mime_type, output_width, output_height, slide:input_snapshot->slide'
-
-/** Attempts that point at one image are a handful; a page that hits this ceiling is refused rather than read half-way. */
-const ATTEMPT_LOOKUP_CEILING = 1000
 
 export interface LoaderContext {
   userDb: SupabaseClient
@@ -91,7 +106,7 @@ async function loadOwnedContext(userDb: SupabaseClient, userId: string, projectI
   const productions = new Map<string, VerifiableProduction & { title: string | null; intention: string | null }>()
   const projectSet = new Set([...projectIds].filter((id): id is string => Boolean(id)))
   if (productionList.length > 0) {
-    const rows = must<Row[]>(await userDb.from('productions').select('id, project_id, title, intention').eq('user_id', userId).in('id', productionList), 'CONTEXT_UNAVAILABLE')
+    const rows = await readComplete(userDb.from('productions').select('id, project_id, title, intention', { count: 'exact' }).eq('user_id', userId).in('id', productionList), 'CONTEXT_UNAVAILABLE')
     for (const row of rows) {
       productions.set(row.id, { id: row.id, project_id: row.project_id, title: row.title ?? null, intention: row.intention ?? null })
       if (row.project_id) projectSet.add(row.project_id)
@@ -99,7 +114,7 @@ async function loadOwnedContext(userDb: SupabaseClient, userId: string, projectI
   }
   const projects = new Map<string, string>()
   if (projectSet.size > 0) {
-    const rows = must<Row[]>(await userDb.from('projects').select('id, name').eq('user_id', userId).in('id', [...projectSet]), 'CONTEXT_UNAVAILABLE')
+    const rows = await readComplete(userDb.from('projects').select('id, name', { count: 'exact' }).eq('user_id', userId).in('id', [...projectSet]), 'CONTEXT_UNAVAILABLE')
     for (const row of rows) projects.set(row.id, row.name)
   }
   return { projects, productions }
@@ -123,7 +138,7 @@ function scopeFields(context: OwnedContext, projectId: string | null, claims: Re
 async function loadSavedFiles(userDb: SupabaseClient, userId: string, column: 'source_render_execution_id' | 'source_image_id', ids: string[]): Promise<Map<string, string[]>> {
   const saved = new Map<string, string[]>()
   if (ids.length === 0) return saved
-  const rows = must<Row[]>(await userDb.from('library_files').select(`id, ${column}, created_at`).eq('user_id', userId).in(column, ids).is('deleted_at', null), 'SAVED_FILES_UNAVAILABLE')
+  const rows = await readComplete(userDb.from('library_files').select(`id, ${column}, created_at`, { count: 'exact' }).eq('user_id', userId).in(column, ids).is('deleted_at', null), 'SAVED_FILES_UNAVAILABLE')
   for (const row of [...rows].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)))) {
     const list = saved.get(row[column]) ?? []
     list.push(row.id)
@@ -164,14 +179,13 @@ async function loadImages(ctx: LoaderContext): Promise<GalleryOutput[]> {
   const ids = rows.map((row) => row.id as string)
 
   // Production provenance: the Attempts that produced the image (current writers), then the legacy draft that holds it.
-  const attempts = must<Row[]>(
-    await ctx.userDb.from('image_generation_attempts').select('id, session_id, project_id, production_id, result_image_id, status, completed_at').eq('user_id', ctx.userId).in('result_image_id', ids).limit(ATTEMPT_LOOKUP_CEILING),
+  // A truncated Attempt or draft lookup could hide a conflicting claim or a Session: both are read to completion or the source fails.
+  const attempts = await readComplete(
+    ctx.userDb.from('image_generation_attempts').select('id, session_id, project_id, production_id, result_image_id, status, completed_at', { count: 'exact' }).eq('user_id', ctx.userId).in('result_image_id', ids),
     'ATTEMPTS_UNAVAILABLE',
   )
-  // A truncated Attempt lookup could hide a conflicting claim: refuse the page instead of guessing.
-  if (attempts.length >= ATTEMPT_LOOKUP_CEILING) throw new GallerySourceError('ATTEMPTS_UNAVAILABLE')
-  const drafts = must<Row[]>(
-    await ctx.userDb.from('image_drafts').select('id, project_id, production_id, current_image_id').eq('user_id', ctx.userId).in('current_image_id', ids),
+  const drafts = await readComplete(
+    ctx.userDb.from('image_drafts').select('id, project_id, production_id, current_image_id', { count: 'exact' }).eq('user_id', ctx.userId).in('current_image_id', ids),
     'DRAFTS_UNAVAILABLE',
   )
   const saved = await loadSavedFiles(ctx.userDb, ctx.userId, 'source_image_id', ids)
@@ -247,7 +261,7 @@ async function loadVideoGenerations(ctx: LoaderContext): Promise<GalleryOutput[]
   const pointerIds = [...new Set(rows.map((row) => row.library_file_id).filter((id): id is string => Boolean(id)))]
   const liveFiles = new Set<string>()
   if (pointerIds.length > 0) {
-    const live = must<Row[]>(await ctx.userDb.from('library_files').select('id').eq('user_id', ctx.userId).in('id', pointerIds).is('deleted_at', null), 'SAVED_FILES_UNAVAILABLE')
+    const live = await readComplete(ctx.userDb.from('library_files').select('id', { count: 'exact' }).eq('user_id', ctx.userId).in('id', pointerIds).is('deleted_at', null), 'SAVED_FILES_UNAVAILABLE')
     for (const file of live) liveFiles.add(file.id)
   }
 
@@ -309,7 +323,7 @@ async function loadVideoRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
   const draftIds = [...new Set(rows.map((row) => row.video_draft_id).filter((id): id is string => Boolean(id)))]
   const drafts = new Map<string, Row>()
   if (draftIds.length > 0) {
-    for (const draft of must<Row[]>(await ctx.userDb.from('video_drafts').select('id, project_id, production_id, name').eq('user_id', ctx.userId).in('id', draftIds), 'DRAFTS_UNAVAILABLE')) drafts.set(draft.id, draft)
+    for (const draft of await readComplete(ctx.userDb.from('video_drafts').select('id, project_id, production_id, name', { count: 'exact' }).eq('user_id', ctx.userId).in('id', draftIds), 'DRAFTS_UNAVAILABLE')) drafts.set(draft.id, draft)
   }
   const saved = await loadSavedFiles(ctx.userDb, ctx.userId, 'source_render_execution_id', rows.map((row) => row.id))
   const context = await loadOwnedContext(ctx.userDb, ctx.userId, [...rows.map((row) => row.project_id), ...[...drafts.values()].map((draft) => draft.project_id)], [...drafts.values()].map((draft) => draft.production_id))
@@ -358,12 +372,12 @@ async function loadStaticRenders(ctx: LoaderContext): Promise<GalleryOutput[]> {
   const pieceIds = [...new Set(rows.map((row) => row.channel_piece_id).filter((id): id is string => Boolean(id)))]
   const pieces = new Map<string, Row>()
   if (pieceIds.length > 0) {
-    for (const piece of must<Row[]>(await ctx.userDb.from('channel_pieces').select('id, editorial_content_id').eq('user_id', ctx.userId).in('id', pieceIds), 'PIECES_UNAVAILABLE')) pieces.set(piece.id, piece)
+    for (const piece of await readComplete(ctx.userDb.from('channel_pieces').select('id, editorial_content_id', { count: 'exact' }).eq('user_id', ctx.userId).in('id', pieceIds), 'PIECES_UNAVAILABLE')) pieces.set(piece.id, piece)
   }
   const contentIds = [...new Set([...pieces.values()].map((piece) => piece.editorial_content_id).filter((id): id is string => Boolean(id)))]
   const contents = new Map<string, Row>()
   if (contentIds.length > 0) {
-    for (const content of must<Row[]>(await ctx.userDb.from('editorial_contents').select('id, project_id, production_id, title').eq('user_id', ctx.userId).in('id', contentIds), 'CONTENTS_UNAVAILABLE')) contents.set(content.id, content)
+    for (const content of await readComplete(ctx.userDb.from('editorial_contents').select('id, project_id, production_id, title', { count: 'exact' }).eq('user_id', ctx.userId).in('id', contentIds), 'CONTENTS_UNAVAILABLE')) contents.set(content.id, content)
   }
   const saved = await loadSavedFiles(ctx.userDb, ctx.userId, 'source_render_execution_id', rows.map((row) => row.id))
   const context = await loadOwnedContext(ctx.userDb, ctx.userId, [...rows.map((row) => row.project_id), ...[...contents.values()].map((content) => content.project_id)], [...contents.values()].map((content) => content.production_id))

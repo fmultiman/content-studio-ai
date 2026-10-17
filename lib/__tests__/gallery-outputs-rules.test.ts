@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   accessEndpoints,
   assembleGalleryPage,
@@ -8,6 +8,7 @@ import {
   decodeGalleryCursor,
   encodeGalleryCursor,
   filterFingerprint,
+  GALLERY_CURSOR_MAX_LENGTH,
   GALLERY_MAX_LIMIT,
   GALLERY_OUTPUT_TYPES,
   normalizeInstant,
@@ -88,7 +89,53 @@ describe('cursor', () => {
     expect(decodeGalleryCursor(cursor, filterFingerprint(['image'], null))).toEqual({ ok: false, reason: 'FILTER_MISMATCH' })
     expect(decodeGalleryCursor(cursor, filterFingerprint(GALLERY_OUTPUT_TYPES, u(9)))).toEqual({ ok: false, reason: 'FILTER_MISMATCH' })
   })
-  it('refuses anything this endpoint did not produce, before it can reach a filter', () => {
+  const forgeCursor = (payload: unknown) => Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+
+  it('bounds the input BEFORE decoding or parsing it', () => {
+    // A legitimate cursor (four sources, a long filter) is far below the bound.
+    const full = encodeGalleryCursor(filterFingerprint(GALLERY_OUTPUT_TYPES, u(9)), Object.fromEntries(GALLERY_OUTPUT_TYPES.map((type) => [type, { at: at(5, 123456), id: u(7) }])))
+    expect(full.length).toBeLessThan(GALLERY_CURSOR_MAX_LENGTH / 2)
+    expect(decodeGalleryCursor(full, filterFingerprint(GALLERY_OUTPUT_TYPES, u(9)))).toMatchObject({ ok: true })
+
+    // Over the bound is refused without touching Buffer/JSON, even when the content would be perfectly valid JSON.
+    const oversized = 'A'.repeat(GALLERY_CURSOR_MAX_LENGTH + 1)
+    const fromBase64 = vi.spyOn(Buffer, 'from')
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      expect(decodeGalleryCursor(oversized, FINGERPRINT)).toEqual({ ok: false, reason: 'MALFORMED' })
+      expect(fromBase64).not.toHaveBeenCalled()
+      expect(parse).not.toHaveBeenCalled()
+    } finally {
+      fromBase64.mockRestore()
+      parse.mockRestore()
+    }
+    // Padding a valid payload past the bound is refused too; at the bound itself it is still parsed (and rejected only on content).
+    const padded = forgeCursor({ v: 1, f: FINGERPRINT, p: {}, pad: 'x'.repeat(GALLERY_CURSOR_MAX_LENGTH) })
+    expect(padded.length).toBeGreaterThan(GALLERY_CURSOR_MAX_LENGTH)
+    expect(decodeGalleryCursor(padded, FINGERPRINT)).toEqual({ ok: false, reason: 'MALFORMED' })
+    expect(decodeGalleryCursor('A'.repeat(GALLERY_CURSOR_MAX_LENGTH), FINGERPRINT)).toEqual({ ok: false, reason: 'MALFORMED' }) // parsed, then judged on content
+  })
+
+  it('is NOT tamper-evident: an edited cursor of valid shape is accepted and only names another position', () => {
+    const original = encodeGalleryCursor(FINGERPRINT, { image: { at: at(5), id: u(1) } })
+    const edited = forgeCursor({ v: 1, f: FINGERPRINT, p: { image: [at(40, 7), u(999)], video_render: [at(1), u(5)] } })
+    expect(edited).not.toBe(original)
+    expect(decodeGalleryCursor(edited, FINGERPRINT)).toEqual({ ok: true, positions: { image: { at: at(40, 7), id: u(999) }, video_render: { at: at(1), id: u(5) } } })
+  })
+
+  it('whatever it accepts is made only of canonical instants and UUIDs - nothing a query filter could misread', () => {
+    const decoded = decodeGalleryCursor(forgeCursor({ v: 1, f: FINGERPRINT, p: { image: [at(40, 7), u(999)] } }), FINGERPRINT)
+    if (!decoded.ok) throw new Error('expected an accepted cursor')
+    const position = decoded.positions.image!
+    expect(position.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/)
+    expect(position.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    for (const hostile of [`${at(1)},id.gt.0`, `${at(1)})`, `${at(1)}"`, "2026-10-10T10:00:00.000000Z'--", `${u(1)},or(id.gt.0)`]) {
+      expect(decodeGalleryCursor(forgeCursor({ v: 1, f: FINGERPRINT, p: { image: [hostile, u(1)] } }), FINGERPRINT)).toMatchObject({ ok: false })
+      expect(decodeGalleryCursor(forgeCursor({ v: 1, f: FINGERPRINT, p: { image: [at(1), hostile] } }), FINGERPRINT)).toMatchObject({ ok: false })
+    }
+  })
+
+  it('refuses anything that is not a well-formed cursor for these filters, before it can reach a filter', () => {
     const forge = (payload: unknown) => Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
     const bad = [
       'not-base64-json', forge([]), forge({ v: 2, f: FINGERPRINT, p: {} }), forge({ v: 1, f: FINGERPRINT, p: [] }),

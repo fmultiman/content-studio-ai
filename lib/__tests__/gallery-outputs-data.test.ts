@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { loadGalleryOutputs } from '@/lib/gallery/outputs-data'
+import { AUX_LOOKUP_LIMIT, loadGalleryOutputs } from '@/lib/gallery/outputs-data'
 import { decodeGalleryCursor, filterFingerprint, GALLERY_OUTPUT_TYPES, type GalleryOutput, type GalleryOutputType, type GalleryOutputsResponse } from '@/lib/gallery/outputs'
-import { createGalleryFakeDb, type Row } from './helpers/gallery-fake-db'
+import { createGalleryFakeDb, type FakeOptions, type Row } from './helpers/gallery-fake-db'
 
 const u = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const ME = u(1)
@@ -19,6 +19,7 @@ let failing: Set<string>
 let failingHead: Set<string>
 let log: ReturnType<typeof createGalleryFakeDb>['log']
 let renderEnabled: boolean
+let fakeOptions: FakeOptions
 
 const image = (n: number, over: Row = {}): Row => ({ id: u(100 + n), user_id: ME, project_id: P1, user_input: `Imagem ${n}`, generated_prompt: null, status: 'draft', model: 'gpt-image-2', mime_type: 'image/png', created_at: t(1, n), image_url: 'https://cdn/x', thumbnail_url: null, storage_path: `users/${ME}/images/${u(900 + n)}/original.png`, thumbnail_path: null, ...over })
 const attempt = (n: number, imageN: number, over: Row = {}): Row => ({ id: u(200 + n), user_id: ME, session_id: u(300 + n), project_id: P1, production_id: PR1, result_image_id: u(100 + imageN), status: 'succeeded', completed_at: t(1, imageN), ...over })
@@ -29,6 +30,7 @@ beforeEach(() => {
   failing = new Set()
   failingHead = new Set()
   renderEnabled = true
+  fakeOptions = {}
   tables = {
     projects: [{ id: P1, user_id: ME, name: 'Portal Norte' }, { id: P2, user_id: ME, name: 'Outro Project' }],
     productions: [
@@ -42,8 +44,8 @@ beforeEach(() => {
 })
 
 async function run(query: Partial<Parameters<typeof loadGalleryOutputs>[1]> = {}, userId = ME): Promise<GalleryOutputsResponse> {
-  const user = createGalleryFakeDb(tables, failing, failingHead)
-  const render = createGalleryFakeDb(tables, failing, failingHead)
+  const user = createGalleryFakeDb(tables, failing, failingHead, fakeOptions)
+  const render = createGalleryFakeDb(tables, failing, failingHead, fakeOptions)
   log = [...user.log, ...render.log]
   const response = await loadGalleryOutputs(
     { userDb: user.db, renderDb: renderEnabled ? render.db : null, userId },
@@ -501,12 +503,118 @@ describe('totals', () => {
   })
 })
 
-describe('no hidden truncation', () => {
-  it('refuses to show images when the Attempt lookup could be truncated', async () => {
+describe('no hidden truncation: related-data lookups are complete or the source fails', () => {
+  const draftRow = (n: number, imageN: number): Row => ({ id: u(700 + n), user_id: ME, project_id: P1, production_id: PR1, current_image_id: u(100 + imageN) })
+
+  it('a cut-short Attempt lookup fails the images source instead of hiding a conflicting claim', async () => {
     tables.images = [image(1)]
-    tables.image_generation_attempts = Array.from({ length: 1000 }, (_, n) => attempt(1000 + n, 1, { id: u(5000 + n), session_id: u(6000 + n) }))
+    // 3 Attempts match, the server answers with only 2: the missing one could be the conflicting claim.
+    tables.image_generation_attempts = [attempt(1, 1), attempt(2, 1), attempt(3, 1, { production_id: PR2 })]
+    fakeOptions = { maxRows: { image_generation_attempts: 2 } }
     const response = await run({ types: ['image'] })
-    expect(response.sources.image).toMatchObject({ state: 'failed', code: 'ATTEMPTS_UNAVAILABLE' })
+    expect(response.sources.image).toEqual({ state: 'failed', code: 'ATTEMPTS_UNAVAILABLE' })
+    expect(response.items).toEqual([])
+  })
+
+  it('a cut-short legacy draft lookup fails the images source instead of giving a Production from part of the claims', async () => {
+    tables.images = [image(1), image(2), image(3)]
+    tables.image_drafts = [draftRow(1, 1), draftRow(2, 2), draftRow(3, 3)]
+    fakeOptions = { maxRows: { image_drafts: 2 } }
+    expect((await run({ types: ['image'] })).sources.image).toEqual({ state: 'failed', code: 'DRAFTS_UNAVAILABLE' })
+  })
+
+  it('a cut-short saved-files lookup fails the source instead of showing incomplete saved-file metadata - for images and renders', async () => {
+    tables.images = [image(1)]
+    tables.library_files = [1, 2, 3].map((n) => ({ id: u(840 + n), user_id: ME, source_image_id: u(101), source_render_execution_id: u(501), deleted_at: null, created_at: t(4, n) }))
+    tables.video_drafts = [{ id: u(601), user_id: ME, project_id: P1, production_id: PR1, name: 'x' }]
+    tables.render_executions = [execution(1)]
+    fakeOptions = { maxRows: { library_files: 2 } }
+    const response = await run({ types: ['image', 'video_render'] })
+    expect(response.sources.image).toEqual({ state: 'failed', code: 'SAVED_FILES_UNAVAILABLE' })
+    expect(response.sources.video_render).toEqual({ state: 'failed', code: 'SAVED_FILES_UNAVAILABLE' })
+    expect(response.items).toEqual([])
+  })
+
+  it('a cut-short live-file check of AI videos fails that source', async () => {
+    tables.video_generations = [videoGeneration(1, { library_file_id: u(810) }), videoGeneration(2, { library_file_id: u(811) }), videoGeneration(3, { library_file_id: u(812) })]
+    tables.library_files = [810, 811, 812].map((n) => ({ id: u(n), user_id: ME, deleted_at: null }))
+    fakeOptions = { maxRows: { library_files: 2 } }
+    expect((await run({ types: ['video_generation'] })).sources.video_generation).toEqual({ state: 'failed', code: 'SAVED_FILES_UNAVAILABLE' })
+  })
+
+  it('cut-short VideoDraft, ChannelPiece, EditorialContent, Production and Project lookups fail their sources', async () => {
+    tables.video_drafts = [601, 602, 603].map((n) => ({ id: u(n), user_id: ME, project_id: P1, production_id: PR1, name: 'x' }))
+    tables.render_executions = [1, 2, 3].map((n) => execution(n, { video_draft_id: u(600 + n) }))
+    fakeOptions = { maxRows: { video_drafts: 2 } }
+    expect((await run({ types: ['video_render'] })).sources.video_render).toEqual({ state: 'failed', code: 'DRAFTS_UNAVAILABLE' })
+
+    tables.channel_pieces = [650, 651, 652].map((n) => ({ id: u(n), user_id: ME, editorial_content_id: u(660) }))
+    tables.editorial_contents = [660, 661, 662].map((n) => ({ id: u(n), user_id: ME, project_id: P1, production_id: PR1, title: 'c' }))
+    tables.render_executions = [650, 651, 652].map((n, index) => execution(10 + index, { kind: 'static_still', video_draft_id: null, channel_piece_id: u(n) }))
+    fakeOptions = { maxRows: { channel_pieces: 2 } }
+    expect((await run({ types: ['static_render'] })).sources.static_render).toEqual({ state: 'failed', code: 'PIECES_UNAVAILABLE' })
+
+    tables.channel_pieces = [650, 651, 652].map((n, index) => ({ id: u(n), user_id: ME, editorial_content_id: u(660 + index) }))
+    fakeOptions = { maxRows: { editorial_contents: 2 } }
+    expect((await run({ types: ['static_render'] })).sources.static_render).toEqual({ state: 'failed', code: 'CONTENTS_UNAVAILABLE' })
+
+    tables.images = [image(1), image(2), image(3)]
+    tables.image_generation_attempts = [1, 2, 3].map((n) => attempt(n, n, { production_id: [PR1, PR2, PR1][n - 1] }))
+    fakeOptions = { maxRows: { productions: 1 } }
+    expect((await run({ types: ['image'] })).sources.image).toEqual({ state: 'failed', code: 'CONTEXT_UNAVAILABLE' })
+
+    tables.images = [image(1), image(2, { project_id: P2 })]
+    tables.image_generation_attempts = []
+    fakeOptions = { maxRows: { projects: 1 } }
+    expect((await run({ types: ['image'] })).sources.image).toEqual({ state: 'failed', code: 'CONTEXT_UNAVAILABLE' })
+  })
+
+  it('a complete answer exactly at the server cap is accepted: the check compares with the exact total, not with the cap', async () => {
+    tables.images = [image(1)]
+    tables.image_generation_attempts = [attempt(1, 1), attempt(2, 1)]
+    fakeOptions = { maxRows: { image_generation_attempts: 2 } }
+    const response = await run({ types: ['image'] })
+    expect(response.sources.image).toMatchObject({ state: 'ok' })
+    expect(response.items[0]).toMatchObject({ productionId: PR1, productionState: 'resolved' })
+  })
+
+  it('a lookup answer without a total count fails closed - completeness is never assumed', async () => {
+    tables.images = [image(1)]
+    tables.image_generation_attempts = [attempt(1, 1)]
+    fakeOptions = { noCount: new Set(['image_generation_attempts']) }
+    expect((await run({ types: ['image'] })).sources.image).toEqual({ state: 'failed', code: 'ATTEMPTS_UNAVAILABLE' })
+  })
+
+  it('beyond the explicit lookup ceiling the source fails even when the server would have answered', async () => {
+    tables.images = [image(1)]
+    tables.image_generation_attempts = Array.from({ length: AUX_LOOKUP_LIMIT + 1 }, (_, n) => attempt(1000 + n, 1, { id: u(5000 + n), session_id: u(6000 + n) }))
+    expect((await run({ types: ['image'] })).sources.image).toEqual({ state: 'failed', code: 'ATTEMPTS_UNAVAILABLE' })
+  })
+
+  it('exactly the ceiling many Attempts is still complete (nothing was cut)', async () => {
+    tables.images = [image(1)]
+    tables.image_generation_attempts = Array.from({ length: AUX_LOOKUP_LIMIT }, (_, n) => attempt(1000 + n, 1, { id: u(5000 + n), session_id: u(300) }))
+    expect((await run({ types: ['image'] })).sources.image).toMatchObject({ state: 'ok' })
+  })
+
+  it('every auxiliary lookup asks for the exact count and an explicit ceiling; only the four page lists do not', async () => {
+    tables.images = [image(1)]
+    tables.image_generation_attempts = [attempt(1, 1)]
+    tables.video_generations = [videoGeneration(1, { library_file_id: u(810) })]
+    tables.library_files = [{ id: u(810), user_id: ME, source_image_id: u(101), deleted_at: null, created_at: t(1) }]
+    tables.video_drafts = [{ id: u(601), user_id: ME, project_id: P1, production_id: PR1, name: 'x' }]
+    tables.channel_pieces = [{ id: u(650), user_id: ME, editorial_content_id: u(660) }]
+    tables.editorial_contents = [{ id: u(660), user_id: ME, project_id: P1, production_id: PR1, title: 'c' }]
+    tables.image_drafts = [{ id: u(700), user_id: ME, project_id: P1, production_id: PR1, current_image_id: u(101) }]
+    tables.render_executions = [execution(1), execution(2, { kind: 'static_still', video_draft_id: null, channel_piece_id: u(650) })]
+    await run()
+    const lookups = log.filter((entry) => !entry.head && !['images', 'video_generations', 'render_executions'].includes(entry.table))
+    expect(new Set(lookups.map((entry) => entry.table))).toEqual(new Set(['image_generation_attempts', 'image_drafts', 'library_files', 'productions', 'projects', 'video_drafts', 'channel_pieces', 'editorial_contents']))
+    for (const entry of lookups) {
+      expect(entry.count, `${entry.table} must request the exact count`).toBe(true)
+      expect(entry.limit, `${entry.table} must carry an explicit ceiling`).toBe(AUX_LOOKUP_LIMIT)
+    }
+    for (const entry of log.filter((query) => ['images', 'video_generations', 'render_executions'].includes(query.table) && !query.head)) expect(entry.limit).toBe(49)
   })
 
   it('a row whose instant cannot be read fails its source instead of disappearing', async () => {
