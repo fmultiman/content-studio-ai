@@ -164,9 +164,11 @@ describe('query strategy (no N+1) and untouched neighbours', () => {
     expect(lib).toMatch(/const productionById = new Map\(productions\.map/)
   })
 
-  it('the static items reuse the same batched list: no extra Production request was added to the page', () => {
-    expect(page.match(/fetch\('\/api\/library-files\?origin=studio_render&kind=image'\)/g)).toHaveLength(1)
-    expect(page).toMatch(/setStudioRenders\(payload\.files \|\| \[\]\)/)
+  it('static renders come from the canonical endpoint now: the page no longer lists LibraryFiles and adds no per-card request', () => {
+    // A saved LibraryFile is an annotation on the render (savedLibraryFileIds), never a second Gallery card.
+    expect(page).not.toMatch(/\/api\/library-files/)
+    expect(page).not.toMatch(/setStudioRenders|studio_render/)
+    expect(page.match(/fetch\(/g) ?? []).toHaveLength(0) // every request lives in the hook/media modules, none in a card
   })
 
   it('does not re-derive through ChannelPiece / EditorialContent at display time', () => {

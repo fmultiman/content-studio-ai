@@ -282,11 +282,13 @@ describe('UX-H3C gallery output library helpers', () => {
   it('keeps Galeria positioned as outputs while Imagens remains creation and drafts', () => {
     const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
 
-    expect(galleryPage).toContain('Explore imagens geradas nos seus Projects e Productions.')
+    // Wave 1A-2 S2 (contract Q1): the Gallery is every COMPLETED output, read from the canonical endpoint - not from the output tables.
+    expect(galleryPage).toContain('Todos os outputs concluídos: imagens e vídeos gerados por IA e renders do Creative Editor.')
+    expect(galleryPage).toContain('Uploads, referências e documentos continuam em Arquivos.')
     expect(galleryPage).toContain('Outputs gerados')
     expect(galleryPage).not.toContain('Criar nova imagem')
-    expect(galleryPage).toContain("from('images')")
-    expect(galleryPage).toContain("from('image_drafts')")
+    expect(galleryPage).not.toContain("from('images')")
+    expect(galleryPage).not.toContain("from('image_drafts')")
     expect(galleryPage).not.toContain('Rascunhos')
   })
 
@@ -344,7 +346,9 @@ describe('UX-H3C gallery output library helpers', () => {
     expect(galleryPage).toContain("label: 'Project'")
     expect(galleryPage).toContain("label: 'Production'")
     expect(galleryPage).toContain('2xl:grid')
-    expect(galleryPage).toContain('Sem Production associada')
+    // The honest "no Production" wording now lives in the shared UI rules used by every card and row.
+    expect(galleryPage).toContain('productionLabel(output)')
+    expect(readFileSync(join(process.cwd(), 'lib/gallery/ui-model.ts'), 'utf8')).toContain('Sem Production associada')
   })
 
   it('keeps Galeria in a two-phase layout at intermediate widths and wraps actions safely', () => {
@@ -464,37 +468,38 @@ describe('Phase 2I — video outputs in the Gallery (Task B1/B2)', () => {
 describe('Phase 2I — Gallery browser authority regression (Task B2)', () => {
   const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
 
-  it('does not query render_executions directly from the browser (403 root cause)', () => {
-    expect(galleryPage).not.toMatch(/from\('render_executions'\)/)
+  // The 403 root cause (browser SELECT on render_executions) stays closed: since Wave 1A-2 S2 the page reads NO output table at all.
+  const hook = readFileSync(join(process.cwd(), 'hooks/use-gallery-outputs.ts'), 'utf8')
+  const media = readFileSync(join(process.cwd(), 'components/gallery/gallery-media.tsx'), 'utf8')
+
+  it('does not query render_executions (or any output table) directly from the browser', () => {
+    for (const source of [galleryPage, hook, media]) {
+      expect(source).not.toMatch(/from\('(render_executions|images|image_drafts|video_generations|video_drafts|library_files|image_generation_attempts)'\)/)
+    }
   })
 
-  it('fetches video outputs from the narrow server-authoritative route', () => {
-    expect(galleryPage).toContain("fetch('/api/gallery/video-outputs')")
+  it('reads every output through the one canonical, server-authoritative endpoint', () => {
+    expect(hook).toContain('/api/gallery/outputs')
+    expect(galleryPage).toContain('useGalleryOutputs(serverFilters)')
+    // The legacy readers are gone from the page.
+    expect(galleryPage).not.toContain('/api/gallery/video-outputs')
+    expect(galleryPage).not.toContain('/api/library-files')
+    expect(galleryPage).not.toContain('buildGalleryOutputs')
   })
 
-  it('isolates the video-outputs fetch from the core data fetch — a partial failure sets its own flag rather than throwing', () => {
-    expect(galleryPage).toContain('setVideoOutputsUnavailable(true)')
-    // The core-data try/catch must set errorMessage and return BEFORE the
-    // isolated video-outputs fetch runs — it must never be inside the same
-    // try block (which would let a video-outputs failure blank out
-    // images/Projects/Productions that already loaded successfully).
-    const coreCatchIndex = galleryPage.indexOf("setErrorMessage('Não foi possível carregar a Galeria agora.')")
-    const videoOutputsFetchIndex = galleryPage.indexOf("fetch('/api/gallery/video-outputs')")
-    expect(coreCatchIndex).toBeGreaterThan(-1)
-    expect(videoOutputsFetchIndex).toBeGreaterThan(coreCatchIndex)
+  it('a failing source never blanks what loaded and is never read as an empty Gallery', () => {
+    // Failure handling is isolated per source by the API; the page keeps the loaded outputs and names the failed sources.
+    expect(galleryPage).toContain('gallery.partial')
+    expect(galleryPage).toContain('failedSourceTypes(gallery.sources)')
+    expect(galleryPage).toContain('describeFailedSources(failedTypes)')
+    // The only "empty" decision goes through decideGalleryPanel (behaviour covered in gallery-ui-model.test.ts).
+    expect(galleryPage).toContain('decideGalleryPanel(')
   })
 
-  it('still sets Projects/images from the core fetch even when video outputs are unavailable (no false "Crie um Project")', () => {
-    // setProjects must appear before the isolated video-outputs fetch block,
-    // proving Projects are committed to state independently of whether the
-    // video-outputs fetch below it later succeeds or fails.
-    const setProjectsIndex = galleryPage.indexOf('setProjects(')
-    const videoOutputsFetchIndex = galleryPage.indexOf("fetch('/api/gallery/video-outputs')")
-    expect(setProjectsIndex).toBeGreaterThan(-1)
-    expect(setProjectsIndex).toBeLessThan(videoOutputsFetchIndex)
-  })
-
-  it('passes executions and videoDrafts into buildGalleryOutputs', () => {
-    expect(galleryPage).toMatch(/buildGalleryOutputs\(\{ images, drafts, projects, productions, executions, videoDrafts, studioRenders \}\)/)
+  it('Projects and Productions are only filter OPTIONS, loaded independently of the outputs (no false "Crie um Project")', () => {
+    expect(galleryPage).toContain("supabase.from('projects')")
+    expect(galleryPage).toContain("supabase.from('productions')")
+    expect(galleryPage).not.toContain('Crie um Project')
+    expect(galleryPage.indexOf('useGalleryOutputs(')).toBeLessThan(galleryPage.indexOf("supabase.from('projects')"))
   })
 })

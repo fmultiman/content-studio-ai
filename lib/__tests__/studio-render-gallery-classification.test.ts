@@ -106,10 +106,13 @@ describe('Discovery surfaces', () => {
     expect(picker).toMatch(/\{studioRenders\.map\(\(file\) => \(\s*<LibraryCard/)
   })
 
-  it('Galeria fetches studio renders in isolation (a failure never blanks images/videos)', () => {
+  it('Galeria lists static renders from the canonical outputs endpoint, as an isolated source (a failure never blanks images/videos)', () => {
     const gallery = read('app', '(dashboard)', 'galeria', 'page.tsx')
-    expect(gallery).toMatch(/fetch\('\/api\/library-files\?origin=studio_render&kind=image'\)/)
-    expect(gallery).toMatch(/setStudioRenders\(\[\]\)/)
+    const data = read('lib', 'gallery', 'outputs-data.ts')
+    // The page does not read LibraryFiles at all; the API loads each source atomically and reports a failure per source.
+    expect(gallery).not.toMatch(/library-files/)
+    expect(data).toMatch(/loadStaticRenders/)
+    expect(data).toMatch(/return \{ type, state: 'failed', code: failureCode\(error\) \}/)
   })
 
   it('the piece media list labels a saved render as "Imagem gerada"', () => {

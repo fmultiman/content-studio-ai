@@ -23,8 +23,11 @@ import {
  *   type       repeated or comma separated: image | video_generation | video_render | static_render (default: all four).
  *              Filtering is SERVER-side, across the whole collection.
  *   projectId  one of the caller's own Projects
+ *   productionId one of the caller's own Productions (S2A). Server-side and exact: it filters BEFORE pagination and counting and
+ *              selects only outputs whose Production is VERIFIED for their family (conflicting/unscoped ones are never inside a
+ *              Production). Its Project is implied; a `projectId` that disagrees with it is refused (400).
  *   limit      1..100, default 48
- *   cursor     opaque; only valid for the same `type` / `projectId`
+ *   cursor     opaque; only valid for the same `type` / `projectId` / `productionId`
  *   totals     "1" to include exact counts (only reported as a global total when every selected source succeeded)
  *
  * Contract (see docs/productization/structural-wave-1a2-s1-gallery-read-model-v1.md):
@@ -67,17 +70,32 @@ export async function GET(request: Request) {
     if (projectIdRaw !== null && projectIdRaw !== '' && !isUuid(projectIdRaw)) return jsonError(400, 'INVALID_PROJECT', 'Project inválido.')
     const projectId = projectIdRaw ? projectIdRaw : null
 
-    const fingerprint = filterFingerprint(types, projectId)
-    const cursor = decodeGalleryCursor(params.get('cursor'), fingerprint)
-    if (!cursor.ok) {
-      return jsonError(400, cursor.reason === 'FILTER_MISMATCH' ? 'CURSOR_FILTER_MISMATCH' : 'INVALID_CURSOR', 'Cursor inválido para esta consulta.')
-    }
+    const productionIdRaw = params.get('productionId')
+    if (productionIdRaw !== null && productionIdRaw !== '' && !isUuid(productionIdRaw)) return jsonError(400, 'INVALID_PRODUCTION', 'Production inválida.')
+    const productionId = productionIdRaw ? productionIdRaw : null
 
     if (projectId) {
       // An unknown/foreign Project is "not found", never an empty Gallery.
       const { data: project, error: projectError } = await supabase.from('projects').select('id').eq('id', projectId).eq('user_id', user.id).maybeSingle()
       if (projectError) return jsonError(503, 'PROJECT_UNAVAILABLE', 'Não foi possível validar o Project agora.')
       if (!project) return jsonError(404, 'PROJECT_NOT_FOUND', 'Project não encontrado.')
+    }
+
+    // The Production must be the caller's own, and its Project is the Project every family is filtered by. A Project the caller
+    // also sent has to be that same Project: a contradictory pair is refused, never silently resolved to either side.
+    let effectiveProjectId = projectId
+    if (productionId) {
+      const { data: production, error: productionError } = await supabase.from('productions').select('id, project_id').eq('id', productionId).eq('user_id', user.id).maybeSingle()
+      if (productionError) return jsonError(503, 'PRODUCTION_UNAVAILABLE', 'Não foi possível validar a Production agora.')
+      if (!production) return jsonError(404, 'PRODUCTION_NOT_FOUND', 'Production não encontrada.')
+      if (projectId && production.project_id !== projectId) return jsonError(400, 'PROJECT_PRODUCTION_MISMATCH', 'A Production não pertence ao Project informado.')
+      effectiveProjectId = production.project_id as string
+    }
+
+    const fingerprint = filterFingerprint(types, effectiveProjectId, productionId)
+    const cursor = decodeGalleryCursor(params.get('cursor'), fingerprint)
+    if (!cursor.ok) {
+      return jsonError(400, cursor.reason === 'FILTER_MISMATCH' ? 'CURSOR_FILTER_MISMATCH' : 'INVALID_CURSOR', 'Cursor inválido para esta consulta.')
     }
 
     // A missing or locally-forbidden service-role client only fails the two render sources; the others still answer.
@@ -90,7 +108,7 @@ export async function GET(request: Request) {
 
     const response = await loadGalleryOutputs(
       { userDb: supabase, renderDb, userId: user.id },
-      { types, projectId, limit: clampGalleryLimit(params.get('limit')), positions: cursor.positions, includeTotals: params.get('totals') === '1' },
+      { types, projectId: effectiveProjectId, productionId, limit: clampGalleryLimit(params.get('limit')), positions: cursor.positions, includeTotals: params.get('totals') === '1' },
     )
 
     const selectedStates = types.map((type) => response.sources[type].state)

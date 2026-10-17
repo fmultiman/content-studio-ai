@@ -143,10 +143,15 @@ describe('Arquivos / Gallery federation', () => {
     expect(arquivos).toMatch(/projectRootSelected/)
   })
 
-  it('keeps Gallery video history on render executions and studio LibraryFiles image-only, preventing a duplicate MP4 card', () => {
-    expect(galeria).toMatch(/\/api\/gallery\/video-outputs/)
-    expect(galeria).toMatch(/origin=studio_render&kind=image/)
-    expect(galleryLibrary).toMatch(/file\.origin === 'studio_render'[\s\S]*file\.kind \?\? 'image'\) === 'image'/)
+  it('keeps Gallery history on render executions (video AND static) and never lists a LibraryFile as an output, preventing a duplicate card', () => {
+    const outputsData = read('lib', 'gallery', 'outputs-data.ts')
+    // One card per execution; the saved MP4/PNG copies are only an annotation found through source_render_execution_id.
+    expect(galeria).toMatch(/useGalleryOutputs\(/)
+    expect(galeria).not.toMatch(/\/api\/library-files|studio_render/)
+    expect(outputsData).toMatch(/loadSavedFiles\(ctx\.userDb, ctx\.userId, 'source_render_execution_id'/)
+    expect(outputsData).not.toMatch(/from\('library_files'\)\.select\([^)]*\)\.eq\('origin'/)
+    expect(outputsData).toMatch(/kind', kind\)\.eq\('status', 'completed'\)/)
+    expect(galleryLibrary).toBeTruthy() // legacy builder is no longer wired into the page
   })
 })
 

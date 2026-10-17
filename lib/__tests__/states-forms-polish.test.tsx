@@ -84,10 +84,13 @@ describe('UX-H4B4 states, forms and final polish', () => {
   it('preserves gallery terminal loading and retry-safe structural states', () => {
     const galleryPage = readFileSync(join(process.cwd(), 'app/(dashboard)/galeria/page.tsx'), 'utf8')
 
-    expect(galleryPage).toContain('setIsLoading(true)')
-    expect(galleryPage).toContain('setIsLoading(false)')
+    // Wave 1A-2 S2: loading/error/retry state lives in the outputs hook; the page shows the terminal states.
+    const hook = readFileSync(join(process.cwd(), 'hooks/use-gallery-outputs.ts'), 'utf8')
+    expect(hook).toContain("phase: result.ok ? 'ready' : 'error'")
+    expect(hook).toContain("phase: 'error'")
     expect(galleryPage).toContain('Falha ao carregar a Galeria')
     expect(galleryPage).toContain('Carregando Galeria...')
+    expect(galleryPage).toContain('onAction={gallery.reload}')
   })
 
   it('keeps dashboard usable during partial failure', () => {

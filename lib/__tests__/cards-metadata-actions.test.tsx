@@ -80,7 +80,8 @@ describe('UX-H4B3 cards, metadata and actions', () => {
     expect(source).toContain('Baixar')
     expect(source).toContain('output.sourceHref &&')
     expect(source).toContain('output.productionHref &&')
-    expect(source).toContain('output.canDownload &&')
+    // Wave 1A-2 S2: every output has its own download endpoint, so Baixar is always offered (one shared OutputActions for cards and list).
+    expect(source).toContain('function OutputActions')
   })
 
   it('keeps files distinct from outputs and exposes explicit preview/download actions', () => {
